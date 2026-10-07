@@ -12,8 +12,8 @@ Target DHIS2 version: **2.42** (verified against 2.42.6). 2.43 is mapped to the 
 | `cmd/fakecentral` | A stand-in DHIS2 used by the upgrade test script |
 | `internal/app` | Wiring: store, handlers, sync worker, upgrader |
 | `internal/auth` | Online and offline login, Basic auth (Android), key slots, PATs (spec 7) |
-| `internal/store` | SQLite store: encrypted payloads, outbox, cache, issues, migrations (spec 9.2) |
-| `internal/hubcrypto` | Data key, Argon2id key slots and password hashes, AES-256-GCM (spec 9.1) |
+| `internal/store` | SQLite store in two files: a plaintext key file (hub identity, key slots) and an AES-256-XTS encrypted data file (everything else); migrations (spec 9.2) |
+| `internal/hubcrypto` | Data key, Argon2id key slots, AES-256-GCM (spec 9.1) |
 | `internal/tracker` | Object model, in-memory index, visibility rules, offline queries and import validation (spec 8.2, 9.3, 10) |
 | `internal/trackerapi` | `/api/tracker/*` and generated attribute values, online and offline (spec 10) |
 | `internal/proxy` | Pass-through with a per-user GET cache (spec 5.1) |
@@ -49,17 +49,20 @@ The hub has no facility-specific configuration. It reads one small image-default
 
 | Key | Meaning |
 |---|---|
-| `central_url` | Central DHIS2 base URL. Optional; asked at setup if empty |
+| `central_url` | Central DHIS2 base URL. When set, setup cannot change it. When empty, setup asks for an `https://` URL |
 | `setup_user_group` | UID of the user group whose members may set up, administer and reset a hub |
 | `listen` | Listen address, e.g. `:8443` |
-| `data_dir` | Store, TLS certificate, request log, upgrade files |
+| `data_dir` | Store (`hub.db` key file, `hub.db.data` encrypted data file), TLS certificate (`ca.crt` for devices, also served at `/hub/ca.crt`), request log, upgrade files |
 | `sync_interval`, `ping_interval`, `ping_timeout` | Sync cadence and connectivity probe (spec 5.2) |
 | `pat_expiry_days` | Lifetime of the personal access tokens the hub creates |
 | `release_channel`, `release_public_key` | Where to look for upgrades, and the ed25519 key releases must be signed with |
-| `tls` | `true` (default): a self-signed certificate is created at first boot. `false`: plain HTTP for development |
+| `tls` | `true` (default): at first boot the hub creates a CA limited to its own names and private addresses, issues its server certificate and discards the CA key. `false`: plain HTTP for development |
 | `reserved_pool_size` | Reserved values kept per generated attribute (default 150) |
 | `full_pull_interval` | How often a full, non-incremental pull runs per user (default 24h) |
 | `log_requests` | Log every request and append it to `data_dir/requests.log` (spec 13.1) |
+| `hub_hosts` | Extra host names clients may use for the hub (comma separated). The hub answers 421 to any other `Host`; its own names and addresses are always accepted |
+| `session_idle`, `session_max` | End a hub session after this long without requests (default 1h) or after login (default 12h) |
+| `key_slot_max_age` | Remove the key slot of a user who has not logged in for this long (default 2160h, 90 days); the three most recently used slots are always kept |
 
 ## Run
 

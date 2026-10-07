@@ -14,8 +14,8 @@ Facility hub POC. Results recorded against DHIS2 **2.42.6** (Sierra Leone demo d
 | 5 | outsider_d cannot use hub-local tracker calls | Pass: 403 | e2e test; live DHIS2 |
 | 6 | Reconnect: pending data reaches central in order, attributed to its author | Pass | e2e test; live DHIS2 (`createdBy` per author checked on central) |
 | 7 | Rejection: unique value conflict; dependents blocked; other data syncs; issue in central data store and hub UI | Pass | e2e test; live DHIS2 (E1064 on the tracked entity, E5000 on its enrollment, "blocked by" on its events, 4 issues in `facility-hub-issues`) |
-| 8 | Reboot offline: data unreadable until a known user logs in; unknown users get "first login must be online" | Pass | e2e test; live (hub restart, then online and offline login) |
-| 9 | No patient values in plain text in the database file | Pass (database, WAL and request log grepped) | e2e test; live hub database grepped for demo-data values |
+| 8 | Reboot offline: data unreadable until a known user logs in; unknown users get the same answer as a wrong password | Pass | e2e test; live (hub restart, then online and offline login) |
+| 9 | No patient data in plain text on disk | Pass (every file in the data directory grepped, for values and for UIDs, programs and dates) | e2e test; live hub database grepped for demo-data values |
 | 10 | Setup by a member of `setup_user_group` with only a login; nurse_a refused | Pass | e2e test; live DHIS2 (registry entry written, replace prompt for a second hub) |
 | 11 | Upgrade: signed release installs; failing release rolls back and is reported; unsigned release ignored | Pass | `scripts/test-upgrade.sh` |
 
@@ -106,7 +106,7 @@ Not solved; options observed while building:
 
 - Rejected objects stay visible locally, flagged `rejected` in the hub UI, which only an admin sees.
 - The hub knows the author of every outbox entry. It could show a per-user banner in a hub-served page, or expose `GET /hub/issues?user=me` for a future app-runtime status component next to the `/hub/status` indicator.
-- Central's error messages can contain the offending value. E1064 quotes the duplicate attribute value. The hub redacts backticked non-UID values before reporting issues to central or showing them on the admin page; the full message stays encrypted on the hub.
+- Central's error messages can contain the offending value. E1064 quotes the duplicate attribute value. Issue reports to central therefore carry only error codes, tracker types and UIDs, never central's message text; the admin page shows the message with backticked values masked, and the full message stays encrypted on the hub.
 - Fixing a rejection usually needs central data the hub does not have (for example, who holds the duplicate national ID). A realistic flow is "show the rejection to the author, let them correct or discard it online".
 
 ### Key escrow for the data key
@@ -123,7 +123,7 @@ Options:
 
 ### Long-term TLS
 
-POC: a self-signed certificate made at first boot, valid for `hub.local`, the host name, `localhost` and the LAN IPs, and marked as a CA so a test device can install it. Options for production:
+POC: at first boot the hub creates a CA limited by name constraints to its own names and private address ranges, issues a server certificate for `hub.local`, the host name, `localhost` and the LAN IPs, and discards the CA key. Test devices install `ca.crt` (served at `/hub/ca.crt`). An earlier version made the server certificate itself a CA, so anyone reading its key could have minted certificates for any site. Options for production:
 
 1. **Public name per hub.** For example `<hubid>.hubs.example.org`, with an ACME DNS-01 certificate. The hub needs DNS API credentials or a central issuing service, and local DNS must resolve the name to the LAN IP; split-horizon DNS or a public record pointing to the private IP both work.
 2. **Private CA.** A country CA trusted by managed devices through MDM. This needs Android network-security-config support for user CAs (see the Android finding).
@@ -169,7 +169,7 @@ Either way, **protect the namespaces**. By default any user can read and write a
    - `totalPages=true`: adds `total` and `pageCount`.
    - `paging=false`: no `pager` key at all.
 8. **Encrypted runtime state (6.3).**
-   - The central URL, server version, hub ID and mode are kept in a small plaintext `meta` table. The hub needs them before the store is unlocked: to forward the first login to central, and to know whether it is in setup mode.
+   - The central URL, server version, hub ID and mode are kept in a small plaintext key file with the key slots. The hub needs them before the store is unlocked: to forward the first login to central, and to know whether it is in setup mode. Everything else, including sync times, is in the encrypted data file (item 23).
    - The hub signing key pair is created at setup rather than first boot, so that it can be stored encrypted. At first boot there is no data key yet.
 9. **Program attributes per program.** Spec 8.2 filters nested objects by program/stage/TET access. The hub also drops tracked entity attributes that belong to programs the user cannot read. Otherwise a pulled tracked entity carries every program's attributes, and so would a locally merged one.
 10. **Unique attributes.** Offline, the hub also rejects a unique attribute value that already exists in its own store (E1064). Central stays authoritative on push (scenario 7 uses a value created on central while the hub was offline).
@@ -185,6 +185,13 @@ Either way, **protect the namespaces**. By default any user can read and write a
 20. **Event programs.** Android also downloads event programs (`WITHOUT_REGISTRATION`) assigned to the facility. The hub caches only tracker programs (spec 6.2 step 6) and answers 503 for these offline. The app tolerated it.
 21. **`/api/me` offline.** Spec 7.1 says `GET /api/me` is cached from the last online login. Capture asks for many field variants (`me.json?fields=authorities`, `userCredentials[userRoles]`, `settings[keyUiLocale]`). The hub stores the user's full `/api/me` at online login and applies the top-level field selection itself, matching central's answers: unknown fields are dropped, so `userCredentials[userRoles]` gives `{}` on 2.42.
 22. **SQLite library.** The spec names `modernc.org/sqlite`. This build environment could reach GitHub but not `proxy.golang.org` or GitLab, where modernc's dependencies live, so the hub uses `github.com/ncruces/go-sqlite3`: also pure Go and no cgo, with SQLite compiled to Go. Only `internal/store` touches the driver (`database/sql` with driver name `sqlite3`). Switching back to modernc means changing the import and the driver name.
+
+23. **Spec 9.2's plaintext index was a confidentiality flaw.** "Index columns hold UIDs and timestamps only, no patient data" is not true in effect. Program, stage and owner org unit per tracked entity, with dates, say who is enrolled in which program (HIV, TB, ANC) at which facility and when they visited. UIDs are the same as central's and appear on printed records, URLs and exports, so they identify patients. Visibility and outbox rows say which staff see or entered whom, and SQLite keeps deleted rows in free pages. The store is now a plaintext key file (hub ID, mode, central URL, usernames and key slots) and a data file encrypted page by page with AES-256-XTS (WAL and temp files too), under a key derived from the data key; rows keep their AES-GCM sealing. Since the index is rebuilt in memory on unlock (spec 9.3), this costs nothing in queries. A store from before is migrated on its first unlock. What still leaks from a stolen disk: usernames, the number and size of pages, and the fact that it is a hub.
+24. **Spec 7.1/9.2 store a password hash next to the key slot.** Both are offline password verifiers for the user's central password. The hub keeps only the key slot, which verifies the password by opening, and removes slots unused for `key_slot_max_age`.
+25. **Spec 8.2's rule for local objects ignores search scope.** Program, stage and TET read plus facility ownership let a user with capture but not search scope at the facility see records central would hide. The hub also requires the facility in the user's effective search scope.
+26. **Spec 8.3 and revocation.** Fine-grained access cannot be re-checked offline, but a disabled account or a changed password can be detected cheaply while online. The hub re-checks cached Basic credentials with central every 5 minutes, ends all sessions of a user central refuses, and refuses that user offline until an online login succeeds. Sessions also expire (`session_idle`, `session_max`).
+27. **Spec 11.2's hub token expires.** It is a PAT with `pat_expiry_days`; nothing in the spec renews it. The hub renews it on sync a week before expiry.
+28. **Spec 12a's store copy needs writes stopped.** Writes accepted while the upgrade copies the store were lost with the old store. The hub refuses local writes (503, `Retry-After`) for the duration; online writes still pass through to central.
 
 ## Capture web app through the hub
 

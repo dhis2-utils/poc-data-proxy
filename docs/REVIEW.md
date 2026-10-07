@@ -191,3 +191,27 @@ The hub token (the setup user's PAT, `internal/ui/setup.go:261`) is created at s
 ## Verification status
 
 Not run in this environment (no Go toolchain): `go build ./...`, `go test ./...` (scenarios 1–10), `scripts/test-upgrade.sh` (scenario 11). The findings are from static review; the e2e suite in `internal/e2e` covers the acceptance scenarios but does not cover H1, M2, M4, M5 or M6 — regression tests for those would be new.
+
+---
+
+## Response and status (2026-10-07)
+
+Each finding was checked against the code, fixed on branch `security-fixes`, and covered by a regression test (`internal/e2e/security_test.go`, `internal/store/store_test.go`, unit tests). `go test ./...` and `scripts/test-upgrade.sh` (scenario 11) pass. The store migration was also run on a hub holding live 2.42 data.
+
+| Finding | Assessment | Status |
+|---|---|---|
+| H1 | The example is wrong: tracker searches go to the tracker handler, which never writes `http_cache`, so typed search terms were not stored. The wider point holds and is worse than stated. The plaintext index showed who is enrolled in which program at the facility and when, and SQLite free pages kept deleted rows. The spec chose this, and the spec was wrong. Each key slot and password hash also let anyone holding the disk guess staff passwords offline, and those are central passwords. | Fixed: the store is a plaintext key file (identity, key slots) plus a data file encrypted with AES-256-XTS (WAL and temp files too). The password hash is removed, and unused key slots are pruned. Old stores migrate on first unlock. Remaining: usernames in the key file, offline guessing of key-slot passwords (TPM recommended in DEPLOYMENT). |
+| M1 | Real, but the stated paths are weak: a forged `Location` goes back to the forger, and a rebinding page carries no hub cookie. The real path was cache poisoning: responses were rewritten with the requester's Host **before** caching, and offline the hub serves other users' cached app files. | Fixed: responses are cached unrewritten and rewritten per request. Unknown `Host` headers get 421 (`hub_hosts` for extra names). |
+| M2 | Confirmed. The suggested lock would deadlock: the upgrade check runs inside `Cycle` holding `w.mu`, and `Drain` calls `Push`. | Fixed: a shared/exclusive local-write gate refuses offline writes and pool hand-outs with 503 during the copy. Online writes still go to central. `Push` has its own lock, and reset excludes sync cycles (L1). |
+| M3 | Confirmed. | Fixed: per user+address, per address and per user throttling (429, Retry-After); one answer for unknown user and wrong password offline; at most two Argon2 derivations at a time. |
+| M4 | Confirmed. Also: offline login cleared `needs_login`. | Fixed: idle and absolute session expiry; cached Basic credentials re-checked with central every 5 minutes; a refused user loses all sessions and cannot log in offline; logout drops Basic entries. |
+| M5 | Confirmed. | Fixed: renewed on sync a week before expiry; old token revoked. A dedicated hub system user is still the right production answer (FINDINGS). |
+| M6 | Confirmed. | Fixed: errors carry status and DHIS2 error code only. Issue reports and logs carry codes, tracker types and UIDs. |
+| M7 | Confirmed. | Fixed: only generated attributes the user can read; at most half the pool per request; offline job reports expire after an hour. |
+| M8 | Confirmed. | Fixed: `central_url` from the image defaults cannot be changed at setup; a free-entry URL must be `https`. A one-time setup token on the label is still worth building. |
+| M9 | Confirmed as a spec gap. | Fixed: local objects also require the facility in the user's effective search scope. |
+| L1 | Confirmed. | Fixed with M2. |
+| L2 | Agreed: integrity only, and central rejects on push. The hub has no relationship-type sharing to check against. | Accepted; documented. |
+| L3 | Confirmed. | Fixed: `createdAt`/`createdBy` kept on offline update. |
+| L4 | Confirmed. | Fixed: page overflow, 64 MB body limit with 413, read and idle timeouts, release-channel timeout, 30-day cache pruning. |
+| L5 | CA certificate: the real fix is to throw the CA key away, not to drop the CA flag (Android needs a CA). | Fixed: name-constrained CA, key discarded, server certificate issued from it; fail-closed attribute filter; unbiased UIDs; `Sec-Fetch-Site` check; `Referer` not forwarded. Not changed: admin rights follow the stored access list (refreshed every sync), and `eq` filter case sensitivity is a fidelity question to check against central. |

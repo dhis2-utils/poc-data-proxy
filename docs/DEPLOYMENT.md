@@ -43,7 +43,7 @@ Built once per release with Raspberry Pi's image tools (`pi-gen` or `rpi-image-g
 - **Support VPN (optional, to build):** an outbound-only WireGuard tunnel to a country support server, disabled until the setup flow enables it.
 - **First-boot service:** regenerates SSH host keys and the machine ID, so cloned images do not share identities.
 
-The image holds **no secrets**. Each hub gets its own data key, hub ID and signing key pair at first boot and setup. Patient data on the SSD is encrypted by the hub itself (spec 9), so full-disk encryption is optional. If it is used, it must unlock without a person present, for example with a key held in TPM-like storage, which the Pi does not have. This is why the POC relies on application-level encryption.
+The image holds **no secrets**. Each hub gets its own data key, hub ID and signing key pair at first boot and setup. Patient data on the SSD is encrypted by the hub itself: everything except a small key file (hub ID, mode, central URL, and each user's username and key slot) is in a data file encrypted with AES-256-XTS under the data key, so full-disk encryption is optional. If it is used, it must unlock without a person present, for example with a key held in TPM-like storage, which the Pi does not have. This is why the POC relies on application-level encryption.
 
 ## 3. From depot to facility
 
@@ -74,7 +74,7 @@ No facility is assigned at the depot. Any box can go anywhere.
 
 - **Replacement:** set up a spare at the facility and confirm "replace the old hub". The old one is marked retired in the registry. Anything the old hub had not pushed is lost, which is why the UPS and SSD matter.
 - **Decommissioning:** use "Reset hub" in the admin page. It pushes the outbox, wipes the store and returns to setup mode. Then revoke its PATs centrally.
-- **Theft:** the store is unreadable without a staff password, because the data key is only in memory. Revoke the hub's and users' PATs on central **(to build: a "revoke all tokens of this hub" action)**.
+- **Theft:** the store is unreadable without a staff password, because the data key is only in memory. It is only as strong as the weakest password among the users with a key slot, though: whoever holds the SSD can test password guesses offline against each slot, and a cracked password is also that user's central DHIS2 password. Treat a stolen hub as a possible password leak: ask its users to change their passwords. Revoke the hub's and users' PATs on central **(to build: a "revoke all tokens of this hub" action)**.
 
 ## 4. Network set-ups
 
@@ -146,7 +146,7 @@ Proposed design **(to build)**:
    - case A: whitelist the hub zone on the router, or set the hub as the facility's DNS server;
    - last resort: devices use the IP address on the label, over plain HTTP.
 
-Until this exists, the POC's working set-up is plain HTTP on the LAN by IP address, which the Android app accepts. That is acceptable for a pilot on a closed facility network, but not for a national rollout.
+Until this exists, the POC's working set-up is plain HTTP on the LAN by IP address, which the Android app accepts. With `tls: true`, managed devices can install the hub's CA from `/hub/ca.crt`; the CA is limited to the hub's own names and private addresses, and its key is discarded after signing. That is acceptable for a pilot on a closed facility network, but not for a national rollout.
 
 ## 5. Pointing client devices at the hub
 
@@ -214,7 +214,10 @@ A hub only serves its own facility. A community health worker's tablet that visi
   - PATs expire after `pat_expiry_days` (default 90) and renew at online login.
   - Users who leave are disabled on central, so their PATs stop working.
   - Hubs show those users as "needs online login".
-- **Physical access:** data at rest is encrypted, and the key is only in memory after a staff login. A stolen hub reveals no patient data, but a powered-on hub that is moved keeps its key until it loses power.
+- **Physical access:** data at rest is encrypted, and the key is only in memory after a staff login. A stolen hub reveals no patient data without a staff password, but a powered-on hub that is moved keeps its key until it loses power.
+- **Passwords protect the disk.** Each key slot can be attacked offline by whoever holds the SSD (Argon2id slows this down; it does not stop weak passwords). Enforce central's password policy for hub users. The hub removes slots of users who have not logged in for `key_slot_max_age`.
+- **TPM (recommended for production).** A TPM add-on board (about USD 25 for the Pi) could hold a device secret mixed into every key slot, so an SSD on its own is useless and the TPM limits how fast passwords can be guessed **(to build)**.
+- **Host names:** if devices reach the hub by a name other than its host name, `hub.local` or its IP (for example a router DNS name), list it in `hub_hosts`; the hub refuses unknown `Host` headers.
 
 ## 7. Rollout plan
 
