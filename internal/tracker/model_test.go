@@ -36,3 +36,24 @@ func TestMergeKeepsOtherAttributes(t *testing.T) {
 		t.Fatal(vals)
 	}
 }
+
+// Review M6: free text from central never leaves the hub, however a value is quoted.
+func TestOutgoingMessage(t *testing.T) {
+	reps := []ErrorReport{{Message: "Value 'Amina Otieno' is not valid", ErrorCode: "E1007", TrackerType: "TRACKED_ENTITY", UID: "AAAAAAAAAA1"}}
+	if got := OutgoingMessage(reps[0].Message, reps); got != "rejected by central: E1007" {
+		t.Fatal(got)
+	}
+	if got := OutgoingReports(reps); got[0].Message != "" || got[0].UID != "AAAAAAAAAA1" || got[0].ErrorCode != "E1007" {
+		t.Fatalf("%+v", got)
+	}
+	for msg, want := range map[string]string{
+		"blocked by AAAAAAAAAA1":                  "blocked by AAAAAAAAAA1",
+		"central returned 409 (E1064)":            "central returned 409 (E1064)",
+		"central returned 400: {\"x\":\"Amina\"}": "rejected by central",
+		"blocked by Amina Otieno":                 "rejected by central",
+	} {
+		if got := OutgoingMessage(msg, nil); got != want {
+			t.Errorf("%q: got %q", msg, got)
+		}
+	}
+}

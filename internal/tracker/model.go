@@ -7,6 +7,8 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"regexp"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/store"
@@ -239,15 +241,44 @@ func Redact(msg string) string {
 	})
 }
 
-// RedactReports returns error reports with redacted messages and without "args".
-func RedactReports(reps []ErrorReport) []ErrorReport {
+// OutgoingReports reduces error reports to their structured fields for anything that
+// leaves the hub: central's messages are free text and can quote patient values in
+// ways no pattern catches (review M6).
+func OutgoingReports(reps []ErrorReport) []ErrorReport {
 	out := make([]ErrorReport, len(reps))
 	for i, r := range reps {
-		r.Message = Redact(r.Message)
-		out[i] = r
+		out[i] = ErrorReport{ErrorCode: r.ErrorCode, TrackerType: r.TrackerType, UID: r.UID}
 	}
 	return out
 }
+
+// OutgoingMessage is an issue message safe to leave the hub: the error codes when
+// central sent error reports, a message the hub wrote itself, or a fixed text.
+func OutgoingMessage(msg string, reps []ErrorReport) string {
+	if len(reps) > 0 {
+		var codes []string
+		for _, r := range reps {
+			if r.ErrorCode != "" && !slices.Contains(codes, r.ErrorCode) {
+				codes = append(codes, r.ErrorCode)
+			}
+		}
+		if len(codes) > 0 {
+			return "rejected by central: " + strings.Join(codes, ", ")
+		}
+	}
+	for _, own := range []*regexp.Regexp{hubBlocked, hubNotPersisted, hubCentralStatus} {
+		if own.MatchString(msg) {
+			return msg
+		}
+	}
+	return "rejected by central"
+}
+
+var (
+	hubBlocked       = regexp.MustCompile(`^blocked by [A-Za-z][A-Za-z0-9]{10}$`)
+	hubNotPersisted  = regexp.MustCompile(`^not persisted by central$`)
+	hubCentralStatus = regexp.MustCompile(`^central returned [0-9]{3}( \(E[0-9]{4}\))?$`)
+)
 
 const uidChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 

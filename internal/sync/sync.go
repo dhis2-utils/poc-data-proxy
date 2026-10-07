@@ -201,7 +201,7 @@ func (w *Worker) reject(e *store.OutboxEntry, it *tracker.Item, errorReports []t
 	if err := w.H.Store.AddIssue(e.Seq, it.UID, it.Kind, e.UserID, b); err != nil {
 		slog.Error("add issue", "err", err)
 	}
-	slog.Warn("object rejected", "uid", it.UID, "kind", it.Kind, "seq", e.Seq, "reason", tracker.Redact(message))
+	slog.Warn("object rejected", "uid", it.UID, "kind", it.Kind, "seq", e.Seq, "reason", tracker.OutgoingMessage(message, errorReports))
 }
 
 func parents(it *tracker.Item) []string {
@@ -277,7 +277,7 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 	if perr != nil {
 		// A non-report answer (e.g. 400 parse error) rejects the whole entry.
 		for _, it := range send {
-			w.reject(e, it, nil, fmt.Sprintf("central returned %d: %.500s", resp.StatusCode, rb))
+			w.reject(e, it, nil, (&central.HTTPError{Status: resp.StatusCode, Body: rb}).Error())
 		}
 		return pushResult{}, h.Store.FinishOutbox(e.Seq, store.OutboxRejected, perr.Error())
 	}
@@ -346,8 +346,8 @@ func (w *Worker) ReportIssues(ctx context.Context) error {
 			ErrorReports []tracker.ErrorReport `json:"errorReports"`
 		}
 		json.Unmarshal(is.Error, &stored)
-		errBody := map[string]any{"message": tracker.Redact(stored.Message),
-			"errorReports": tracker.RedactReports(stored.ErrorReports)}
+		errBody := map[string]any{"message": tracker.OutgoingMessage(stored.Message, stored.ErrorReports),
+			"errorReports": tracker.OutgoingReports(stored.ErrorReports)}
 		payload := map[string]any{"hub_id": h.HubID(), "facility": h.Facility(), "user": userUID, "objectUid": is.ObjectUID,
 			"kind": is.Kind, "outboxSeq": is.OutboxSeq, "error": errBody, "createdAt": is.CreatedAt}
 		key := fmt.Sprintf("%s-%d", h.HubID(), is.ID)

@@ -128,7 +128,7 @@ type importReport struct {
 func (v42) TrackerResult(status int, body []byte) (map[string]bool, map[string][]tracker.ErrorReport, error) {
 	var r importReport
 	if err := json.Unmarshal(body, &r); err != nil || r.Status == "" {
-		return nil, nil, fmt.Errorf("unexpected import response (HTTP %d): %.300s", status, body)
+		return nil, nil, fmt.Errorf("unexpected import response (HTTP %d)", status)
 	}
 	persisted := map[string]bool{}
 	errs := map[string][]tracker.ErrorReport{}

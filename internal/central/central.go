@@ -125,12 +125,26 @@ type HTTPError struct {
 	Body   []byte
 }
 
+// Error names the status and DHIS2 error code only. Central's body can quote
+// submitted values, and this text reaches logs, the status page and the heartbeat
+// on central (review M6); callers that need the body read e.Body.
 func (e *HTTPError) Error() string {
-	b := e.Body
-	if len(b) > 300 {
-		b = b[:300]
+	if code := ErrorCode(e.Body); code != "" {
+		return fmt.Sprintf("central returned %d (%s)", e.Status, code)
 	}
-	return fmt.Sprintf("central returned %d: %s", e.Status, b)
+	return fmt.Sprintf("central returned %d", e.Status)
+}
+
+// ErrorCode returns the errorCode of a DHIS2 web message body, or "".
+func ErrorCode(body []byte) string {
+	var m struct {
+		ErrorCode string `json:"errorCode"`
+	}
+	json.Unmarshal(body, &m)
+	if len(m.ErrorCode) > 16 {
+		return ""
+	}
+	return m.ErrorCode
 }
 
 // JSON does a request and decodes a 2xx JSON response into out (if non-nil).
