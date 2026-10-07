@@ -105,7 +105,9 @@ func serve(args []string) error {
 			slog.Error("unlock with handed-over key", "err", err)
 		}
 	}
-	srv = &http.Server{Addr: cfg.Listen, Handler: a.Handler, ReadHeaderTimeout: 30 * time.Second}
+	// No WriteTimeout: app downloads over weak facility Wi-Fi can take minutes.
+	srv = &http.Server{Addr: cfg.Listen, Handler: a.Handler, ReadHeaderTimeout: 30 * time.Second,
+		ReadTimeout: 10 * time.Minute, IdleTimeout: 2 * time.Minute}
 	ln, err := net.Listen("tcp", cfg.Listen)
 	if err != nil {
 		return err

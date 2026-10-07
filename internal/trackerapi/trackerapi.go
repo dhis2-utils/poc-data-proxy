@@ -77,7 +77,11 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.H.WebError(w, 401, "Unauthorized", "")
 		return
 	}
-	body, _ := core.ReadBody(r, 256<<20)
+	body, err := core.ReadBody(r, core.MaxBody)
+	if err != nil {
+		a.H.WebError(w, http.StatusRequestEntityTooLarge, "request body too large or unreadable", "")
+		return
+	}
 
 	// Online writes go to central even during an upgrade: central holds them, and
 	// what the hub learns from them comes back with the next pull.

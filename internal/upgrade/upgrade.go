@@ -228,6 +228,9 @@ func (u *Upgrader) fetchManifest(ctx context.Context) (*Manifest, error) {
 }
 
 func (u *Upgrader) get(ctx context.Context, name string) ([]byte, error) {
+	// The check runs inside the sync cycle; a hung channel must not stall push and pull.
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(u.H.Cfg.ReleaseChannel, "/")+"/"+name, nil)
 	if err != nil {
 		return nil, err

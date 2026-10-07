@@ -57,3 +57,25 @@ func TestOutgoingMessage(t *testing.T) {
 		}
 	}
 }
+
+// Review L4: huge page numbers neither overflow nor panic.
+func TestPageOverflow(t *testing.T) {
+	objs := []*Obj{{UID: "a"}, {UID: "b"}, {UID: "c"}}
+	if got := page(objs, 1<<62, 2, true); got != nil {
+		t.Fatal(got)
+	}
+	if got := page(objs, 2, 2, true); len(got) != 1 || got[0].UID != "c" {
+		t.Fatal(got)
+	}
+	if got := page(objs, 2, 1<<62, true); got != nil {
+		t.Fatal(got)
+	}
+}
+
+func TestNewUID(t *testing.T) {
+	for i := 0; i < 1000; i++ {
+		if u := NewUID(); !ValidUID(u) {
+			t.Fatal(u)
+		}
+	}
+}

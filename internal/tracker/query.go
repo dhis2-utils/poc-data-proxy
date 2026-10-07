@@ -310,7 +310,7 @@ func filterAttributes(v *Viewer, tet string, attrs any) []any {
 	out := []any{}
 	for _, a := range arr {
 		m, _ := a.(M)
-		if v.Catalog == nil || v.Catalog.ReadableAttribute(v.Access, tet, Str(m, "attribute")) {
+		if v.Catalog != nil && v.Catalog.ReadableAttribute(v.Access, tet, Str(m, "attribute")) {
 			out = append(out, a)
 		}
 	}
@@ -408,10 +408,10 @@ func page(objs []*Obj, pg, size int, paged bool) []*Obj {
 	if !paged {
 		return objs
 	}
-	start := (pg - 1) * size
-	if start >= len(objs) {
+	if pg-1 >= (len(objs)+size-1)/size { // compared before multiplying: page and size are unbounded
 		return nil
 	}
+	start := (pg - 1) * size
 	return objs[start:min(start+size, len(objs))]
 }
 

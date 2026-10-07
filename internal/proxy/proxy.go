@@ -34,7 +34,9 @@ var hopHeaders = []string{"Connection", "Keep-Alive", "Proxy-Authenticate", "Pro
 	"Transfer-Encoding", "Upgrade", "Cookie", "Authorization", "Accept-Encoding", "Content-Length", "Host",
 	// The browser's origin is the hub; to central the hub is a same-origin client. A
 	// forwarded Origin makes central answer non-allowlisted origins with empty bodies.
-	"Origin"}
+	"Origin",
+	// Central sees the request itself; the page it came from adds nothing.
+	"Referer"}
 
 var droppedResponseHeaders = []string{"Set-Cookie", "Content-Length", "Content-Encoding", "Transfer-Encoding",
 	"Connection", "Keep-Alive", "Strict-Transport-Security"}
@@ -264,7 +266,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	status := 0
 	defer func() { p.H.ReqLog.Record(r, core.ClientKind(r), served, status) }()
 
-	body, _ := core.ReadBody(r, 256<<20)
+	body, err := core.ReadBody(r, core.MaxBody)
+	if err != nil {
+		status = http.StatusRequestEntityTooLarge
+		p.H.WebError(w, status, "request body too large or unreadable", "")
+		return
+	}
 	if p.H.Online() {
 		res, err := p.Forward(r.Context(), r, body, p.Upstream(sess))
 		if err == nil {

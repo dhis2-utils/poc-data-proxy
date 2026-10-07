@@ -155,6 +155,9 @@ func (w *Worker) cycle(ctx context.Context) error {
 	if err := w.RefillPool(ctx); err != nil {
 		errs = append(errs, err)
 	}
+	if _, err := h.Store.PruneCache(30 * 24 * time.Hour); err != nil {
+		errs = append(errs, fmt.Errorf("cache: %w", err))
+	}
 	w.heartbeat(ctx)
 	return errors.Join(errs...)
 }

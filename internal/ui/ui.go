@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"slices"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/auth"
@@ -127,9 +126,14 @@ func (u *UI) admin(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// sameOrigin refuses cross-site form posts to the admin pages. Without an Origin
+// header it relies on Sec-Fetch-Site, which browsers send on every request.
 func sameOrigin(r *http.Request) bool {
-	o := r.Header.Get("Origin")
-	return o == "" || strings.HasSuffix(o, "://"+r.Host)
+	if o := r.Header.Get("Origin"); o != "" {
+		return o == "http://"+r.Host || o == "https://"+r.Host
+	}
+	site := r.Header.Get("Sec-Fetch-Site")
+	return site == "" || site == "same-origin" || site == "none"
 }
 
 func (u *UI) handleLogin(w http.ResponseWriter, r *http.Request) {

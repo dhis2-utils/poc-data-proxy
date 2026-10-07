@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 // --- HTTP cache (spec 5.1) ---------------------------------------------------
@@ -37,6 +38,16 @@ VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id, method, url) DO UPDATE SET status=exc
  headers_enc=excluded.headers_enc, body_enc=excluded.body_enc, fetched_at=excluded.fetched_at`,
 		userID, method, url, r.Status, hct, bct, Now())
 	return err
+}
+
+// PruneCache deletes cached responses not refreshed for maxAge. Entries in use are
+// refreshed whenever a client fetches them online.
+func (s *Store) PruneCache(maxAge time.Duration) (int64, error) {
+	res, err := s.DB().Exec(`DELETE FROM http_cache WHERE fetched_at < ?`, time.Now().Add(-maxAge).UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // GetCache returns the cached response or nil.

@@ -284,12 +284,17 @@ const uidChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
 
 // NewUID returns a random DHIS2-style UID (a letter followed by 10 alphanumerics).
 func NewUID() string {
-	b := make([]byte, 11)
-	rand.Read(b)
-	out := make([]byte, 11)
-	out[0] = uidChars[int(b[0])%52]
-	for i := 1; i < 11; i++ {
-		out[i] = uidChars[int(b[i])%62]
+	out := make([]byte, 0, 11)
+	b := make([]byte, 16)
+	for len(out) < 11 {
+		rand.Read(b)
+		for _, c := range b {
+			// Rejection sampling: 248 = 4*62 keeps every character equally likely.
+			if c >= 248 || (len(out) == 0 && c%62 >= 52) || len(out) == 11 {
+				continue
+			}
+			out = append(out, uidChars[c%62])
+		}
 	}
 	return string(out)
 }

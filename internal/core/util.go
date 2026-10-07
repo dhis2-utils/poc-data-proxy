@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -20,12 +21,25 @@ func mustJSON(v any) []byte {
 func MustJSON(v any) []byte { return mustJSON(v) }
 
 // ReadBody reads a request body up to limit bytes.
+// ErrTooLarge is returned by ReadBody for a body over the limit.
+var ErrTooLarge = errors.New("request body too large")
+
+// ReadBody buffers a request body of at most limit bytes. A larger body is an error,
+// never silently cut.
 func ReadBody(r *http.Request, limit int64) ([]byte, error) {
 	if r.Body == nil {
 		return nil, nil
 	}
-	return io.ReadAll(io.LimitReader(r.Body, limit))
+	b, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
+	if err == nil && int64(len(b)) > limit {
+		return nil, ErrTooLarge
+	}
+	return b, err
 }
+
+// MaxBody is the largest request body the hub buffers (tracker imports, proxied
+// requests). Everything is held in RAM on a small device.
+const MaxBody = 64 << 20
 
 // NewUID returns a random DHIS2-style UID.
 func NewUID() string { return tracker.NewUID() }
