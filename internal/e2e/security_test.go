@@ -2,6 +2,7 @@
 package e2e
 
 import (
+	"encoding/json"
 	"io"
 	"net/url"
 	"strings"
@@ -185,5 +186,24 @@ func TestSetupCentralURL(t *testing.T) {
 	}
 	if got := e.app.Hub.Central.BaseURL(); got != e.cSrv.URL {
 		t.Fatalf("hub points at %s", got)
+	}
+}
+
+// M7: offline, the pool hands out only generated attributes the user can read, and at
+// most half the pool per request.
+func TestReservedValueLimits(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.android("nurse_a")
+	a.json("GET", "/api/me", nil, 200)
+	e.offline()
+	if st, _ := a.do("GET", "/api/trackedEntityAttributes/"+fc.AttrFirstName+"/generate", nil); st != 403 {
+		t.Fatalf("non-generated attribute: got %d, want 403", st)
+	}
+	st, body := a.do("GET", "/api/trackedEntityAttributes/"+fc.AttrTBID+"/generateAndReserve?numberToReserve=1000", nil)
+	var vals []any
+	json.Unmarshal(body, &vals)
+	if st != 200 || len(vals) != e.app.Hub.Cfg.ReservedPoolSize/2 {
+		t.Fatalf("got %d values (%d): %s", len(vals), st, body)
 	}
 }

@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/access"
 	"github.com/dhis2/facility-hub/internal/auth"
 	"github.com/dhis2/facility-hub/internal/central"
 	"github.com/dhis2/facility-hub/internal/core"
@@ -45,7 +47,12 @@ type job struct {
 	stats  tracker.Stats
 	state  string
 	at     string
+	made   time.Time
 }
+
+// jobTTL is how long an offline job report is kept for the client to fetch. Reports
+// can quote submitted values, so they do not stay in memory until a restart.
+const jobTTL = time.Hour
 
 var collections = map[string]string{"trackedEntities": store.KindTrackedEntity, "enrollments": store.KindEnrollment,
 	"events": store.KindEvent, "relationships": store.KindRelationship}
@@ -204,6 +211,25 @@ func split(p string) (coll, uid string) {
 	return
 }
 
+// generatedReadable reports whether attr is a generated attribute in the facility's
+// programs that the user can read through a tracked entity type or a program.
+func (a *API) generatedReadable(userID int64, attr string) bool {
+	c := a.H.Catalog()
+	if !slices.ContainsFunc(c.GeneratedAttributes(), func(m access.AttrMeta) bool { return m.ID == attr }) {
+		return false
+	}
+	acc := a.H.Access(userID)
+	if c.ReadableAttribute(acc, "", attr) {
+		return true
+	}
+	for tet := range c.TETAttributes {
+		if c.ReadableAttribute(acc, tet, attr) {
+			return true
+		}
+	}
+	return false
+}
+
 // usable checks the hub-local preconditions for a user (spec 8.1).
 func (a *API) usable(w http.ResponseWriter, sess *core.Session) bool {
 	switch {
@@ -322,8 +348,13 @@ func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Ses
 	if a.jobs == nil {
 		a.jobs = map[string]*job{}
 	}
+	for k, j := range a.jobs {
+		if time.Since(j.made) > jobTTL {
+			delete(a.jobs, k)
+		}
+	}
 	a.jobs[id] = &job{userID: sess.UserID, status: status, report: report, stats: total, state: st,
-		at: tracker.DHIS2Time(time.Now())}
+		at: tracker.DHIS2Time(time.Now()), made: time.Now()}
 	a.jobsMu.Unlock()
 	core.WriteJSON(w, 200, a.H.API().AsyncAccepted(id, a.selfBase(r)+"/tracker/jobs/"+id))
 }
@@ -335,7 +366,7 @@ func (a *API) serveJob(w http.ResponseWriter, r *http.Request, sess *core.Sessio
 	a.jobsMu.Lock()
 	j := a.jobs[parts[0]]
 	a.jobsMu.Unlock()
-	if j == nil || j.userID != sess.UserID {
+	if j == nil || j.userID != sess.UserID || time.Since(j.made) > jobTTL {
 		a.H.NeedsConnection(w, "tracker job "+parts[0]+" is not known to the hub")
 		return
 	}
@@ -375,15 +406,19 @@ func (a *API) ServeGenerated(w http.ResponseWriter, r *http.Request) {
 	if !a.usable(w, sess) {
 		return
 	}
+	if !a.generatedReadable(sess.UserID, attr) {
+		a.H.WebError(w, http.StatusForbidden, "attribute "+attr+" is not a generated attribute this user can read", "")
+		return
+	}
 	n := 1
 	if op != "generate" {
 		if s := r.URL.Query().Get("numberToReserve"); s != "" {
 			n, _ = strconv.Atoi(s)
 		}
 	}
-	if n < 1 {
-		n = 1
-	}
+	// The pool is shared by the facility: one request may take at most half of
+	// it, so one device cannot leave the others without values until the next sync.
+	n = max(1, min(n, a.H.Cfg.ReservedPoolSize/2))
 	if !a.H.BeginLocalWrite() {
 		a.H.UpgradingError(w) // values handed out now would be handed out again after the swap
 		return
