@@ -149,15 +149,29 @@ func (u *Upgrader) check(ctx context.Context) error {
 	}()
 	// 3. Migrations on a copy of the store, run by the new binary.
 	next := u.StorePath + ".next"
-	os.Remove(next)
+	removeStore(next)
 	if err := u.H.Store.BackupTo(next); err != nil {
 		return fmt.Errorf("store copy: %w", err)
 	}
+	dk, err := u.H.Store.DK()
+	if err != nil {
+		return err
+	}
+	// The data file's migrations need the data key: hand it over a pipe, as Reexec does.
 	cctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	out, err := exec.CommandContext(cctx, newBin, "migrate", "-db", next).CombinedOutput()
+	cmd := exec.CommandContext(cctx, newBin, "migrate", "-db", next)
+	keyPipe, err := dkPipe(dk)
+	if err != nil {
+		cancel()
+		return err
+	}
+	cmd.ExtraFiles = []*os.File{keyPipe}
+	cmd.Env = append(os.Environ(), DKEnv+"=3")
+	out, err := cmd.CombinedOutput()
+	keyPipe.Close()
 	cancel()
 	if err != nil {
-		os.Remove(next)
+		removeStore(next)
 		u.record(Result{Result: "failed", From: u.H.Version, To: m.Version, Reason: "migration failed: " + strings.TrimSpace(string(out))})
 		u.H.Store.SetMeta("upgrade_skip", m.Version)
 		return fmt.Errorf("migration: %v: %s", err, out)
@@ -175,10 +189,6 @@ func (u *Upgrader) check(ctx context.Context) error {
 	mk := Marker{State: "swapped", From: u.H.Version, To: m.Version, ExePath: exe, PrevBinary: prevBin,
 		PrevStore: u.StorePath + ".prev", StartedAt: store.Now()}
 	if err := writeMarker(u.dir("upgrade.json"), mk); err != nil {
-		return err
-	}
-	dk, err := u.H.Store.DK()
-	if err != nil {
 		return err
 	}
 	ok = true
@@ -313,7 +323,7 @@ func (u *Upgrader) AfterBoot(ctx context.Context, selfStatusURL string) {
 	reason := u.healthCheck(ctx, selfStatusURL)
 	if reason == "" {
 		os.Remove(path)
-		os.Remove(mk.PrevStore)
+		removeStore(mk.PrevStore)
 		u.record(Result{Result: "ok", From: mk.From, To: mk.To})
 		return
 	}
@@ -341,11 +351,11 @@ func (u *Upgrader) healthCheck(ctx context.Context, statusURL string) string {
 	if u.HealthFail {
 		return "forced failure (test build)"
 	}
-	if err := u.H.Store.DB.PingContext(ctx); err != nil {
+	if err := u.H.Store.DB().PingContext(ctx); err != nil {
 		return "store: " + err.Error()
 	}
 	var n int
-	if err := u.H.Store.DB.QueryRowContext(ctx, `SELECT count(*) FROM objects`).Scan(&n); err != nil {
+	if err := u.H.Store.DB().QueryRowContext(ctx, `SELECT count(*) FROM objects`).Scan(&n); err != nil {
 		return "store: " + err.Error()
 	}
 	if !u.H.Monitor.Probe(ctx, u.H.Central.BaseURL()) {
@@ -391,20 +401,57 @@ func copyFile(src, dst string, mode os.FileMode) error {
 // replaceBinary atomically puts src at dst (copy next to dst, then rename).
 func replaceBinary(src, dst string) error { return copyFile(src, dst, 0o755) }
 
-// swapStore moves live -> saveAs and incoming -> live. The store must be closed.
+// swapStore moves live -> saveAs and incoming -> live, for the key file and its data
+// file. The store must be closed.
 func swapStore(live, incoming, saveAs string) error {
-	for _, sfx := range []string{"-wal", "-shm"} {
-		os.Remove(live + sfx)
+	for _, f := range []string{live, store.DataPath(live)} {
+		for _, sfx := range []string{"-wal", "-shm"} {
+			os.Remove(f + sfx)
+		}
 	}
-	os.Remove(saveAs)
+	removeStore(saveAs)
 	if err := os.Rename(live, saveAs); err != nil {
+		return err
+	}
+	if err := os.Rename(store.DataPath(live), store.DataPath(saveAs)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		os.Rename(saveAs, live)
 		return err
 	}
 	if err := os.Rename(incoming, live); err != nil {
 		os.Rename(saveAs, live)
+		os.Rename(store.DataPath(saveAs), store.DataPath(live))
+		return err
+	}
+	if err := os.Rename(store.DataPath(incoming), store.DataPath(live)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		os.Rename(live, incoming)
+		os.Rename(saveAs, live)
+		os.Rename(store.DataPath(saveAs), store.DataPath(live))
 		return err
 	}
 	return nil
+}
+
+// removeStore deletes a key file and its data file.
+func removeStore(path string) {
+	for _, f := range []string{path, store.DataPath(path)} {
+		for _, sfx := range []string{"", "-wal", "-shm"} {
+			os.Remove(f + sfx)
+		}
+	}
+}
+
+// dkPipe returns the read end of a pipe that yields the data key, hex encoded.
+func dkPipe(dk []byte) (*os.File, error) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	defer w.Close()
+	if _, err := w.Write([]byte(hex.EncodeToString(dk))); err != nil {
+		r.Close()
+		return nil, err
+	}
+	return r, nil
 }
 
 // DKEnv names the inherited file descriptor that carries the data key across a
@@ -415,14 +462,10 @@ const DKEnv = "HUB_DK_FD"
 func Reexec(exe string, dk []byte) error {
 	env := os.Environ()
 	if len(dk) > 0 {
-		r, w, err := os.Pipe()
+		r, err := dkPipe(dk)
 		if err != nil {
 			return err
 		}
-		if _, err := w.Write([]byte(hex.EncodeToString(dk))); err != nil {
-			return err
-		}
-		w.Close()
 		fd := int(r.Fd())
 		if _, _, e := syscall.Syscall(syscall.SYS_FCNTL, uintptr(fd), syscall.F_SETFD, 0); e != 0 {
 			return e

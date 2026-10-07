@@ -36,6 +36,8 @@ type Config struct {
 	// SessionIdle and SessionMax end hub sessions after inactivity and after login.
 	SessionIdle time.Duration
 	SessionMax  time.Duration
+	// KeySlotMaxAge removes the key slot of a user who has not logged in for this long.
+	KeySlotMaxAge time.Duration
 }
 
 func Default() Config {
@@ -52,6 +54,7 @@ func Default() Config {
 		OfflineSearchFacility: true,
 		SessionIdle:           time.Hour,
 		SessionMax:            12 * time.Hour,
+		KeySlotMaxAge:         90 * 24 * time.Hour,
 	}
 }
 
@@ -120,6 +123,8 @@ func (c *Config) set(k, v string) error {
 		c.SessionIdle, err = time.ParseDuration(v)
 	case "session_max":
 		c.SessionMax, err = time.ParseDuration(v)
+	case "key_slot_max_age":
+		c.KeySlotMaxAge, err = time.ParseDuration(v)
 	case "hub_hosts":
 		c.HubHosts = nil
 		for _, x := range strings.Split(v, ",") {

@@ -63,7 +63,7 @@ func (s *Store) SetSyncState(q Execer, uid, state string) error {
 func (s *Store) GetObject(uid string) (*Object, error) {
 	o := &Object{}
 	var ct []byte
-	err := s.DB.QueryRow(`SELECT uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at, origin,
+	err := s.DB().QueryRow(`SELECT uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at, origin,
  sync_state, payload_enc FROM objects WHERE uid=?`, uid).Scan(&o.UID, &o.Kind, &o.TE, &o.Enrollment, &o.Program,
 		&o.Stage, &o.TET, &o.OwnerOrgUnit, &o.UpdatedAt, &o.Origin, &o.SyncState, &ct)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -78,7 +78,7 @@ func (s *Store) GetObject(uid string) (*Object, error) {
 
 // AllObjects decrypts every object (used to build the in-memory index on unlock).
 func (s *Store) AllObjects(fn func(*Object) error) error {
-	rows, err := s.DB.Query(`SELECT uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at,
+	rows, err := s.DB().Query(`SELECT uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at,
  origin, sync_state, payload_enc FROM objects`)
 	if err != nil {
 		return err
@@ -103,7 +103,7 @@ func (s *Store) AllObjects(fn func(*Object) error) error {
 
 // Visibility returns object UID -> set of user IDs.
 func (s *Store) Visibility() (map[string]map[int64]bool, error) {
-	rows, err := s.DB.Query(`SELECT object_uid, user_id FROM visibility`)
+	rows, err := s.DB().Query(`SELECT object_uid, user_id FROM visibility`)
 	if err != nil {
 		return nil, err
 	}
@@ -140,6 +140,6 @@ type Execer interface {
 
 func (s *Store) CountObjects(state string) int {
 	var n int
-	s.DB.QueryRow(`SELECT count(*) FROM objects WHERE sync_state=?`, state).Scan(&n)
+	s.DB().QueryRow(`SELECT count(*) FROM objects WHERE sync_state=?`, state).Scan(&n)
 	return n
 }

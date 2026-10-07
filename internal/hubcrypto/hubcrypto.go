@@ -7,11 +7,8 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/subtle"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"strings"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -104,37 +101,3 @@ func WrapDK(dk Key, password string, salt []byte) ([]byte, error) {
 func UnwrapDK(wrapped []byte, password string, salt []byte) (Key, error) {
 	return Open(DeriveKEK(password, salt), wrapped, []byte("keyslot"))
 }
-
-// HashPassword returns an encoded Argon2id hash for offline login.
-func HashPassword(password string) (string, error) {
-	salt, err := RandomBytes(16)
-	if err != nil {
-		return "", err
-	}
-	h := idKey([]byte(password), salt, ArgonTime, ArgonMemory, ArgonThreads, 32)
-	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s", ArgonMemory, ArgonTime, ArgonThreads,
-		b64(salt), b64(h)), nil
-}
-
-// VerifyPassword checks a password against an encoded hash from HashPassword.
-func VerifyPassword(encoded, password string) bool {
-	parts := strings.Split(encoded, "$")
-	if len(parts) != 6 || parts[1] != "argon2id" {
-		return false
-	}
-	var m, t uint32
-	var p uint8
-	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &m, &t, &p); err != nil {
-		return false
-	}
-	salt, err1 := unb64(parts[4])
-	want, err2 := unb64(parts[5])
-	if err1 != nil || err2 != nil {
-		return false
-	}
-	got := idKey([]byte(password), salt, t, m, p, uint32(len(want)))
-	return subtle.ConstantTimeCompare(got, want) == 1
-}
-
-func b64(b []byte) string            { return base64.RawStdEncoding.EncodeToString(b) }
-func unb64(s string) ([]byte, error) { return base64.RawStdEncoding.DecodeString(s) }

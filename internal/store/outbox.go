@@ -78,7 +78,7 @@ func (s *Store) LatestPendingSeqFor(q interface {
 // HasPendingOutboxFor reports whether uid is in a pending entry other than exceptSeq.
 func (s *Store) HasPendingOutboxFor(uid string, exceptSeq int64) bool {
 	var n int
-	s.DB.QueryRow(`SELECT count(*) FROM outbox o JOIN outbox_objects oo ON oo.seq=o.seq
+	s.DB().QueryRow(`SELECT count(*) FROM outbox o JOIN outbox_objects oo ON oo.seq=o.seq
  WHERE o.state=? AND oo.uid=? AND o.seq<>?`, OutboxPending, uid, exceptSeq).Scan(&n)
 	return n > 0
 }
@@ -114,7 +114,7 @@ const outboxCols = `seq, user_id, payload_enc, created_at, state, attempts, last
 
 // PendingOutbox returns pending entries in seq order, with payloads.
 func (s *Store) PendingOutbox() ([]*OutboxEntry, error) {
-	rows, err := s.DB.Query(`SELECT `+outboxCols+` FROM outbox WHERE state=? ORDER BY seq`, OutboxPending)
+	rows, err := s.DB().Query(`SELECT `+outboxCols+` FROM outbox WHERE state=? ORDER BY seq`, OutboxPending)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (s *Store) PendingOutbox() ([]*OutboxEntry, error) {
 
 // RecentOutbox returns the last n entries without payloads (admin UI).
 func (s *Store) RecentOutbox(n int) ([]*OutboxEntry, error) {
-	rows, err := s.DB.Query(`SELECT `+outboxCols+` FROM outbox ORDER BY seq DESC LIMIT ?`, n)
+	rows, err := s.DB().Query(`SELECT `+outboxCols+` FROM outbox ORDER BY seq DESC LIMIT ?`, n)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func (s *Store) RecentOutbox(n int) ([]*OutboxEntry, error) {
 		return nil, err
 	}
 	for _, e := range es {
-		r, err := s.DB.Query(`SELECT uid FROM outbox_objects WHERE seq=? ORDER BY uid`, e.Seq)
+		r, err := s.DB().Query(`SELECT uid FROM outbox_objects WHERE seq=? ORDER BY uid`, e.Seq)
 		if err != nil {
 			return nil, err
 		}
@@ -148,7 +148,7 @@ func (s *Store) RecentOutbox(n int) ([]*OutboxEntry, error) {
 
 func (s *Store) OutboxState(seq int64) string {
 	var st string
-	s.DB.QueryRow(`SELECT state FROM outbox WHERE seq=?`, seq).Scan(&st)
+	s.DB().QueryRow(`SELECT state FROM outbox WHERE seq=?`, seq).Scan(&st)
 	return st
 }
 
@@ -160,7 +160,7 @@ func (s *Store) FinishOutbox(seq int64, state, lastError string) error {
 			return err
 		}
 	}
-	_, err := s.DB.Exec(`UPDATE outbox SET state=?, attempts=attempts+1, last_error_enc=? WHERE seq=?`, state, ct, seq)
+	_, err := s.DB().Exec(`UPDATE outbox SET state=?, attempts=attempts+1, last_error_enc=? WHERE seq=?`, state, ct, seq)
 	return err
 }
 
@@ -170,12 +170,12 @@ func (s *Store) NoteAttempt(seq int64, lastError string) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.DB.Exec(`UPDATE outbox SET attempts=attempts+1, last_error_enc=? WHERE seq=?`, ct, seq)
+	_, err = s.DB().Exec(`UPDATE outbox SET attempts=attempts+1, last_error_enc=? WHERE seq=?`, ct, seq)
 	return err
 }
 
 func (s *Store) CountOutbox(state string) int {
 	var n int
-	s.DB.QueryRow(`SELECT count(*) FROM outbox WHERE state=?`, state).Scan(&n)
+	s.DB().QueryRow(`SELECT count(*) FROM outbox WHERE state=?`, state).Scan(&n)
 	return n
 }

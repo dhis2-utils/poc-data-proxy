@@ -22,7 +22,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/tracker"
 )
 
-// Meta keys (plaintext; needed while the store is locked, hold no patient data).
+// Meta keys (key file, plaintext: needed while the store is locked; no patient or user data).
 const (
 	MetaHubID         = "hub_id"
 	MetaMode          = "mode" // "setup" or "active"
@@ -133,10 +133,10 @@ func (s *SyncStats) Get() (lastPush, lastPull, lastSync, lastErr string) {
 func (h *Hub) LastPushPull() (push, pull string) {
 	push, pull, _, _ = h.Stats.Get()
 	if push == "" {
-		push = h.Store.Meta("last_push")
+		push = h.Store.Private("last_push")
 	}
 	if pull == "" {
-		pull = h.Store.Meta("last_pull")
+		pull = h.Store.Private("last_pull")
 	}
 	return
 }
@@ -222,7 +222,9 @@ func (h *Hub) UpdateRuntime(fn func(*Runtime)) error {
 
 // Unlock installs the data key, loads runtime state and builds the index (spec 9.3).
 func (h *Hub) Unlock(dk hubcrypto.Key) error {
-	h.Store.SetDK(dk)
+	if err := h.Store.SetDK(dk); err != nil {
+		return err
+	}
 	b, err := h.Store.State("runtime")
 	if err != nil {
 		h.Store.SetDK(nil)

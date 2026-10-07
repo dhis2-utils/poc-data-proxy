@@ -588,16 +588,26 @@ func TestAcceptance(t *testing.T) {
 		e.android("nurse_a").json("GET", "/api/tracker/trackedEntities/OffTe000001", nil, 200)
 	})
 
-	t.Run("9 encryption: no patient values in the database file", func(t *testing.T) {
+	t.Run("9 encryption: no patient data in any file on disk", func(t *testing.T) {
 		e.stop()
-		for _, f := range []string{"hub.db", "hub.db-wal", "requests.log"} {
-			data, err := os.ReadFile(filepath.Join(e.dir, f))
+		files, _ := filepath.Glob(filepath.Join(e.dir, "*"))
+		if len(files) < 2 {
+			t.Fatalf("files: %v", files)
+		}
+		// Values, search terms and secrets, and also what the index used to keep in
+		// plaintext (review H1): which tracked entities exist, in which program, at
+		// which facility, and when.
+		needles := []string{"Amina", "amin", "Kwame", "Seeded", "NAT-2001", "NAT-0001", fc.Password, "d2p_",
+			"OffTe000001", "SeedTe00001", "SeedEv00001", fc.Program, fc.Stage1, "2026-10-07"}
+		for _, f := range files {
+			data, err := os.ReadFile(f)
 			if err != nil {
 				continue
 			}
-			for _, needle := range []string{"Amina", "amin", "Kwame", "Seeded", "NAT-2001", "NAT-0001", fc.Password, "d2p_"} {
-				if bytes.Contains(data, []byte(needle)) {
-					t.Fatalf("%q found in plain text in %s", needle, f)
+			for _, needle := range needles {
+				// The request log has today's date in its timestamps.
+				if bytes.Contains(data, []byte(needle)) && !(filepath.Base(f) == "requests.log" && needle == "2026-10-07") {
+					t.Fatalf("%q found in plain text in %s", needle, filepath.Base(f))
 				}
 			}
 		}

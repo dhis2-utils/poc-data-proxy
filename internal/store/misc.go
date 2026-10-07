@@ -32,7 +32,7 @@ func (s *Store) PutCache(userID int64, method, url string, r *CachedResponse) er
 	if err != nil {
 		return err
 	}
-	_, err = s.DB.Exec(`INSERT INTO http_cache(user_id, method, url, status, headers_enc, body_enc, fetched_at)
+	_, err = s.DB().Exec(`INSERT INTO http_cache(user_id, method, url, status, headers_enc, body_enc, fetched_at)
 VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id, method, url) DO UPDATE SET status=excluded.status,
  headers_enc=excluded.headers_enc, body_enc=excluded.body_enc, fetched_at=excluded.fetched_at`,
 		userID, method, url, r.Status, hct, bct, Now())
@@ -43,7 +43,7 @@ VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id, method, url) DO UPDATE SET status=exc
 func (s *Store) GetCache(userID int64, method, url string) (*CachedResponse, error) {
 	var hct, bct []byte
 	r := &CachedResponse{}
-	err := s.DB.QueryRow(`SELECT status, headers_enc, body_enc, fetched_at FROM http_cache WHERE user_id=? AND method=? AND url=?`,
+	err := s.DB().QueryRow(`SELECT status, headers_enc, body_enc, fetched_at FROM http_cache WHERE user_id=? AND method=? AND url=?`,
 		userID, method, url).Scan(&r.Status, &hct, &bct, &r.FetchedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -65,7 +65,7 @@ func (s *Store) GetCache(userID int64, method, url string) (*CachedResponse, err
 // static app files, which hold no user data.
 func (s *Store) GetCacheAnyUser(method, url string) (*CachedResponse, error) {
 	var id int64
-	err := s.DB.QueryRow(`SELECT user_id FROM http_cache WHERE method=? AND url=? ORDER BY fetched_at DESC LIMIT 1`,
+	err := s.DB().QueryRow(`SELECT user_id FROM http_cache WHERE method=? AND url=? ORDER BY fetched_at DESC LIMIT 1`,
 		method, url).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -90,7 +90,7 @@ type Issue struct {
 }
 
 func (s *Store) AddIssue(seq int64, uid, kind string, userID int64, errJSON []byte) error {
-	tx, err := s.DB.Begin()
+	tx, err := s.DB().Begin()
 	if err != nil {
 		return err
 	}
@@ -117,7 +117,7 @@ func (s *Store) Issues(onlyUnreported bool, limit int) ([]*Issue, error) {
 		q += ` WHERE reported_central_at=''`
 	}
 	q += ` ORDER BY id DESC LIMIT ?`
-	rows, err := s.DB.Query(q, limit)
+	rows, err := s.DB().Query(q, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -141,20 +141,20 @@ func (s *Store) Issues(onlyUnreported bool, limit int) ([]*Issue, error) {
 }
 
 func (s *Store) MarkIssueReported(id int64) error {
-	_, err := s.DB.Exec(`UPDATE issues SET reported_central_at=? WHERE id=?`, Now(), id)
+	_, err := s.DB().Exec(`UPDATE issues SET reported_central_at=? WHERE id=?`, Now(), id)
 	return err
 }
 
 func (s *Store) CountIssues() int {
 	var n int
-	s.DB.QueryRow(`SELECT count(*) FROM issues`).Scan(&n)
+	s.DB().QueryRow(`SELECT count(*) FROM issues`).Scan(&n)
 	return n
 }
 
 // --- pull state (spec 11.3) -----------------------------------------------------
 
 func (s *Store) PullState(userID int64, program string) (lastPull, lastFull string) {
-	s.DB.QueryRow(`SELECT last_pull_at, last_full_at FROM pull_state WHERE user_id=? AND program=?`, userID, program).
+	s.DB().QueryRow(`SELECT last_pull_at, last_full_at FROM pull_state WHERE user_id=? AND program=?`, userID, program).
 		Scan(&lastPull, &lastFull)
 	return
 }
@@ -164,7 +164,7 @@ func (s *Store) SetPullState(userID int64, program, lastPull string, full bool) 
 	if full {
 		lastFull = lastPull
 	}
-	_, err := s.DB.Exec(`INSERT INTO pull_state(user_id, program, last_pull_at, last_full_at) VALUES(?,?,?,?)
+	_, err := s.DB().Exec(`INSERT INTO pull_state(user_id, program, last_pull_at, last_full_at) VALUES(?,?,?,?)
 ON CONFLICT(user_id, program) DO UPDATE SET last_pull_at=excluded.last_pull_at,
  last_full_at=CASE WHEN excluded.last_full_at<>'' THEN excluded.last_full_at ELSE pull_state.last_full_at END`,
 		userID, program, lastPull, lastFull)
@@ -173,7 +173,7 @@ ON CONFLICT(user_id, program) DO UPDATE SET last_pull_at=excluded.last_pull_at,
 
 func (s *Store) LastPull() string {
 	var t sql.NullString
-	s.DB.QueryRow(`SELECT max(last_pull_at) FROM pull_state`).Scan(&t)
+	s.DB().QueryRow(`SELECT max(last_pull_at) FROM pull_state`).Scan(&t)
 	return t.String
 }
 
@@ -186,7 +186,7 @@ type ReservedValue struct {
 }
 
 func (s *Store) AddReservedValues(attr string, values []ReservedValue) error {
-	tx, err := s.DB.Begin()
+	tx, err := s.DB().Begin()
 	if err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func (s *Store) AddReservedValues(attr string, values []ReservedValue) error {
 // TakeReservedValues removes and returns up to n unexpired values. A value is
 // deleted in the same transaction it is read in, so it is never handed out twice.
 func (s *Store) TakeReservedValues(attr string, n int, now string) ([]ReservedValue, error) {
-	tx, err := s.DB.Begin()
+	tx, err := s.DB().Begin()
 	if err != nil {
 		return nil, err
 	}
@@ -248,6 +248,6 @@ func (s *Store) TakeReservedValues(attr string, n int, now string) ([]ReservedVa
 
 func (s *Store) CountReservedValues(attr, now string) int {
 	var n int
-	s.DB.QueryRow(`SELECT count(*) FROM reserved_values WHERE attribute=? AND (expires_at='' OR expires_at>=?)`, attr, now).Scan(&n)
+	s.DB().QueryRow(`SELECT count(*) FROM reserved_values WHERE attribute=? AND (expires_at='' OR expires_at>=?)`, attr, now).Scan(&n)
 	return n
 }

@@ -125,6 +125,11 @@ func (w *Worker) cycle(ctx context.Context) error {
 			slog.Warn("access refresh", "user", u.Username, "err", err)
 		}
 	}
+	if pruned, err := h.Store.PruneKeySlots(h.Cfg.KeySlotMaxAge, 3); err != nil {
+		errs = append(errs, fmt.Errorf("key slots: %w", err))
+	} else if len(pruned) > 0 {
+		slog.Info("removed unused key slots", "users", pruned)
+	}
 	if err := w.Push(ctx); err != nil {
 		return err
 	}
@@ -182,13 +187,13 @@ func (w *Worker) Push(ctx context.Context) error {
 	if h.Store.CountOutbox(store.OutboxPending) == 0 || len(entries) > 0 {
 		now := store.Now()
 		h.Stats.Set(func(s *core.SyncStats) { s.LastPush = now })
-		h.Store.SetMeta("last_push", now)
+		h.Store.SetPrivate("last_push", now)
 	}
 	return nil
 }
 
 func (w *Worker) setState(uid, state string) {
-	w.H.Store.SetSyncState(w.H.Store.DB, uid, state)
+	w.H.Store.SetSyncState(w.H.Store.DB(), uid, state)
 	w.H.Index.SetSyncState(uid, state)
 }
 
@@ -416,7 +421,7 @@ func (w *Worker) Pull(ctx context.Context) error {
 			if full {
 				// Full pulls record their own time so the daily check works.
 				h.Store.SetPullState(u.ID, p, maxUpdated, true)
-				h.Store.DB.Exec(`UPDATE pull_state SET last_full_at=? WHERE user_id=? AND program=?`, store.Now(), u.ID, p)
+				h.Store.DB().Exec(`UPDATE pull_state SET last_full_at=? WHERE user_id=? AND program=?`, store.Now(), u.ID, p)
 			} else {
 				h.Store.SetPullState(u.ID, p, maxUpdated, false)
 			}
@@ -430,7 +435,7 @@ func (w *Worker) Pull(ctx context.Context) error {
 	}
 	now := store.Now()
 	h.Stats.Set(func(s *core.SyncStats) { s.LastPull = now })
-	h.Store.SetMeta("last_pull", now)
+	h.Store.SetPrivate("last_pull", now)
 	return nil
 }
 

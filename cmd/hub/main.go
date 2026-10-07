@@ -2,7 +2,7 @@
 // a facility LAN and the central DHIS2 server. See SPEC-facility-hub-poc.md.
 //
 //	hub [serve] -config hub.yaml      run the hub
-//	hub migrate -db path              run store migrations on a file (used by upgrades)
+//	hub migrate -db path              run store migrations on a copy (used by upgrades; data key on HUB_DK_FD)
 //	hub keygen -out prefix            create a release signing key pair
 //	hub release -key k -dir d -version v linux/arm64=path ...   publish a signed release
 package main
@@ -68,7 +68,12 @@ func migrate(args []string) error {
 	if err != nil {
 		return err
 	}
-	return s.Close()
+	defer s.Close()
+	// With the data key (handed over by an upgrade), migrate the data file too.
+	if dk := upgrade.HandedOverDK(); dk != nil {
+		return s.SetDK(dk)
+	}
+	return nil
 }
 
 func serve(args []string) error {

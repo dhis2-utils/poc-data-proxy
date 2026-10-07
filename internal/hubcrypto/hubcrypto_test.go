@@ -40,13 +40,3 @@ func TestKeySlot(t *testing.T) {
 		t.Fatal("wrong password unwrapped")
 	}
 }
-
-func TestPasswordHash(t *testing.T) {
-	h, err := HashPassword("secret")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !VerifyPassword(h, "secret") || VerifyPassword(h, "Secret") {
-		t.Fatal("verify mismatch")
-	}
-}

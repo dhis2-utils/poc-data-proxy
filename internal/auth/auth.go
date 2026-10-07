@@ -1,6 +1,6 @@
 // Package auth implements hub login (spec 7): online login is forwarded to central and
-// registers the user on the hub (password hash, key slot, PAT, access list); offline
-// login checks the stored Argon2id hash and unlocks the store with the user's key slot.
+// registers the user on the hub (key slot, PAT, access list); offline login opens the
+// user's key slot, which both checks the password and unlocks the store.
 package auth
 
 import (
@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/central"
@@ -234,8 +233,9 @@ func (a *Auth) storeMe(ctx context.Context, userID int64) {
 
 var errLockedNewUser = errors.New("store is locked and this user has no key slot; a known user must log in first")
 
-// ensureKeySlot stores the password hash and the user's key slot, unlocking the store
-// if needed (spec 7.1 steps 3-4, spec 9.1).
+// ensureKeySlot makes sure the user has a key slot that opens with this password,
+// unlocking the store if needed (spec 7.1 steps 3-4, spec 9.1). The slot is the only
+// password verifier the hub keeps.
 func (a *Auth) ensureKeySlot(username, userUID, password string) (int64, error) {
 	h := a.H
 	u, err := h.Store.UserByName(username)
@@ -255,24 +255,28 @@ func (a *Auth) ensureKeySlot(username, userUID, password string) (int64, error) 
 		if err := h.Unlock(dk); err != nil {
 			return 0, err
 		}
-		if !hubcrypto.VerifyPassword(u.PwHash, password) {
+		if u, err = h.Store.UserByID(u.ID); err != nil {
+			return 0, err
+		}
+		if u.UserUID != userUID {
 			return a.writeSlot(username, userUID, password)
 		}
 		return u.ID, nil
 	}
-	if u != nil && hubcrypto.VerifyPassword(u.PwHash, password) && u.UserUID == userUID {
+	if u != nil && u.UserUID == userUID && slotOpens(u, password) {
 		return u.ID, nil
 	}
 	// New user, or password changed (detected at online login): replace the slot.
 	return a.writeSlot(username, userUID, password)
 }
 
+func slotOpens(u *store.User, password string) bool {
+	_, err := hubcrypto.UnwrapDK(u.WrappedDK, password, u.KEKSalt)
+	return err == nil
+}
+
 func (a *Auth) writeSlot(username, userUID, password string) (int64, error) {
 	dk, err := a.H.Store.DK()
-	if err != nil {
-		return 0, err
-	}
-	hash, err := hubcrypto.HashPassword(password)
 	if err != nil {
 		return 0, err
 	}
@@ -284,7 +288,7 @@ func (a *Auth) writeSlot(username, userUID, password string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return a.H.Store.UpsertCredentials(username, userUID, hash, salt, wrapped)
+	return a.H.Store.UpsertCredentials(username, userUID, salt, wrapped)
 }
 
 func (a *Auth) loginOffline(username, password string) (*core.Session, *Failure) {
@@ -293,11 +297,12 @@ func (a *Auth) loginOffline(username, password string) (*core.Session, *Failure)
 	if err != nil || u == nil {
 		// The same answer, after the same work, as a wrong password: offline the hub
 		// must not tell which usernames it knows (review M3).
-		hubcrypto.VerifyPassword(dummyHash(), password)
+		hubcrypto.DeriveKEK(password, dummySalt)
 		st, body := a.api().LoginFailure()
 		return nil, &Failure{Status: st, Body: body}
 	}
-	if !hubcrypto.VerifyPassword(u.PwHash, password) {
+	dk, err := hubcrypto.UnwrapDK(u.WrappedDK, password, u.KEKSalt)
+	if err != nil {
 		st, body := a.api().LoginFailure()
 		return nil, &Failure{Status: st, Body: body}
 	}
@@ -307,12 +312,8 @@ func (a *Auth) loginOffline(username, password string) (*core.Session, *Failure)
 		return nil, &Failure{Status: 401, Body: a.api().WebMessage(401, needsOnlineAgain, "")}
 	}
 	if !h.Store.Unlocked() {
-		dk, err := hubcrypto.UnwrapDK(u.WrappedDK, password, u.KEKSalt)
-		if err != nil {
-			return nil, &Failure{Status: 500, Body: a.api().WebMessage(500, "key slot could not be opened", "")}
-		}
 		if err := h.Unlock(dk); err != nil {
-			return nil, &Failure{Status: 500, Body: a.api().WebMessage(500, "unlock failed: "+err.Error(), "")}
+			return nil, &Failure{Status: 500, Body: a.api().WebMessage(500, "unlock failed", "")}
 		}
 	}
 	h.Store.TouchLogin(u.ID)
@@ -440,16 +441,5 @@ func (a *Auth) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-var dummy struct {
-	once sync.Once
-	hash string
-}
-
-// dummyHash is a password hash no password matches, for unknown usernames.
-func dummyHash() string {
-	dummy.once.Do(func() {
-		b, _ := hubcrypto.RandomBytes(32)
-		dummy.hash, _ = hubcrypto.HashPassword(string(b))
-	})
-	return dummy.hash
-}
+// dummySalt is used to spend the cost of a key slot check on unknown usernames.
+var dummySalt = []byte("facility-hub-no-such-user")

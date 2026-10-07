@@ -261,7 +261,9 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (*core.Session,
 	if err != nil {
 		return nil, err
 	}
-	h.Store.SetDK(dk)
+	if err := h.Store.SetDK(dk); err != nil {
+		return nil, err
+	}
 	h.Store.SetMeta(core.MetaCentralURL, p.CentralURL)
 
 	// Hub-level token (spec 6.2 step 8, 11.2). POC: the setup user's PAT.

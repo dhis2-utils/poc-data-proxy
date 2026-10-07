@@ -176,7 +176,7 @@ func (h *Hub) RemoveVisibilityExcept(userID int64, programs []string, seen map[s
 			if o.Program != "" && !slices.Contains(programs, o.Program) {
 				continue
 			}
-			h.Store.RemoveVisibility(h.Store.DB, o.UID, userID)
+			h.Store.RemoveVisibility(h.Store.DB(), o.UID, userID)
 			h.Index.SetVisible(o.UID, userID, false)
 			n++
 		}
@@ -205,7 +205,7 @@ func (h *Hub) ShareByRules(uids []string) {
 			}
 			v := h.Viewer(u.ID)
 			if v.Access.InFacility(v.Facility) && h.Index.CanRead(v, &probe) {
-				h.Store.AddVisibility(h.Store.DB, uid, u.ID)
+				h.Store.AddVisibility(h.Store.DB(), uid, u.ID)
 				h.Index.SetVisible(uid, u.ID, true)
 			}
 		}
