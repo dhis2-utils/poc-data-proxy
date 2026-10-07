@@ -75,6 +75,7 @@ type Hub struct {
 	// localWrites is held shared by every write to the store that only the hub holds
 	// (offline imports, reserved values handed out) and exclusively to freeze them.
 	localWrites sync.RWMutex
+	hosts       hostCache
 }
 
 // BeginLocalWrite reserves the store for a write that exists only on the hub. It

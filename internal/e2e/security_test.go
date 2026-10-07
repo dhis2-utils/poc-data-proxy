@@ -2,6 +2,7 @@
 package e2e
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -57,5 +58,30 @@ func TestHubTokenRenewal(t *testing.T) {
 	}
 	if exp, _ := time.Parse(time.RFC3339, rt.HubTokenExp); time.Until(exp) < 80*24*time.Hour {
 		t.Fatalf("new expiry %s", rt.HubTokenExp)
+	}
+}
+
+// M1: the hub refuses Host names it does not answer to, and a response cached for one
+// Host is never replayed to another client with that Host baked in.
+func TestHostHeader(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.app.Hub.Cfg.HubHosts = []string{"alias.test"}
+	a := e.web("nurse_a")
+	a.login()
+	b := e.web("nurse_b")
+	b.login()
+
+	if st, _ := a.doHost("evil.example", "GET", "/dhis-web-capture/index.html", nil); st != 421 {
+		t.Fatalf("foreign Host: got %d, want 421", st)
+	}
+	st, body := a.doHost("alias.test", "GET", "/dhis-web-capture/index.html", nil)
+	if st != 200 || !strings.Contains(string(body), `content="http://alias.test"`) {
+		t.Fatalf("online, base URL not pointed at the hub: %d %s", st, body)
+	}
+	e.offline()
+	st, body = b.do("GET", "/dhis-web-capture/index.html", nil) // served from nurse_a's cache entry
+	if st != 200 || strings.Contains(string(body), "alias.test") || !strings.Contains(string(body), e.srv.URL) {
+		t.Fatalf("offline, cached page carries another client's Host: %d %s", st, body)
 	}
 }

@@ -82,20 +82,29 @@ func (p *Proxy) Forward(ctx context.Context, r *http.Request, body []byte, a cen
 	for _, k := range droppedResponseHeaders {
 		h.Del(k)
 	}
-	if loc := h.Get("Location"); loc != "" {
+	return &Result{Status: resp.StatusCode, Header: h, Body: b}, nil
+}
+
+// Localize points central's absolute URLs in a response at the hub, for the host the
+// client used. Forward does not do this, so the cache holds central's own form: a
+// response cached for one Host must never be replayed to another client with that
+// Host baked in (review M1).
+func (p *Proxy) Localize(r *http.Request, res *Result) *Result {
+	out := *res
+	out.Header = res.Header.Clone()
+	if loc := out.Header.Get("Location"); loc != "" {
 		// Absolute, on the hub's origin: the Android SDK resolves a relative Location
 		// as a new server URL ("/api/..." became host "api").
 		if rel := p.relative(loc); strings.HasPrefix(rel, "/") {
-			loc = Origin(r) + rel
+			out.Header.Set("Location", Origin(r)+rel)
 		}
-		h.Set("Location", loc)
 	}
 	// Absolute central URLs (pager nextPage, job locations, the app shell's
 	// <meta name="dhis2-base-url">) point clients past the hub; rewrite them to the hub.
-	if base := p.H.Central.BaseURL(); base != "" && rewritable(h.Get("Content-Type")) {
-		b = bytes.ReplaceAll(b, []byte(base), []byte(Origin(r)))
+	if base := p.H.Central.BaseURL(); base != "" && rewritable(out.Header.Get("Content-Type")) {
+		out.Body = bytes.ReplaceAll(res.Body, []byte(base), []byte(Origin(r)))
 	}
-	return &Result{Status: resp.StatusCode, Header: h, Body: b}, nil
+	return &out
 }
 
 // Origin is the scheme and host the client used to reach the hub.
@@ -267,7 +276,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			status = res.Status
-			Write(w, res)
+			Write(w, p.Localize(r, res))
 			return
 		}
 		if !central.IsNetwork(err) {
@@ -329,15 +338,12 @@ func (p *Proxy) serveOffline(w http.ResponseWriter, r *http.Request, sess *core.
 		p.H.NeedsConnection(w, r.URL.Path+" was not cached while online")
 		return 503
 	}
-	for k, v := range cached.Header {
-		w.Header()[k] = v
-	}
-	w.Header().Set("X-Hub-Cache", "offline; fetched="+cached.FetchedAt)
+	res := p.Localize(r, &Result{Status: cached.Status, Header: cached.Header, Body: cached.Body})
+	res.Header.Set("X-Hub-Cache", "offline; fetched="+cached.FetchedAt)
 	if ts := store.ParseTime(cached.FetchedAt); !ts.IsZero() {
-		w.Header().Set("Age", strconv.Itoa(max(0, int(time.Since(ts).Seconds()))))
+		res.Header.Set("Age", strconv.Itoa(max(0, int(time.Since(ts).Seconds()))))
 	}
-	w.WriteHeader(cached.Status)
-	io.Copy(w, bytes.NewReader(cached.Body))
+	Write(w, res)
 	return cached.Status
 }
 

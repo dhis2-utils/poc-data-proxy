@@ -29,6 +29,10 @@ type Config struct {
 	// OfflineSearchFacility answers orgUnitMode=ACCESSIBLE/CAPTURE searches offline from
 	// the facility's data (spec 10.1 says refuse; Capture needs it, see FINDINGS.md).
 	OfflineSearchFacility bool
+	// HubHosts are extra host names or addresses clients may use to reach the hub
+	// (comma separated), e.g. a DNS name on the facility router. "*" accepts any Host;
+	// for development only.
+	HubHosts []string
 }
 
 func Default() Config {
@@ -107,6 +111,13 @@ func (c *Config) set(k, v string) error {
 		c.TLS, err = strconv.ParseBool(v)
 	case "offline_search_facility":
 		c.OfflineSearchFacility, err = strconv.ParseBool(v)
+	case "hub_hosts":
+		c.HubHosts = nil
+		for _, x := range strings.Split(v, ",") {
+			if x = strings.TrimSpace(x); x != "" {
+				c.HubHosts = append(c.HubHosts, x)
+			}
+		}
 	case "log_requests":
 		c.LogRequests, err = strconv.ParseBool(v)
 	default:

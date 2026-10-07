@@ -125,12 +125,21 @@ func (e *env) android(user string) *client {
 
 func (c *client) do(method, path string, body any) (int, []byte) {
 	c.e.t.Helper()
+	return c.doHost("", method, path, body)
+}
+
+// doHost sends the request with the given Host header ("" for the hub's address).
+func (c *client) doHost(host, method, path string, body any) (int, []byte) {
+	c.e.t.Helper()
 	var rd io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
 		rd = bytes.NewReader(b)
 	}
 	req, _ := http.NewRequest(method, c.e.srv.URL+path, rd)
+	if host != "" {
+		req.Host = host
+	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.basic {
 		req.SetBasicAuth(c.user, fc.Password)

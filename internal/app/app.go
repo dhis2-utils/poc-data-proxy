@@ -84,6 +84,10 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 	hubMux := http.NewServeMux()
 	u.Register(hubMux)
 	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !h.HostAllowed(r.Host) {
+			http.Error(w, "unknown host name: open the hub by its address (hub_hosts)", http.StatusMisdirectedRequest)
+			return
+		}
 		// Apps call versioned paths (/api/42/tracker/...). Route them like the
 		// unversioned ones; central accepts either.
 		p := r.URL.Path

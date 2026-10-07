@@ -16,3 +16,4 @@ release_public_key: ""                     # base64 ed25519 key from `hub keygen
 # reserved_pool_size: 150   # reserved values kept per generated attribute (spec 10.3)
 # full_pull_interval: 24h   # full (non-incremental) pull per user at most this often
 # log_requests: false       # log every request and write data_dir/requests.log (spec 13.1)
+# hub_hosts: hub.clinic.example  # extra names clients may use for the hub; the hub refuses other Host headers

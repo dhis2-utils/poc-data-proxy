@@ -78,7 +78,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		res, err := a.Proxy.Forward(r.Context(), r, body, a.Proxy.Upstream(sess))
 		if err == nil {
 			a.learn(sess, r, body, res)
-			proxy.Write(w, res)
+			proxy.Write(w, a.Proxy.Localize(r, res))
 			return
 		}
 		if !central.IsNetwork(err) {
@@ -264,13 +264,7 @@ func (a *API) writeErr(w http.ResponseWriter, r *http.Request, err *tracker.APIE
 	a.H.WebError(w, err.Status, err.Message, err.Code)
 }
 
-func (a *API) selfURL(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	return scheme + "://" + r.Host + r.URL.RequestURI()
-}
+func (a *API) selfURL(r *http.Request) string { return proxy.Origin(r) + r.URL.RequestURI() }
 
 func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Session, v *tracker.Viewer, body []byte) {
 	q := r.URL.Query()
@@ -352,13 +346,7 @@ func (a *API) serveJob(w http.ResponseWriter, r *http.Request, sess *core.Sessio
 	core.WriteJSON(w, 200, a.H.API().JobNotifications(parts[0], j.state, j.stats, j.at))
 }
 
-func (a *API) selfBase(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	return scheme + "://" + r.Host
-}
+func (a *API) selfBase(r *http.Request) string { return proxy.Origin(r) }
 
 // --- generated attribute values (spec 10.3) ---------------------------------------
 

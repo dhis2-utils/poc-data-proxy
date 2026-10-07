@@ -226,7 +226,7 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case strings.HasPrefix(p, "/dhis-web-capture/"):
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte("<html>capture app " + p + "</html>"))
+		w.Write([]byte(`<html><meta name="dhis2-base-url" content="http://` + r.Host + `">capture app ` + p + "</html>"))
 		return
 	}
 	u := c.user(r)
