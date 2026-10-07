@@ -1,0 +1,75 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/programs",
+    "query": {
+      "filter": "id:in:[ur1Edk5Oe2n]",
+      "fields": "id,access[data[read,write]],trackedEntityType[id,access[data[read,write]]],programStages[id,access[data[read,write]]]",
+      "paging": "false"
+    },
+    "headers": {
+      "Authorization": "Basic clerk_c"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "programs": [
+        {
+          "trackedEntityType": {
+            "access": {
+              "data": {
+                "write": true,
+                "read": true
+              }
+            },
+            "id": "nEenWmSyUEp"
+          },
+          "access": {
+            "data": {
+              "write": false,
+              "read": true
+            }
+          },
+          "id": "ur1Edk5Oe2n",
+          "programStages": [
+            {
+              "access": {
+                "data": {
+                  "write": false,
+                  "read": true
+                }
+              },
+              "id": "EPEcjy3FWmI"
+            },
+            {
+              "access": {
+                "data": {
+                  "write": false,
+                  "read": true
+                }
+              },
+              "id": "ZkbAXlQUYJG"
+            },
+            {
+              "access": {
+                "data": {
+                  "write": false,
+                  "read": false
+                }
+              },
+              "id": "jdRD35YwbRH"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

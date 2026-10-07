@@ -1,0 +1,39 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/tracker",
+    "query": {
+      "async": "true"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "events": []
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "httpStatus": "OK",
+      "httpStatusCode": 200,
+      "status": "OK",
+      "message": "Tracker job added",
+      "response": {
+        "id": "TonO1DhpFiY",
+        "location": "http://dhis2-agent-facility-hub:8080/tracker/jobs/TonO1DhpFiY",
+        "responseType": "TrackerJob"
+      }
+    }
+  },
+  "notes": [
+    "Default async=true response shape (job ref)."
+  ]
+}

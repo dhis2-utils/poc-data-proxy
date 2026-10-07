@@ -1,0 +1,55 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/tracker",
+    "query": {
+      "async": "false",
+      "importStrategy": "CREATE_AND_UPDATE"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "trackedEntities": [
+        {
+          "trackedEntity": "bad-uid!",
+          "trackedEntityType": "nEenWmSyUEp",
+          "orgUnit": "DiszpKrYNg8",
+          "attributes": [
+            {
+              "attribute": "w75KJ2mc4zz",
+              "value": "HUBFIX Bad"
+            },
+            {
+              "attribute": "zDhUuAYrxNC",
+              "value": "HUBFIX Uid"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "value": "Male"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "httpStatus": "Bad Request",
+      "httpStatusCode": 400,
+      "status": "ERROR",
+      "message": "JSON parse error: Cannot construct instance of `org.hisp.dhis.common.UID`, problem: UID must be an alphanumeric string of 11 characters starting with a letter, but was: bad-uid!"
+    }
+  },
+  "notes": [
+    "An invalid UID anywhere (object uid or reference) fails at JSON deserialization: HTTP 400 plain WebMessage, no validationReport, no errorCode."
+  ]
+}

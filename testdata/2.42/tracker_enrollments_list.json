@@ -1,0 +1,108 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/enrollments",
+    "query": {
+      "orgUnits": "DiszpKrYNg8",
+      "orgUnitMode": "SELECTED",
+      "program": "ur1Edk5Oe2n"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "pager": {
+        "page": 1,
+        "pageSize": 50,
+        "nextPage": "http://dhis2-agent-facility-hub:8080/api/tracker/enrollments?orgUnits=DiszpKrYNg8&orgUnitMode=SELECTED&program=ur1Edk5Oe2n&page=2"
+      },
+      "enrollments": [
+        {
+          "enrollment": "dzSK05UVtNh",
+          "createdAt": "2017-03-28T12:43:19.722",
+          "createdAtClient": "2016-03-28T12:43:19.722",
+          "updatedAt": "2017-03-28T12:43:19.726",
+          "trackedEntity": "C1eRSb7TZ9y",
+          "program": "ur1Edk5Oe2n",
+          "status": "COMPLETED",
+          "orgUnit": "DiszpKrYNg8",
+          "enrolledAt": "2025-03-03T12:43:19.713",
+          "occurredAt": "2025-02-15T12:43:19.713",
+          "followUp": false,
+          "deleted": false,
+          "notes": []
+        },
+        {
+          "enrollment": "IjjKnMdF8yT",
+          "createdAt": "2017-03-28T12:42:58.992",
+          "createdAtClient": "2016-03-28T12:42:58.992",
+          "updatedAt": "2017-03-28T12:42:58.995",
+          "trackedEntity": "nj37aOvo3Qq",
+          "program": "ur1Edk5Oe2n",
+          "status": "COMPLETED",
+          "orgUnit": "DiszpKrYNg8",
+          "enrolledAt": "2024-05-20T12:42:58.983",
+          "occurredAt": "2024-05-18T12:42:58.983",
+          "followUp": false,
+          "deleted": false,
+          "notes": []
+        },
+        {
+          "enrollment": "vyoVcw6o4hC",
+          "createdAt": "2017-03-28T12:42:56.354",
+          "createdAtClient": "2016-03-28T12:42:56.354",
+          "updatedAt": "2017-03-28T12:42:56.358",
+          "trackedEntity": "AO0NH7JJ4aL",
+          "program": "ur1Edk5Oe2n",
+          "status": "COMPLETED",
+          "orgUnit": "DiszpKrYNg8",
+          "enrolledAt": "2024-08-25T12:42:56.335",
+          "occurredAt": "2024-08-17T12:42:56.335",
+          "followUp": false,
+          "deleted": false,
+          "notes": []
+        },
+        {
+          "enrollment": "b6YrasMbtyN",
+          "createdAt": "2017-03-28T12:42:26.399",
+          "createdAtClient": "2016-03-28T12:42:26.399",
+          "updatedAt": "2017-03-28T12:42:26.401",
+          "trackedEntity": "XACQoI8xPnK",
+          "program": "ur1Edk5Oe2n",
+          "status": "COMPLETED",
+          "orgUnit": "DiszpKrYNg8",
+          "enrolledAt": "2024-12-05T12:42:26.380",
+          "occurredAt": "2024-12-01T12:42:26.380",
+          "followUp": false,
+          "deleted": false,
+          "notes": []
+        },
+        {
+          "enrollment": "IK7VgLNHkwx",
+          "createdAt": "2017-03-28T12:42:08.743",
+          "createdAtClient": "2016-03-28T12:42:08.743",
+          "updatedAt": "2017-03-28T12:42:08.744",
+          "trackedEntity": "Wo13tqLEuPD",
+          "program": "ur1Edk5Oe2n",
+          "status": "COMPLETED",
+          "orgUnit": "DiszpKrYNg8",
+          "enrolledAt": "2025-02-24T12:42:08.734",
+          "occurredAt": "2025-02-11T12:42:08.734",
+          "followUp": false,
+          "deleted": false,
+          "notes": []
+        }
+      ]
+    }
+  }
+}

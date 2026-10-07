@@ -1,0 +1,34 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/events",
+    "query": {
+      "orgUnits": "DiszpKrYNg8",
+      "orgUnitMode": "SELECTED",
+      "program": "ur1Edk5Oe2n"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "httpStatus": "Bad Request",
+      "httpStatusCode": 400,
+      "status": "ERROR",
+      "message": "At least one org unit is required for orgUnitMode: SELECTED. Please add one org unit or use a different orgUnitMode.",
+      "errorCode": "E1003"
+    }
+  },
+  "notes": [
+    "orgUnits (plural) is NOT accepted by /api/tracker/events in 2.42; it is silently ignored and the request fails validation."
+  ]
+}

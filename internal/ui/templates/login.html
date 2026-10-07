@@ -1,0 +1,12 @@
+{{template "head" .}}
+<header><h1>Facility hub</h1></header>
+<main><div class="card" style="max-width:460px">
+<h2>Hub administration login</h2>
+{{with .}}{{with .Error}}<div class="err">{{.}}</div>{{end}}{{end}}
+<form method="post" action="/hub/login">
+<label for="u">Username</label><input id="u" type="text" name="username" autocomplete="username" required>
+<label for="p">Password</label><input id="p" type="password" name="password" autocomplete="current-password" required>
+<p><button type="submit">Log in</button></p>
+<p class="muted">Use your DHIS2 account. Only members of the hub setup user group can open the admin page.</p>
+</form></div></main>
+{{template "foot"}}

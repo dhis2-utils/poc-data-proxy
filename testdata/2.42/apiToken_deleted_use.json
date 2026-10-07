@@ -1,0 +1,24 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/me",
+    "query": {},
+    "headers": {
+      "Authorization": "ApiToken <deleted key>"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "WWW-Authenticate": "ApiToken"
+    },
+    "body": {
+      "httpStatus": "Unauthorized",
+      "httpStatusCode": 401,
+      "status": "ERROR",
+      "message": "The API token does not exists"
+    }
+  }
+}

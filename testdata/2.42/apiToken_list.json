@@ -1,0 +1,83 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/apiToken",
+    "query": {
+      "fields": "*"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "pager": {
+        "page": 1,
+        "total": 1,
+        "pageSize": 50,
+        "pageCount": 1
+      },
+      "apiToken": [
+        {
+          "created": "2026-10-07T16:17:50.327",
+          "lastUpdated": "2026-10-07T16:17:50.327",
+          "translations": [],
+          "createdBy": {
+            "id": "HubUsrNursA",
+            "code": null,
+            "name": "Nurse A",
+            "displayName": "Nurse A",
+            "username": "nurse_a"
+          },
+          "favorites": [],
+          "lastUpdatedBy": {
+            "id": "HubUsrNursA",
+            "code": null,
+            "name": "Nurse A",
+            "displayName": "Nurse A",
+            "username": "nurse_a"
+          },
+          "sharing": {
+            "owner": "HubUsrNursA",
+            "users": {},
+            "userGroups": {},
+            "public": "--------"
+          },
+          "version": 2,
+          "type": "PERSONAL_ACCESS_TOKEN_V2",
+          "expire": 1799165869997,
+          "attributes": [],
+          "access": {
+            "manage": true,
+            "write": true,
+            "read": true,
+            "update": true,
+            "delete": true
+          },
+          "user": {
+            "id": "HubUsrNursA",
+            "code": null,
+            "name": "Nurse A",
+            "displayName": "Nurse A",
+            "username": "nurse_a"
+          },
+          "favorite": false,
+          "href": "http://dhis2-agent-facility-hub:8080/api/apiToken/m7QsFKId7bC",
+          "id": "m7QsFKId7bC",
+          "attributeValues": []
+        }
+      ]
+    }
+  },
+  "notes": [
+    "Lists only the calling user's tokens. Key is never returned again (no key/hash field). Collection key 'apiToken' (singular)."
+  ]
+}

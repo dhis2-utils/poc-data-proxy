@@ -1,0 +1,45 @@
+{
+ "request": {
+  "method": "GET",
+  "path": "/api/tracker/jobs/cbzaURHXKla",
+  "query": {}
+ },
+ "response": {
+  "status": 200,
+  "headers": {
+   "Content-Type": "application/json;charset=UTF-8"
+  },
+  "body": [
+   {
+    "level": "INFO",
+    "category": "TRACKER_IMPORT_JOB",
+    "message": "Import complete with status OK, 0 created, 0 updated, 0 deleted, 0 ignored",
+    "completed": true,
+    "id": "fF8eL9pNM8y",
+    "time": "2026-10-07T16:35:16.349",
+    "uid": "fF8eL9pNM8y"
+   },
+   {
+    "level": "INFO",
+    "category": "TRACKER_IMPORT_JOB",
+    "message": "PostCommit",
+    "completed": false,
+    "id": "E4sW3nX7lL9",
+    "time": "2026-10-07T16:35:16.348",
+    "uid": "E4sW3nX7lL9"
+   },
+   {
+    "level": "INFO",
+    "category": "TRACKER_IMPORT_JOB",
+    "message": "Commit Transaction",
+    "completed": false,
+    "id": "fH4sH5dBA8s",
+    "time": "2026-10-07T16:35:16.347",
+    "uid": "fH4sH5dBA8s"
+   }
+  ]
+ },
+ "notes": [
+  "Notifications newest first; the first entry has completed=true and message 'Import complete with status OK, ...'. Trimmed to 3 entries."
+ ]
+}

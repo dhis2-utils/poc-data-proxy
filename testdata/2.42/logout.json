@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/dhis-web-commons-security/logout.action",
+    "query": {},
+    "headers": {
+      "Cookie": "JSESSIONID_<instance>=<session>"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 302,
+    "headers": {
+      "Set-Cookie": [
+        "JSESSIONID=<redacted>; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:10 GMT; Path=/"
+      ],
+      "Location": "/"
+    },
+    "body": null
+  },
+  "notes": [
+    "Legacy logout used by the 2.42 header bar: GET /dhis-web-commons-security/logout.action -> 302 Location '/' and invalidates the server session (subsequent /api/me with the old cookie -> 401).",
+    "SURPRISE: the Set-Cookie clears 'JSESSIONID' (default name), NOT the instance's actual cookie name JSESSIONID_agent-facility-hub; the session is still invalidated server-side."
+  ]
+}

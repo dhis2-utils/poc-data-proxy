@@ -1,0 +1,21 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/me",
+    "query": {},
+    "headers": {
+      "Accept": "application/json"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 302,
+    "headers": {
+      "Location": "http://dhis2-agent-facility-hub:8080/dhis-web-login/"
+    },
+    "body": null
+  },
+  "notes": [
+    "Unauthenticated, no X-Requested-With: 302 redirect to /dhis-web-login/ with empty body even though Accept is application/json. See *_xhr variant for the 401 JSON."
+  ]
+}

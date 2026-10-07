@@ -1,0 +1,26 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/trackedEntities",
+    "query": {
+      "orgUnits": "DiszpKrYNg8",
+      "program": "ur1Edk5Oe2n"
+    },
+    "headers": {
+      "X-Requested-With": "XMLHttpRequest"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8"
+    },
+    "body": {
+      "httpStatus": "Unauthorized",
+      "httpStatusCode": 401,
+      "status": "ERROR",
+      "message": "Unauthorized"
+    }
+  }
+}

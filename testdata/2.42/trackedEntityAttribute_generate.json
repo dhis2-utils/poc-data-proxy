@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/trackedEntityAttributes/xs8A6tQJY0s/generate",
+    "query": {},
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "ownerObject": "TRACKEDENTITYATTRIBUTE",
+      "ownerUid": "xs8A6tQJY0s",
+      "key": "RANDOM(##########)",
+      "value": "0174703991",
+      "created": "2026-10-07T16:23:44.264",
+      "expiryDate": "2026-10-10T16:23:44.257"
+    }
+  },
+  "notes": [
+    "TB identifier xs8A6tQJY0s, pattern RANDOM(##########), no ORG_UNIT_CODE so no extra param. Single object (not array). Default expiryDate = created + 3 days (generate) vs +60 days (generateAndReserve). The value returned here was used in tracker_post_success_nested."
+  ]
+}

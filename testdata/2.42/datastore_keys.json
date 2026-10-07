@@ -1,0 +1,25 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/dataStore/facility-hub-poc",
+    "query": {},
+    "headers": {
+      "Authorization": "Basic hub_admin"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": [
+      "hub-DiszpKrYNg8",
+      "hub-other",
+      "nokey"
+    ]
+  }
+}

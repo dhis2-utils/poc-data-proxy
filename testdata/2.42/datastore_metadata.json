@@ -1,0 +1,65 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/dataStore/facility-hub-poc/hub-DiszpKrYNg8/metaData",
+    "query": {},
+    "headers": {
+      "Authorization": "Basic hub_admin"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "created": "2026-10-07T16:24:44.091",
+      "lastUpdated": "2026-10-07T16:24:44.091",
+      "translations": [],
+      "createdBy": {
+        "id": "HubUsrAdmin",
+        "code": null,
+        "name": "Hub Admin",
+        "displayName": "Hub Admin",
+        "username": "hub_admin"
+      },
+      "favorites": [],
+      "lastUpdatedBy": {
+        "id": "HubUsrAdmin",
+        "code": null,
+        "name": "Hub Admin",
+        "displayName": "Hub Admin",
+        "username": "hub_admin"
+      },
+      "sharing": {
+        "owner": "HubUsrAdmin",
+        "users": {},
+        "userGroups": {},
+        "public": "rw------"
+      },
+      "namespace": "facility-hub-poc",
+      "key": "hub-DiszpKrYNg8",
+      "access": {
+        "manage": true,
+        "write": true,
+        "read": true,
+        "update": true,
+        "delete": true
+      },
+      "user": {
+        "id": "HubUsrAdmin",
+        "code": null,
+        "name": "Hub Admin",
+        "displayName": "Hub Admin",
+        "username": "hub_admin"
+      },
+      "favorite": false,
+      "id": "aHdnRSfRH8t",
+      "attributeValues": []
+    }
+  }
+}

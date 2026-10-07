@@ -1,0 +1,37 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/events",
+    "query": {
+      "orgUnit": "DiszpKrYNg8",
+      "orgUnitMode": "SELECTED",
+      "program": "ur1Edk5Oe2n",
+      "programStage": "jdRD35YwbRH",
+      "totalPages": "true",
+      "pageSize": "2"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_b"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "httpStatus": "Forbidden",
+      "httpStatusCode": 403,
+      "status": "ERROR",
+      "message": "User has no access to program stage: jdRD35YwbRH",
+      "errorCode": "E1006"
+    }
+  },
+  "notes": [
+    "nurse_b asking for the stage they cannot read."
+  ]
+}

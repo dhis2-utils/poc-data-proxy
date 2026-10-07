@@ -1,0 +1,37 @@
+{
+  "request": {
+    "method": "PUT",
+    "path": "/api/dataStore/facility-hub-poc/nokey",
+    "query": {},
+    "headers": {
+      "Authorization": "Basic hub_admin",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "facility": "DiszpKrYNg8",
+      "name": "Ngelehun CHC hub",
+      "version": "0.1.1",
+      "registeredBy": "hub_admin",
+      "registeredAt": "2026-10-07T16:30:00Z",
+      "lastHeartbeat": "2026-10-07T16:35:00Z"
+    }
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "httpStatus": "Created",
+      "httpStatusCode": 201,
+      "status": "OK",
+      "message": "Key created: 'nokey'"
+    }
+  },
+  "notes": [
+    "PUT on a non-existent key CREATES it (201 'Key created') in 2.42 \u2014 it does not 404."
+  ]
+}

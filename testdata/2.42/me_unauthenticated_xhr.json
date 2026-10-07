@@ -1,0 +1,26 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/me",
+    "query": {},
+    "headers": {
+      "X-Requested-With": "XMLHttpRequest"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8"
+    },
+    "body": {
+      "httpStatus": "Unauthorized",
+      "httpStatusCode": 401,
+      "status": "ERROR",
+      "message": "Unauthorized"
+    }
+  },
+  "notes": [
+    "With X-Requested-With: XMLHttpRequest an unauthenticated API call returns 401 JSON instead of 302 to /dhis-web-login/."
+  ]
+}

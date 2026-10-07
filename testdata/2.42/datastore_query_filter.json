@@ -1,0 +1,45 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/dataStore/facility-hub-poc",
+    "query": {
+      "fields": ".",
+      "filter": "facility:eq:DiszpKrYNg8"
+    },
+    "headers": {
+      "Authorization": "Basic hub_admin"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "pager": {
+        "page": 1,
+        "pageSize": 50
+      },
+      "entries": [
+        {
+          "key": "hub-DiszpKrYNg8",
+          "value": {
+            "name": "Ngelehun CHC hub",
+            "version": "0.1.1",
+            "facility": "DiszpKrYNg8",
+            "registeredAt": "2026-10-07T16:30:00Z",
+            "registeredBy": "hub_admin",
+            "lastHeartbeat": "2026-10-07T16:35:00Z"
+          }
+        }
+      ]
+    }
+  },
+  "notes": [
+    "2.42 supports datastore queries: GET /api/dataStore/<ns>?fields=...&filter=<path>:<op>:<value>. Response {pager:{page,pageSize}, entries:[{key, value}]} with fields=. ; with named fields each entry is {key, <field>...}. Without fields= the namespace GET returns a bare array of keys. A third key 'hub-other' (facility g8upMTyEZGZ) existed and was correctly filtered out. (One extra matching key created accidentally by the PUT test was removed from the recorded body.)"
+  ]
+}

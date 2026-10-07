@@ -1,0 +1,27 @@
+{{template "head" .}}
+<header><h1>Facility hub setup</h1><span class="sp"></span><span class="mono">hub {{.HubID}}</span></header>
+<main><div class="card" style="max-width:640px">
+{{with .Error}}<div class="err">{{.}}</div>{{end}}
+{{if eq .Step "facility"}}
+<h2>Pick the facility this hub serves</h2>
+<form method="post" action="/hub/setup"><input type="hidden" name="step" value="facility"><input type="hidden" name="nonce" value="{{.Pending.Nonce}}">
+<label for="f">Facility</label><select id="f" name="facility">{{range .Pending.Facilities}}<option value="{{.ID}}">{{.Name}}{{with .Code}} ({{.}}){{end}}</option>{{end}}</select>
+<p><button type="submit">Continue</button></p></form>
+{{else if eq .Step "confirm"}}
+<h2>Another hub is registered for {{.Pending.Facility.Name}}</h2>
+<table><tr><th>Hub ID</th><th>Set up by</th><th>Set up at</th><th>Version</th></tr>
+{{range .Pending.Others}}<tr><td class="mono">{{.Key}}</td><td>{{index .Value "setupBy"}}</td><td>{{index .Value "setupAt"}}</td><td>{{index .Value "hubVersion"}}</td></tr>{{end}}</table>
+<form method="post" action="/hub/setup"><input type="hidden" name="step" value="confirm"><input type="hidden" name="nonce" value="{{.Pending.Nonce}}">
+<label><input type="checkbox" name="replace" value="yes"> Replace it (the old hub is marked retired)</label>
+<p><button type="submit">Set up this hub</button></p></form>
+{{else}}
+<h2>Set up this hub</h2>
+<p>The hub must be online. Log in with a DHIS2 account that is allowed to set up hubs. The hub finds the facility and its tracker programs by itself.</p>
+<form method="post" action="/hub/setup"><input type="hidden" name="step" value="login">
+<label for="c">Central server URL</label><input id="c" type="url" name="central_url" value="{{.CentralURL}}" required>
+<label for="u">Username</label><input id="u" type="text" name="username" autocomplete="username" required>
+<label for="p">Password</label><input id="p" type="password" name="password" autocomplete="current-password" required>
+<p><button type="submit">Set up</button></p></form>
+{{end}}
+</div></main>
+{{template "foot"}}

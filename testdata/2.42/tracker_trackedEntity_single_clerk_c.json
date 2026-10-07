@@ -1,0 +1,41 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/trackedEntities/LxMVYhJm3Jp",
+    "query": {
+      "program": "ur1Edk5Oe2n",
+      "fields": "trackedEntity,enrollments[enrollment,events[event,programStage]]"
+    },
+    "headers": {
+      "Authorization": "Basic clerk_c"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "trackedEntity": "LxMVYhJm3Jp",
+      "enrollments": [
+        {
+          "enrollment": "awZ5RHoJin5",
+          "events": [
+            {
+              "event": "IQCiAZs7PrK",
+              "programStage": "ZkbAXlQUYJG"
+            },
+            {
+              "event": "tBAguooTVqg",
+              "programStage": "EPEcjy3FWmI"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

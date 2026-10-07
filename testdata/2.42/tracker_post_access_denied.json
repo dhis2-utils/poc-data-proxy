@@ -1,0 +1,66 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/tracker",
+    "query": {
+      "async": "false",
+      "importStrategy": "CREATE_AND_UPDATE"
+    },
+    "headers": {
+      "Authorization": "Basic clerk_c",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "events": [
+        {
+          "event": "HubFxEv0010",
+          "enrollment": "HubFxEn0002",
+          "program": "ur1Edk5Oe2n",
+          "programStage": "EPEcjy3FWmI",
+          "orgUnit": "DiszpKrYNg8",
+          "status": "ACTIVE",
+          "occurredAt": "2026-10-04",
+          "dataValues": []
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 409,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "status": "ERROR",
+      "validationReport": {
+        "errorReports": [
+          {
+            "message": "User: `HubUsrClrkC` has no data write access to ProgramStage: `EPEcjy3FWmI`.",
+            "errorCode": "E1095",
+            "trackerType": "EVENT",
+            "uid": "HubFxEv0010",
+            "args": [
+              "org.hisp.dhis.user.UserDetailsImpl@33190334",
+              "{\"class\":\"class org.hisp.dhis.program.ProgramStage\", \"hashCode\":\"-1982063581\", \"id\":\"860005\", \"uid\":\"EPEcjy3FWmI\", \"code\":\"null\", \"name\":\"Lab monitoring\", \"shortName\":\"null\", \"description\":\"null\", \"created\":\"null\", \"lastUpdated\":\"null\" }"
+            ]
+          }
+        ],
+        "warningReports": []
+      },
+      "stats": {
+        "created": 0,
+        "updated": 0,
+        "deleted": 0,
+        "ignored": 1,
+        "total": 1
+      }
+    }
+  },
+  "notes": [
+    "clerk_c has program data read only.",
+    "clerk_c (program data read-only): E1095 'no data write access to ProgramStage' (stage check fires, not a program-level E1091). HTTP 409."
+  ]
+}

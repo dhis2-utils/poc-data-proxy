@@ -1,0 +1,29 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/trackedEntityAttributes/HubNoSuchAt/requestValues",
+    "query": {
+      "numberToReserve": "1"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "httpStatus": "Not Found",
+      "httpStatusCode": 404,
+      "status": "ERROR",
+      "message": "TrackedEntityAttribute with id HubNoSuchAt could not be found.",
+      "errorCode": "E1005"
+    }
+  }
+}

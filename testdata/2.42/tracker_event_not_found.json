@@ -1,0 +1,27 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/events/HubNoSuchEv",
+    "query": {},
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "httpStatus": "Not Found",
+      "httpStatusCode": 404,
+      "status": "ERROR",
+      "message": "Event with id HubNoSuchEv could not be found.",
+      "errorCode": "E1005"
+    }
+  }
+}

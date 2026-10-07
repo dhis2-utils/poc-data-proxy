@@ -1,0 +1,97 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/me",
+    "query": {},
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "id": "HubUsrNursA",
+      "username": "nurse_a",
+      "surname": "A",
+      "firstName": "Nurse",
+      "created": "2026-10-07T16:16:49.411",
+      "lastUpdated": "2026-10-07T16:19:52.655",
+      "dataViewOrganisationUnits": [
+        {
+          "id": "DiszpKrYNg8"
+        }
+      ],
+      "favorites": [],
+      "userGroups": [
+        {
+          "id": "HubGrpStag3"
+        }
+      ],
+      "translations": [],
+      "teiSearchOrganisationUnits": [
+        {
+          "id": "O6uvpzGd5pu"
+        }
+      ],
+      "organisationUnits": [
+        {
+          "id": "DiszpKrYNg8"
+        }
+      ],
+      "displayName": "Nurse A",
+      "access": {
+        "manage": false,
+        "write": false,
+        "read": false,
+        "update": false,
+        "delete": false
+      },
+      "name": "Nurse A",
+      "emailVerified": false,
+      "userRoles": [
+        {
+          "id": "HubRole0001"
+        }
+      ],
+      "settings": {
+        "keyMessageSmsNotification": false,
+        "keyDbLocale": "en",
+        "keyTrackerDashboardLayout": "",
+        "keyStyle": "light_blue/light_blue.css",
+        "keyUiLocale": "en",
+        "keyAnalysisDisplayProperty": "name",
+        "keyMessageEmailNotification": false
+      },
+      "programs": [
+        "MoUd5BTQ3lY",
+        "ur1Edk5Oe2n"
+      ],
+      "authorities": [
+        "M_dhis-web-messaging",
+        "M_dhis-web-dashboard",
+        "M_dhis-web-capture",
+        "F_UNCOMPLETE_EVENT"
+      ],
+      "dataSets": [
+        "Nyh6laLdBEJ",
+        "PLq9sJluXvc",
+        "j38YW1Am7he",
+        "ce7DSxx5H2I",
+        "aLpVgfXiz0f"
+      ],
+      "patTokens": [],
+      "twoFactorType": "NOT_ENABLED",
+      "attributeValues": []
+    }
+  },
+  "notes": [
+    "Default /api/me (no fields) as nurse_a; arrays trimmed to 5."
+  ]
+}

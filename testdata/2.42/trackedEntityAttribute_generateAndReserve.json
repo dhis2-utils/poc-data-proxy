@@ -1,0 +1,51 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/trackedEntityAttributes/xs8A6tQJY0s/generateAndReserve",
+    "query": {
+      "numberToReserve": "3"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": [
+      {
+        "ownerObject": "TRACKEDENTITYATTRIBUTE",
+        "ownerUid": "xs8A6tQJY0s",
+        "key": "RANDOM(##########)",
+        "value": "7910266795",
+        "created": "2026-10-07T16:24:13.567",
+        "expiryDate": "2026-12-06T16:24:13.567"
+      },
+      {
+        "ownerObject": "TRACKEDENTITYATTRIBUTE",
+        "ownerUid": "xs8A6tQJY0s",
+        "key": "RANDOM(##########)",
+        "value": "0910266795",
+        "created": "2026-10-07T16:24:13.567",
+        "expiryDate": "2026-12-06T16:24:13.567"
+      },
+      {
+        "ownerObject": "TRACKEDENTITYATTRIBUTE",
+        "ownerUid": "xs8A6tQJY0s",
+        "key": "RANDOM(##########)",
+        "value": "9506750799",
+        "created": "2026-10-07T16:24:13.567",
+        "expiryDate": "2026-12-06T16:24:13.567"
+      }
+    ]
+  },
+  "notes": [
+    "This is the endpoint the Android SDK uses for reserved values (generateAndReserve?numberToReserve=N[&ORG_UNIT_CODE=..]). Bare JSON array. Default expiryDate = created + 60 days. Pattern has no ORG_UNIT_CODE so that param is not needed. Note RANDOM values can have leading zeros."
+  ]
+}

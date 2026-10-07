@@ -1,0 +1,26 @@
+{{define "head"}}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Facility hub</title>
+<style>
+:root{--bg:#f6f7f9;--fg:#1d2733;--muted:#5b6876;--card:#fff;--line:#d9dee4;--accent:#1565c0;--ok:#2e7d32;--warn:#b26a00;--bad:#c62828}
+*{box-sizing:border-box}body{margin:0;font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--fg)}
+header{background:#0f3d6e;color:#fff;padding:12px 16px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+header h1{font-size:17px;margin:0;font-weight:600}header .sp{flex:1}header a{color:#cfe3ff}
+main{max-width:1100px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:14px}
+h2{font-size:15px;margin:0 0 10px}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600}.scroll{overflow-x:auto}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+.pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600;color:#fff}
+.online,.synced{background:var(--ok)}.offline,.rejected{background:var(--bad)}.pending,.partial{background:var(--warn)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.stat b{display:block;font-size:20px}.stat span{color:var(--muted);font-size:12px}
+label{display:block;margin:10px 0 4px;font-weight:600}input[type=text],input[type=password],input[type=url],select{width:100%;max-width:420px;padding:8px;border:1px solid var(--line);border-radius:6px;font:inherit}
+button{background:var(--accent);color:#fff;border:0;border-radius:6px;padding:8px 14px;font:inherit;cursor:pointer}
+button.secondary{background:#56606b}button.danger{background:var(--bad)}
+.err{background:#fdecea;border:1px solid #f5c2c0;color:#8a1c1c;padding:8px 12px;border-radius:6px;margin-bottom:12px}
+.msg{background:#e8f1fd;border:1px solid #c3d8f5;padding:8px 12px;border-radius:6px;margin-bottom:12px}
+.muted{color:var(--muted)}form.inline{display:inline-block;margin:0 6px 6px 0}
+</style></head><body>{{end}}
+{{define "foot"}}</body></html>{{end}}

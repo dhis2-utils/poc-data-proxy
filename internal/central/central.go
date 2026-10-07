@@ -1,0 +1,314 @@
+// Package central is the hub's HTTP client for the central DHIS2 server and the
+// connectivity monitor (spec 5.2).
+package central
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/url"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Auth is how a request authenticates to central. Exactly one field is normally set.
+type Auth struct {
+	PAT      string // personal access token: "Authorization: ApiToken <key>"
+	Username string // Basic auth (login verification, PAT fallback)
+	Password string
+	Cookie   string // central session cookie header value, e.g. "JSESSIONID=..."
+}
+
+func (a Auth) Apply(h http.Header) {
+	h.Del("Authorization")
+	h.Del("Cookie")
+	switch {
+	case a.PAT != "":
+		h.Set("Authorization", "ApiToken "+a.PAT)
+	case a.Username != "":
+		h.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(a.Username+":"+a.Password)))
+	case a.Cookie != "":
+		h.Set("Cookie", a.Cookie)
+	}
+}
+
+func (a Auth) Empty() bool { return a.PAT == "" && a.Username == "" && a.Cookie == "" }
+
+// Client talks to central and reports network failures to the monitor.
+type Client struct {
+	mu      sync.RWMutex
+	baseURL string
+	HTTP    *http.Client
+	Monitor *Monitor
+}
+
+func NewClient(baseURL string, m *Monitor) *Client {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.ResponseHeaderTimeout = 60 * time.Second
+	return &Client{baseURL: strings.TrimRight(baseURL, "/"), Monitor: m,
+		HTTP: &http.Client{Transport: tr, Timeout: 5 * time.Minute,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+}
+
+func (c *Client) BaseURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.baseURL
+}
+
+func (c *Client) SetBaseURL(u string) {
+	c.mu.Lock()
+	c.baseURL = strings.TrimRight(u, "/")
+	c.mu.Unlock()
+}
+
+// ErrNetwork wraps transport failures (no HTTP response).
+var ErrNetwork = errors.New("central unreachable")
+
+// IsNetwork reports whether err means central could not be reached.
+func IsNetwork(err error) bool { return errors.Is(err, ErrNetwork) }
+
+// Do sends a request. pathAndQuery starts with "/". A network error marks the hub
+// offline immediately (spec 5.2) and is returned wrapped in ErrNetwork.
+func (c *Client) Do(ctx context.Context, method, pathAndQuery string, body []byte, auth Auth, hdr http.Header) (*http.Response, error) {
+	base := c.BaseURL()
+	if c.Monitor.ForcedOffline() {
+		return nil, fmt.Errorf("%w: uplink switched off on the hub", ErrNetwork)
+	}
+	if base == "" {
+		return nil, fmt.Errorf("%w: central URL not configured", ErrNetwork)
+	}
+	var rd io.Reader
+	if body != nil {
+		rd = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, base+pathAndQuery, rd)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range hdr {
+		req.Header[k] = v
+	}
+	if body != nil && req.Header.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if req.Header.Get("Accept") == "" {
+		req.Header.Set("Accept", "application/json")
+	}
+	auth.Apply(req.Header)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		if ctx.Err() == nil || isTimeout(err) {
+			c.Monitor.ReportFailure(err)
+		}
+		return nil, fmt.Errorf("%w: %v", ErrNetwork, err)
+	}
+	return resp, nil
+}
+
+func isTimeout(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
+}
+
+// HTTPError is a non-2xx answer from central.
+type HTTPError struct {
+	Status int
+	Body   []byte
+}
+
+func (e *HTTPError) Error() string {
+	b := e.Body
+	if len(b) > 300 {
+		b = b[:300]
+	}
+	return fmt.Sprintf("central returned %d: %s", e.Status, b)
+}
+
+// JSON does a request and decodes a 2xx JSON response into out (if non-nil).
+func (c *Client) JSON(ctx context.Context, method, pathAndQuery string, in any, auth Auth, out any) error {
+	var body []byte
+	if in != nil {
+		var err error
+		if body, err = json.Marshal(in); err != nil {
+			return err
+		}
+	}
+	resp, err := c.Do(ctx, method, pathAndQuery, body, auth, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.Monitor.ReportFailure(err)
+		return fmt.Errorf("%w: %v", ErrNetwork, err)
+	}
+	if resp.StatusCode/100 != 2 {
+		return &HTTPError{Status: resp.StatusCode, Body: b}
+	}
+	if out != nil && len(b) > 0 {
+		return json.Unmarshal(b, out)
+	}
+	return nil
+}
+
+// Status returns the HTTP status of an HTTPError, or 0.
+func Status(err error) int {
+	var he *HTTPError
+	if errors.As(err, &he) {
+		return he.Status
+	}
+	return 0
+}
+
+func Q(path string, kv ...string) string {
+	v := url.Values{}
+	for i := 0; i+1 < len(kv); i += 2 {
+		v.Add(kv[i], kv[i+1])
+	}
+	if len(v) == 0 {
+		return path
+	}
+	return path + "?" + v.Encode()
+}
+
+// --- connectivity monitor --------------------------------------------------------
+
+// Monitor tracks whether central is reachable (spec 5.2).
+type Monitor struct {
+	mu        sync.Mutex
+	online    bool
+	failures  int
+	listeners []func(online bool)
+	Interval  time.Duration
+	Timeout   time.Duration
+	// Forced, when set, pins the state (tests and the "cut the uplink" demo switch).
+	forced *bool
+}
+
+func NewMonitor(interval, timeout time.Duration) *Monitor {
+	return &Monitor{Interval: interval, Timeout: timeout}
+}
+
+func (m *Monitor) Online() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.forced != nil {
+		return *m.forced
+	}
+	return m.online
+}
+
+// OnChange registers a callback for state switches.
+func (m *Monitor) OnChange(fn func(online bool)) {
+	m.mu.Lock()
+	m.listeners = append(m.listeners, fn)
+	m.mu.Unlock()
+}
+
+func (m *Monitor) set(online bool) {
+	m.mu.Lock()
+	changed := m.online != online
+	m.online = online
+	ls := append([]func(bool){}, m.listeners...)
+	forced := m.forced != nil
+	m.mu.Unlock()
+	if changed && !forced {
+		slog.Info("connectivity", "online", online)
+		for _, fn := range ls {
+			go fn(online)
+		}
+	}
+}
+
+// ReportFailure switches to offline immediately (any failed upstream request).
+func (m *Monitor) ReportFailure(err error) {
+	slog.Warn("upstream request failed", "err", err)
+	m.mu.Lock()
+	m.failures = 2
+	m.mu.Unlock()
+	m.set(false)
+}
+
+// Force pins the state; nil releases it.
+func (m *Monitor) Force(online *bool) {
+	m.mu.Lock()
+	was := m.forced
+	m.forced = online
+	ls := append([]func(bool){}, m.listeners...)
+	before := m.online
+	if was != nil {
+		before = *was
+	}
+	after := m.online
+	if online != nil {
+		after = *online
+	}
+	m.mu.Unlock()
+	if before != after {
+		slog.Info("connectivity (forced)", "online", after)
+		for _, fn := range ls {
+			go fn(after)
+		}
+	}
+}
+
+func (m *Monitor) ForcedOffline() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.forced != nil && !*m.forced
+}
+
+// Probe pings central once and updates the state: offline after 2 failures,
+// online after 1 success.
+func (m *Monitor) Probe(ctx context.Context, baseURL string) bool {
+	ok := false
+	if baseURL != "" {
+		ctx, cancel := context.WithTimeout(ctx, m.Timeout)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/system/ping", nil)
+		if resp, err := http.DefaultClient.Do(req); err == nil {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			ok = resp.StatusCode < 500
+		}
+	}
+	m.mu.Lock()
+	if ok {
+		m.failures = 0
+	} else {
+		m.failures++
+	}
+	f := m.failures
+	m.mu.Unlock()
+	if ok {
+		m.set(true)
+	} else if f >= 2 {
+		m.set(false)
+	}
+	return ok
+}
+
+// Run probes every Interval until ctx ends.
+func (m *Monitor) Run(ctx context.Context, baseURL func() string) {
+	m.Probe(ctx, baseURL())
+	t := time.NewTicker(m.Interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			m.Probe(ctx, baseURL())
+		}
+	}
+}

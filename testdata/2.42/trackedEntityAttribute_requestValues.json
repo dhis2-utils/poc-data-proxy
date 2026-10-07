@@ -1,0 +1,26 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/trackedEntityAttributes/xs8A6tQJY0s/requestValues",
+    "query": {
+      "numberToReserve": "3"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {}
+  },
+  "notes": [
+    "SURPRISE: on 2.42.6 /requestValues returns HTTP 200 with an empty object {} for every user (also superuser, any Accept header). Use /generateAndReserve (what Android uses) instead; see trackedEntityAttribute_generateAndReserve.json."
+  ]
+}

@@ -1,0 +1,309 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/trackedEntities",
+    "query": {
+      "orgUnits": "DiszpKrYNg8",
+      "orgUnitMode": "SELECTED",
+      "program": "ur1Edk5Oe2n",
+      "page": "2",
+      "pageSize": "5",
+      "totalPages": "true"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "pager": {
+        "page": 2,
+        "pageSize": 5,
+        "total": 63,
+        "pageCount": 13,
+        "prevPage": "http://dhis2-agent-facility-hub:8080/api/tracker/trackedEntities?orgUnits=DiszpKrYNg8&orgUnitMode=SELECTED&program=ur1Edk5Oe2n&pageSize=5&totalPages=true&page=1",
+        "nextPage": "http://dhis2-agent-facility-hub:8080/api/tracker/trackedEntities?orgUnits=DiszpKrYNg8&orgUnitMode=SELECTED&program=ur1Edk5Oe2n&pageSize=5&totalPages=true&page=3"
+      },
+      "trackedEntities": [
+        {
+          "trackedEntity": "kerL1lEo6ch",
+          "trackedEntityType": "nEenWmSyUEp",
+          "createdAt": "2014-03-26T15:51:49.615",
+          "createdAtClient": "2014-03-26T15:51:49.615",
+          "updatedAt": "2014-03-28T12:41:52.900",
+          "orgUnit": "DiszpKrYNg8",
+          "inactive": false,
+          "deleted": false,
+          "potentialDuplicate": false,
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "code": "MMD_PER_ADR1",
+              "displayName": "Address",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1100 Bodenstein St"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "displayName": "TB number",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1Z 034 506 72 6686 646 7"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "displayName": "Weight in kg",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "NUMBER",
+              "value": "69.0"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "displayName": "Email",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "MustafaSelassie@rhyta.com"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "displayName": "Gender",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "Male"
+            }
+          ]
+        },
+        {
+          "trackedEntity": "M8x12sxXgeL",
+          "trackedEntityType": "nEenWmSyUEp",
+          "createdAt": "2014-03-26T15:51:12.249",
+          "createdAtClient": "2014-03-26T15:51:12.249",
+          "updatedAt": "2014-03-28T12:41:23.537",
+          "orgUnit": "DiszpKrYNg8",
+          "inactive": false,
+          "deleted": false,
+          "potentialDuplicate": false,
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "code": "MMD_PER_ADR1",
+              "displayName": "Address",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "2450 Telford Ave"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "displayName": "TB number",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1Z 20E 587 99 2523 872 2"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "displayName": "Weight in kg",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "NUMBER",
+              "value": "92.1"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "displayName": "Email",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "FethawiRezene@jourrapide.com"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "displayName": "Gender",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "Male"
+            }
+          ]
+        },
+        {
+          "trackedEntity": "kZNpoELWjFQ",
+          "trackedEntityType": "nEenWmSyUEp",
+          "createdAt": "2014-03-26T15:51:03.168",
+          "createdAtClient": "2014-03-26T15:51:03.168",
+          "updatedAt": "2014-03-28T12:40:59.510",
+          "orgUnit": "DiszpKrYNg8",
+          "inactive": false,
+          "deleted": false,
+          "potentialDuplicate": false,
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "code": "MMD_PER_ADR1",
+              "displayName": "Address",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1752 Bhoola Rd"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "displayName": "TB number",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1Z 461 765 44 2540 545 1"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "displayName": "Weight in kg",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "NUMBER",
+              "value": "49.1"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "displayName": "Email",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "GimjaFesahaye@rhyta.com"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "displayName": "Gender",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "Female"
+            }
+          ]
+        },
+        {
+          "trackedEntity": "iGVIiBVsnh9",
+          "trackedEntityType": "nEenWmSyUEp",
+          "createdAt": "2014-03-26T15:51:01.647",
+          "createdAtClient": "2014-03-26T15:51:01.647",
+          "updatedAt": "2014-03-28T12:41:07.806",
+          "orgUnit": "DiszpKrYNg8",
+          "inactive": false,
+          "deleted": false,
+          "potentialDuplicate": false,
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "code": "MMD_PER_ADR1",
+              "displayName": "Address",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "649 Bhoola Rd"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "displayName": "TB number",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1Z W63 319 01 8310 756 4"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "displayName": "Weight in kg",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "NUMBER",
+              "value": "103.3"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "displayName": "Email",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "HaylomSaare@teleworm.us"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "displayName": "Gender",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "Male"
+            }
+          ]
+        },
+        {
+          "trackedEntity": "Trc1H9T5C6f",
+          "trackedEntityType": "nEenWmSyUEp",
+          "createdAt": "2014-03-26T15:50:47.506",
+          "createdAtClient": "2014-03-26T15:50:47.506",
+          "updatedAt": "2014-03-28T12:40:09.150",
+          "orgUnit": "DiszpKrYNg8",
+          "inactive": false,
+          "deleted": false,
+          "potentialDuplicate": false,
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "code": "MMD_PER_ADR1",
+              "displayName": "Address",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "221 Impala St"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "displayName": "TB number",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1Z 042 63W 17 3205 606 1"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "displayName": "Weight in kg",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "NUMBER",
+              "value": "89.3"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "displayName": "Email",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "AbrhaIggi@fleckens.hu"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "displayName": "Gender",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "Male"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "request": {
+    "method": "PUT",
+    "path": "/api/dataStore/facility-hub-poc/hub-DiszpKrYNg8",
+    "query": {},
+    "headers": {
+      "Authorization": "Basic hub_admin",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "facility": "DiszpKrYNg8",
+      "name": "Ngelehun CHC hub",
+      "version": "0.1.1",
+      "registeredBy": "hub_admin",
+      "registeredAt": "2026-10-07T16:30:00Z",
+      "lastHeartbeat": "2026-10-07T16:35:00Z"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "httpStatus": "OK",
+      "httpStatusCode": 200,
+      "status": "OK",
+      "message": "Key updated: 'hub-DiszpKrYNg8'"
+    }
+  }
+}

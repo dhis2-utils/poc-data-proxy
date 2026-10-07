@@ -1,0 +1,29 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/me",
+    "query": {
+      "fields": "id,username"
+    },
+    "headers": {
+      "Authorization": "ApiToken <key>"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "id": "HubUsrNursA",
+      "username": "nurse_a"
+    }
+  },
+  "notes": [
+    "PAT auth works for /api/me and /api/tracker/*. NOTE: DHIS2 still answers with Set-Cookie JSESSIONID_<instance> on a PAT-authenticated request; the hub should ignore/strip it."
+  ]
+}

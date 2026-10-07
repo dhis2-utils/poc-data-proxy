@@ -1,0 +1,44 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/apiToken",
+    "query": {},
+    "headers": {
+      "Authorization": "Basic nurse_a",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "expire": 1799165869997
+    }
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ],
+      "Location": "http://dhis2-agent-facility-hub:8080/api/apiToken/m7QsFKId7bC"
+    },
+    "body": {
+      "httpStatus": "Created",
+      "httpStatusCode": 201,
+      "status": "OK",
+      "response": {
+        "key": "d2p_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "uid": "m7QsFKId7bC",
+        "klass": "org.hisp.dhis.security.apikey.ApiToken",
+        "errorReports": [],
+        "responseType": "ObjectReport"
+      }
+    }
+  },
+  "notes": [
+    "Normal user (no special authority; role has only M_dhis-web-capture etc.) can create own PAT. No PAT-related authority exists in 2.42.",
+    "Minimal body {} also works: type defaults to PERSONAL_ACCESS_TOKEN_V2, expire defaults to now+30 days.",
+    "expire is epoch milliseconds. 400 days and a past timestamp were both accepted (no server-side max/min validation observed).",
+    "type must be PERSONAL_ACCESS_TOKEN_V1|PERSONAL_ACCESS_TOKEN_V2; an invalid enum gives HTTP 500 with Jackson message.",
+    "Key is returned only here: response.key (format d2p_ + 50 chars). response.uid is the token object id (used for DELETE /api/apiToken/{uid}). Key redacted in this fixture.",
+    "Optional attributes: [{type:'IpAllowedList',allowedIps:[...]}, {type:'MethodAllowedList',allowedMethods:[...]}, {type:'RefererAllowedList',...}]."
+  ]
+}

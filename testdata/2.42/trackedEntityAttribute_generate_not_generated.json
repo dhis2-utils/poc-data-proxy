@@ -1,0 +1,26 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/trackedEntityAttributes/w75KJ2mc4zz/generate",
+    "query": {},
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "httpStatus": "Bad Request",
+      "httpStatusCode": 400,
+      "status": "ERROR",
+      "message": "Attribute does not contain pattern."
+    }
+  }
+}

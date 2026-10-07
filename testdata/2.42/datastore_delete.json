@@ -1,0 +1,26 @@
+{
+  "request": {
+    "method": "DELETE",
+    "path": "/api/dataStore/facility-hub-poc/nokey",
+    "query": {},
+    "headers": {
+      "Authorization": "Basic hub_admin"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "httpStatus": "OK",
+      "httpStatusCode": 200,
+      "status": "OK",
+      "message": "Key 'nokey' deleted from namespace 'facility-hub-poc'"
+    }
+  }
+}

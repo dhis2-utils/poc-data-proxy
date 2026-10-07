@@ -1,0 +1,46 @@
+{{template "head" .}}
+<header><h1>Facility hub</h1>
+<span class="pill {{.Status.mode}}">{{.Status.mode}}</span>{{if .Forced}}<span class="pill offline">uplink switched off</span>{{end}}
+{{if .Status.needsUpgrade}}<span class="pill offline">hub needs upgrade</span>{{end}}
+<span class="sp"></span><span class="mono">hub {{.Status.hubId}} · v{{.Status.version}}</span><a href="/hub/logout">Log out</a></header>
+<main>
+{{with .Msg}}<div class="msg">{{.}}</div>{{end}}
+<div class="card"><div class="grid">
+<div class="stat"><b>{{.Status.pending}}</b><span>pending objects</span></div>
+<div class="stat"><b>{{.Status.rejected}}</b><span>rejected objects</span></div>
+<div class="stat"><b>{{.Objects}}</b><span>objects cached</span></div>
+<div class="stat"><b>{{or (short (printf "%v" .Status.lastPush)) "never"}}</b><span>last push</span></div>
+<div class="stat"><b>{{or (short (printf "%v" .Status.lastPull)) "never"}}</b><span>last pull</span></div>
+</div>
+<p class="muted">Facility <span class="mono">{{with .Runtime}}{{.Facility}} {{.FacilityName}}{{end}}</span> · central <span class="mono">{{.Central}}</span> (DHIS2 {{.ServerVersion}}){{with .Heartbeat.lastError}} · last sync error: {{.}}{{end}}</p>
+<form class="inline" method="post" action="/hub/ui/sync"><button>Sync now</button></form>
+{{if .Forced}}<form class="inline" method="post" action="/hub/ui/uplink"><input type="hidden" name="state" value="auto"><button class="secondary">Restore uplink</button></form>
+{{else}}<form class="inline" method="post" action="/hub/ui/uplink"><input type="hidden" name="state" value="off"><button class="secondary">Simulate uplink cut</button></form>{{end}}
+<a href="/hub/ui/endpoints">Endpoint log</a>
+</div>
+
+<div class="card"><h2>Programs cached</h2><ul>{{range .Programs}}<li class="mono">{{.}}</li>{{else}}<li>none</li>{{end}}</ul></div>
+
+<div class="card"><h2>Users</h2><div class="scroll"><table>
+<tr><th>Username</th><th>Last login</th><th>Access refreshed</th><th>Upstream credential</th><th>PAT expires</th><th>Facility</th><th>Needs online login</th></tr>
+{{range .Users}}<tr><td>{{.Username}}</td><td>{{short .LastLogin}}</td><td>{{short .AccessRefreshed}}</td><td>{{.Credential}}</td><td>{{short .PATExpires}}</td><td>{{if .InFacility}}yes{{else}}<b>no</b>{{end}}</td><td>{{if .NeedsLogin}}<b>yes</b>{{end}}</td></tr>{{end}}
+</table></div></div>
+
+<div class="card"><h2>Outbox (latest 50)</h2><div class="scroll"><table>
+<tr><th>Seq</th><th>User</th><th>Created</th><th>State</th><th>Attempts</th><th>Depends on</th><th>Objects</th><th>Last error</th></tr>
+{{range .Outbox}}<tr><td>{{.Seq}}</td><td>{{index $.Names .UserID}}</td><td>{{short .CreatedAt}}</td><td><span class="pill {{.State}}">{{.State}}</span></td><td>{{.Attempts}}</td><td>{{if .DependsOnSeq}}{{.DependsOnSeq}}{{end}}</td><td class="mono">{{range .UIDs}}{{.}} {{end}}</td><td>{{.LastError}}</td></tr>{{else}}<tr><td colspan="8" class="muted">empty</td></tr>{{end}}
+</table></div></div>
+
+<div class="card"><h2>Issues (rejected by central)</h2><div class="scroll"><table>
+<tr><th>#</th><th>Object</th><th>Kind</th><th>User</th><th>Error</th><th>Created</th><th>Reported to central</th></tr>
+{{range .Issues}}<tr><td>{{.ID}}</td><td class="mono">{{.ObjectUID}}</td><td>{{.Kind}}</td><td>{{.User}}</td><td>{{.Message}}</td><td>{{short .CreatedAt}}</td><td>{{short .ReportedCentralAt}}</td></tr>{{else}}<tr><td colspan="7" class="muted">none</td></tr>{{end}}
+</table></div></div>
+
+<div class="card"><h2>Upgrades</h2><p class="mono">{{or .Upgrade "no upgrade attempted"}}</p></div>
+
+<div class="card"><h2>Reset hub</h2>
+<p>Pushes the outbox, then wipes all data and returns to setup mode.</p>
+<form method="post" action="/hub/ui/reset"><label for="c">Type RESET to confirm</label><input id="c" type="text" name="confirm"><p><button class="danger">Reset hub</button></p></form>
+</div>
+</main>
+{{template "foot"}}

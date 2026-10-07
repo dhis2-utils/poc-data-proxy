@@ -1,0 +1,37 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/apiToken",
+    "query": {},
+    "headers": {
+      "Authorization": "ApiToken <key>",
+      "Content-Type": "application/json"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ],
+      "Location": "http://dhis2-agent-facility-hub:8080/api/apiToken/wylX7EPmowU"
+    },
+    "body": {
+      "httpStatus": "Created",
+      "httpStatusCode": 201,
+      "status": "OK",
+      "response": {
+        "key": "d2p_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        "uid": "wylX7EPmowU",
+        "klass": "org.hisp.dhis.security.apikey.ApiToken",
+        "errorReports": [],
+        "responseType": "ObjectReport"
+      }
+    }
+  },
+  "notes": [
+    "A request authenticated with a PAT can itself create another PAT (201). Created token deleted afterwards."
+  ]
+}

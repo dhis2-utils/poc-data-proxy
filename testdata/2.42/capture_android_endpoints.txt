@@ -1,0 +1,163 @@
+# Android Capture 3.4.2 (SDK 1.14.2) through hub http://10.0.2.2:49266, user nurse_b, 2026-10-07 (run 2, after the redirect fix).
+# Sequence: pm clear -> login -> full metadata + data sync (online) -> search -> register HUBAND One + stage 1 event + sync (online)
+#   -> uplink off -> register HUBANDOFF Two + stage 2 event + manual sync -> nurse_a curl event -> manual sync (offline)
+#   -> uplink auto -> manual sync (online).
+# [other] lines are sandbox curl calls (nurse_a / nurse_b reproductions), not the app.
+# Offline results (status from hub.log):
+#   POST /api/tracker?atomicMode=OBJECT&importStrategy=CREATE_AND_UPDATE        200, then GET /api/tracker/jobs/{id} and /report 200 (hub queued it, pending=3)
+#   GET  /api/trackedEntityAttributes/{uid}/generateAndReserve?numberToReserve=2 200 (served from the hub pool)
+#   GET  /api/tracker/trackedEntities?...includeDeleted=true&orgUnitMode=DESCENDANTS&orgUnits=DiszpKrYNg8&program=..&updatedAfter=..  400 "not supported offline: includeDeleted"
+#   GET  /api/tracker/events?...includeDeleted=true&orgUnit=DiszpKrYNg8&orgUnitMode=DESCENDANTS&program=MoUd5BTQ3lY&updatedAfter=..  400 "not supported offline: includeDeleted"
+#   GET  /api/tracker/trackedEntities?filter=..&orgUnitMode=ACCESSIBLE&program=.. (online search) 503 "needs connection: orgUnitMode ACCESSIBLE is not supported offline"
+#   GET  /api/dataValueSets?... (aggregate)                                          503 "needs connection: /api/dataValueSets was not cached while online"
+# Parameter values the app sent: orgUnitMode=DESCENDANTS (sync download), orgUnitMode=ACCESSIBLE (search, single TE), includeDeleted=true (sync), includeDeleted=false (search),
+#   order=createdAt:desc, page/pageSize=50 (sync) or 30 (search), paging=true, updatedAfter=<last successful download>, numberToReserve=100 at first sync and 2 for top-ups.
+
+# Endpoints called through the hub (method path ?params [client]) count
+GET /api/attributes ?fields,filter,paging [android]	1
+GET /api/categories ?fields,filter,paging [android]	1
+GET /api/categoryCombos ?fields,filter,paging [android]	2
+GET /api/categoryOptions ?fields,filter,paging [android]	1
+GET /api/categoryOptions/orgUnits ?categoryOptions [android]	1
+GET /api/completeDataSetRegistrations ?children,dataSet,fields,lastUpdated,orgUnit,paging,period [android]	9
+GET /api/completeDataSetRegistrations ?children,dataSet,fields,orgUnit,paging,period [android]	9
+GET /api/constants ?fields,paging [android]	1
+GET /api/dataApprovals/multiple ?aoc,fields,lastUpdated,ou,pe,wf [android]	1
+GET /api/dataApprovals/multiple ?aoc,fields,ou,pe,wf [android]	1
+GET /api/dataElements ?fields,filter,paging [android]	6
+GET /api/dataSets ?fields,filter,paging [android]	1
+GET /api/dataStore/ANDROID_SETTINGS_APP/info ? [android]	2
+GET /api/dataStore/ANDROID_SETTING_APP/dataSet_settings ? [android]	1
+GET /api/dataStore/ANDROID_SETTING_APP/general_settings ? [android]	5
+GET /api/dataStore/ANDROID_SETTING_APP/program_settings ? [android]	1
+GET /api/dataStore/APK_DISTRIBUTION/versions ? [android]	2
+GET /api/dataStore/USE_CASES/stockUseCases ? [android]	1
+GET /api/dataValueSets ?children,dataSet,fields,includeDeleted,lastUpdated,orgUnit,paging,period [android]	43
+GET /api/dataValueSets ?children,dataSet,fields,includeDeleted,orgUnit,paging,period [android]	25
+GET /api/dataValueSets ?dataSet,orgUnit,period [other]	1
+GET /api/eventFilters ?fields,filter,paging [android]	1
+GET /api/externalMapLayers ?fields,filter,paging [android]	1
+GET /api/fileResources/{uid} ? [android]	4
+GET /api/icons ?fields,keys,paging,type [android]	1
+GET /api/indicatorTypes ?fields,filter,paging [android]	1
+GET /api/indicators ?fields,filter,paging [android]	1
+GET /api/legendSets ?fields,filter,paging [android]	1
+GET /api/loginConfig ? [android]	2
+GET /api/me ?fields [android]	2
+GET /api/me/authorization ? [android]	1
+GET /api/optionGroups ?fields,filter,paging [android]	1
+GET /api/optionSets ?fields,filter,paging [android]	2
+GET /api/options ?fields,filter,page,pageSize,paging [android]	2
+GET /api/organisationUnitLevels ?fields,paging [android]	1
+GET /api/organisationUnits ?fields,filter,order,page,pageSize,paging [android]	1
+GET /api/ping ? [android]	9
+GET /api/programIndicators ?fields,filter,paging [android]	1
+GET /api/programRules ?fields,filter,paging [android]	1
+GET /api/programStageWorkingLists ?fields,filter,paging [android]	1
+GET /api/programStages ?fields,filter,paging [android]	1
+GET /api/programs ?fields,filter,paging [android]	1
+GET /api/relationshipTypes ?fields,filter,paging [android]	1
+GET /api/system/info ?fields [android]	15
+GET /api/systemSettings ?key [android]	3
+GET /api/trackedEntityAttributes ?fields,filter,paging [android]	1
+GET /api/trackedEntityAttributes/{uid}/generateAndReserve ?numberToReserve [android]	4
+GET /api/trackedEntityInstanceFilters ?fields,filter,paging [android]	1
+GET /api/trackedEntityTypes ?fields,filter,paging [android]	1
+GET /api/tracker/events ?fields,includeDeleted,orgUnit,orgUnitMode,page,pageSize,paging,program [android]	1
+GET /api/tracker/events ?fields,includeDeleted,orgUnit,orgUnitMode,page,pageSize,paging,program,updatedAfter [android]	3
+GET /api/tracker/jobs/tqdwrOhZqQN ? [android]	1
+GET /api/tracker/jobs/tqdwrOhZqQN/report ? [android]	1
+GET /api/tracker/jobs/{uid} ? [android]	1
+GET /api/tracker/jobs/{uid}/report ? [android]	1
+GET /api/tracker/trackedEntities ?fields,filter,includeDeleted,orgUnitMode,page,pageSize,paging,program [android]	5
+GET /api/tracker/trackedEntities ?fields,filter,includeDeleted,orgUnitMode,page,pageSize,paging,program [other]	1
+GET /api/tracker/trackedEntities ?fields,filter,orgUnits,program [other]	2
+GET /api/tracker/trackedEntities ?fields,includeDeleted,order,orgUnitMode,orgUnits,page,pageSize,paging,program [android]	2
+GET /api/tracker/trackedEntities ?fields,includeDeleted,order,orgUnitMode,orgUnits,page,pageSize,paging,program,updatedAfter [android]	3
+GET /api/tracker/trackedEntities ?fields,includeDeleted,order,orgUnitMode,orgUnits,page,pageSize,paging,program,updatedAfter [other]	1
+GET /api/tracker/trackedEntities/{uid} ?fields,includeDeleted,orgUnitMode [android]	1
+GET /api/tracker/trackedEntities/{uid} ?fields,includeDeleted,orgUnitMode,program [android]	1
+GET /api/userSettings ?fields [android]	1
+GET /api/validationRules ?dataSet,fields,paging [android]	25
+GET /api/validationRules ?fields,filter,paging [android]	1
+POST /api/tracker ?async [other]	1
+POST /api/tracker ?atomicMode,importStrategy [android]	2
+
+# Parameters not supported offline
+/api/tracker/events includeDeleted	2
+/api/tracker/trackedEntities includeDeleted	3
+/api/tracker/trackedEntities orgUnitMode=ACCESSIBLE	3
+
+# ===================================================================================================
+# run 3 (2026-10-07 17:18-17:26 UTC, hub restarted with offline fixes). Same device, no pm clear.
+# Sequence: online register HUBANDON3 Pre (TE bCGCTpxRD0g) + sync -> uplink off 25 s later -> search -> register
+#   HUBANDOFF3 Three (TE SLUOeL4Sdjv, enr xLKJlPVqApI) + TB visit + sync -> nurse_a curl event HubAndNa003
+#   -> app sync (offline) -> uplink auto -> app sync (online).
+# Offline results (status from hub.log; bodies reproduced with curl):
+#   GET  /api/tracker/trackedEntities?filter=..&includeDeleted=false&orgUnitMode=ACCESSIBLE&page=1&pageSize=30&paging=true&program=ur1Edk5Oe2n   200 (search, now served)
+#   POST /api/tracker?atomicMode=OBJECT&importStrategy=CREATE_AND_UPDATE                                    200 (+ jobs/{id}, jobs/{id}/report 200), pending=3
+#   GET  /api/tracker/trackedEntities/SLUOeL4Sdjv?fields=..&includeDeleted=true&orgUnitMode=ACCESSIBLE&program=ur1Edk5Oe2n   200
+#   GET  /api/tracker/trackedEntities?..&includeDeleted=true&order=createdAt:desc&orgUnitMode=DESCENDANTS&orgUnits=DiszpKrYNg8&page=1&pageSize=50&paging=true&program=ur1Edk5Oe2n&updatedAfter=2026-10-07T17:14:35.164   200
+#        BUT the response carries nurse_a's event HubAndNa003 with "occurredAt":"2026-10-07" (stored as posted; central returns
+#        "2026-10-07T00:00:00.000"). App logcat: E APIErrorMapper: java.text.ParseException: Unparseable date: "2026-10-07"
+#        -> the event did not appear on the device offline. After reconnect + hub pull the value is "2026-10-07T00:00:00.000" and the event arrives.
+#   GET  /api/tracker/events?..&includeDeleted=true&orgUnit=DiszpKrYNg8&orgUnitMode=DESCENDANTS&page=1&pageSize=50&paging=true&program=MoUd5BTQ3lY&updatedAfter=..
+#        503 {"message":"needs connection: program MoUd5BTQ3lY is not cached on this hub"} (event program outside the PoC; app tolerated it)
+#   GET  /api/trackedEntityAttributes/{uid}/generateAndReserve?numberToReserve=2   200 (hub pool)
+#   GET  /api/dataValueSets?...   503 (not cached)
+# Online write just before the cut (HUBANDON3 Pre, POST 17:19:29, jobs report fetched 17:19:30, cut 17:19:54, no pull in between):
+#   nurse_b offline: visible (search + single GET 200).
+#   nurse_a offline: search returns [] ; GET /api/tracker/trackedEntities/bCGCTpxRD0g -> 503 "needs connection: trackedEntity bCGCTpxRD0g is not available offline".
+#   Cause: core.UpsertCentral adds visibility only for the writing user (AddVisibility(uid, userID)); nurse_a gains it only at her next pull.
+# After reconnect: outbox seq 5 ok=3, seq 6 ok=1, rejected=0. Central createdBy: TEs/enrollments/TB visit events nurse_b; HubAndNa003 nurse_a.
+
+# Endpoint log after run 3:
+# Endpoints called through the hub (method path ?params [client]) count
+GET /api/completeDataSetRegistrations ?children,dataSet,fields,lastUpdated,orgUnit,paging,period [android]	9
+GET /api/dataApprovals/multiple ?aoc,fields,lastUpdated,ou,pe,wf [android]	1
+GET /api/dataValueSets ?children,dataSet,fields,includeDeleted,lastUpdated,orgUnit,paging,period [android]	34
+GET /api/fileResources/{uid} ? [android]	2
+GET /api/ping ? [android]	6
+GET /api/system/info ?fields [android]	8
+GET /api/trackedEntityAttributes/{uid}/generateAndReserve ?numberToReserve [android]	2
+GET /api/tracker/enrollments ?fields,orgUnits,program,trackedEntity [other]	1
+GET /api/tracker/events ?fields,includeDeleted,orgUnit,orgUnitMode,page,pageSize,paging,program,updatedAfter [android]	2
+GET /api/tracker/events ?fields,includeDeleted,orgUnit,orgUnitMode,page,pageSize,paging,program,updatedAfter [other]	1
+GET /api/tracker/events ?fields,orgUnit,program,trackedEntity [other]	1
+GET /api/tracker/events/{uid} ?fields [other]	1
+GET /api/tracker/jobs/{uid} ? [android]	2
+GET /api/tracker/jobs/{uid}/report ? [android]	2
+GET /api/tracker/trackedEntities ?fields,filter,includeDeleted,orgUnitMode,page,pageSize,paging,program [android]	4
+GET /api/tracker/trackedEntities ?fields,filter,includeDeleted,orgUnitMode,page,pageSize,paging,program [other]	1
+GET /api/tracker/trackedEntities ?fields,filter,orgUnits,program [other]	3
+GET /api/tracker/trackedEntities ?fields,includeDeleted,order,orgUnitMode,orgUnits,page,pageSize,paging,program,updatedAfter [android]	2
+GET /api/tracker/trackedEntities ?fields,includeDeleted,order,orgUnitMode,orgUnits,page,pageSize,paging,program,updatedAfter [other]	1
+GET /api/tracker/trackedEntities ?fields,order,orgUnits,pageSize,program [other]	1
+GET /api/tracker/trackedEntities/{uid} ?fields [other]	1
+GET /api/tracker/trackedEntities/{uid} ?fields,includeDeleted,orgUnitMode,program [android]	2
+GET /api/tracker/trackedEntities/{uid} ?fields,program [other]	3
+POST /api/tracker ?async [other]	1
+POST /api/tracker ?atomicMode,importStrategy [android]	2
+
+# Parameters not supported offline
+
+# ===================================================================================================
+# run 4 (2026-10-07 17:27-17:31 UTC, hub with date normalisation + ShareByRules). Same device.
+# (1) Online: registered HUBANDON4 Pre (TE oIAo3hiw7hq, enr J9xsmmD4J9G) and synced:
+#       POST /api/tracker?atomicMode=OBJECT&importStrategy=CREATE_AND_UPDATE 200 (17:28:18) -> GET /api/tracker/jobs/qMz7zIITZyj 200
+#       -> GET /api/tracker/jobs/qMz7zIITZyj/report 200 (17:28:19.9) -> GET /api/tracker/trackedEntities/oIAo3hiw7hq?..&orgUnitMode=ACCESSIBLE 200.
+#     Uplink cut 17:28:24 (no hub pull in between). Offline: nurse_b sees it; nurse_a:
+#       GET /api/tracker/trackedEntities?orgUnits=DiszpKrYNg8&program=ur1Edk5Oe2n&filter=w75KJ2mc4zz:like:HUBANDON4 -> 200 {"trackedEntities":[]}
+#       GET /api/tracker/trackedEntities/oIAo3hiw7hq -> 503 "needs connection: trackedEntity oIAo3hiw7hq is not available offline"
+#       POST /api/tracker?async=false event HubAndNa004 -> enrollment J9xsmmD4J9G -> 409 E1033 "needs connection: ... Enrollment `J9xsmmD4J9G` not found."
+#     STILL FAILS. Likely cause (code reading): in trackerapi.learn() the first switch case
+#     `r.Method == GET && res.Status == 200` also matches GET /api/tracker/jobs/{id}/report, so the job-report case
+#     (storePersisted + ShareByRules) is never reached. nurse_b's visibility comes from the app's follow-up single-TE GET
+#     (UpsertCentral for nurse_b only, no ShareByRules).
+# (2) Date fix verified on HUBANDOFF3's enrollment xLKJlPVqApI instead: nurse_a POST event HubAndNa005 "occurredAt":"2026-10-07" -> 200;
+#     hub serves "occurredAt":"2026-10-07T00:00:00.000"; app offline sync: trackedEntities?..DESCENDANTS..updatedAfter=2026-10-07T17:25:06.666 200,
+#     no ParseException in logcat, event shown on device (shots/40_run4_offline_device_has_nurse_a_event.png).
+#     (events?program=MoUd5BTQ3lY still 503 "program not cached"; tolerated.)
+# (3) Reconnect: outbox seq 7 (HubAndNa005) rejected by central: E1302 DataElement Vk1tzSQxvOR value `false` invalid
+#     (TRUE_ONLY; tester error, but shows the hub accepts offline values central rejects; the device keeps the event).
+#     Central createdBy: oIAo3hiw7hq/J9xsmmD4J9G/TPyNybGhUuJ nurse_b; SLUOeL4Sdjv tree nurse_b, HubAndNa003 nurse_a.

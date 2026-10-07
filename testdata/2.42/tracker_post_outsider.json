@@ -1,0 +1,65 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/tracker",
+    "query": {
+      "async": "false",
+      "importStrategy": "CREATE_AND_UPDATE"
+    },
+    "headers": {
+      "Authorization": "Basic outsider_d",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "events": [
+        {
+          "event": "HubFxEv0012",
+          "enrollment": "HubFxEn0002",
+          "program": "ur1Edk5Oe2n",
+          "programStage": "EPEcjy3FWmI",
+          "orgUnit": "DiszpKrYNg8",
+          "status": "ACTIVE",
+          "occurredAt": "2026-10-04",
+          "dataValues": []
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 409,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "status": "ERROR",
+      "validationReport": {
+        "errorReports": [
+          {
+            "message": "User: `HubUsrOutsD` has no write access to OrganisationUnit: `DiszpKrYNg8`.",
+            "errorCode": "E1000",
+            "trackerType": "EVENT",
+            "uid": "HubFxEv0012",
+            "args": [
+              "org.hisp.dhis.user.UserDetailsImpl@3d71644d",
+              "{\"class\":\"class org.hisp.dhis.organisationunit.OrganisationUnit\", \"hashCode\":\"285803861\", \"id\":\"559\", \"uid\":\"DiszpKrYNg8\", \"code\":\"OU_559\", \"name\":\"Ngelehun CHC\", \"shortName\":\"null\", \"description\":\"null\", \"created\":\"Wed Oct 07 16:23:46 UTC 2026\", \"lastUpdated\":\"Wed Oct 07 16:23:46 UTC 2026\" }"
+            ]
+          }
+        ],
+        "warningReports": []
+      },
+      "stats": {
+        "created": 0,
+        "updated": 0,
+        "deleted": 0,
+        "ignored": 1,
+        "total": 1
+      }
+    }
+  },
+  "notes": [
+    "outsider_d (capture OU Njandama) writing an event at Ngelehun."
+  ]
+}

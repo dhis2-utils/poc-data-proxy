@@ -1,0 +1,53 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/trackedEntities",
+    "query": {
+      "orgUnits": "DiszpKrYNg8",
+      "orgUnitMode": "SELECTED",
+      "program": "ur1Edk5Oe2n",
+      "paging": "false",
+      "fields": "trackedEntity,updatedAt"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "trackedEntities": [
+        {
+          "trackedEntity": "C1eRSb7TZ9y",
+          "updatedAt": "2014-03-28T12:43:19.726"
+        },
+        {
+          "trackedEntity": "nj37aOvo3Qq",
+          "updatedAt": "2014-03-28T12:42:58.995"
+        },
+        {
+          "trackedEntity": "AO0NH7JJ4aL",
+          "updatedAt": "2014-03-28T12:42:56.358"
+        },
+        {
+          "trackedEntity": "XACQoI8xPnK",
+          "updatedAt": "2014-03-28T12:42:26.401"
+        },
+        {
+          "trackedEntity": "Wo13tqLEuPD",
+          "updatedAt": "2014-03-28T12:42:08.744"
+        }
+      ]
+    }
+  },
+  "notes": [
+    "paging=false: no pager key at all. Array trimmed to 5 here (real total 63+)."
+  ]
+}

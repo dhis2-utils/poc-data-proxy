@@ -1,0 +1,137 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/me",
+    "query": {
+      "fields": "id,code,name,displayName,created,lastUpdated,birthday,education,gender,jobTitle,surname,firstName,introduction,employer,interests,languages,email,phoneNumber,nationality,username,userRoles[id,code,name,displayName],organisationUnits[id,code,name,displayName,path,openingDate,closedDate,level,parent[id],ancestors[id,displayName],programs[id],dataSets[id]],teiSearchOrganisationUnits[id,path],dataViewOrganisationUnits[id,path],userGroups[id,name],authorities,settings"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "id": "HubUsrNursA",
+      "username": "nurse_a",
+      "surname": "A",
+      "firstName": "Nurse",
+      "created": "2026-10-07T16:16:49.411",
+      "lastUpdated": "2026-10-07T16:19:52.946",
+      "dataViewOrganisationUnits": [
+        {
+          "path": "/ImspTQPwCqd/O6uvpzGd5pu/YuQRtpLP10I/DiszpKrYNg8",
+          "id": "DiszpKrYNg8"
+        }
+      ],
+      "userGroups": [
+        {
+          "name": "Facility hub stage 3",
+          "id": "HubGrpStag3"
+        }
+      ],
+      "teiSearchOrganisationUnits": [
+        {
+          "path": "/ImspTQPwCqd/O6uvpzGd5pu",
+          "id": "O6uvpzGd5pu"
+        }
+      ],
+      "organisationUnits": [
+        {
+          "code": "OU_559",
+          "name": "Ngelehun CHC",
+          "parent": {
+            "id": "YuQRtpLP10I"
+          },
+          "path": "/ImspTQPwCqd/O6uvpzGd5pu/YuQRtpLP10I/DiszpKrYNg8",
+          "openingDate": "1970-01-01T00:00:00.000",
+          "dataSets": [
+            {
+              "id": "Y8gAn9DfAGU"
+            },
+            {
+              "id": "pBOMPrpg1QX"
+            },
+            {
+              "id": "QX4ZTUbOt3a"
+            },
+            {
+              "id": "EKWVBc5C0ms"
+            },
+            {
+              "id": "lyLU2wR22tC"
+            }
+          ],
+          "programs": [
+            {
+              "id": "q04UBOqq3rp"
+            },
+            {
+              "id": "kla3mAPgvCH"
+            },
+            {
+              "id": "M3xtLkYBlKI"
+            },
+            {
+              "id": "MoUd5BTQ3lY"
+            },
+            {
+              "id": "uy2gU8kT1jF"
+            }
+          ],
+          "displayName": "Ngelehun CHC",
+          "id": "DiszpKrYNg8",
+          "level": 4,
+          "ancestors": [
+            {
+              "displayName": "Sierra Leone",
+              "id": "ImspTQPwCqd"
+            },
+            {
+              "displayName": "Bo",
+              "id": "O6uvpzGd5pu"
+            },
+            {
+              "displayName": "Badjia",
+              "id": "YuQRtpLP10I"
+            }
+          ]
+        }
+      ],
+      "displayName": "Nurse A",
+      "name": "Nurse A",
+      "userRoles": [
+        {
+          "name": "Facility hub tracker user",
+          "displayName": "Facility hub tracker user",
+          "id": "HubRole0001"
+        }
+      ],
+      "settings": {
+        "keyMessageSmsNotification": false,
+        "keyDbLocale": "en",
+        "keyTrackerDashboardLayout": "",
+        "keyStyle": "light_blue/light_blue.css",
+        "keyUiLocale": "en",
+        "keyAnalysisDisplayProperty": "name",
+        "keyMessageEmailNotification": false
+      },
+      "authorities": [
+        "M_dhis-web-messaging",
+        "M_dhis-web-dashboard",
+        "M_dhis-web-capture",
+        "F_UNCOMPLETE_EVENT"
+      ]
+    }
+  },
+  "notes": [
+    "Approximation of the Android SDK user/orgunit call (fields list hand-written, not captured from Android traffic). Record real Android traffic per spec 13.1 to confirm."
+  ]
+}

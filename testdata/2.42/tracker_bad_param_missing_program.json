@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/trackedEntities",
+    "query": {
+      "orgUnits": "DiszpKrYNg8",
+      "orgUnitMode": "SELECTED"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "httpStatus": "Bad Request",
+      "httpStatusCode": 400,
+      "status": "ERROR",
+      "message": "Either `program`, `trackedEntityType` or `trackedEntities` should be specified",
+      "errorCode": "E1003"
+    }
+  }
+}

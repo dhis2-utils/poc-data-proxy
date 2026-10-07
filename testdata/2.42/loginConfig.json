@@ -1,0 +1,40 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/loginConfig",
+    "query": {},
+    "headers": {},
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8"
+    },
+    "body": {
+      "apiVersion": "2.42.6",
+      "applicationTitle": "DHIS 2 Demo - Sierra Leone",
+      "applicationDescription": "Welcome to the DHIS 2 demo application",
+      "applicationNotification": "Log in with admin / district and feel free to do changes as system is reset every night.<br><br><i>Note: In order to maintain access for everyone, changes to the admin user password are blocked in the DHIS2 play environment.</i>",
+      "applicationLeftSideFooter": "Learn more at <a href=\"http://www.dhis2.org\">dhis2.org</a>",
+      "applicationRightSideFooter": "",
+      "countryFlag": "sierra_leone",
+      "uiLocale": "en",
+      "loginPopup": "",
+      "loginPageLayout": "DEFAULT",
+      "loginPageTemplate": "",
+      "recaptchaSite": "6LcVwT0UAAAAAAkO_EGPiYOiymIszZUeHfqWIYX5",
+      "minPasswordLength": "8",
+      "maxPasswordLength": "72",
+      "emailConfigured": false,
+      "selfRegistrationEnabled": true,
+      "selfRegistrationNoRecaptcha": false,
+      "allowAccountRecovery": true,
+      "useCustomLogoFront": false,
+      "oidcProviders": []
+    }
+  },
+  "notes": [
+    "Called unauthenticated by the 2.42 login app before showing the form."
+  ]
+}

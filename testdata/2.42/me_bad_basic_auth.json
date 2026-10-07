@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/me",
+    "query": {},
+    "headers": {
+      "Authorization": "Basic nurse_a:<wrong password>"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8"
+    },
+    "body": {
+      "httpStatus": "Unauthorized",
+      "httpStatusCode": 401,
+      "status": "ERROR",
+      "message": "Unauthorized"
+    }
+  }
+}

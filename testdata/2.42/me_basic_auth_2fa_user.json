@@ -1,0 +1,28 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/me",
+    "query": {
+      "fields": "id"
+    },
+    "headers": {
+      "Authorization": "Basic hub_tmp2fa (2FA enabled)"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8"
+    },
+    "body": {
+      "httpStatus": "Unauthorized",
+      "httpStatusCode": 401,
+      "status": "ERROR",
+      "message": "Unauthorized"
+    }
+  },
+  "notes": [
+    "What Android/basic-auth clients get for a 2FA-enabled user."
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/relationships",
+    "query": {
+      "trackedEntity": "J8KD01PshMC"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "pager": {
+        "page": 1,
+        "pageSize": 50
+      },
+      "relationships": [
+        {
+          "relationship": "phKR1Eyw3p5",
+          "relationshipType": "tBeOL0DL026",
+          "from": {
+            "trackedEntity": {
+              "trackedEntity": "fSofnQR6lAU"
+            }
+          },
+          "to": {
+            "trackedEntity": {
+              "trackedEntity": "J8KD01PshMC"
+            }
+          }
+        },
+        {
+          "relationship": "Cm1sVE1rvo3",
+          "relationshipType": "dDrh5UyCyvQ",
+          "from": {
+            "trackedEntity": {
+              "trackedEntity": "J8KD01PshMC"
+            }
+          },
+          "to": {
+            "trackedEntity": {
+              "trackedEntity": "fSofnQR6lAU"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/me",
+    "query": {
+      "fields": "id"
+    },
+    "headers": {
+      "Authorization": "ApiToken <key created with expire in the past>"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "WWW-Authenticate": "ApiToken"
+    },
+    "body": {
+      "httpStatus": "Unauthorized",
+      "httpStatusCode": 401,
+      "status": "ERROR",
+      "message": "Failed to authenticate API token, token has expired."
+    }
+  },
+  "notes": [
+    "POST /api/apiToken accepts an expire in the past; using such a token fails like this."
+  ]
+}

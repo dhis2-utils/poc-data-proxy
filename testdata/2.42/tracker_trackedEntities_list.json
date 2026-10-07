@@ -1,0 +1,307 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/trackedEntities",
+    "query": {
+      "orgUnits": "DiszpKrYNg8",
+      "orgUnitMode": "SELECTED",
+      "program": "ur1Edk5Oe2n"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "pager": {
+        "page": 1,
+        "pageSize": 50,
+        "nextPage": "http://dhis2-agent-facility-hub:8080/api/tracker/trackedEntities?orgUnits=DiszpKrYNg8&orgUnitMode=SELECTED&program=ur1Edk5Oe2n&page=2"
+      },
+      "trackedEntities": [
+        {
+          "trackedEntity": "C1eRSb7TZ9y",
+          "trackedEntityType": "nEenWmSyUEp",
+          "createdAt": "2014-03-26T15:53:21.297",
+          "createdAtClient": "2014-03-26T15:53:21.297",
+          "updatedAt": "2014-03-28T12:43:19.726",
+          "orgUnit": "DiszpKrYNg8",
+          "inactive": false,
+          "deleted": false,
+          "potentialDuplicate": false,
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "code": "MMD_PER_ADR1",
+              "displayName": "Address",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "769 Daffodil Dr"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "displayName": "TB number",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1Z 750 731 43 1257 255 3"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "displayName": "Weight in kg",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "NUMBER",
+              "value": "84.1"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "displayName": "Email",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "DahlakSelam@gustr.com"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "displayName": "Gender",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "Male"
+            }
+          ]
+        },
+        {
+          "trackedEntity": "nj37aOvo3Qq",
+          "trackedEntityType": "nEenWmSyUEp",
+          "createdAt": "2014-03-26T15:53:01.869",
+          "createdAtClient": "2014-03-26T15:53:01.869",
+          "updatedAt": "2014-03-28T12:42:58.995",
+          "orgUnit": "DiszpKrYNg8",
+          "inactive": false,
+          "deleted": false,
+          "potentialDuplicate": false,
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "code": "MMD_PER_ADR1",
+              "displayName": "Address",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "200 Protea St"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "displayName": "TB number",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1Z 2F5 194 99 7580 055 7"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "displayName": "Weight in kg",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "NUMBER",
+              "value": "75.0"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "displayName": "Email",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "HaileRezene@dayrep.com"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "displayName": "Gender",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "Male"
+            }
+          ]
+        },
+        {
+          "trackedEntity": "AO0NH7JJ4aL",
+          "trackedEntityType": "nEenWmSyUEp",
+          "createdAt": "2014-03-26T15:52:56.384",
+          "createdAtClient": "2014-03-26T15:52:56.384",
+          "updatedAt": "2014-03-28T12:42:56.358",
+          "orgUnit": "DiszpKrYNg8",
+          "inactive": false,
+          "deleted": false,
+          "potentialDuplicate": false,
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "code": "MMD_PER_ADR1",
+              "displayName": "Address",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1969 Heuvel St"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "displayName": "TB number",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1Z 13F 522 85 5307 407 3"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "displayName": "Weight in kg",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "NUMBER",
+              "value": "66.9"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "displayName": "Email",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "AdonayGoytiom@superrito.com"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "displayName": "Gender",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "Male"
+            }
+          ]
+        },
+        {
+          "trackedEntity": "XACQoI8xPnK",
+          "trackedEntityType": "nEenWmSyUEp",
+          "createdAt": "2014-03-26T15:52:30.913",
+          "createdAtClient": "2014-03-26T15:52:30.913",
+          "updatedAt": "2014-03-28T12:42:26.401",
+          "orgUnit": "DiszpKrYNg8",
+          "inactive": false,
+          "deleted": false,
+          "potentialDuplicate": false,
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "code": "MMD_PER_ADR1",
+              "displayName": "Address",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1395 Broad Rd"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "displayName": "TB number",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1Z 93E 702 05 7867 898 7"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "displayName": "Weight in kg",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "NUMBER",
+              "value": "79.8"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "displayName": "Email",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "RobelTemesgen@armyspy.com"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "displayName": "Gender",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "Male"
+            }
+          ]
+        },
+        {
+          "trackedEntity": "Wo13tqLEuPD",
+          "trackedEntityType": "nEenWmSyUEp",
+          "createdAt": "2014-03-26T15:52:13.940",
+          "createdAtClient": "2014-03-26T15:52:13.940",
+          "updatedAt": "2014-03-28T12:42:08.744",
+          "orgUnit": "DiszpKrYNg8",
+          "inactive": false,
+          "deleted": false,
+          "potentialDuplicate": false,
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "code": "MMD_PER_ADR1",
+              "displayName": "Address",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "2220 Main Rd"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "displayName": "TB number",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1Z W25 971 33 8261 912 4"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "displayName": "Weight in kg",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "NUMBER",
+              "value": "91.7"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "displayName": "Email",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "AwetYohannes@fleckens.hu"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "displayName": "Gender",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "Female"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "notes": [
+    "Default paging: pager has page,pageSize and prevPage/nextPage URLs; NO total/pageCount.",
+    "nextPage appears only when the page is full (more results may exist); prevPage only when page>1. With totalPages=true the pager adds total and pageCount."
+  ]
+}

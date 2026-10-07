@@ -1,0 +1,32 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/auth/login",
+    "query": {},
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "username": "nurse_a",
+      "password": "<redacted>"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "loginStatus": "SUCCESS",
+      "redirectUrl": "/"
+    }
+  },
+  "notes": [
+    "2.42 login app sequence: GET /dhis-web-login/ (static app) -> GET /api/loginConfig (unauthenticated) -> POST /api/auth/login JSON {username,password[,twoFactorCode]} -> on loginStatus SUCCESS the app navigates to redirectUrl.",
+    "Response body only {loginStatus, redirectUrl}. Session cookie name on this instance is JSESSIONID_agent-facility-hub (instance-configured; default DHIS2 is JSESSIONID) \u2014 the hub must not hardcode it.",
+    "redirectUrl is '/' here (no prior saved request)."
+  ]
+}

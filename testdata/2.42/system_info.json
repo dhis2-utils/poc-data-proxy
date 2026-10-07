@@ -1,0 +1,51 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/system/info",
+    "query": {},
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "contextPath": "http://dhis2-agent-facility-hub:8080",
+      "userAgent": "Python-urllib/3.12",
+      "calendar": "iso8601",
+      "dateFormat": "yyyy-mm-dd",
+      "serverDate": "2026-10-07T16:19:53.392",
+      "serverTimeZoneId": "Etc/UTC",
+      "serverTimeZoneDisplayName": "Coordinated Universal Time",
+      "lastAnalyticsTableSuccess": "2025-03-25T17:19:40.134",
+      "intervalSinceLastAnalyticsTableSuccess": "13463 h, 13 s",
+      "lastAnalyticsTableRuntime": "00:45:41.298",
+      "lastSystemMonitoringSuccess": "2019-03-26T17:07:15.418",
+      "lastAnalyticsTablePartitionSuccess": "1970-01-01T00:00:00.000",
+      "intervalSinceLastAnalyticsTablePartitionSuccess": "497608 h, 19 m, 53 s",
+      "lastAnalyticsTablePartitionRuntime": "",
+      "databaseInfo": {
+        "spatialSupport": true,
+        "time": "2026-10-07T16:19:53.392"
+      },
+      "version": "2.42.6",
+      "revision": "dd8bdbb",
+      "buildTime": "2026-08-26T14:23:02.000",
+      "encryption": false,
+      "emailConfigured": false,
+      "redisEnabled": false,
+      "systemId": "eed3d451-4ff5-4193-b951-ffcc68954299",
+      "systemName": "DHIS 2 Demo - Sierra Leone",
+      "systemMetadataVersion": "",
+      "isMetadataVersionEnabled": true,
+      "lastMetadataVersionSyncAttempt": "1970-01-01T00:00:00.000"
+    }
+  }
+}

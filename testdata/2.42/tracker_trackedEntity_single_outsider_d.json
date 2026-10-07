@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/trackedEntities/LxMVYhJm3Jp",
+    "query": {
+      "program": "ur1Edk5Oe2n",
+      "fields": "trackedEntity"
+    },
+    "headers": {
+      "Authorization": "Basic outsider_d"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "trackedEntity": "LxMVYhJm3Jp"
+    }
+  },
+  "notes": [
+    "outsider_d: capture OU Njandama, search OU = Bo district. TE owned by Ngelehun.",
+    "outsider_d can still READ a Ngelehun TE because teiSearchOrganisationUnits = Bo district and the program is OPEN. Writes are refused (tracker_post_outsider.json, E1000)."
+  ]
+}

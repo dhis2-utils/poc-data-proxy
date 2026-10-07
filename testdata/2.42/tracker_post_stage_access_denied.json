@@ -1,0 +1,74 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/tracker",
+    "query": {
+      "async": "false",
+      "importStrategy": "CREATE_AND_UPDATE"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_b",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "events": [
+        {
+          "event": "HubFxEv0011",
+          "enrollment": "HubFxEn0002",
+          "program": "ur1Edk5Oe2n",
+          "programStage": "jdRD35YwbRH",
+          "orgUnit": "DiszpKrYNg8",
+          "status": "ACTIVE",
+          "occurredAt": "2026-10-04",
+          "dataValues": [
+            {
+              "dataElement": "yLIPuJHRgey",
+              "value": "1"
+            },
+            {
+              "dataElement": "zocHNQIQBIN",
+              "value": "POS"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 409,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "status": "ERROR",
+      "validationReport": {
+        "errorReports": [
+          {
+            "message": "User: `HubUsrNursB` has no data write access to ProgramStage: `jdRD35YwbRH`.",
+            "errorCode": "E1095",
+            "trackerType": "EVENT",
+            "uid": "HubFxEv0011",
+            "args": [
+              "org.hisp.dhis.user.UserDetailsImpl@8910bbfb",
+              "{\"class\":\"class org.hisp.dhis.program.ProgramStage\", \"hashCode\":\"683120394\", \"id\":\"859998\", \"uid\":\"jdRD35YwbRH\", \"code\":\"null\", \"name\":\"Sputum smear microscopy test\", \"shortName\":\"null\", \"description\":\"null\", \"created\":\"null\", \"lastUpdated\":\"null\" }"
+            ]
+          }
+        ],
+        "warningReports": []
+      },
+      "stats": {
+        "created": 0,
+        "updated": 0,
+        "deleted": 0,
+        "ignored": 1,
+        "total": 1
+      }
+    }
+  },
+  "notes": [
+    "nurse_b writing to stage 3 (not shared)."
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/me",
+    "query": {},
+    "headers": {
+      "Authorization": "ApiToken d2p_AAAA... (non-existent)"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 400,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "WWW-Authenticate": "ApiToken"
+    },
+    "body": {
+      "httpStatus": "Bad Request",
+      "httpStatusCode": 400,
+      "status": "ERROR",
+      "message": "Checksum validation failed"
+    }
+  },
+  "notes": [
+    "A syntactically wrong/unknown d2p_ key fails checksum validation -> HTTP 400 (not 401!), with WWW-Authenticate: ApiToken. A deleted (valid checksum) key gives 401 'The API token does not exists'."
+  ]
+}

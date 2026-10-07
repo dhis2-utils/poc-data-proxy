@@ -1,0 +1,84 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/trackedEntities",
+    "query": {
+      "orgUnits": "DiszpKrYNg8",
+      "orgUnitMode": "SELECTED",
+      "program": "ur1Edk5Oe2n",
+      "filter": "w75KJ2mc4zz:eq:Berhane",
+      "fields": "trackedEntity,attributes[attribute,value]"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "pager": {
+        "page": 1,
+        "pageSize": 50
+      },
+      "trackedEntities": [
+        {
+          "trackedEntity": "LxMVYhJm3Jp",
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "value": "68 President St"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "value": "1Z 221 949 49 5151 232 3"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "value": "80.2"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "value": "BerhaneYusef@cuvox.de"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "value": "Male"
+            }
+          ]
+        },
+        {
+          "trackedEntity": "ijJi1COKKT9",
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "value": "2166 Burger St"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "value": "1Z 915 171 75 0772 790 6"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "value": "110.1"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "value": "BerhaneNuguse@superrito.com"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "value": "Male"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

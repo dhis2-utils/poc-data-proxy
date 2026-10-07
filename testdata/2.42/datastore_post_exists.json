@@ -1,0 +1,34 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/dataStore/facility-hub-poc/hub-DiszpKrYNg8",
+    "query": {},
+    "headers": {
+      "Authorization": "Basic hub_admin",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "facility": "DiszpKrYNg8",
+      "name": "Ngelehun CHC hub",
+      "version": "0.1.0",
+      "registeredBy": "hub_admin",
+      "registeredAt": "2026-10-07T16:30:00Z"
+    }
+  },
+  "response": {
+    "status": 409,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "httpStatus": "Conflict",
+      "httpStatusCode": 409,
+      "status": "ERROR",
+      "message": "Key 'hub-DiszpKrYNg8' already exists in namespace 'facility-hub-poc'",
+      "errorCode": "E1004"
+    }
+  }
+}

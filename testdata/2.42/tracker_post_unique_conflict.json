@@ -1,0 +1,160 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/tracker",
+    "query": {
+      "async": "false",
+      "importStrategy": "CREATE_AND_UPDATE",
+      "atomicMode": "OBJECT"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "trackedEntities": [
+        {
+          "trackedEntity": "HubFxTe0003",
+          "trackedEntityType": "nEenWmSyUEp",
+          "orgUnit": "DiszpKrYNg8",
+          "attributes": [
+            {
+              "attribute": "w75KJ2mc4zz",
+              "value": "HUBFIX Dup"
+            },
+            {
+              "attribute": "zDhUuAYrxNC",
+              "value": "HUBFIX Unique"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "value": "Male"
+            },
+            {
+              "attribute": "AuPLng5hLbE",
+              "value": "886649902"
+            }
+          ],
+          "enrollments": [
+            {
+              "enrollment": "HubFxEn0003",
+              "program": "ur1Edk5Oe2n",
+              "orgUnit": "DiszpKrYNg8",
+              "status": "ACTIVE",
+              "enrolledAt": "2026-10-01",
+              "occurredAt": "2026-10-01",
+              "events": [
+                {
+                  "event": "HubFxEv0007",
+                  "programStage": "EPEcjy3FWmI",
+                  "orgUnit": "DiszpKrYNg8",
+                  "status": "ACTIVE",
+                  "occurredAt": "2026-10-02",
+                  "dataValues": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "status": "OK",
+      "validationReport": {
+        "errorReports": [
+          {
+            "message": "enrollment `HubFxEn0003` cannot be created because trackedEntity `HubFxTe0003` referenced by it could not be created.",
+            "errorCode": "E5000",
+            "trackerType": "ENROLLMENT",
+            "uid": "HubFxEn0003",
+            "args": [
+              "enrollment",
+              "HubFxEn0003",
+              "trackedEntity",
+              "HubFxTe0003"
+            ]
+          },
+          {
+            "message": "Non-unique attribute value `886649902` for attribute `AuPLng5hLbE`.",
+            "errorCode": "E1064",
+            "trackerType": "TRACKED_ENTITY",
+            "uid": "HubFxTe0003",
+            "args": [
+              "886649902",
+              "TrackedEntityAttribute{description='null', formName='null', valueType=TEXT, inherit=false, optionSet=null, expression='null', displayOnVisitSchedule=false, sortOrderInVisitSchedule=null, displayInListNoProgram=false, sortOrderInListNoProgram=null, confidential=false, unique=true, generated=false, pattern='', textPattern=null, style=null, orgunitScope=false, skipSynchronization=false}"
+            ]
+          }
+        ],
+        "warningReports": []
+      },
+      "stats": {
+        "created": 0,
+        "updated": 0,
+        "deleted": 0,
+        "ignored": 2,
+        "total": 2
+      },
+      "bundleReport": {
+        "typeReportMap": {
+          "EVENT": {
+            "trackerType": "EVENT",
+            "stats": {
+              "created": 0,
+              "updated": 0,
+              "deleted": 0,
+              "ignored": 1,
+              "total": 1
+            },
+            "objectReports": []
+          },
+          "TRACKED_ENTITY": {
+            "trackerType": "TRACKED_ENTITY",
+            "stats": {
+              "created": 0,
+              "updated": 0,
+              "deleted": 0,
+              "ignored": 1,
+              "total": 1
+            },
+            "objectReports": []
+          },
+          "ENROLLMENT": {
+            "trackerType": "ENROLLMENT",
+            "stats": {
+              "created": 0,
+              "updated": 0,
+              "deleted": 0,
+              "ignored": 1,
+              "total": 1
+            },
+            "objectReports": []
+          },
+          "RELATIONSHIP": {
+            "trackerType": "RELATIONSHIP",
+            "stats": {
+              "created": 0,
+              "updated": 0,
+              "deleted": 0,
+              "ignored": 0,
+              "total": 0
+            },
+            "objectReports": []
+          }
+        }
+      }
+    }
+  },
+  "notes": [
+    "National identifier (AuPLng5hLbE, unique, not generated) = 886649902, which TE LxMVYhJm3Jp already has. atomicMode=OBJECT to see the dependent enrollment/event fate.",
+    "E1064 on the TE; the nested enrollment gets E5000 (parent could not be created). The nested event gets NO error report but is counted as ignored in bundleReport.typeReportMap.EVENT.stats (top-level stats say ignored 2/total 2, the per-type stats sum to 3). With atomicMode=OBJECT and only errors: HTTP 200, status OK!"
+  ]
+}

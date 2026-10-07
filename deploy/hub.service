@@ -1,0 +1,18 @@
+# systemd unit for a Raspberry Pi hub. Install the binary at /usr/local/bin/hub and the
+# image defaults at /etc/hub/hub.yaml. Self-upgrade replaces /usr/local/bin/hub in place
+# and re-execs (same PID), so the service user must own that file.
+[Unit]
+Description=DHIS2 facility hub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=hub
+ExecStart=/usr/local/bin/hub serve -config /etc/hub/hub.yaml
+Restart=always
+RestartSec=5
+StateDirectory=hub
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

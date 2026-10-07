@@ -1,0 +1,63 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/events/IQCiAZs7PrK",
+    "query": {
+      "fields": "*"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "event": "IQCiAZs7PrK",
+      "status": "COMPLETED",
+      "program": "ur1Edk5Oe2n",
+      "programStage": "ZkbAXlQUYJG",
+      "enrollment": "awZ5RHoJin5",
+      "trackedEntity": "LxMVYhJm3Jp",
+      "orgUnit": "DiszpKrYNg8",
+      "relationships": [],
+      "occurredAt": "2025-07-03T00:00:00.000",
+      "scheduledAt": "2025-06-28T00:00:00.000",
+      "storedBy": "system",
+      "followUp": false,
+      "deleted": false,
+      "createdAt": "2017-03-28T12:35:24.047",
+      "createdAtClient": "2016-03-28T12:35:24.047",
+      "updatedAt": "2018-07-04T15:33:02.250",
+      "attributeOptionCombo": "HllvX50cXC0",
+      "attributeCategoryOptions": "xYerKDKCefk",
+      "completedBy": "system",
+      "completedAt": "2025-07-04T00:00:00.000",
+      "dataValues": [
+        {
+          "createdAt": "2016-06-28T13:41:25.678",
+          "updatedAt": "2016-07-04T15:33:02.261",
+          "storedBy": "system",
+          "providedElsewhere": false,
+          "dataElement": "HmkXnHJxcD1",
+          "value": "Relapse"
+        },
+        {
+          "createdAt": "2016-06-28T13:41:23.683",
+          "updatedAt": "2016-07-04T15:33:02.256",
+          "storedBy": "system",
+          "providedElsewhere": false,
+          "dataElement": "D7m8vpzxHDJ",
+          "value": "P-"
+        }
+      ],
+      "notes": []
+    }
+  }
+}

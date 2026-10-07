@@ -1,0 +1,29 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/auth/login",
+    "query": {},
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "username": "nurse_a",
+      "password": "<wrong>"
+    }
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8"
+    },
+    "body": {
+      "httpStatus": "Unauthorized",
+      "httpStatusCode": 401,
+      "status": "ERROR",
+      "message": "Bad credentials"
+    }
+  },
+  "notes": [
+    "Wrong password: HTTP 401 WebMessage {httpStatus,httpStatusCode,status,message:'Bad credentials'}, no Set-Cookie. Unknown user gives the identical response (login_unknown_user.json)."
+  ]
+}

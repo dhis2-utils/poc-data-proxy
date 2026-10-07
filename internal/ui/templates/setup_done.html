@@ -1,0 +1,8 @@
+{{template "head" .}}
+<header><h1>Facility hub setup</h1><span class="sp"></span><span class="mono">hub {{.HubID}}</span></header>
+<main><div class="card" style="max-width:640px">
+<h2>This hub now serves {{.Facility.Name}}</h2>
+<p>The first full pull has started. Progress shows on the <a href="/hub/ui">admin page</a>.</p>
+<div class="msg"><b>Every staff member must log in once through the hub while it is online.</b> Offline login only works for users who have done this.</div>
+</div></main>
+{{template "foot"}}

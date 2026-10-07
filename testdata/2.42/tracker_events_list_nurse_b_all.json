@@ -1,0 +1,42 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/events",
+    "query": {
+      "orgUnit": "DiszpKrYNg8",
+      "orgUnitMode": "SELECTED",
+      "program": "ur1Edk5Oe2n",
+      "totalPages": "true",
+      "pageSize": "1",
+      "fields": "event,programStage"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_b"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "pager": {
+        "page": 1,
+        "pageSize": 1,
+        "total": 28,
+        "pageCount": 28,
+        "nextPage": "http://dhis2-agent-facility-hub:8080/api/tracker/events?orgUnit=DiszpKrYNg8&orgUnitMode=SELECTED&program=ur1Edk5Oe2n&totalPages=true&pageSize=1&fields=event,programStage&page=2"
+      },
+      "events": [
+        {
+          "event": "IQCiAZs7PrK",
+          "programStage": "ZkbAXlQUYJG"
+        }
+      ]
+    }
+  }
+}

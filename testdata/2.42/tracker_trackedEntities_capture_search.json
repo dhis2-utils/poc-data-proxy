@@ -1,0 +1,663 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/tracker/trackedEntities",
+    "query": {
+      "program": "ur1Edk5Oe2n",
+      "orgUnitMode": "ACCESSIBLE",
+      "filter": "w75KJ2mc4zz:like:ber",
+      "fields": ":all,!relationships,programOwners[orgUnit,program]",
+      "pageSize": "5",
+      "page": "1"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "pager": {
+        "page": 1,
+        "pageSize": 5,
+        "nextPage": "http://dhis2-agent-facility-hub:8080/api/tracker/trackedEntities?program=ur1Edk5Oe2n&orgUnitMode=ACCESSIBLE&filter=w75KJ2mc4zz:like:ber&fields=:all,!relationships,programOwners[orgUnit,program]&pageSize=5&page=2"
+      },
+      "trackedEntities": [
+        {
+          "trackedEntity": "HwDM2f9y0v1",
+          "trackedEntityType": "nEenWmSyUEp",
+          "createdAt": "2014-03-26T15:53:30.751",
+          "createdAtClient": "2014-03-26T15:53:30.751",
+          "updatedAt": "2014-03-28T12:43:32.812",
+          "orgUnit": "GvFqTavdpGE",
+          "inactive": false,
+          "deleted": false,
+          "potentialDuplicate": false,
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "code": "MMD_PER_ADR1",
+              "displayName": "Address",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "2068 Union Lane"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "displayName": "TB number",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1Z F68 725 78 7337 300 3"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "displayName": "Weight in kg",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "NUMBER",
+              "value": "78.9"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "displayName": "Email",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "BerhaneBerhane@jourrapide.com"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "displayName": "Gender",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "Male"
+            }
+          ],
+          "enrollments": [
+            {
+              "enrollment": "bOFdyYO4nzK",
+              "createdAt": "2017-03-28T12:43:32.808",
+              "createdAtClient": "2016-03-28T12:43:32.808",
+              "updatedAt": "2017-03-28T12:43:32.812",
+              "trackedEntity": "HwDM2f9y0v1",
+              "program": "ur1Edk5Oe2n",
+              "status": "COMPLETED",
+              "orgUnit": "GvFqTavdpGE",
+              "enrolledAt": "2024-04-25T12:43:32.782",
+              "occurredAt": "2024-04-20T12:43:32.782",
+              "followUp": false,
+              "deleted": false,
+              "events": [],
+              "relationships": [],
+              "attributes": [
+                {
+                  "attribute": "RG7uGl4w5Jq",
+                  "code": "Longitude",
+                  "displayName": "Longitude",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "31.563816"
+                },
+                {
+                  "attribute": "ruQQnf6rswq",
+                  "displayName": "TB number",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "1Z F68 725 78 7337 300 3"
+                },
+                {
+                  "attribute": "VHfUeXpawmE",
+                  "code": "Vehicle",
+                  "displayName": "Vehicle",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "1994 Oldsmobile Eighty-Eight"
+                },
+                {
+                  "attribute": "VqEFza8wbwA",
+                  "code": "MMD_PER_ADR1",
+                  "displayName": "Address",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "2068 Union Lane"
+                },
+                {
+                  "attribute": "lw1SqmMlnfh",
+                  "code": "Height in cm",
+                  "displayName": "Height in cm",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "NUMBER",
+                  "value": "186"
+                }
+              ],
+              "notes": []
+            }
+          ],
+          "programOwners": [
+            {
+              "orgUnit": "GvFqTavdpGE",
+              "program": "ur1Edk5Oe2n"
+            }
+          ]
+        },
+        {
+          "trackedEntity": "XknHXRbn20d",
+          "trackedEntityType": "nEenWmSyUEp",
+          "createdAt": "2014-03-26T15:53:24.145",
+          "createdAtClient": "2014-03-26T15:53:24.145",
+          "updatedAt": "2014-03-28T12:43:23.768",
+          "orgUnit": "PuZOFApTSeo",
+          "inactive": false,
+          "deleted": false,
+          "potentialDuplicate": false,
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "code": "MMD_PER_ADR1",
+              "displayName": "Address",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "2339 Union Lane"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "displayName": "TB number",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1Z 20E 035 93 2468 125 3"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "displayName": "Weight in kg",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "NUMBER",
+              "value": "75.0"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "displayName": "Email",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "BerhaneSheshy@rhyta.com"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "displayName": "Gender",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "Male"
+            }
+          ],
+          "enrollments": [
+            {
+              "enrollment": "hUZ8290QEQC",
+              "createdAt": "2017-03-28T12:43:23.766",
+              "createdAtClient": "2016-03-28T12:43:23.766",
+              "updatedAt": "2017-03-28T12:43:23.768",
+              "trackedEntity": "XknHXRbn20d",
+              "program": "ur1Edk5Oe2n",
+              "status": "COMPLETED",
+              "orgUnit": "PuZOFApTSeo",
+              "enrolledAt": "2024-07-16T12:43:23.757",
+              "occurredAt": "2024-07-02T12:43:23.757",
+              "followUp": false,
+              "deleted": false,
+              "events": [],
+              "relationships": [],
+              "attributes": [
+                {
+                  "attribute": "ruQQnf6rswq",
+                  "displayName": "TB number",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "1Z 20E 035 93 2468 125 3"
+                },
+                {
+                  "attribute": "lw1SqmMlnfh",
+                  "code": "Height in cm",
+                  "displayName": "Height in cm",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "NUMBER",
+                  "value": "169"
+                },
+                {
+                  "attribute": "Qo571yj6Zcn",
+                  "code": "Latitude",
+                  "displayName": "Latitude",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "-29.880576"
+                },
+                {
+                  "attribute": "zDhUuAYrxNC",
+                  "displayName": "Last name",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "Sheshy"
+                },
+                {
+                  "attribute": "n9nUvfpTsxQ",
+                  "code": "Zip code",
+                  "displayName": "Zip code",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "NUMBER",
+                  "value": "3655"
+                }
+              ],
+              "notes": []
+            }
+          ],
+          "programOwners": [
+            {
+              "orgUnit": "PuZOFApTSeo",
+              "program": "ur1Edk5Oe2n"
+            }
+          ]
+        },
+        {
+          "trackedEntity": "dkB78x0vq10",
+          "trackedEntityType": "nEenWmSyUEp",
+          "createdAt": "2014-03-26T15:53:20.216",
+          "createdAtClient": "2014-03-26T15:53:20.216",
+          "updatedAt": "2014-03-28T12:43:18.352",
+          "orgUnit": "KvE0PYQzXMM",
+          "inactive": false,
+          "deleted": false,
+          "potentialDuplicate": false,
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "code": "MMD_PER_ADR1",
+              "displayName": "Address",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "533 Ireland St"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "displayName": "TB number",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1Z 301 54Y 53 6598 183 6"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "displayName": "Weight in kg",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "NUMBER",
+              "value": "99.0"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "displayName": "Email",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "BerhaneAdonay@armyspy.com"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "displayName": "Gender",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "Male"
+            }
+          ],
+          "enrollments": [
+            {
+              "enrollment": "ExByXXFgHBA",
+              "createdAt": "2017-03-28T12:43:18.350",
+              "createdAtClient": "2016-03-28T12:43:18.350",
+              "updatedAt": "2017-03-28T12:43:18.352",
+              "trackedEntity": "dkB78x0vq10",
+              "program": "ur1Edk5Oe2n",
+              "status": "COMPLETED",
+              "orgUnit": "KvE0PYQzXMM",
+              "enrolledAt": "2024-05-30T12:43:18.342",
+              "occurredAt": "2024-05-13T12:43:18.342",
+              "followUp": false,
+              "deleted": false,
+              "events": [],
+              "relationships": [],
+              "attributes": [
+                {
+                  "attribute": "GUOBQt5K2WI",
+                  "code": "State",
+                  "displayName": "State",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "Mpumalanga"
+                },
+                {
+                  "attribute": "lw1SqmMlnfh",
+                  "code": "Height in cm",
+                  "displayName": "Height in cm",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "NUMBER",
+                  "value": "177"
+                },
+                {
+                  "attribute": "VqEFza8wbwA",
+                  "code": "MMD_PER_ADR1",
+                  "displayName": "Address",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "533 Ireland St"
+                },
+                {
+                  "attribute": "zDhUuAYrxNC",
+                  "displayName": "Last name",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "Adonay"
+                },
+                {
+                  "attribute": "ruQQnf6rswq",
+                  "displayName": "TB number",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "1Z 301 54Y 53 6598 183 6"
+                }
+              ],
+              "notes": []
+            }
+          ],
+          "programOwners": [
+            {
+              "orgUnit": "KvE0PYQzXMM",
+              "program": "ur1Edk5Oe2n"
+            }
+          ]
+        },
+        {
+          "trackedEntity": "YefSGUkSidi",
+          "trackedEntityType": "nEenWmSyUEp",
+          "createdAt": "2014-03-26T15:53:15.826",
+          "createdAtClient": "2014-03-26T15:53:15.826",
+          "updatedAt": "2014-03-28T12:43:13.611",
+          "orgUnit": "pMEnu7BjqMz",
+          "inactive": false,
+          "deleted": false,
+          "potentialDuplicate": false,
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "code": "MMD_PER_ADR1",
+              "displayName": "Address",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1373 Wattle St"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "displayName": "TB number",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1Z 76A 149 12 6482 909 2"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "displayName": "Weight in kg",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "NUMBER",
+              "value": "93.6"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "displayName": "Email",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "BerhaneTekle@teleworm.us"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "displayName": "Gender",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "Male"
+            }
+          ],
+          "enrollments": [
+            {
+              "enrollment": "wgUCLS5ziza",
+              "createdAt": "2017-03-28T12:43:13.609",
+              "createdAtClient": "2016-03-28T12:43:13.609",
+              "updatedAt": "2017-03-28T12:43:13.611",
+              "trackedEntity": "YefSGUkSidi",
+              "program": "ur1Edk5Oe2n",
+              "status": "COMPLETED",
+              "orgUnit": "pMEnu7BjqMz",
+              "enrolledAt": "2024-08-02T12:43:13.597",
+              "occurredAt": "2024-07-25T12:43:13.597",
+              "followUp": false,
+              "deleted": false,
+              "events": [],
+              "relationships": [],
+              "attributes": [
+                {
+                  "attribute": "GUOBQt5K2WI",
+                  "code": "State",
+                  "displayName": "State",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "Eastern Cape"
+                },
+                {
+                  "attribute": "o9odfev2Ty5",
+                  "code": "Mother maiden name",
+                  "displayName": "Mother maiden name",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "Abraham"
+                },
+                {
+                  "attribute": "H9IlTX2X6SL",
+                  "code": "Blood type",
+                  "displayName": "Blood type",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "B+"
+                },
+                {
+                  "attribute": "FO4sWYJ64LQ",
+                  "code": "City",
+                  "displayName": "City",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "Grahamstad"
+                },
+                {
+                  "attribute": "RG7uGl4w5Jq",
+                  "code": "Longitude",
+                  "displayName": "Longitude",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "26.504983"
+                }
+              ],
+              "notes": []
+            }
+          ],
+          "programOwners": [
+            {
+              "orgUnit": "pMEnu7BjqMz",
+              "program": "ur1Edk5Oe2n"
+            }
+          ]
+        },
+        {
+          "trackedEntity": "Bb8peBcZDx6",
+          "trackedEntityType": "nEenWmSyUEp",
+          "createdAt": "2014-03-26T15:52:42.693",
+          "createdAtClient": "2014-03-26T15:52:42.693",
+          "updatedAt": "2014-03-28T12:42:36.762",
+          "orgUnit": "QDoO5r6Sae7",
+          "inactive": false,
+          "deleted": false,
+          "potentialDuplicate": false,
+          "attributes": [
+            {
+              "attribute": "VqEFza8wbwA",
+              "code": "MMD_PER_ADR1",
+              "displayName": "Address",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1386 Prospect St"
+            },
+            {
+              "attribute": "ruQQnf6rswq",
+              "displayName": "TB number",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "1Z 456 39A 89 2438 269 1"
+            },
+            {
+              "attribute": "OvY4VVhSDeJ",
+              "displayName": "Weight in kg",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "NUMBER",
+              "value": "61.5"
+            },
+            {
+              "attribute": "NDXw0cluzSw",
+              "displayName": "Email",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "BerhaneGoytiom@armyspy.com"
+            },
+            {
+              "attribute": "cejWyOfXge6",
+              "displayName": "Gender",
+              "createdAt": "2016-01-12T09:10:26.986",
+              "updatedAt": "2016-01-12T09:10:35.884",
+              "valueType": "TEXT",
+              "value": "Male"
+            }
+          ],
+          "enrollments": [
+            {
+              "enrollment": "rFCfhR6vuo3",
+              "createdAt": "2017-03-28T12:42:36.759",
+              "createdAtClient": "2016-03-28T12:42:36.759",
+              "updatedAt": "2017-03-28T12:42:36.762",
+              "trackedEntity": "Bb8peBcZDx6",
+              "program": "ur1Edk5Oe2n",
+              "status": "COMPLETED",
+              "orgUnit": "QDoO5r6Sae7",
+              "enrolledAt": "2025-04-05T12:42:36.741",
+              "occurredAt": "2025-03-16T12:42:36.741",
+              "followUp": false,
+              "deleted": false,
+              "events": [],
+              "relationships": [],
+              "attributes": [
+                {
+                  "attribute": "zDhUuAYrxNC",
+                  "displayName": "Last name",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "Goytiom"
+                },
+                {
+                  "attribute": "VHfUeXpawmE",
+                  "code": "Vehicle",
+                  "displayName": "Vehicle",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "2006 BMW 645"
+                },
+                {
+                  "attribute": "FO4sWYJ64LQ",
+                  "code": "City",
+                  "displayName": "City",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "Laudium"
+                },
+                {
+                  "attribute": "H9IlTX2X6SL",
+                  "code": "Blood type",
+                  "displayName": "Blood type",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "B+"
+                },
+                {
+                  "attribute": "Qo571yj6Zcn",
+                  "code": "Latitude",
+                  "displayName": "Latitude",
+                  "createdAt": "2016-01-12T09:10:26.986",
+                  "updatedAt": "2016-01-12T09:10:35.884",
+                  "valueType": "TEXT",
+                  "value": "-25.764418"
+                }
+              ],
+              "notes": []
+            }
+          ],
+          "programOwners": [
+            {
+              "orgUnit": "QDoO5r6Sae7",
+              "program": "ur1Edk5Oe2n"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "notes": [
+    "Capture-like search with ACCESSIBLE mode (hub supports SELECTED only)."
+  ]
+}

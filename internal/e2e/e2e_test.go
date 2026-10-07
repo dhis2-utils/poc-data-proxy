@@ -1,0 +1,655 @@
+// End-to-end tests for the acceptance scenarios in spec 13.3, run against the fake
+// central (internal/fakecentral). The uplink is cut by making central drop
+// connections, so the hub sees real network errors.
+package e2e
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/cookiejar"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/dhis2/facility-hub/internal/app"
+	"github.com/dhis2/facility-hub/internal/config"
+	fc "github.com/dhis2/facility-hub/internal/fakecentral"
+	"github.com/dhis2/facility-hub/internal/hubcrypto"
+	"github.com/dhis2/facility-hub/internal/store"
+)
+
+func init() { hubcrypto.ArgonMemory, hubcrypto.ArgonTime = 8*1024, 1 }
+
+type env struct {
+	t       *testing.T
+	central *fc.Central
+	cSrv    *httptest.Server
+	dir     string
+	app     *app.App
+	srv     *httptest.Server
+}
+
+func newEnv(t *testing.T) *env {
+	t.Helper()
+	e := &env{t: t, central: fc.New(), dir: t.TempDir()}
+	e.central.Seed("SeedTe00001", "SeedEn00001", "Seeded", "NAT-0001",
+		map[string]string{"SeedEv00001": fc.Stage1, "SeedEv00003": fc.Stage3})
+	e.cSrv = httptest.NewServer(e.central)
+	t.Cleanup(e.cSrv.Close)
+	e.start()
+	return e
+}
+
+func (e *env) cfg() config.Config {
+	c := config.Default()
+	c.CentralURL = e.cSrv.URL
+	c.SetupUserGroup = fc.SetupGroup
+	c.DataDir = e.dir
+	c.TLS = false
+	c.SyncInterval = time.Hour // tests run cycles by hand
+	c.PingTimeout = time.Second
+	c.ReservedPoolSize = 5
+	c.LogRequests = true
+	return c
+}
+
+// start builds a hub on e.dir (a "boot").
+func (e *env) start() {
+	a, err := app.New(e.cfg(), "0.1.0", false, nil)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	e.app = a
+	e.srv = httptest.NewServer(a.Handler)
+	e.app.Hub.Monitor.Probe(context.Background(), e.cSrv.URL)
+}
+
+// stop is a hub shutdown (the in-memory data key is lost).
+func (e *env) stop() {
+	e.srv.Close()
+	e.app.Close()
+}
+
+func (e *env) offline() {
+	e.central.SetDown(true)
+	e.app.Hub.Monitor.Probe(context.Background(), e.cSrv.URL)
+	e.app.Hub.Monitor.Probe(context.Background(), e.cSrv.URL)
+	if e.app.Hub.Online() {
+		e.t.Fatal("hub still online")
+	}
+}
+
+func (e *env) online() {
+	e.central.SetDown(false)
+	e.app.Hub.Monitor.Probe(context.Background(), e.cSrv.URL)
+	if !e.app.Hub.Online() {
+		e.t.Fatal("hub still offline")
+	}
+}
+
+func (e *env) sync() {
+	e.t.Helper()
+	if err := e.app.Worker.Cycle(context.Background()); err != nil {
+		e.t.Fatalf("sync: %v", err)
+	}
+}
+
+// --- clients ------------------------------------------------------------------------
+
+type client struct {
+	e     *env
+	http  *http.Client
+	user  string
+	basic bool
+}
+
+func (e *env) web(user string) *client {
+	jar, _ := cookiejar.New(nil)
+	return &client{e: e, user: user, http: &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}}
+}
+
+// android sends Basic auth on every request, like the Android Capture app.
+func (e *env) android(user string) *client {
+	return &client{e: e, user: user, basic: true, http: &http.Client{}}
+}
+
+func (c *client) do(method, path string, body any) (int, []byte) {
+	c.e.t.Helper()
+	var rd io.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		rd = bytes.NewReader(b)
+	}
+	req, _ := http.NewRequest(method, c.e.srv.URL+path, rd)
+	req.Header.Set("Content-Type", "application/json")
+	if c.basic {
+		req.SetBasicAuth(c.user, fc.Password)
+		req.Header.Set("User-Agent", "okhttp/4.12.0")
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		c.e.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, b
+}
+
+func (c *client) login() {
+	c.e.t.Helper()
+	st, b := c.do("POST", "/api/auth/login", map[string]string{"username": c.user, "password": fc.Password})
+	if st != 200 || !strings.Contains(string(b), "SUCCESS") {
+		c.e.t.Fatalf("login %s: %d %s", c.user, st, b)
+	}
+}
+
+func (c *client) json(method, path string, body any, wantStatus int) map[string]any {
+	c.e.t.Helper()
+	st, b := c.do(method, path, body)
+	if st != wantStatus {
+		c.e.t.Fatalf("%s %s as %s: got %d want %d: %s", method, path, c.user, st, wantStatus, b)
+	}
+	var out map[string]any
+	json.Unmarshal(b, &out)
+	return out
+}
+
+func (e *env) setup() {
+	e.t.Helper()
+	c := e.web("hub_admin")
+	form := url.Values{"step": {"login"}, "central_url": {e.cSrv.URL}, "username": {"hub_admin"}, "password": {fc.Password}}
+	resp, err := c.http.PostForm(e.srv.URL+"/hub/setup", form)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(b), "This hub now serves") {
+		e.t.Fatalf("setup failed: %s", b)
+	}
+	e.sync()
+}
+
+// --- helpers on payloads ---------------------------------------------------------------
+
+func newPatient(te, enr, first, nationalID string, events map[string]string) map[string]any {
+	var evs []any
+	for ev, stage := range events {
+		evs = append(evs, map[string]any{"event": ev, "programStage": stage, "orgUnit": fc.Facility, "occurredAt": "2026-10-07",
+			"status": "ACTIVE", "dataValues": []any{}})
+	}
+	attrs := []any{map[string]any{"attribute": fc.AttrFirstName, "value": first}}
+	if nationalID != "" {
+		attrs = append(attrs, map[string]any{"attribute": fc.AttrNationalI, "value": nationalID})
+	}
+	return map[string]any{"trackedEntities": []any{map[string]any{"trackedEntity": te, "trackedEntityType": fc.TET,
+		"orgUnit": fc.Facility, "attributes": attrs,
+		"enrollments": []any{map[string]any{"enrollment": enr, "program": fc.Program, "orgUnit": fc.Facility,
+			"enrolledAt": "2026-10-07", "occurredAt": "2026-10-07", "status": "ACTIVE", "events": evs}}}}}
+}
+
+func event(ev, enr, stage string) map[string]any {
+	return map[string]any{"events": []any{map[string]any{"event": ev, "enrollment": enr, "programStage": stage,
+		"orgUnit": fc.Facility, "occurredAt": "2026-10-07", "status": "ACTIVE"}}}
+}
+
+func uids(list any, key string) []string {
+	var out []string
+	arr, _ := list.([]any)
+	for _, x := range arr {
+		out = append(out, fmt.Sprint(x.(map[string]any)[key]))
+	}
+	return out
+}
+
+func contains(ss []string, s string) bool {
+	for _, x := range ss {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+func errorCodes(report map[string]any) []string {
+	vr, _ := report["validationReport"].(map[string]any)
+	return uids(vr["errorReports"], "errorCode")
+}
+
+const postSync = "/api/tracker?async=false&importStrategy=CREATE_AND_UPDATE&atomicMode=ALL"
+
+// --- scenarios ---------------------------------------------------------------------------
+
+func TestAcceptance(t *testing.T) {
+	e := newEnv(t)
+	t.Run("10 setup: nurse_a cannot set up a hub", func(t *testing.T) {
+		c := e.web("nurse_a")
+		resp, _ := c.http.PostForm(e.srv.URL+"/hub/setup", url.Values{"step": {"login"}, "central_url": {e.cSrv.URL},
+			"username": {"nurse_a"}, "password": {fc.Password}})
+		b, _ := io.ReadAll(resp.Body)
+		if !strings.Contains(string(b), "not allowed to set up a hub") {
+			t.Fatalf("expected refusal, got %s", b)
+		}
+	})
+	t.Run("10 setup: hub_admin sets up with only a login", func(t *testing.T) {
+		e.setup()
+		h := e.app.Hub
+		if h.Facility() != fc.Facility || h.Catalog().Programs[fc.Program] == nil {
+			t.Fatalf("facility %q programs %v", h.Facility(), h.Catalog().ProgramIDs())
+		}
+		reg := e.central.DataStoreValue("facility-hub-registry", h.HubID())
+		if reg["facility"] != fc.Facility || reg["status"] != "active" {
+			t.Fatalf("registry entry: %v", reg)
+		}
+		if len(e.central.DataStoreKeys("facility-hub-status")) != 1 {
+			t.Fatal("no heartbeat")
+		}
+	})
+
+	a, b, clerk, outsider := e.web("nurse_a"), e.web("nurse_b"), e.web("clerk_c"), e.web("outsider_d")
+	tablet := e.android("nurse_b")
+	t.Run("staff log in once online", func(t *testing.T) {
+		for _, c := range []*client{a, b, clerk, outsider} {
+			c.login()
+		}
+		tablet.json("GET", "/api/me", nil, 200) // Android starts with /api/me and Basic auth
+		e.sync()
+	})
+
+	t.Run("no redirects for API paths (Android adopts redirect targets)", func(t *testing.T) {
+		for _, p := range []string{"/api/trackedEntityAttributes?paging=false", "/api/tracker", "/api/tracker/trackedEntities"} {
+			if st, _ := tablet.do("GET", p, nil); st >= 300 && st < 400 {
+				t.Fatalf("%s answered %d", p, st)
+			}
+		}
+	})
+
+	t.Run("online async write from the tablet is visible to others offline", func(t *testing.T) {
+		job := tablet.json("POST", "/api/tracker?atomicMode=OBJECT&importStrategy=CREATE_AND_UPDATE",
+			newPatient("AsyncTe0001", "AsyncEn0001", "Async", "NAT-5001", nil), 200)
+		id := job["response"].(map[string]any)["id"].(string)
+		tablet.json("GET", "/api/tracker/jobs/"+id+"/report", nil, 200)
+		e.offline()
+		a.json("GET", "/api/tracker/trackedEntities/AsyncTe0001?program="+fc.Program, nil, 200)
+		e.online()
+	})
+
+	t.Run("1 online pass-through attributed to nurse_a", func(t *testing.T) {
+		rep := a.json("POST", postSync, newPatient("OnlineTe001", "OnlineEn001", "Online", "NAT-1001",
+			map[string]string{"OnlineEv001": fc.Stage1}), 200)
+		if rep["status"] != "OK" {
+			t.Fatal(rep)
+		}
+		te := e.central.Object("OnlineTe001")
+		if te == nil || te["createdBy"].(map[string]any)["username"] != "nurse_a" {
+			t.Fatalf("central TE: %v", te)
+		}
+		if o := e.app.Hub.Index.Get("OnlineTe001"); o == nil || o.Origin != store.OriginCentral {
+			t.Fatal("online write not stored on hub")
+		}
+		// Other users see it offline before their own next pull.
+		e.offline()
+		b.json("GET", "/api/tracker/trackedEntities/OnlineTe001?program="+fc.Program, nil, 200)
+		e.online()
+	})
+
+	t.Run("2 offline sharing between nurse_a and nurse_b", func(t *testing.T) {
+		e.offline()
+		rep := a.json("POST", postSync, newPatient("OffTe000001", "OffEn000001", "Amina", "NAT-2001",
+			map[string]string{"OffEv000001": fc.Stage1}), 200)
+		if len(errorCodes(rep)) != 0 {
+			t.Fatal(rep)
+		}
+		found := b.json("GET", "/api/tracker/trackedEntities?orgUnits="+fc.Facility+"&orgUnitMode=SELECTED&program="+fc.Program+
+			"&filter="+fc.AttrFirstName+":like:amin&fields=*,enrollments[*]", nil, 200)
+		if got := uids(found["trackedEntities"], "trackedEntity"); len(got) != 1 || got[0] != "OffTe000001" {
+			t.Fatalf("nurse_b search: %v", got)
+		}
+		rep = b.json("POST", postSync, event("OffEv000002", "OffEn000001", fc.Stage2), 200)
+		if len(errorCodes(rep)) != 0 {
+			t.Fatal(rep)
+		}
+		evs := a.json("GET", "/api/tracker/events?orgUnit="+fc.Facility+"&program="+fc.Program+"&trackedEntity=OffTe000001", nil, 200)
+		if got := uids(evs["events"], "event"); len(got) != 2 {
+			t.Fatalf("nurse_a sees %v", got)
+		}
+	})
+
+	t.Run("2a mixed clients: Android tablet and web", func(t *testing.T) {
+		// Android: generated value from the hub's pool, async import, job report.
+		st, body := tablet.do("GET", "/api/trackedEntityAttributes/"+fc.AttrTBID+"/generateAndReserve?numberToReserve=2", nil)
+		var vals []map[string]any
+		if st != 200 || json.Unmarshal(body, &vals) != nil || len(vals) != 2 {
+			t.Fatalf("generateAndReserve offline: %d %s", st, body)
+		}
+		tbid := vals[0]["value"]
+		p := newPatient("TabletTe001", "TabletEn001", "Kwame", "NAT-2002", map[string]string{"TabletEv001": fc.Stage1})
+		te := p["trackedEntities"].([]any)[0].(map[string]any)
+		te["attributes"] = append(te["attributes"].([]any), map[string]any{"attribute": fc.AttrTBID, "value": tbid})
+		job := tablet.json("POST", "/api/tracker", p, 200) // async=true by default
+		id := job["response"].(map[string]any)["id"].(string)
+		rep := tablet.json("GET", "/api/tracker/jobs/"+id+"/report", nil, 200)
+		if rep["status"] != "OK" || len(errorCodes(rep)) != 0 {
+			t.Fatalf("job report: %v", rep)
+		}
+		// Web user continues on the Android-registered patient...
+		a.json("POST", postSync, event("WebEv000001", "TabletEn001", fc.Stage2), 200)
+		// ...and the tablet sees the web user's work.
+		evs := tablet.json("GET", "/api/tracker/trackedEntities/TabletTe001?program="+fc.Program+"&fields=*,enrollments[*,events[*]]", nil, 200)
+		enr := evs["enrollments"].([]any)[0].(map[string]any)
+		if got := uids(enr["events"], "event"); !contains(got, "WebEv000001") {
+			t.Fatalf("tablet sees %v", got)
+		}
+		// Android's offline download: includeDeleted, DESCENDANTS, an updatedAfter
+		// watermark from central's clock, and ACCESSIBLE on single-object fetches.
+		future := time.Now().Add(48 * time.Hour).UTC().Format("2006-01-02T15:04:05.000")
+		down := tablet.json("GET", "/api/tracker/trackedEntities?fields=*&includeDeleted=true&order=createdAt:desc&orgUnitMode=DESCENDANTS&orgUnits="+
+			fc.Facility+"&page=1&pageSize=50&paging=true&program="+fc.Program+"&updatedAfter="+future, nil, 200)
+		if got := uids(down["trackedEntities"], "trackedEntity"); !contains(got, "TabletTe001") || !contains(got, "OffTe000001") {
+			t.Fatalf("android download: %v", got)
+		}
+		evDown := tablet.json("GET", "/api/tracker/events?fields=*&includeDeleted=true&orgUnit="+fc.Facility+"&orgUnitMode=DESCENDANTS&page=1&pageSize=50&paging=true&program="+
+			fc.Program+"&updatedAfter="+future, nil, 200)
+		if got := uids(evDown["events"], "event"); !contains(got, "WebEv000001") {
+			t.Fatalf("android event download: %v", got)
+		}
+		tablet.json("GET", "/api/tracker/trackedEntities/TabletTe001?program="+fc.Program+"&includeDeleted=true&orgUnitMode=ACCESSIBLE", nil, 200)
+		// A pool value is never handed out twice.
+		_, body2 := a.do("GET", "/api/trackedEntityAttributes/"+fc.AttrTBID+"/generate", nil)
+		if bytes.Contains(body2, []byte(fmt.Sprint(tbid))) {
+			t.Fatal("pool value handed out twice")
+		}
+		// Android's cached /api/me works offline.
+		if st, _ := tablet.do("GET", "/api/me", nil); st != 200 {
+			t.Fatalf("/api/me offline: %d", st)
+		}
+	})
+
+	t.Run("3 stage access: nurse_b does not see stage 3", func(t *testing.T) {
+		a.json("POST", postSync, event("OffEv000003", "OffEn000001", fc.Stage3), 200)
+		path := "/api/tracker/trackedEntities/OffTe000001?program=" + fc.Program + "&fields=*,enrollments[*,events[*]]"
+		stages := func(c *client) []string {
+			te := c.json("GET", path, nil, 200)
+			return uids(te["enrollments"].([]any)[0].(map[string]any)["events"], "programStage")
+		}
+		if !contains(stages(a), fc.Stage3) {
+			t.Fatal("nurse_a should see stage 3")
+		}
+		if contains(stages(b), fc.Stage3) {
+			t.Fatal("nurse_b sees stage 3")
+		}
+		// Pulled central data: the seeded stage-3 event is hidden from nurse_b too.
+		te := b.json("GET", "/api/tracker/trackedEntities/SeedTe00001?fields=*,enrollments[*,events[*]]", nil, 200)
+		if got := uids(te["enrollments"].([]any)[0].(map[string]any)["events"], "event"); contains(got, "SeedEv00003") {
+			t.Fatal("nurse_b sees pulled stage 3 event")
+		}
+		b.json("GET", "/api/tracker/events?orgUnit="+fc.Facility+"&programStage="+fc.Stage3, nil, 403)
+	})
+
+	t.Run("4 program access: clerk_c cannot write events", func(t *testing.T) {
+		rep := clerk.json("POST", postSync, event("ClerkEv0001", "OffEn000001", fc.Stage1), 409)
+		if codes := errorCodes(rep); len(codes) != 1 || codes[0] != "E1095" {
+			t.Fatalf("codes %v", codes)
+		}
+	})
+
+	t.Run("5 facility scope: outsider_d is refused", func(t *testing.T) {
+		outsider.json("GET", "/api/tracker/trackedEntities?orgUnits="+fc.Facility+"&program="+fc.Program, nil, 403)
+		outsider.json("POST", postSync, event("OutEv000001", "OffEn000001", fc.Stage1), 403)
+	})
+
+	t.Run("offline refusals fail closed", func(t *testing.T) {
+		a.json("GET", "/api/tracker/trackedEntities?orgUnitMode=ALL&program="+fc.Program, nil, 503)
+		a.json("GET", "/api/tracker/trackedEntities?orgUnits="+fc.OtherFacility+"&program="+fc.Program, nil, 503)
+		a.json("GET", "/api/tracker/trackedEntities/NoSuchTe001", nil, 503)
+		a.json("POST", "/api/tracker?async=false&importStrategy=DELETE", map[string]any{}, 503)
+		a.json("GET", "/api/tracker/trackedEntities?orgUnits="+fc.Facility+"&program="+fc.Program+"&followUp=true", nil, 400)
+		a.json("POST", "/api/dataValueSets", map[string]any{}, 503)
+	})
+
+	t.Run("Capture web app shapes offline", func(t *testing.T) {
+		// Versioned paths go to the hub's tracker handler, not the GET cache.
+		found := a.json("GET", "/api/42/tracker/trackedEntities?orgUnitMode=ACCESSIBLE&program="+fc.Program+
+			"&filter="+fc.AttrFirstName+":like:amin&fields=:all,!relationships,programOwners[orgUnit,program]", nil, 200)
+		if got := uids(found["trackedEntities"], "trackedEntity"); len(got) != 1 || got[0] != "OffTe000001" {
+			t.Fatalf("ACCESSIBLE search offline: %v", got)
+		}
+		// Capture's registration payload has no enrollment UID; the hub assigns one.
+		p := newPatient("CapTe000001", "", "Capture", "NAT-4001", map[string]string{"": fc.Stage1})
+		rep := a.json("POST", "/api/42/tracker?async=false", p, 200)
+		if len(errorCodes(rep)) != 0 {
+			t.Fatalf("registration without enrollment UID: %v", rep)
+		}
+		te := a.json("GET", "/api/42/tracker/trackedEntities/CapTe000001?program="+fc.Program+"&fields=*,enrollments[*,events[*]]", nil, 200)
+		enr := te["enrollments"].([]any)[0].(map[string]any)
+		ev := enr["events"].([]any)[0].(map[string]any)
+		if _, ok := ev["dataValues"].([]any); !ok || ev["notes"] == nil || ev["attributeOptionCombo"] != fc.DefaultAOC ||
+			ev["occurredAt"] != "2026-10-07T00:00:00.000" {
+			t.Fatalf("event shape: %v", ev)
+		}
+		// atomicMode=ALL (the default) rejects the whole payload on any error.
+		bad := newPatient("CapTe000002", "CapEn000002", "Bad", "NAT-4002", map[string]string{"CapEv000002": fc.Stage1})
+		bad["trackedEntities"] = append(bad["trackedEntities"].([]any), map[string]any{"trackedEntity": "CapTe000003",
+			"trackedEntityType": fc.TET, "orgUnit": fc.OtherFacility})
+		rep = a.json("POST", "/api/tracker?async=false", bad, 409)
+		if rep["status"] != "ERROR" || e.app.Hub.Index.Get("CapTe000002") != nil {
+			t.Fatalf("ALL mode stored part of a failed payload: %v", rep)
+		}
+		// Generated values on the versioned path come from the pool, not the cache.
+		st1, g1 := a.do("GET", "/api/42/trackedEntityAttributes/"+fc.AttrTBID+"/generate?expiration=3", nil)
+		st2, g2 := a.do("GET", "/api/42/trackedEntityAttributes/"+fc.AttrTBID+"/generate?expiration=3", nil)
+		if st1 != 200 || st2 != 200 || bytes.Equal(g1, g2) {
+			t.Fatalf("versioned generate: %d %d same=%v", st1, st2, bytes.Equal(g1, g2))
+		}
+		if st, body := a.do("GET", "/api/ping", nil); st != 200 || string(body) != "pong" {
+			t.Fatalf("ping offline: %d %s", st, body)
+		}
+	})
+
+	t.Run("7 rejection: unique value conflict blocks dependents only", func(t *testing.T) {
+		// Central gets NAT-7777 while the hub is offline, so the hub cannot know.
+		e.central.Seed("CentralTe77", "CentralEn77", "Other", "NAT-7777", nil)
+		a.json("POST", postSync, newPatient("DupTe000001", "DupEn000001", "Dup", "NAT-7777",
+			map[string]string{"DupEv000001": fc.Stage1}), 200)
+		a.json("POST", postSync, event("DupEv000002", "DupEn000001", fc.Stage2), 200) // later entry, depends on the first
+		b.json("POST", postSync, newPatient("FineTe00001", "FineEn00001", "Fine", "NAT-7778", nil), 200)
+	})
+
+	t.Run("6 reconnect: pending data reaches central in order, by author", func(t *testing.T) {
+		e.online()
+		e.sync()
+		order := e.central.Order()
+		idx := func(uid string) int {
+			for i, u := range order {
+				if u == uid {
+					return i
+				}
+			}
+			t.Fatalf("%s not on central", uid)
+			return -1
+		}
+		if !(idx("OffTe000001") < idx("OffEn000001") && idx("OffEn000001") < idx("OffEv000001") && idx("OffEv000001") < idx("OffEv000002")) {
+			t.Fatalf("out of order: %v", order)
+		}
+		for uid, want := range map[string]string{"OffTe000001": "nurse_a", "OffEv000002": "nurse_b", "TabletTe001": "nurse_b",
+			"WebEv000001": "nurse_a", "OffEv000003": "nurse_a", "FineTe00001": "nurse_b"} {
+			o := e.central.Object(uid)
+			if o == nil || o["createdBy"].(map[string]any)["username"] != want {
+				t.Fatalf("%s createdBy: %v", uid, o)
+			}
+		}
+		if n := e.app.Hub.Store.CountOutbox(store.OutboxPending); n != 0 {
+			t.Fatalf("%d entries still pending", n)
+		}
+	})
+
+	t.Run("7 rejection: reported to central and hub UI", func(t *testing.T) {
+		for _, uid := range []string{"DupTe000001", "DupEn000001", "DupEv000001", "DupEv000002"} {
+			if e.central.Object(uid) != nil {
+				t.Fatalf("%s should be rejected", uid)
+			}
+			if o := e.app.Hub.Index.Get(uid); o == nil || o.SyncState != store.SyncRejected {
+				t.Fatalf("%s not marked rejected", uid)
+			}
+		}
+		issues, _ := e.app.Hub.Store.Issues(false, 100)
+		byUID := map[string]string{}
+		for _, is := range issues {
+			byUID[is.ObjectUID] = string(is.Error)
+		}
+		if !strings.Contains(byUID["DupTe000001"], "E1064") || !strings.Contains(byUID["DupEv000002"], "blocked by") {
+			t.Fatalf("issues: %v", byUID)
+		}
+		keys := e.central.DataStoreKeys("facility-hub-issues")
+		if len(keys) != len(issues) {
+			t.Fatalf("central issues %v vs hub %d", keys, len(issues))
+		}
+		for _, k := range keys {
+			if s, _ := json.Marshal(e.central.DataStoreValue("facility-hub-issues", k)); bytes.Contains(s, []byte("NAT-7777")) {
+				t.Fatalf("issue payload contains the attribute value: %s", s)
+			}
+			v := e.central.DataStoreValue("facility-hub-issues", k)
+			if s, _ := json.Marshal(v); bytes.Contains(s, []byte("Dup")) && !bytes.Contains(s, []byte("DupTe000001")) &&
+				!bytes.Contains(s, []byte("DupEn000001")) && !bytes.Contains(s, []byte("DupEv00000")) {
+				t.Fatalf("issue payload leaks values: %s", s)
+			}
+		}
+		admin := e.web("hub_admin")
+		admin.login()
+		st, page := admin.do("GET", "/hub/ui", nil)
+		if st != 200 || !bytes.Contains(page, []byte("DupTe000001")) || !bytes.Contains(page, []byte("E1064")) || bytes.Contains(page, []byte("NAT-7777")) {
+			t.Fatalf("admin page: %d", st)
+		}
+		if st, _ := a.do("GET", "/hub/ui", nil); st != 403 {
+			t.Fatalf("nurse_a on admin page: %d", st)
+		}
+	})
+
+	t.Run("401 on push flags the user", func(t *testing.T) {
+		e.offline()
+		a.json("POST", postSync, event("RevokedEv01", "OffEn000001", fc.Stage1), 200)
+		e.central.RevokeTokensOf("nurse_a")
+		e.online()
+		e.app.Worker.Cycle(context.Background())
+		u, _ := e.app.Hub.Store.UserByName("nurse_a")
+		if !u.NeedsLogin || e.app.Hub.Store.CountOutbox(store.OutboxPending) != 1 {
+			t.Fatalf("needsLogin=%v pending=%d", u.NeedsLogin, e.app.Hub.Store.CountOutbox(store.OutboxPending))
+		}
+		a.login() // online login creates a new PAT
+		e.sync()
+		if e.central.Object("RevokedEv01") == nil {
+			t.Fatal("entry not pushed after re-login")
+		}
+	})
+
+	t.Run("8 offline login after reboot", func(t *testing.T) {
+		e.stop()
+		e.central.SetDown(true)
+		e.start()
+		e.offline()
+		h := e.app.Hub
+		if h.Store.Unlocked() || h.Index.Len() != 0 {
+			t.Fatal("store readable before login")
+		}
+		stranger := e.web("someone_new")
+		st, body := stranger.do("POST", "/api/auth/login", map[string]string{"username": "someone_new", "password": "x"})
+		if st != 401 || !strings.Contains(string(body), "first login must be online") {
+			t.Fatalf("unknown user: %d %s", st, body)
+		}
+		wrong := e.web("nurse_b")
+		if st, _ := wrong.do("POST", "/api/auth/login", map[string]string{"username": "nurse_b", "password": "wrong"}); st != 401 {
+			t.Fatalf("wrong password: %d", st)
+		}
+		b = e.web("nurse_b")
+		b.login()
+		if !h.Store.Unlocked() {
+			t.Fatal("not unlocked")
+		}
+		b.json("GET", "/api/tracker/trackedEntities/OffTe000001?program="+fc.Program, nil, 200)
+		// Android Basic auth works offline for a known user, too.
+		e.android("nurse_a").json("GET", "/api/tracker/trackedEntities/OffTe000001", nil, 200)
+	})
+
+	t.Run("9 encryption: no patient values in the database file", func(t *testing.T) {
+		e.stop()
+		for _, f := range []string{"hub.db", "hub.db-wal", "requests.log"} {
+			data, err := os.ReadFile(filepath.Join(e.dir, f))
+			if err != nil {
+				continue
+			}
+			for _, needle := range []string{"Amina", "amin", "Kwame", "Seeded", "NAT-2001", "NAT-0001", fc.Password, "d2p_"} {
+				if bytes.Contains(data, []byte(needle)) {
+					t.Fatalf("%q found in plain text in %s", needle, f)
+				}
+			}
+		}
+	})
+}
+
+func TestResetHub(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.offline()
+	a.json("POST", postSync, newPatient("ResetTe0001", "ResetEn0001", "Reset", "NAT-3001", nil), 200)
+	e.online()
+	oldID := e.app.Hub.HubID()
+	admin := e.web("hub_admin")
+	admin.login()
+	resp, err := admin.http.PostForm(e.srv.URL+"/hub/ui/reset", url.Values{"confirm": {"RESET"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if e.central.Object("ResetTe0001") == nil {
+		t.Fatal("outbox not pushed before reset")
+	}
+	if e.app.Hub.Mode() != "setup" || e.app.Hub.HubID() == oldID || e.app.Hub.Index.Len() != 0 {
+		t.Fatalf("mode %s id %s", e.app.Hub.Mode(), e.app.Hub.HubID())
+	}
+	if reg := e.central.DataStoreValue("facility-hub-registry", oldID); reg["status"] != "retired" {
+		t.Fatalf("old registry entry: %v", reg)
+	}
+}
+
+func TestOfflineStaticCache(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.web("nurse_b").login() // nurse_b's first login is online
+	if st, _ := a.do("GET", "/dhis-web-capture/index.html", nil); st != 200 {
+		t.Fatal(st)
+	}
+	a.do("GET", "/api/programs/"+fc.Program+"?fields=id", nil) // metadata, cached under nurse_a
+	a.do("GET", "/api/me?fields=id", nil)                      // user-specific, never shared
+	e.offline()
+	b := e.web("nurse_b")
+	b.login() // offline login; nurse_b never loaded the app through the hub
+	st, body := b.do("GET", "/dhis-web-capture/index.html", nil)
+	if st != 200 || !strings.Contains(string(body), "capture app") {
+		t.Fatalf("static file offline: %d %s", st, body)
+	}
+	if st, _ := b.do("GET", "/api/programs/"+fc.Program+"?fields=id", nil); st != 200 {
+		t.Fatalf("shared metadata offline for nurse_b: %d", st)
+	}
+	if st, _ := b.do("GET", "/api/apps?fields=id", nil); st != 503 {
+		t.Fatalf("uncached API offline should need connection, got %d", st)
+	}
+	// /api/me variants come from nurse_b's own /api/me stored at login, never nurse_a's.
+	st, body = b.do("GET", "/api/42/me.json?fields=id,username", nil)
+	if st != 200 || !strings.Contains(string(body), "nurse_b") || strings.Contains(string(body), "nurse_a") {
+		t.Fatalf("me offline: %d %s", st, body)
+	}
+}

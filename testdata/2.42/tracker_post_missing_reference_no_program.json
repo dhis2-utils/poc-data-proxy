@@ -1,0 +1,73 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/tracker",
+    "query": {
+      "async": "false",
+      "importStrategy": "CREATE_AND_UPDATE"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "events": [
+        {
+          "event": "HubFxEv0009",
+          "enrollment": "HubNoSuchEn",
+          "programStage": "EPEcjy3FWmI",
+          "orgUnit": "DiszpKrYNg8",
+          "status": "ACTIVE",
+          "occurredAt": "2026-10-05"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 409,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "status": "ERROR",
+      "validationReport": {
+        "errorReports": [
+          {
+            "message": "Event: `HubFxEv0009`, program: `ur1Edk5Oe2n` is different from program defined in enrollment `HubNoSuchEn`.",
+            "errorCode": "E1079",
+            "trackerType": "EVENT",
+            "uid": "HubFxEv0009",
+            "args": [
+              "Event(event=HubFxEv0009, status=ACTIVE, program=MetadataIdentifier(idScheme=UID, identifier=ur1Edk5Oe2n, attributeValue=null), programStage=MetadataIdentifier(idScheme=UID, identifier=EPEcjy3FWmI, attributeValue=null), enrollment=HubNoSuchEn, orgUnit=MetadataIdentifier(idScheme=UID, identifier=DiszpKrYNg8, attributeValue=null), occurredAt=2026-10-05T00:00:00Z, scheduledAt=null, createdAtClient=null, updatedAtClient=null, attributeOptionCombo=MetadataIdentifier(idScheme=UID, identifier=null, attributeValue=null), attributeCategoryOptions=[], completedAt=null, geometry=null, assignedUser=null, dataValues=[], notes=[])",
+              "{\"class\":\"class org.hisp.dhis.program.Program\", \"hashCode\":\"-677974879\", \"id\":\"1150449\", \"uid\":\"ur1Edk5Oe2n\", \"code\":\"null\", \"name\":\"TB program\", \"shortName\":\"null\", \"description\":\"null\", \"created\":\"null\", \"lastUpdated\":\"null\" }",
+              "HubNoSuchEn"
+            ]
+          },
+          {
+            "message": "Event `HubFxEv0009` of an Enrollment does not reference a TrackedEntity.",
+            "errorCode": "E1313",
+            "trackerType": "EVENT",
+            "uid": "HubFxEv0009",
+            "args": [
+              "HubFxEv0009"
+            ]
+          }
+        ],
+        "warningReports": []
+      },
+      "stats": {
+        "created": 0,
+        "updated": 0,
+        "deleted": 0,
+        "ignored": 1,
+        "total": 1
+      }
+    }
+  },
+  "notes": [
+    "Event with non-existent enrollment and no program field."
+  ]
+}

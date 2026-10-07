@@ -1,0 +1,28 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/auth/login",
+    "query": {},
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "username": "hub_tmp2fa",
+      "password": "<redacted>"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8"
+    },
+    "body": {
+      "loginStatus": "INCORRECT_TWO_FACTOR_CODE_TOTP"
+    }
+  },
+  "notes": [
+    "Tested live with a temporary user (TOTP enrolled via POST /api/2fa/enrollTOTP2FA, GET /api/2fa/qrCodeJson {base32Secret,base64QRImage}, POST /api/2fa/enabled {code}). User deleted afterwards.",
+    "Missing twoFactorCode: HTTP 200 (not 401!) with {loginStatus:'INCORRECT_TWO_FACTOR_CODE_TOTP'} and no redirectUrl/cookie. Wrong code: same body. Correct code: SUCCESS + cookie.",
+    "Basic auth for a 2FA user returns 401 'Unauthorized' (me_basic_auth_2fa_user.json)."
+  ]
+}

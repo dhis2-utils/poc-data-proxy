@@ -1,0 +1,44 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/trackedEntityAttributes/xs8A6tQJY0s/generateAndReserve",
+    "query": {
+      "numberToReserve": "2",
+      "expiration": "30"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": [
+      {
+        "ownerObject": "TRACKEDENTITYATTRIBUTE",
+        "ownerUid": "xs8A6tQJY0s",
+        "key": "RANDOM(##########)",
+        "value": "8119503713",
+        "created": "2026-10-07T16:24:13.702",
+        "expiryDate": "2026-11-06T16:24:13.702"
+      },
+      {
+        "ownerObject": "TRACKEDENTITYATTRIBUTE",
+        "ownerUid": "xs8A6tQJY0s",
+        "key": "RANDOM(##########)",
+        "value": "0119503713",
+        "created": "2026-10-07T16:24:13.702",
+        "expiryDate": "2026-11-06T16:24:13.702"
+      }
+    ]
+  },
+  "notes": [
+    "expiration = days."
+  ]
+}

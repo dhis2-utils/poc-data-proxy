@@ -1,0 +1,45 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/api/me",
+    "query": {
+      "fields": "id,username,organisationUnits[id],teiSearchOrganisationUnits[id],authorities"
+    },
+    "headers": {
+      "Authorization": "Basic nurse_a"
+    },
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Set-Cookie": [
+        "JSESSIONID_agent-facility-hub=<redacted>; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    "body": {
+      "id": "HubUsrNursA",
+      "username": "nurse_a",
+      "teiSearchOrganisationUnits": [
+        {
+          "id": "O6uvpzGd5pu"
+        }
+      ],
+      "organisationUnits": [
+        {
+          "id": "DiszpKrYNg8"
+        }
+      ],
+      "authorities": [
+        "M_dhis-web-messaging",
+        "M_dhis-web-dashboard",
+        "M_dhis-web-capture",
+        "F_UNCOMPLETE_EVENT"
+      ]
+    }
+  },
+  "notes": [
+    "Spec 8.1 access-list call."
+  ]
+}
