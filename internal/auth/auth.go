@@ -10,7 +10,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/central"
@@ -20,7 +22,10 @@ import (
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
-type Auth struct{ H *core.Hub }
+type Auth struct {
+	H   *core.Hub
+	thr throttle
+}
 
 // Failure is a login answer to send back verbatim.
 type Failure struct {
@@ -37,10 +42,7 @@ func (a *Auth) api() compat.API {
 	return compat.For("2.42")
 }
 
-const (
-	needsOnlineFirst = "needs connection: first login must be online"
-	needsOnlineAgain = "needs connection: central refused this account; log in again online"
-)
+const needsOnlineAgain = "needs connection: central refused this account; log in again online"
 
 // LoginRequest is the body of POST /api/auth/login.
 type LoginRequest struct {
@@ -49,9 +51,49 @@ type LoginRequest struct {
 	TwoFactor string `json:"twoFactorCode,omitempty"`
 }
 
-// LoginWeb handles the login app's JSON login. It returns the session and central's
-// (or the hub's) answer body for the client.
-func (a *Auth) LoginWeb(ctx context.Context, req LoginRequest, rawBody []byte) (*core.Session, any, *Failure) {
+// LoginWeb handles the login app's JSON login from src (the client address). It
+// returns the session and central's (or the hub's) answer body for the client.
+func (a *Auth) LoginWeb(ctx context.Context, src string, req LoginRequest, rawBody []byte) (*core.Session, any, *Failure) {
+	if f := a.throttled(src, req.Username); f != nil {
+		return nil, nil, f
+	}
+	sess, body, f := a.loginWeb(ctx, req, rawBody)
+	a.count(src, req.Username, f)
+	return sess, body, f
+}
+
+// throttled refuses a login attempt while src is locked out for user.
+func (a *Auth) throttled(src, user string) *Failure {
+	d := a.thr.wait(src, user)
+	if d <= 0 {
+		return nil
+	}
+	return &Failure{Status: http.StatusTooManyRequests, Header: http.Header{"Retry-After": {strconv.Itoa(int(d.Seconds()) + 1)}},
+		Body: a.api().WebMessage(http.StatusTooManyRequests, "too many failed logins; try again later", "")}
+}
+
+// Throttled and Count apply the login throttle to logins the hub checks elsewhere
+// (the setup page).
+func (a *Auth) Throttled(src, user string) *Failure { return a.throttled(src, user) }
+
+func (a *Auth) Count(src, user string, failed bool) {
+	if failed {
+		a.thr.fail(src, user)
+	} else {
+		a.thr.ok(src, user)
+	}
+}
+
+func (a *Auth) count(src, user string, f *Failure) {
+	switch {
+	case f == nil:
+		a.thr.ok(src, user)
+	case f.Status == http.StatusUnauthorized:
+		a.thr.fail(src, user)
+	}
+}
+
+func (a *Auth) loginWeb(ctx context.Context, req LoginRequest, rawBody []byte) (*core.Session, any, *Failure) {
 	if a.H.Online() {
 		resp, err := a.H.Central.Do(ctx, "POST", "/api/auth/login", rawBody, central.Auth{}, http.Header{"Content-Type": {"application/json"}})
 		if err == nil {
@@ -80,9 +122,20 @@ func (a *Auth) LoginWeb(ctx context.Context, req LoginRequest, rawBody []byte) (
 	return sess, a.api().LoginSuccess("/"), nil
 }
 
-// LoginBasic handles HTTP Basic auth (Android and API clients). It runs the online or
-// offline login the first time a credential is seen (spec 7.1).
-func (a *Auth) LoginBasic(ctx context.Context, username, password string) (*core.Session, *Failure) {
+// LoginBasic handles HTTP Basic auth (Android and API clients) from src. It runs the
+// online or offline login the first time a credential is seen (spec 7.1).
+func (a *Auth) LoginBasic(ctx context.Context, src, username, password string) (*core.Session, *Failure) {
+	if cached, _ := a.H.Sessions.Basic(username, password); cached == nil {
+		if f := a.throttled(src, username); f != nil {
+			return nil, f
+		}
+	}
+	sess, f := a.loginBasic(ctx, username, password)
+	a.count(src, username, f)
+	return sess, f
+}
+
+func (a *Auth) loginBasic(ctx context.Context, username, password string) (*core.Session, *Failure) {
 	cached, fresh := a.H.Sessions.Basic(username, password)
 	if cached != nil && (fresh || !a.H.Online()) {
 		return cached, nil
@@ -238,7 +291,11 @@ func (a *Auth) loginOffline(username, password string) (*core.Session, *Failure)
 	h := a.H
 	u, err := h.Store.UserByName(username)
 	if err != nil || u == nil {
-		return nil, &Failure{Status: 401, Body: a.api().WebMessage(401, needsOnlineFirst, "")}
+		// The same answer, after the same work, as a wrong password: offline the hub
+		// must not tell which usernames it knows (review M3).
+		hubcrypto.VerifyPassword(dummyHash(), password)
+		st, body := a.api().LoginFailure()
+		return nil, &Failure{Status: st, Body: body}
 	}
 	if !hubcrypto.VerifyPassword(u.PwHash, password) {
 		st, body := a.api().LoginFailure()
@@ -299,10 +356,10 @@ func (a *Auth) Identify(r *http.Request) (*core.Session, *Failure) {
 	if user, pw, ok := r.BasicAuth(); ok {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
 		defer cancel()
-		s, f := a.LoginBasic(ctx, user, pw)
+		s, f := a.LoginBasic(ctx, Source(r), user, pw)
 		if s != nil && a.mustLogInAgain(s) {
 			// Online, a fresh Basic login may clear the flag; offline it refuses.
-			s, f = a.LoginBasic(ctx, user, pw)
+			s, f = a.LoginBasic(ctx, Source(r), user, pw)
 			if s != nil && a.mustLogInAgain(s) {
 				return nil, &Failure{Status: 401, Body: a.api().WebMessage(401, needsOnlineAgain, "")}
 			}
@@ -358,7 +415,7 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		a.H.WebError(w, 400, "Invalid login request", "")
 		return
 	}
-	sess, body, f := a.LoginWeb(r.Context(), req, raw)
+	sess, body, f := a.LoginWeb(r.Context(), Source(r), req, raw)
 	if f != nil {
 		WriteFailure(w, f)
 		return
@@ -381,4 +438,18 @@ func (a *Auth) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	core.ClearSessionCookie(w, a.H.Cfg.TLS)
 	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+var dummy struct {
+	once sync.Once
+	hash string
+}
+
+// dummyHash is a password hash no password matches, for unknown usernames.
+func dummyHash() string {
+	dummy.once.Do(func() {
+		b, _ := hubcrypto.RandomBytes(32)
+		dummy.hash, _ = hubcrypto.HashPassword(string(b))
+	})
+	return dummy.hash
 }

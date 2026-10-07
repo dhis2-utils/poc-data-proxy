@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/auth"
 	"github.com/dhis2/facility-hub/internal/central"
 	"github.com/dhis2/facility-hub/internal/compat"
 	"github.com/dhis2/facility-hub/internal/core"
@@ -91,7 +92,13 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch r.FormValue("step") {
 	case "login":
-		p, err = u.setupLogin(ctx, r.FormValue("central_url"), r.FormValue("username"), r.FormValue("password"))
+		src, user := auth.Source(r), r.FormValue("username")
+		if f := u.Auth.Throttled(src, user); f != nil {
+			err = errors.New("too many failed logins; try again later")
+			break
+		}
+		p, err = u.setupLogin(ctx, r.FormValue("central_url"), user, r.FormValue("password"))
+		u.Auth.Count(src, user, err != nil)
 	case "facility":
 		if p = u.setup.get(r.FormValue("nonce")); p == nil {
 			err = errors.New("setup session expired, start again")
@@ -304,7 +311,7 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (*core.Session,
 	h.Store.SetMeta(core.MetaMode, core.ModeActive)
 	slog.Info("hub set up", "facility", p.Facility.ID, "programs", len(cat.Programs), "by", p.Username)
 
-	sess, f := u.Auth.LoginBasic(ctx, p.Username, p.Password)
+	sess, f := u.Auth.LoginBasic(ctx, "setup", p.Username, p.Password)
 	if f != nil {
 		return nil, fmt.Errorf("registering setup user: HTTP %d", f.Status)
 	}

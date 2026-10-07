@@ -570,14 +570,13 @@ func TestAcceptance(t *testing.T) {
 		if h.Store.Unlocked() || h.Index.Len() != 0 {
 			t.Fatal("store readable before login")
 		}
+		// Unknown user and wrong password get the same answer offline (review M3).
 		stranger := e.web("someone_new")
 		st, body := stranger.do("POST", "/api/auth/login", map[string]string{"username": "someone_new", "password": "x"})
-		if st != 401 || !strings.Contains(string(body), "first login must be online") {
-			t.Fatalf("unknown user: %d %s", st, body)
-		}
 		wrong := e.web("nurse_b")
-		if st, _ := wrong.do("POST", "/api/auth/login", map[string]string{"username": "nurse_b", "password": "wrong"}); st != 401 {
-			t.Fatalf("wrong password: %d", st)
+		st2, body2 := wrong.do("POST", "/api/auth/login", map[string]string{"username": "nurse_b", "password": "wrong"})
+		if st != 401 || st2 != 401 || !bytes.Equal(body, body2) {
+			t.Fatalf("unknown user %d %s vs wrong password %d %s", st, body, st2, body2)
 		}
 		b = e.web("nurse_b")
 		b.login()

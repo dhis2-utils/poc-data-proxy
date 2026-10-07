@@ -136,3 +136,25 @@ func TestDisabledUserLosesAccess(t *testing.T) {
 	e.offline()
 	tablet.json("GET", search, nil, 200)
 }
+
+// M3: repeated failed logins lock out that user from that address, for the web login
+// and Basic auth alike; other users are unaffected.
+func TestLoginThrottle(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.web("nurse_a").login()
+	e.web("nurse_b").login()
+	e.offline()
+	for i := 0; i < 5; i++ {
+		if st, _ := e.web("nurse_b").do("POST", "/api/auth/login", map[string]string{"username": "nurse_b", "password": "guess"}); st != 401 {
+			t.Fatalf("attempt %d: %d", i, st)
+		}
+	}
+	if st, _ := e.web("nurse_b").do("POST", "/api/auth/login", map[string]string{"username": "nurse_b", "password": fc.Password}); st != 429 {
+		t.Fatalf("locked-out web login: got %d, want 429", st)
+	}
+	if st, _ := e.android("nurse_b").do("GET", "/api/me", nil); st != 429 {
+		t.Fatalf("locked-out Basic login: got %d, want 429", st)
+	}
+	e.web("nurse_a").login()
+}

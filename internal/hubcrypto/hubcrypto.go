@@ -28,6 +28,16 @@ var (
 
 var ErrDecrypt = errors.New("decryption failed")
 
+// argonSlots bounds concurrent Argon2id derivations, so a burst of logins (or of
+// guesses) costs at most this many times ArgonMemory of RAM.
+var argonSlots = make(chan struct{}, 2)
+
+func idKey(password, salt []byte, t, m uint32, p uint8, n uint32) []byte {
+	argonSlots <- struct{}{}
+	defer func() { <-argonSlots }()
+	return argon2.IDKey(password, salt, t, m, p, n)
+}
+
 // Key is a 256-bit AES key.
 type Key []byte
 
@@ -82,7 +92,7 @@ func newGCM(k Key) (cipher.AEAD, error) {
 
 // DeriveKEK derives a key-encryption key from a password and per-user salt.
 func DeriveKEK(password string, salt []byte) Key {
-	return argon2.IDKey([]byte(password), salt, ArgonTime, ArgonMemory, ArgonThreads, KeySize)
+	return idKey([]byte(password), salt, ArgonTime, ArgonMemory, ArgonThreads, KeySize)
 }
 
 // WrapDK wraps the data key for one user's key slot.
@@ -101,7 +111,7 @@ func HashPassword(password string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	h := argon2.IDKey([]byte(password), salt, ArgonTime, ArgonMemory, ArgonThreads, 32)
+	h := idKey([]byte(password), salt, ArgonTime, ArgonMemory, ArgonThreads, 32)
 	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s", ArgonMemory, ArgonTime, ArgonThreads,
 		b64(salt), b64(h)), nil
 }
@@ -122,7 +132,7 @@ func VerifyPassword(encoded, password string) bool {
 	if err1 != nil || err2 != nil {
 		return false
 	}
-	got := argon2.IDKey([]byte(password), salt, t, m, p, uint32(len(want)))
+	got := idKey([]byte(password), salt, t, m, p, uint32(len(want)))
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
 

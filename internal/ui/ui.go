@@ -144,7 +144,7 @@ func (u *UI) handleLogin(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	req := auth.LoginRequest{Username: r.FormValue("username"), Password: r.FormValue("password")}
 	raw, _ := json.Marshal(req)
-	sess, _, f := u.Auth.LoginWeb(r.Context(), req, raw)
+	sess, _, f := u.Auth.LoginWeb(r.Context(), auth.Source(r), req, raw)
 	if f != nil {
 		w.WriteHeader(f.Status)
 		u.render(w, "login", map[string]any{"Error": "Login failed (HTTP " + fmt.Sprint(f.Status) + ")"})
