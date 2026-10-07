@@ -150,13 +150,14 @@ func (u *UI) handleLogin(w http.ResponseWriter, r *http.Request) {
 		u.render(w, "login", map[string]any{"Error": "Login failed (HTTP " + fmt.Sprint(f.Status) + ")"})
 		return
 	}
-	core.SetSessionCookie(w, sess, u.H.Cfg.TLS)
+	core.SetSessionCookie(w, sess, u.H.Cfg.TLS, u.H.Sessions.Max)
 	http.Redirect(w, r, "/hub/ui", http.StatusFound)
 }
 
 func (u *UI) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if s := u.H.Sessions.FromCookie(r); s != nil {
 		u.H.Sessions.Delete(s.Token)
+		u.H.Sessions.DropBasic(s.Username)
 	}
 	core.ClearSessionCookie(w, u.H.Cfg.TLS)
 	http.Redirect(w, r, "/hub/login", http.StatusFound)

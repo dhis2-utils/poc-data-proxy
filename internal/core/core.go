@@ -146,6 +146,7 @@ func New(cfg config.Config, version string, st *store.Store) *Hub {
 	h := &Hub{Cfg: cfg, Version: version, Store: st, Index: tracker.NewIndex(), Monitor: mon,
 		Sessions: NewSessions(), ReqLog: NewRequestLog(), Started: time.Now(), access: map[int64]*access.List{},
 		SyncNow: make(chan struct{}, 1)}
+	h.Sessions.Idle, h.Sessions.Max = cfg.SessionIdle, cfg.SessionMax
 	base := st.Meta(MetaCentralURL)
 	if base == "" {
 		base = cfg.CentralURL

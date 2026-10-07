@@ -33,6 +33,9 @@ type Config struct {
 	// (comma separated), e.g. a DNS name on the facility router. "*" accepts any Host;
 	// for development only.
 	HubHosts []string
+	// SessionIdle and SessionMax end hub sessions after inactivity and after login.
+	SessionIdle time.Duration
+	SessionMax  time.Duration
 }
 
 func Default() Config {
@@ -47,6 +50,8 @@ func Default() Config {
 		ReservedPoolSize:      150,
 		FullPullInterval:      24 * time.Hour,
 		OfflineSearchFacility: true,
+		SessionIdle:           time.Hour,
+		SessionMax:            12 * time.Hour,
 	}
 }
 
@@ -111,6 +116,10 @@ func (c *Config) set(k, v string) error {
 		c.TLS, err = strconv.ParseBool(v)
 	case "offline_search_facility":
 		c.OfflineSearchFacility, err = strconv.ParseBool(v)
+	case "session_idle":
+		c.SessionIdle, err = time.ParseDuration(v)
+	case "session_max":
+		c.SessionMax, err = time.ParseDuration(v)
 	case "hub_hosts":
 		c.HubHosts = nil
 		for _, x := range strings.Split(v, ",") {

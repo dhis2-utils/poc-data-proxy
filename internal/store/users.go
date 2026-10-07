@@ -89,8 +89,10 @@ ON CONFLICT(username) DO UPDATE SET user_uid=excluded.user_uid, pw_hash=excluded
 	return id, err
 }
 
+// TouchLogin records a login. It leaves needs_login alone: only an online login, which
+// central accepted, clears it.
 func (s *Store) TouchLogin(id int64) error {
-	_, err := s.DB.Exec(`UPDATE users SET last_login_at=?, needs_login=0 WHERE id=?`, Now(), id)
+	_, err := s.DB.Exec(`UPDATE users SET last_login_at=? WHERE id=?`, Now(), id)
 	return err
 }
 

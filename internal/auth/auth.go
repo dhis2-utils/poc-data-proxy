@@ -37,7 +37,10 @@ func (a *Auth) api() compat.API {
 	return compat.For("2.42")
 }
 
-const needsOnlineFirst = "needs connection: first login must be online"
+const (
+	needsOnlineFirst = "needs connection: first login must be online"
+	needsOnlineAgain = "needs connection: central refused this account; log in again online"
+)
 
 // LoginRequest is the body of POST /api/auth/login.
 type LoginRequest struct {
@@ -80,8 +83,9 @@ func (a *Auth) LoginWeb(ctx context.Context, req LoginRequest, rawBody []byte) (
 // LoginBasic handles HTTP Basic auth (Android and API clients). It runs the online or
 // offline login the first time a credential is seen (spec 7.1).
 func (a *Auth) LoginBasic(ctx context.Context, username, password string) (*core.Session, *Failure) {
-	if s := a.H.Sessions.Basic(username, password); s != nil {
-		return s, nil
+	cached, fresh := a.H.Sessions.Basic(username, password)
+	if cached != nil && (fresh || !a.H.Online()) {
+		return cached, nil
 	}
 	if a.H.Online() {
 		auth := central.Auth{Username: username, Password: password}
@@ -90,7 +94,20 @@ func (a *Auth) LoginBasic(ctx context.Context, username, password string) (*core
 			b, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			if resp.StatusCode != http.StatusOK {
+				if resp.StatusCode == http.StatusUnauthorized {
+					// Disabled account or changed password: end the user's hub
+					// sessions, and keep them from logging in offline until an
+					// online login succeeds again.
+					a.H.Sessions.DropUser(username)
+					if u, _ := a.H.Store.UserByName(username); u != nil {
+						a.H.Store.SetNeedsLogin(u.ID, true)
+					}
+				}
 				return nil, &Failure{Status: resp.StatusCode, Raw: b, Header: http.Header{"Content-Type": resp.Header["Content-Type"]}}
+			}
+			if cached != nil {
+				a.H.Sessions.Verified(cached)
+				return cached, nil
 			}
 			sess := a.registerOnline(ctx, username, password, auth)
 			a.H.Sessions.SetBasic(username, password, sess)
@@ -98,6 +115,9 @@ func (a *Auth) LoginBasic(ctx context.Context, username, password string) (*core
 		}
 		if !central.IsNetwork(err) {
 			return nil, &Failure{Status: 502, Body: a.api().WebMessage(502, err.Error(), "")}
+		}
+		if cached != nil {
+			return cached, nil // central went away mid-check; the credential was good
 		}
 	}
 	sess, f := a.loginOffline(username, password)
@@ -125,9 +145,10 @@ func (a *Auth) registerOnline(ctx context.Context, username, password string, wi
 	if _, err := h.RefreshServerVersion(ctx, with); err != nil {
 		slog.Warn("login: system info", "err", err)
 	}
-	if err := h.EnsurePAT(ctx, u, with, password); err != nil {
+	if err := h.EnsurePAT(ctx, u, with, password); err != nil { // replaces a refused PAT (needs_login)
 		slog.Warn("login: PAT", "user", username, "err", err)
 	}
+	h.Store.SetNeedsLogin(userID, false) // central just accepted the password
 	if err := h.RefreshAccess(ctx, userID); err != nil {
 		slog.Warn("login: access refresh", "user", username, "err", err)
 	}
@@ -223,6 +244,11 @@ func (a *Auth) loginOffline(username, password string) (*core.Session, *Failure)
 		st, body := a.api().LoginFailure()
 		return nil, &Failure{Status: st, Body: body}
 	}
+	if u.NeedsLogin {
+		// Central refused this user's token or password since the last online login
+		// (spec 8.3 cannot see revoked access offline; this it can see).
+		return nil, &Failure{Status: 401, Body: a.api().WebMessage(401, needsOnlineAgain, "")}
+	}
 	if !h.Store.Unlocked() {
 		dk, err := hubcrypto.UnwrapDK(u.WrappedDK, password, u.KEKSalt)
 		if err != nil {
@@ -265,14 +291,40 @@ func (a *Auth) relative(u string) string {
 // that fails login yields a Failure to send back.
 func (a *Auth) Identify(r *http.Request) (*core.Session, *Failure) {
 	if s := a.H.Sessions.FromCookie(r); s != nil {
-		return s, nil
+		if !a.mustLogInAgain(s) {
+			return s, nil
+		}
+		return nil, &Failure{Status: 401, Body: a.api().WebMessage(401, needsOnlineAgain, "")}
 	}
 	if user, pw, ok := r.BasicAuth(); ok {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
 		defer cancel()
-		return a.LoginBasic(ctx, user, pw)
+		s, f := a.LoginBasic(ctx, user, pw)
+		if s != nil && a.mustLogInAgain(s) {
+			// Online, a fresh Basic login may clear the flag; offline it refuses.
+			s, f = a.LoginBasic(ctx, user, pw)
+			if s != nil && a.mustLogInAgain(s) {
+				return nil, &Failure{Status: 401, Body: a.api().WebMessage(401, needsOnlineAgain, "")}
+			}
+		}
+		return s, f
 	}
 	return nil, nil
+}
+
+// mustLogInAgain ends a session whose user central has refused since it began (a
+// push or access refresh got 401). Without this a disabled user kept reading and
+// writing through the hub until it restarted (review M4).
+func (a *Auth) mustLogInAgain(s *core.Session) bool {
+	if s.UserID == 0 {
+		return false
+	}
+	u, err := a.H.Store.UserByID(s.UserID)
+	if err != nil || u == nil || !u.NeedsLogin {
+		return false
+	}
+	a.H.Sessions.DropUser(s.Username)
+	return true
 }
 
 // WriteFailure sends a login failure.
@@ -311,7 +363,7 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		WriteFailure(w, f)
 		return
 	}
-	core.SetSessionCookie(w, sess, a.H.Cfg.TLS)
+	core.SetSessionCookie(w, sess, a.H.Cfg.TLS, a.H.Sessions.Max)
 	core.WriteJSON(w, 200, body)
 }
 
@@ -319,6 +371,7 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 func (a *Auth) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	if s := a.H.Sessions.FromCookie(r); s != nil {
 		a.H.Sessions.Delete(s.Token)
+		a.H.Sessions.DropBasic(s.Username)
 		if s.Upstream.Cookie != "" && a.H.Online() {
 			// End the central session the login created too.
 			if resp, err := a.H.Central.Do(r.Context(), "GET", "/dhis-web-commons-security/logout.action", nil, s.Upstream, nil); err == nil {

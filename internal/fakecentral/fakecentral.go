@@ -51,6 +51,7 @@ type User struct {
 	ProgramWrite  bool
 	StageRead     map[string]bool
 	StageWrite    map[string]bool
+	Disabled      bool
 }
 
 type Central struct {
@@ -181,6 +182,21 @@ func webMessage(w http.ResponseWriter, status int, msg, code string) {
 }
 
 func (c *Central) user(r *http.Request) *User {
+	u := c.credentialUser(r)
+	if u != nil && u.Disabled {
+		return nil
+	}
+	return u
+}
+
+// SetDisabled disables or re-enables an account: every credential of it is refused.
+func (c *Central) SetDisabled(username string, disabled bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Users[username].Disabled = disabled
+}
+
+func (c *Central) credentialUser(r *http.Request) *User {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	h := r.Header.Get("Authorization")
@@ -333,7 +349,7 @@ func (c *Central) login(w http.ResponseWriter, r *http.Request) {
 	c.mu.Lock()
 	u := c.Users[req.Username]
 	c.mu.Unlock()
-	if u == nil || req.Password != Password {
+	if u == nil || u.Disabled || req.Password != Password {
 		webMessage(w, 401, "Bad credentials", "")
 		return
 	}

@@ -134,7 +134,7 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 		u.setup.mu.Lock()
 		u.setup.pending = nil
 		u.setup.mu.Unlock()
-		core.SetSessionCookie(w, sess, h.Cfg.TLS)
+		core.SetSessionCookie(w, sess, h.Cfg.TLS, h.Sessions.Max)
 		u.render(w, "setup_done", map[string]any{"Facility": p.Facility, "HubID": h.HubID()})
 	}
 }

@@ -85,3 +85,54 @@ func TestHostHeader(t *testing.T) {
 		t.Fatalf("offline, cached page carries another client's Host: %d %s", st, body)
 	}
 }
+
+// M4: sessions end after inactivity.
+func TestSessionIdleExpiry(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	search := "/api/tracker/trackedEntities?orgUnits=" + fc.Facility + "&program=" + fc.Program
+	e.app.Hub.Sessions.Idle = 100 * time.Millisecond
+	a := e.web("nurse_a")
+	a.login()
+	a.json("GET", search, nil, 200)
+	time.Sleep(200 * time.Millisecond)
+	if st, _ := a.do("GET", "/api/me", nil); st != 401 {
+		t.Fatalf("idle session still accepted: %d", st)
+	}
+}
+
+// M4: an account disabled on central stops working through the hub, online on the
+// next credential check and offline from then on, until an online login succeeds.
+func TestDisabledUserLosesAccess(t *testing.T) {
+	old := core.BasicRecheck
+	core.BasicRecheck = 0
+	t.Cleanup(func() { core.BasicRecheck = old })
+	e := newEnv(t)
+	e.setup()
+	search := "/api/tracker/trackedEntities?orgUnits=" + fc.Facility + "&program=" + fc.Program
+	tablet := e.android("nurse_a")
+	tablet.json("GET", search, nil, 200)
+	web := e.web("nurse_a")
+	web.login()
+
+	e.central.SetDisabled("nurse_a", true)
+	if st, _ := tablet.do("GET", search, nil); st != 401 {
+		t.Fatalf("disabled user's Basic credential still accepted online: %d", st)
+	}
+	e.offline()
+	if st, _ := tablet.do("GET", search, nil); st != 401 {
+		t.Fatalf("disabled user's Basic credential accepted offline: %d", st)
+	}
+	if st, _ := web.do("GET", search, nil); st != 401 {
+		t.Fatalf("disabled user's web session survived: %d", st)
+	}
+	if st, _ := e.web("nurse_a").do("POST", "/api/auth/login", map[string]string{"username": "nurse_a", "password": fc.Password}); st != 401 {
+		t.Fatalf("disabled user logged in offline: %d", st)
+	}
+
+	e.central.SetDisabled("nurse_a", false)
+	e.online()
+	tablet.json("GET", search, nil, 200)
+	e.offline()
+	tablet.json("GET", search, nil, 200)
+}
