@@ -2,6 +2,8 @@
 package e2e
 
 import (
+	"io"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -157,4 +159,31 @@ func TestLoginThrottle(t *testing.T) {
 		t.Fatalf("locked-out Basic login: got %d, want 429", st)
 	}
 	e.web("nurse_a").login()
+}
+
+// M8: with a central URL in the image defaults, the setup page cannot point the hub
+// elsewhere; without one, only an https URL is accepted.
+func TestSetupCentralURL(t *testing.T) {
+	e := newEnv(t)
+	post := func(centralURL string) string {
+		resp, err := e.web("hub_admin").http.PostForm(e.srv.URL+"/hub/setup", url.Values{"step": {"login"},
+			"central_url": {centralURL}, "username": {"hub_admin"}, "password": {fc.Password}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return string(b)
+	}
+	e.app.Hub.Cfg.CentralURL = ""
+	if page := post("http://attacker.example"); !strings.Contains(page, "https://") {
+		t.Fatalf("plain http central URL accepted: %s", page)
+	}
+	e.app.Hub.Cfg.CentralURL = e.cSrv.URL
+	if page := post("https://attacker.example"); !strings.Contains(page, "This hub now serves") {
+		t.Fatalf("setup with pinned URL failed: %s", page)
+	}
+	if got := e.app.Hub.Central.BaseURL(); got != e.cSrv.URL {
+		t.Fatalf("hub points at %s", got)
+	}
 }

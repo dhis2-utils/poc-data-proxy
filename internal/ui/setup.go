@@ -82,7 +82,8 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet {
-		u.render(w, "setup", map[string]any{"CentralURL": firstNonEmpty(h.Central.BaseURL(), h.Cfg.CentralURL), "HubID": h.HubID(), "Step": ""})
+		u.render(w, "setup", map[string]any{"CentralURL": firstNonEmpty(h.Cfg.CentralURL, h.Central.BaseURL()), "Pinned": h.Cfg.CentralURL != "",
+			"HubID": h.HubID(), "Step": ""})
 		return
 	}
 	r.ParseForm()
@@ -122,7 +123,7 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		u.render(w, "setup", map[string]any{"Error": err.Error(), "CentralURL": firstNonEmpty(r.FormValue("central_url"),
+		u.render(w, "setup", map[string]any{"Error": err.Error(), "Pinned": h.Cfg.CentralURL != "", "CentralURL": firstNonEmpty(h.Cfg.CentralURL, r.FormValue("central_url"),
 			h.Central.BaseURL(), h.Cfg.CentralURL), "HubID": h.HubID(), "Pending": p, "Step": ""})
 		return
 	}
@@ -150,8 +151,12 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 func (u *UI) setupLogin(ctx context.Context, centralURL, username, password string) (*pendingSetup, error) {
 	h := u.H
 	centralURL = strings.TrimRight(strings.TrimSpace(centralURL), "/")
-	if _, err := url.ParseRequestURI(centralURL); err != nil || centralURL == "" {
-		return nil, errors.New("enter the central server URL")
+	if h.Cfg.CentralURL != "" {
+		// The image pins the server: whoever reaches the setup page first must not
+		// point the hub, and every later staff login, at another server (review M8).
+		centralURL = h.Cfg.CentralURL
+	} else if pu, err := url.ParseRequestURI(centralURL); err != nil || pu.Scheme != "https" || pu.Host == "" {
+		return nil, errors.New("enter the central server's https:// URL")
 	}
 	h.Central.SetBaseURL(centralURL)
 	if !h.Monitor.Probe(ctx, centralURL) {

@@ -18,7 +18,8 @@
 <h2>Set up this hub</h2>
 <p>The hub must be online. Log in with a DHIS2 account that is allowed to set up hubs. The hub finds the facility and its tracker programs by itself.</p>
 <form method="post" action="/hub/setup"><input type="hidden" name="step" value="login">
-<label for="c">Central server URL</label><input id="c" type="url" name="central_url" value="{{.CentralURL}}" required>
+{{if .Pinned}}<p>Central server: <strong>{{.CentralURL}}</strong></p>
+{{else}}<label for="c">Central server URL (https)</label><input id="c" type="url" name="central_url" value="{{.CentralURL}}" required>{{end}}
 <label for="u">Username</label><input id="u" type="text" name="username" autocomplete="username" required>
 <label for="p">Password</label><input id="p" type="password" name="password" autocomplete="current-password" required>
 <p><button type="submit">Set up</button></p></form>
