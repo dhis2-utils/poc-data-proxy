@@ -10,6 +10,8 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"time"
@@ -53,6 +55,16 @@ func (u *UI) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/hub/ui/uplink", u.admin(u.handleUplink))
 	mux.HandleFunc("/hub/ui/reset", u.admin(u.handleReset))
 	mux.HandleFunc("/hub/ui/endpoints", u.admin(u.handleEndpoints))
+	// The hub's CA certificate, for installing on devices (public; no key behind it).
+	mux.HandleFunc("/hub/ca.crt", func(w http.ResponseWriter, r *http.Request) {
+		b, err := os.ReadFile(filepath.Join(u.H.Cfg.DataDir, "ca.crt"))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-x509-ca-cert")
+		w.Write(b)
+	})
 	mux.HandleFunc("/hub/", func(w http.ResponseWriter, r *http.Request) {
 		if u.H.Mode() == core.ModeSetup {
 			http.Redirect(w, r, "/hub/setup", http.StatusFound)
