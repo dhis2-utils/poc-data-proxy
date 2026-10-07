@@ -1,6 +1,6 @@
 # Facility hub (proof of concept)
 
-A small device on a facility LAN that caches the facility's DHIS2 tracker data and relays tracker writes to the central DHIS2 server. When central is unreachable, the DHIS2 Capture web app and the Android Capture app keep working against the hub, and each user still sees only what central lets them see. The specification is [SPEC-facility-hub-poc.md](SPEC-facility-hub-poc.md). Answers to its open questions, and the places where the spec turned out wrong, are in [FINDINGS.md](FINDINGS.md).
+A small device on a facility LAN that caches the facility's DHIS2 tracker data and relays tracker writes to the central DHIS2 server. When central is unreachable, the DHIS2 Capture web app and the Android Capture app keep working against the hub, and each user still sees only what central lets them see. The specification is [SPEC-facility-hub-poc.md](docs/SPEC-facility-hub-poc.md). Answers to its open questions, and the places where the spec turned out wrong, are in [FINDINGS.md](docs/FINDINGS.md).
 
 Target DHIS2 version: **2.42** (verified against 2.42.6). 2.43 is mapped to the same request and response handling but has not been tested.
 
@@ -31,7 +31,7 @@ Target DHIS2 version: **2.42** (verified against 2.42.6). 2.43 is mapped to the 
 
 ## Build
 
-You need Go 1.26 or newer. The build needs no C toolchain: SQLite is a pure Go build ([`ncruces/go-sqlite3`](https://github.com/ncruces/go-sqlite3); see FINDINGS.md for why this replaces `modernc.org/sqlite`).
+You need Go 1.26 or newer. The build needs no C toolchain: SQLite is a pure Go build ([`ncruces/go-sqlite3`](https://github.com/ncruces/go-sqlite3); see docs/FINDINGS.md for why this replaces `modernc.org/sqlite`).
 
 ```bash
 go build -o hub ./cmd/hub                                    # this machine
@@ -125,4 +125,4 @@ scripts/test-upgrade.sh     # scenario 11: unsigned release ignored, signed upgr
 - **`internal/e2e`** runs a real hub against `internal/fakecentral`. The fake is shaped after the fixtures in `testdata/2.42`, including central's quirks: with `atomicMode=OBJECT` central answers 200/OK even when objects are rejected, and children of a failed parent are dropped without an error report. The uplink is cut by having the fake central drop connections, so the hub sees real network errors.
 - **`internal/compat`** checks the 2.42 response shapes against the recorded fixtures.
 - **Live DHIS2 instance.** `testdata/2.42/setup_instance.py` creates the test users (`hub_admin`, `nurse_a`, `nurse_b`, `clerk_c`, `outsider_d`), groups and sharing on a Sierra Leone 2.42 demo database. `testdata/2.42/SETUP.md` lists the UIDs.
-- **Manual steps with the real Capture apps** (spec 13.3 scenarios 2 and 2a) and their results are in FINDINGS.md.
+- **Manual steps with the real Capture apps** (spec 13.3 scenarios 2 and 2a) and their results are in docs/FINDINGS.md.
