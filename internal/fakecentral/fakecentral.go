@@ -44,14 +44,15 @@ const (
 )
 
 type User struct {
-	UID, Username string
-	OrgUnits      []string
-	Groups        []string
-	ProgramRead   bool
-	ProgramWrite  bool
-	StageRead     map[string]bool
-	StageWrite    map[string]bool
-	Disabled      bool
+	UID, Username  string
+	OrgUnits       []string
+	Groups         []string
+	ProgramRead    bool
+	ProgramWrite   bool
+	StageRead      map[string]bool
+	StageWrite     map[string]bool
+	Disabled       bool
+	SearchOrgUnits []string // defaults to OrgUnits
 }
 
 type Central struct {
@@ -262,8 +263,15 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for _, g := range u.Groups {
 			groups = append(groups, map[string]any{"id": g})
 		}
+		search := ous
+		if u.SearchOrgUnits != nil {
+			search = []any{}
+			for _, ou := range u.SearchOrgUnits {
+				search = append(search, map[string]any{"id": ou, "path": "/root/" + ou})
+			}
+		}
 		writeJSON(w, 200, map[string]any{"id": u.UID, "username": u.Username, "organisationUnits": ous,
-			"teiSearchOrganisationUnits": ous, "authorities": []string{"M_dhis-web-capture"}, "userGroups": groups})
+			"teiSearchOrganisationUnits": search, "authorities": []string{"M_dhis-web-capture"}, "userGroups": groups})
 	case p == "/api/apiToken" && r.Method == "POST":
 		c.mu.Lock()
 		c.tokenSeq++

@@ -191,10 +191,14 @@ type Viewer struct {
 	// facility's data offline instead of refusing them (Capture search and uniqueness
 	// checks use ACCESSIBLE; FINDINGS.md).
 	AccessibleAsFacility bool
-	UserID               int64
-	Access               *access.List
-	Facility             string
-	Catalog              *access.Catalog
+	// SearchScope: the facility is in the user's search scope. Central-origin objects
+	// carry central's own decision per user; for local objects the hub decides, and
+	// requires this as well as the program and stage rules (review M9).
+	SearchScope bool
+	UserID      int64
+	Access      *access.List
+	Facility    string
+	Catalog     *access.Catalog
 }
 
 // CanRead applies spec 8.2.
@@ -204,6 +208,9 @@ func (ix *Index) CanRead(v *Viewer, o *Obj) bool {
 	}
 	if o.Origin == store.OriginCentral {
 		return o.Visible[v.UserID]
+	}
+	if !v.SearchScope {
+		return false
 	}
 	switch o.Kind {
 	case store.KindTrackedEntity:

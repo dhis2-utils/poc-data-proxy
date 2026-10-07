@@ -42,6 +42,7 @@ type Runtime struct {
 	Facility     string          `json:"facility"`
 	FacilityName string          `json:"facilityName"`
 	FacilityCode string          `json:"facilityCode"`
+	FacilityPath string          `json:"facilityPath"` // "/root/.../facility"; empty before this field existed
 	Catalog      *access.Catalog `json:"catalog"`
 	DefaultAOC   string          `json:"defaultAttributeOptionCombo"`
 	HubToken     string          `json:"hubToken"`
@@ -300,8 +301,13 @@ func (h *Hub) SetAccess(userID int64, l *access.List) error {
 
 // Viewer builds the visibility context for a user.
 func (h *Hub) Viewer(userID int64) *tracker.Viewer {
-	return &tracker.Viewer{UserID: userID, Access: h.Access(userID), Facility: h.Facility(), Catalog: h.Catalog(),
-		AccessibleAsFacility: h.Cfg.OfflineSearchFacility}
+	acc := h.Access(userID)
+	var path string
+	if rt := h.Runtime(); rt != nil {
+		path = rt.FacilityPath
+	}
+	return &tracker.Viewer{UserID: userID, Access: acc, Facility: h.Facility(), Catalog: h.Catalog(),
+		AccessibleAsFacility: h.Cfg.OfflineSearchFacility, SearchScope: path != "" && acc.SearchesIn(path)}
 }
 
 // UpstreamAuth is how calls to central authenticate for a stored user: their PAT, or

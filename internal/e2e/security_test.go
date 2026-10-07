@@ -207,3 +207,24 @@ func TestReservedValueLimits(t *testing.T) {
 		t.Fatalf("got %d values (%d): %s", len(vals), st, body)
 	}
 }
+
+// M9: offline, a record created on the hub is shown only to users whose search scope
+// includes the facility, not to everyone with program access.
+func TestLocalObjectsNeedSearchScope(t *testing.T) {
+	e := newEnv(t)
+	e.central.Users["nurse_b"].SearchOrgUnits = []string{fc.OtherFacility}
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	b := e.web("nurse_b")
+	b.login()
+	e.offline()
+	a.json("POST", postSync, newPatient("ScopeTe0001", "ScopeEn0001", "Scope", "", nil), 200)
+	search := "/api/tracker/trackedEntities?orgUnits=" + fc.Facility + "&program=" + fc.Program
+	if got := uids(a.json("GET", search, nil, 200)["trackedEntities"], "trackedEntity"); !contains(got, "ScopeTe0001") {
+		t.Fatalf("author does not see it: %v", got)
+	}
+	if got := uids(b.json("GET", search, nil, 200)["trackedEntities"], "trackedEntity"); contains(got, "ScopeTe0001") {
+		t.Fatal("user without search scope at the facility sees a local record")
+	}
+}

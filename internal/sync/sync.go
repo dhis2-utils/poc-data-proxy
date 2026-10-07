@@ -105,6 +105,16 @@ func (w *Worker) cycle(ctx context.Context) error {
 	if err := h.RenewHubToken(ctx); err != nil {
 		errs = append(errs, err)
 	}
+	if rt := h.Runtime(); rt != nil && rt.FacilityPath == "" {
+		var ou struct {
+			Path string `json:"path"`
+		}
+		if err := h.Central.JSON(ctx, "GET", central.Q("/api/organisationUnits/"+rt.Facility, "fields", "path"), nil, h.HubAuth(), &ou); err != nil {
+			errs = append(errs, fmt.Errorf("facility path: %w", err))
+		} else if ou.Path != "" {
+			h.UpdateRuntime(func(rt *core.Runtime) { rt.FacilityPath = ou.Path })
+		}
+	}
 	if c, err := h.FetchCatalog(ctx, h.HubAuth(), h.Facility()); err == nil {
 		h.UpdateRuntime(func(rt *core.Runtime) { rt.Catalog = c })
 	} else {

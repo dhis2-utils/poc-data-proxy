@@ -6,6 +6,7 @@ package access
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 )
 
 type Perm struct {
@@ -38,6 +39,25 @@ func Parse(b []byte) (*List, error) {
 // Users without it may not use hub-local tracker calls (spec 8.1).
 func (l *List) InFacility(facility string) bool {
 	return l != nil && slices.Contains(l.OrgUnits, facility)
+}
+
+// SearchesIn reports whether the org unit with this path ("/a/b/c") is in the user's
+// effective search scope: their search org units, or their capture org units when
+// they have none, and everything below them.
+func (l *List) SearchesIn(path string) bool {
+	if l == nil {
+		return false
+	}
+	scope := l.SearchOrgUnits
+	if len(scope) == 0 {
+		scope = l.OrgUnits
+	}
+	for _, id := range scope {
+		if strings.Contains(path+"/", "/"+id+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func (l *List) InGroup(group string) bool {

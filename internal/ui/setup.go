@@ -291,7 +291,8 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (*core.Session,
 		return nil, err
 	}
 	rt := &core.Runtime{Facility: p.Facility.ID, FacilityName: p.Facility.Name, FacilityCode: p.Facility.Code,
-		Catalog: cat, HubToken: tok, HubTokenUID: tokUID,
+		FacilityPath: p.Facility.Path,
+		Catalog:      cat, HubToken: tok, HubTokenUID: tokUID,
 		HubTokenExp: tokExp.UTC().Format(time.RFC3339), SetupBy: p.Username, SetupAt: store.Now(), PrivateKey: priv}
 	if len(aoc.CategoryOptionCombos) > 0 {
 		rt.DefaultAOC = aoc.CategoryOptionCombos[0].ID
