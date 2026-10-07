@@ -181,6 +181,14 @@ func (im *Importer) newObj(it *Item, old *Obj) *Obj {
 	data := it.Data
 	if old != nil {
 		data = Merge(clone(old.Data), it.Data)
+		// Who created an object is not the client's to change (review L3).
+		for _, k := range []string{"createdAt", "createdBy"} {
+			if v, ok := old.Data[k]; ok {
+				data[k] = v
+			} else {
+				delete(data, k)
+			}
+		}
 	} else {
 		data = clone(it.Data)
 		data["createdAt"] = now

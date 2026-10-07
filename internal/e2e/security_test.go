@@ -228,3 +228,24 @@ func TestLocalObjectsNeedSearchScope(t *testing.T) {
 		t.Fatal("user without search scope at the facility sees a local record")
 	}
 }
+
+// L3: an offline update cannot rewrite who created a record.
+func TestCreatedByKept(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	b := e.web("nurse_b")
+	b.login()
+	e.offline()
+	a.json("POST", postSync, newPatient("OwnTe000001", "OwnEn000001", "Own", "", nil), 200)
+	upd := newPatient("OwnTe000001", "OwnEn000001", "Own", "", nil)
+	te := upd["trackedEntities"].([]any)[0].(map[string]any)
+	te["createdBy"] = map[string]any{"username": "someone_else"}
+	te["createdAt"] = "2000-01-01T00:00:00.000"
+	b.json("POST", postSync, upd, 200)
+	o := e.app.Hub.Index.Get("OwnTe000001")
+	if cb, _ := o.Data["createdBy"].(map[string]any); cb["username"] != "nurse_a" || o.Data["createdAt"] == "2000-01-01T00:00:00.000" {
+		t.Fatalf("createdBy %v createdAt %v", o.Data["createdBy"], o.Data["createdAt"])
+	}
+}
