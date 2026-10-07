@@ -57,6 +57,7 @@ type Central struct {
 	mu        sync.Mutex
 	Users     map[string]*User
 	tokens    map[string]string // PAT key -> username
+	tokenSeq  int
 	tokenIDs  map[string]string // token uid -> key
 	sessions  map[string]string // cookie -> username
 	objects   map[string]tracker.M
@@ -248,9 +249,10 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"id": u.UID, "username": u.Username, "organisationUnits": ous,
 			"teiSearchOrganisationUnits": ous, "authorities": []string{"M_dhis-web-capture"}, "userGroups": groups})
 	case p == "/api/apiToken" && r.Method == "POST":
-		key := "d2p_" + strings.Repeat("x", 10) + strconv.Itoa(len(c.tokens)) + u.Username
-		id := fmt.Sprintf("Tok%08d", len(c.tokens))
 		c.mu.Lock()
+		c.tokenSeq++
+		key := "d2p_" + strings.Repeat("x", 10) + strconv.Itoa(c.tokenSeq) + u.Username
+		id := fmt.Sprintf("Tok%08d", c.tokenSeq)
 		c.tokens[key], c.tokenIDs[id] = u.Username, key
 		c.mu.Unlock()
 		writeJSON(w, 201, map[string]any{"httpStatus": "Created", "httpStatusCode": 201, "status": "OK",
@@ -300,6 +302,13 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // RevokeToken deletes a PAT by uid (to test 401 on push).
+// TokenValid reports whether a PAT key is still accepted.
+func (c *Central) TokenValid(key string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.tokens[key] != ""
+}
+
 func (c *Central) RevokeToken(id string) {
 	c.mu.Lock()
 	delete(c.tokens, c.tokenIDs[id])

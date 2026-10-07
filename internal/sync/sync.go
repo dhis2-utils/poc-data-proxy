@@ -102,6 +102,9 @@ func (w *Worker) cycle(ctx context.Context) error {
 		w.heartbeat(ctx)
 		return fmt.Errorf("hub needs upgrade: central runs %s", h.ServerVersion())
 	}
+	if err := h.RenewHubToken(ctx); err != nil {
+		errs = append(errs, err)
+	}
 	if c, err := h.FetchCatalog(ctx, h.HubAuth(), h.Facility()); err == nil {
 		h.UpdateRuntime(func(rt *core.Runtime) { rt.Catalog = c })
 	} else {

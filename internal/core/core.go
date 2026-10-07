@@ -46,6 +46,7 @@ type Runtime struct {
 	DefaultAOC   string          `json:"defaultAttributeOptionCombo"`
 	HubToken     string          `json:"hubToken"`
 	HubTokenUID  string          `json:"hubTokenUid"`
+	HubTokenExp  string          `json:"hubTokenExpires"` // RFC 3339; empty before this field existed
 	SetupBy      string          `json:"setupBy"`
 	SetupAt      string          `json:"setupAt"`
 	PrivateKey   []byte          `json:"hubPrivateKey"` // ed25519 hub signing key

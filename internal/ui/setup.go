@@ -258,7 +258,8 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (*core.Session,
 	h.Store.SetMeta(core.MetaCentralURL, p.CentralURL)
 
 	// Hub-level token (spec 6.2 step 8, 11.2). POC: the setup user's PAT.
-	tokUID, tok, err := h.CreatePAT(ctx, basic, time.Now().Add(time.Duration(h.Cfg.PATExpiryDays)*24*time.Hour))
+	tokExp := time.Now().Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
+	tokUID, tok, err := h.CreatePAT(ctx, basic, tokExp)
 	if err != nil {
 		return nil, fmt.Errorf("creating hub token: %w", err)
 	}
@@ -276,7 +277,8 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (*core.Session,
 		return nil, err
 	}
 	rt := &core.Runtime{Facility: p.Facility.ID, FacilityName: p.Facility.Name, FacilityCode: p.Facility.Code,
-		Catalog: cat, HubToken: tok, HubTokenUID: tokUID, SetupBy: p.Username, SetupAt: store.Now(), PrivateKey: priv}
+		Catalog: cat, HubToken: tok, HubTokenUID: tokUID,
+		HubTokenExp: tokExp.UTC().Format(time.RFC3339), SetupBy: p.Username, SetupAt: store.Now(), PrivateKey: priv}
 	if len(aoc.CategoryOptionCombos) > 0 {
 		rt.DefaultAOC = aoc.CategoryOptionCombos[0].ID
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -136,6 +137,44 @@ func (h *Hub) EnsurePAT(ctx context.Context, u *store.User, with central.Auth, p
 	}
 	h.Store.SetPassword(u.ID, "")
 	return h.Store.SetPAT(u.ID, key, uid, exp.UTC().Format(time.RFC3339))
+}
+
+// RenewHubToken replaces the hub-level token when it expires within a week. Without
+// this, catalog, issue reports, pool refills and the heartbeat all start failing
+// pat_expiry_days after setup. A PAT may create a PAT on 2.42
+// (testdata/2.42/apiToken_create_with_pat.json).
+func (h *Hub) RenewHubToken(ctx context.Context) error {
+	rt := h.Runtime()
+	if rt == nil || rt.HubToken == "" {
+		return nil
+	}
+	exp, err := time.Parse(time.RFC3339, rt.HubTokenExp)
+	if err != nil {
+		setup, err := time.Parse(time.RFC3339, rt.SetupAt)
+		if err != nil {
+			setup = time.Time{} // unknown: renew now
+		}
+		exp = setup.Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
+	}
+	if time.Until(exp) > 7*24*time.Hour {
+		return nil
+	}
+	newExp := time.Now().Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
+	uid, key, err := h.CreatePAT(ctx, h.HubAuth(), newExp)
+	if err != nil {
+		return fmt.Errorf("renewing hub token: %w", err)
+	}
+	oldUID := rt.HubTokenUID
+	if err := h.UpdateRuntime(func(rt *Runtime) {
+		rt.HubToken, rt.HubTokenUID, rt.HubTokenExp = key, uid, newExp.UTC().Format(time.RFC3339)
+	}); err != nil {
+		return err
+	}
+	if oldUID != "" && oldUID != uid {
+		h.Central.JSON(ctx, "DELETE", "/api/apiToken/"+url.PathEscape(oldUID), nil, h.HubAuth(), nil)
+	}
+	slog.Info("hub token renewed", "expires", newExp.UTC().Format(time.RFC3339))
+	return nil
 }
 
 // CreatePAT creates a personal access token on central.
