@@ -28,7 +28,15 @@ type Worker struct {
 	// AfterCycle runs at the end of each online cycle (the upgrade check, spec 12a).
 	AfterCycle func(ctx context.Context)
 
-	mu stdsync.Mutex // one cycle at a time
+	mu     stdsync.Mutex // one cycle at a time
+	pushMu stdsync.Mutex // one push at a time: Cycle, the upgrade drain and reset all push
+}
+
+// Exclusive runs f while no sync cycle runs, and keeps cycles out until f returns.
+func (w *Worker) Exclusive(f func() error) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return f()
 }
 
 const pullPageSize = 200
@@ -142,6 +150,8 @@ type pushResult struct {
 
 // Push sends pending outbox entries in seq order.
 func (w *Worker) Push(ctx context.Context) error {
+	w.pushMu.Lock()
+	defer w.pushMu.Unlock()
 	h := w.H
 	entries, err := h.Store.PendingOutbox()
 	if err != nil {

@@ -70,6 +70,40 @@ type Hub struct {
 	SyncNow   chan struct{}
 	Upgrading atomic.Bool
 	Stats     SyncStats
+
+	// localWrites is held shared by every write to the store that only the hub holds
+	// (offline imports, reserved values handed out) and exclusively to freeze them.
+	localWrites sync.RWMutex
+}
+
+// BeginLocalWrite reserves the store for a write that exists only on the hub. It
+// returns false while an upgrade copies the store: a write accepted then would land
+// in the store the upgrade throws away. Call EndLocalWrite when it returns true.
+func (h *Hub) BeginLocalWrite() bool {
+	h.localWrites.RLock()
+	if h.Upgrading.Load() {
+		h.localWrites.RUnlock()
+		return false
+	}
+	return true
+}
+
+func (h *Hub) EndLocalWrite() { h.localWrites.RUnlock() }
+
+// FreezeLocalWrites waits for local writes in flight and refuses new ones until
+// ThawLocalWrites.
+func (h *Hub) FreezeLocalWrites() {
+	h.localWrites.Lock()
+	h.Upgrading.Store(true)
+	h.localWrites.Unlock()
+}
+
+func (h *Hub) ThawLocalWrites() { h.Upgrading.Store(false) }
+
+// UpgradingError answers a local write refused during an upgrade.
+func (h *Hub) UpgradingError(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", "120")
+	h.WebError(w, http.StatusServiceUnavailable, "the hub is upgrading; try again in a few minutes", "")
 }
 
 // SyncStats is what /hub/status and the heartbeat report.

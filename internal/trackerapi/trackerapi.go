@@ -72,7 +72,9 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	body, _ := core.ReadBody(r, 256<<20)
 
-	if a.H.Online() && !a.H.Upgrading.Load() {
+	// Online writes go to central even during an upgrade: central holds them, and
+	// what the hub learns from them comes back with the next pull.
+	if a.H.Online() {
 		res, err := a.Proxy.Forward(r.Context(), r, body, a.Proxy.Upstream(sess))
 		if err == nil {
 			a.learn(sess, r, body, res)
@@ -242,6 +244,11 @@ func (a *API) serveLocal(w http.ResponseWriter, r *http.Request, sess *core.Sess
 		}
 		core.WriteJSON(w, 200, obj)
 	case r.Method == http.MethodPost && coll == "":
+		if !a.H.BeginLocalWrite() {
+			a.H.UpgradingError(w)
+			return
+		}
+		defer a.H.EndLocalWrite()
 		a.importLocal(w, r, sess, v, body)
 	case r.Method == http.MethodGet && coll == "jobs":
 		a.serveJob(w, r, sess)
@@ -389,7 +396,12 @@ func (a *API) ServeGenerated(w http.ResponseWriter, r *http.Request) {
 	if n < 1 {
 		n = 1
 	}
+	if !a.H.BeginLocalWrite() {
+		a.H.UpgradingError(w) // values handed out now would be handed out again after the swap
+		return
+	}
 	vals, err := a.H.Store.TakeReservedValues(attr, n, tracker.DHIS2Time(time.Now()))
+	a.H.EndLocalWrite()
 	if err != nil || len(vals) == 0 {
 		a.H.NeedsConnection(w, "no reserved values left for attribute "+attr)
 		return

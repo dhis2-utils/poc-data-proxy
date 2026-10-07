@@ -122,8 +122,14 @@ func (a *App) Start(ctx context.Context) {
 
 func (a *App) Close() error { return a.Hub.Store.Close() }
 
-// Reset pushes the outbox, wipes all data and returns to setup mode (spec 6.2).
+// Reset pushes the outbox, wipes all data and returns to setup mode (spec 6.2). No
+// sync cycle may run meanwhile: a pull committing after the wipe would leave rows
+// sealed under the old data key.
 func Reset(h *core.Hub, w *hubsync.Worker) error {
+	return w.Exclusive(func() error { return reset(h, w) })
+}
+
+func reset(h *core.Hub, w *hubsync.Worker) error {
 	if !h.Online() {
 		return errors.New("the hub must be online to push its outbox before a reset")
 	}

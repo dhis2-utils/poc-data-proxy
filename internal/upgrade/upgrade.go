@@ -139,12 +139,12 @@ func (u *Upgrader) check(ctx context.Context) error {
 	if err := os.WriteFile(newBin, bin, 0o755); err != nil {
 		return err
 	}
-	// Block tracker writes from here on, so the store copy is complete.
-	u.H.Upgrading.Store(true)
+	// Refuse local writes from here on, so the store copy is complete.
+	u.H.FreezeLocalWrites()
 	ok := false
 	defer func() {
 		if !ok {
-			u.H.Upgrading.Store(false)
+			u.H.ThawLocalWrites()
 		}
 	}()
 	// 3. Migrations on a copy of the store, run by the new binary.
