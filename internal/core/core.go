@@ -127,6 +127,10 @@ func (h *Hub) StuckOutbox() int {
 	return n
 }
 
+// MarkOffline flags an answer the hub gave itself because central is unreachable,
+// for clients that want to show it (FINDINGS: offline search scope).
+func MarkOffline(w http.ResponseWriter) { w.Header().Set("X-Hub-Mode", "offline") }
+
 // UpgradingError answers a local write refused during an upgrade.
 func (h *Hub) UpgradingError(w http.ResponseWriter) {
 	w.Header().Set("Retry-After", "120")

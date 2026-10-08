@@ -44,6 +44,22 @@ type Me struct {
 	UserGroups                 []idRef  `json:"userGroups"`
 }
 
+// Belongs reports whether the user may register on the hub: the facility is one of
+// their capture org units, or they are in the setup user group.
+func (m *Me) Belongs(facility, setupGroup string) bool {
+	for _, o := range m.OrganisationUnits {
+		if o.ID == facility {
+			return true
+		}
+	}
+	for _, g := range m.UserGroups {
+		if setupGroup != "" && g.ID == setupGroup {
+			return true
+		}
+	}
+	return false
+}
+
 const meFields = "id,username,organisationUnits[id],teiSearchOrganisationUnits[id],authorities,userGroups[id]"
 
 func (h *Hub) FetchMe(ctx context.Context, auth central.Auth) (*Me, error) {

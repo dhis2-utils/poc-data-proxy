@@ -99,6 +99,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Info("central unreachable, serving tracker request locally", "path", r.URL.Path)
 	}
 	served = "hub"
+	core.MarkOffline(w)
 	a.serveLocal(w, r, sess, body)
 }
 
@@ -239,8 +240,11 @@ func (a *API) usable(w http.ResponseWriter, sess *core.Session) bool {
 	switch {
 	case a.H.API() == nil:
 		a.H.NeedsConnection(w, "hub needs upgrade for DHIS2 "+a.H.ServerVersion())
-	case !a.H.Store.Unlocked() || sess.UserID == 0:
+	case !a.H.Store.Unlocked():
 		a.H.NeedsConnection(w, "first login must be online")
+	case sess.UserID == 0:
+		// Online login registers only facility staff and hub admins (REVIEW-2 F5).
+		a.H.WebError(w, http.StatusForbidden, "needs connection: user is not assigned to the hub facility", "E1000")
 	case a.H.Facility() == "":
 		a.H.NeedsConnection(w, "hub is not set up")
 	case !a.H.Access(sess.UserID).InFacility(a.H.Facility()):
@@ -264,6 +268,10 @@ func (a *API) serveLocal(w http.ResponseWriter, r *http.Request, sess *core.Sess
 		if err != nil {
 			a.writeErr(w, r, err)
 			return
+		}
+		if m := strings.ToUpper(r.URL.Query().Get("orgUnitMode")); m == "ACCESSIBLE" || m == "CAPTURE" {
+			// Online this covers the user's whole scope; offline only this facility.
+			w.Header().Set("X-Hub-Scope", "facility")
 		}
 		core.WriteJSON(w, 200, api.ListResponse(res, a.selfURL(r)))
 	case r.Method == http.MethodGet && collections[coll] != "":
@@ -403,6 +411,7 @@ func (a *API) ServeGenerated(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer a.H.ReqLog.Record(r, core.ClientKind(r), "hub-pool", 200)
+	core.MarkOffline(w)
 	if sess == nil {
 		a.H.WebError(w, 401, "Unauthorized", "")
 		return

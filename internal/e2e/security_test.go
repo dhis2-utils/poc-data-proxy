@@ -350,3 +350,44 @@ func TestProgramsBeyondSetupUser(t *testing.T) {
 		t.Fatalf("program not pulled for nurse_a: %v", got)
 	}
 }
+
+// REVIEW-2 F5: a central user outside the facility gets no key slot or stored token.
+func TestOutsiderNotRegistered(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.web("outsider_d").login()
+	if u, _ := e.app.Hub.Store.UserByName("outsider_d"); u != nil {
+		t.Fatal("outsider got a key slot")
+	}
+}
+
+// REVIEW-2 F4: per-user metadata is not served from another user's cache offline;
+// offline answers say so in X-Hub-Mode, and narrowed searches in X-Hub-Scope.
+func TestPerUserMetadataNotShared(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	b := e.web("nurse_b")
+	b.login()
+	tree := "/api/42/organisationUnits?fields=id&withinUserHierarchy=true"
+	a.do("GET", tree, nil)
+	a.do("GET", "/api/organisationUnits/"+fc.Facility+"?fields=id", nil)
+	e.offline()
+	if st, _ := b.do("GET", tree, nil); st != 503 {
+		t.Fatalf("nurse_b got nurse_a's org unit tree offline: %d", st)
+	}
+	if st, _ := b.do("GET", "/api/organisationUnits/"+fc.Facility+"?fields=id", nil); st != 200 {
+		t.Fatalf("one org unit by UID not shared: %d", st)
+	}
+	req, _ := http.NewRequest("GET", e.srv.URL+"/api/tracker/trackedEntities?orgUnitMode=ACCESSIBLE&program="+fc.Program, nil)
+	req.SetBasicAuth("nurse_a", fc.Password)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 || resp.Header.Get("X-Hub-Mode") != "offline" || resp.Header.Get("X-Hub-Scope") != "facility" {
+		t.Fatalf("offline search headers: %d %v", resp.StatusCode, resp.Header)
+	}
+}

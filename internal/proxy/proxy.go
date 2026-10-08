@@ -206,14 +206,14 @@ func splitTop(s string) []string {
 }
 
 // sharedPrefixes are metadata and app configuration paths: the same for every user of
-// the facility and free of patient data. Offline, a user who never fetched one online
+// the facility and free of patient data. Tracked entity filters and working lists are
+// not here: their sharing differs per user (REVIEW-2 F4). Offline, a user who never fetched one online
 // is served another user's copy. Anything user-specific (/api/me, userSettings,
 // userDataStore, tracker data) stays strictly per user.
 var sharedPrefixes = []string{"programs", "programStages", "trackedEntityTypes", "trackedEntityAttributes", "dataElements",
 	"optionSets", "optionGroups", "options", "categoryOptions", "categoryCombos", "categoryOptionCombos", "constants",
 	"programRules", "programRuleVariables", "programRuleActions", "programIndicators", "relationshipTypes",
-	"organisationUnits", "organisationUnitGroups", "organisationUnitLevels", "trackedEntityInstanceFilters",
-	"programStageWorkingLists", "systemSettings", "system/info", "loginConfig", "locales", "staticContent", "icons",
+	"organisationUnits", "organisationUnitGroups", "organisationUnitLevels", "systemSettings", "system/info", "loginConfig", "locales", "staticContent", "icons",
 	"apps", "dataStore/capture", "dataStore/ANDROID_SETTINGS_APP", "dataStore/ANDROID_SETTING_APP",
 	"dataStore/APK_DISTRIBUTION", "dataStore/USE_CASES", "attributes", "legendSets"}
 
@@ -225,6 +225,11 @@ func shared(path string) bool {
 	}
 	if m := regexp.MustCompile(`^[0-9]{2}/`).FindString(rest); m != "" {
 		rest = rest[len(m):]
+	}
+	// The org unit list answers per user (withinUserHierarchy, userDataViewFallback)
+	// at the same URL; one org unit by UID does not (REVIEW-2 F4).
+	if rest == "organisationUnits" || rest == "organisationUnits.json" {
+		return false
 	}
 	for _, p := range sharedPrefixes {
 		if rest == p || strings.HasPrefix(rest, p+"/") || strings.HasPrefix(rest, p+".") || strings.HasPrefix(rest, p+"?") {
@@ -293,6 +298,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	served = "cache"
+	core.MarkOffline(w)
 	status = p.serveOffline(w, r, sess)
 }
 
