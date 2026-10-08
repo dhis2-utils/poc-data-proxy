@@ -121,6 +121,33 @@ Options:
 2. **Recovery code.** Print a one-time recovery code at setup and use it as an extra key slot.
 3. **Hub token slot.** Wrap DK under the hub-level token. This only helps while central is reachable, since the token itself must be verified.
 
+### Changing the central server URL
+
+Countries move DHIS2 to new domains and hosting, so a hub's central URL must be changeable without a new image or a site visit. It must still not be choosable by whoever stands next to a hub in setup mode (REVIEW-2 F1): the hub forwards every staff login to that server.
+
+Before this round, a set-up hub kept its central URL in its own store and ignored the config file, so moving a fleet meant resetting and setting up every hub again. The design now in the code:
+
+1. **An allowlist instead of one URL.** `central_hosts` in the image lists permitted hosts (`hmis.example.org`, `*.hmis.example.org`). Setup accepts any https URL on those hosts. `central_url`, if set, is the default and is always allowed.
+2. **Fleet-wide moves through the signed release channel.** The signed release manifest may carry `centralUrl`. A hub that reads it checks that the URL is allowed and that the new server knows the hub (its registry entry is there and the hub token works), then switches. Only the holder of the release key can move hubs, and no visit or new image is needed.
+3. **A one-time setup token for images with neither.** If the image sets neither `central_url` nor `central_hosts`, setup requires the token the hub writes at first boot to `data_dir/setup-token`, printed on the label at the depot. Only someone holding the device can choose the server.
+
+### Offline search covers this facility only, and Capture should say so
+
+Online, a search with `orgUnitMode=ACCESSIBLE` covers the user's whole search scope, often the district. Offline, the hub answers it from this facility's data: refusing it broke registration (item 2 under "Things in the spec"). A patient registered at another clinic therefore comes back as "no results", and the nurse may register a duplicate. Central's uniqueness check on push catches duplicates only through unique attributes such as a national ID, not names.
+
+The hub cannot tell the user on its own. The tracker API has no field for partial results, and the apps believe they are online, because the hub answers `/api/ping` itself. Answering "offline" instead would switch Capture into its own offline mode, which is not wanted either.
+
+**Requirement for Capture web, the app runtime and Android:**
+
+1. A state "connected through a facility hub, central unreachable", read from the hub (`GET /hub/status` reports `online: false`; every offline answer from the hub carries `X-Hub-Mode: offline`). Show it next to the online indicator.
+2. On search results in that state, a note: "Searched this facility only. Patients registered elsewhere won't appear." Offline searches that the hub narrowed carry `X-Hub-Scope: facility`. Optionally, before a new registration: "Check online before registering, if possible."
+
+The hub side of this exists; the Capture side is to build.
+
+### Shared metadata cache (REVIEW-2 F4)
+
+Offline, a user whose own cache misses a metadata URL is served another user's copy (spec 5.1 deviation, item 11 under "Things in the spec"). Some metadata URLs are the same for every user while central's answer is not. The web app's `organisationUnits?withinUserHierarchy=true` and `?userDataViewFallback=true` return each user's own org unit tree; tracked entity filters and working lists depend on sharing. These are no longer shared between users: a user who never loaded them online gets "needs connection" for them.
+
 ### Long-term TLS
 
 POC: at first boot the hub creates a CA limited by name constraints to its own names and private address ranges, issues a server certificate for `hub.local`, the host name, `localhost` and the LAN IPs, and discards the CA key. Test devices install `ca.crt` (served at `/hub/ca.crt`). An earlier version made the server certificate itself a CA, so anyone reading its key could have minted certificates for any site. Options for production:
