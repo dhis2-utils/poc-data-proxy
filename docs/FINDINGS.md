@@ -225,6 +225,31 @@ Either way, **protect the namespaces**. By default any user can read and write a
 31. **Spec 7.1's password fallback.** Storing a user's central password whenever PAT creation fails was never needed on 2.42 and is now off by default (`password_fallback`). Without a PAT, the user can work online and read offline, but offline changes are refused: they could never be sent.
 32. **Who registers on the hub.** Spec 7.1 registers any user who logs in online. The hub now registers only users with the facility in their capture org units or in the setup user group; others are passed through to central.
 
+## Found by the test framework (docs/TESTING.md)
+
+The differential oracle compares the offline hub with central for every role and access-matrix user, on real 2.42.6 instances.
+
+**Hub bugs, fixed:**
+
+1. One user's refused pull (403 on a program whose tracked entity type they cannot read) aborted the pull for every user after them. A single odd sharing setup stopped the facility's sync.
+2. Nested field selections (`attributes[attribute,value]`) were ignored; the hub returned whole objects.
+3. A program-scoped answer carried enrollments of every program the user can read, and attributes of the user's other programs.
+4. People registered at the facility but enrolled in nothing the user can read were never pulled.
+5. DHIS2 2.42 shows the attributes of **every** tracked entity type on the server, plus the queried program's (`TrackedEntityAggregate.getAllowedAttributeUids`). The hub had assumed the entity's own type only; Sierra Leone's metadata showed the difference.
+6. At login, a user's access was fetched only with a stored token; a user without one got no access list.
+
+**DHIS2 behaviour worth knowing:**
+
+- `/api/tracker/events` shows events to a user who has program and stage access but **no access to the tracked entity type**; a tracked entity search refuses that user (E1006). Event access does not depend on tracked entity type sharing.
+- An unfiltered `orgUnitMode=ACCESSIBLE` search answers 409 "At least 1 attributes should be mentioned in the search criteria".
+- Small 500s on `null` lists: `"enrollments": null` in a tracker import, and `"userAccesses": null` in `POST /api/sharing`. Both work with `[]`.
+
+**Known gaps, reported by the oracle without failing:**
+
+- Events for users without tracked entity type access (above): central shows them, the hub pulls by tracked entity.
+- Unfiltered `ACCESSIBLE` searches: central rejects them, the hub answers from facility data the user can read anyway.
+- Users without the facility in their capture scope (district officers, for instance) are passed through only, by design (REVIEW-2 F5): offline they see nothing.
+
 ## Capture web app through the hub
 
 Tested with Playwright and Chromium against the real 2.42.6 Capture app, scenarios 2 and 3. The first run failed in several places; each failure is now fixed in the hub. The clean second run used no request patching:

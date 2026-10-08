@@ -72,12 +72,32 @@ Scripted Capture web runs (Playwright) and Android Capture runs (adb and the UI 
 
 | Command | What |
 |---|---|
-| `go test ./...` | unit tests, fake-central end-to-end tests, differential tests on the fake |
-| `go run ./cmd/hubtest instance -profile synthetic -version 42` | create a broker instance and provision a profile; writes `manifest.json` |
-| `HUB_MANIFEST=manifest.json go test ./internal/live/...` | the live suite against that instance |
-| `go run ./cmd/hubtest matrix` | every profile × supported version, one instance at a time; writes a report |
+| `go test ./...` | unit tests, fake-central end-to-end tests, and the live suite against the fake |
+| `go run ./cmd/hubtest run -profile synthetic -version 42` | a clean broker instance, provisioned, with the live suite run against it; results in `testresults/synthetic-42/` |
+| `go run ./cmd/hubtest run -profile sierra-leone -version 42` | the same from the Sierra Leone seed (reset from the seed if the instance exists) |
+| `go run ./cmd/hubtest matrix -profiles synthetic,sierra-leone,laos -versions 42` | every profile × version, one instance at a time |
+| `go run ./cmd/hubtest provision -profile laos -url http://dhis2-x:8080 -out manifest.json` | provision an instance yourself |
+| `HUB_MANIFEST=manifest.json HUB_REPORT=oracle.json go test ./internal/live/` | the live suite against a provisioned instance |
 
-Live runs mutate their instance. A run starts from a fresh seed or an empty instance, never from a dirty one.
+`hubtest` needs `DHIS2_BROKER_URL` and `DHIS2_BROKER_TOKEN` for `run` and `matrix`. Live runs mutate their instance; `run` resets it first.
+
+### What the live suite contains
+
+| Test | What it checks |
+|---|---|
+| `TestScenarios` | the acceptance scenarios (spec 13.3) on the profile's own programs: setup, online and offline writes, access per role, unique conflicts, reconnection, reboot, nothing in plain text on disk |
+| `TestOracle` | every role and matrix user × generated read queries, hub offline against central online; verdicts LEAK, MISSING, DIFFERS, LENIENT, REFUSED, MATCH. Known gaps are named in `knownGap` with their reason |
+| `TestWriteOracle` | every user tries the same writes offline; after reconnection central judges them: DENIED (the hub accepted what central refuses this user) fails the run, OVER-REJECT and LATE are reported |
+
+### Profiles
+
+| Profile | Source | What it adds |
+|---|---|---|
+| `synthetic` | empty instance | full control: open, protected, closed, public and event programs, a restricted stage, unique and generated attributes, two tracked entity types, an attribute category combo whose category options are shared per user, ownership moved in and out, visits elsewhere, deleted and scheduled records, cross-facility relationships |
+| `sierra-leone` | `dhis2-db-sierra-leone_v<N>` | real metadata and data; the facility with the most tracker data, its four busiest programs |
+| `laos` | `lao_hmis_demo_v<N>` | a second real configuration, with its own conventions |
+
+The **access matrix** (27–30 users per profile) covers every pair of: capture scope (facility, district, sibling, two facilities, country), search scope (none, facility, district, other district, country), access to the open, protected and closed programs, to the restricted stage, to the tracked entity type and to a category option, granted directly or through a group.
 
 ## Phases
 

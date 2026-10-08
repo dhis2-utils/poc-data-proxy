@@ -60,6 +60,18 @@ const (
 
 	rtMotherChild = "SynRtMoChi1"
 
+	// A second tracked entity type, and a program whose events carry an attribute
+	// option combo: who sees an event depends on access to its category option.
+	tetHousehold = "SynTetHhld1"
+	atHhID       = "SynAtHhId01" // unique
+	atVillage    = "SynAtVilla1"
+	prHhs        = "SynPrgHhs01"
+	stHhs        = "SynStHhs001"
+	coDonorA     = "SynCoDonA01" // shared per the matrix "option" dimension
+	coDonorB     = "SynCoDonB01" // shared with no test user
+	caDonor      = "SynCaDonor1"
+	ccDonor      = "SynCcDonor1"
+
 	Password = "Hub-Test-2026!"
 )
 
@@ -130,9 +142,16 @@ var matrixDims = []struct {
 	{"closed", []string{"none", "write"}},
 	{"lab", []string{"none", "read", "write"}}, // the restricted stage
 	{"tet", []string{"none", "read", "write"}},
+	{"option", []string{"none", "read", "write"}}, // the shared category option (donor A)
 }
 
 var accessOf = map[string]string{"none": acNone, "metadata": acMeta, "read": acRead, "write": acWrite}
+
+func withCombo(p map[string]any, tet, combo string) map[string]any {
+	p["trackedEntityType"] = ref(tet)
+	p["categoryCombo"] = ref(combo)
+	return p
+}
 
 // metadata builds the whole synthetic setup as one /api/metadata payload, and the
 // manifest that describes it.
@@ -200,6 +219,8 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 		tea(atArtNo, "ART number", "TEXT", map[string]any{"unique": true, "generated": true,
 			"pattern": `ORG_UNIT_CODE(...) + "-" + SEQUENTIAL(####)`}),
 		tea(atTbNo, "TB number", "TEXT", map[string]any{"unique": true}),
+		tea(atHhID, "household ID", "TEXT", map[string]any{"unique": true}),
+		tea(atVillage, "village", "TEXT", nil),
 	}
 	de := func(id, name, vt string, extra map[string]any) map[string]any {
 		d := map[string]any{"id": id, "name": "Synthetic " + name, "shortName": "Syn " + name, "valueType": vt,
@@ -224,7 +245,9 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 	l := &Layout{Prefix: "Syn", UserPrefix: "syn_", Root: ouRoot, District: ouNorth, OtherDistrict: ouSouth,
 		Facility: ouFac, Sibling: ouSib, RestrictedStage: stLab, RelationshipTypes: []string{rtMotherChild},
 		Programs: []ProgramLayout{{prMat, tetPerson, []string{stAnc, stDel, stLab}}, {prHiv, tetPerson, []string{stIni, stFup}},
-			{prTb, tetPerson, []string{stTbV}}, {prCom, tetPerson, []string{stCom}}, {prEvt, "", []string{stEvt}}}}
+			{prTb, tetPerson, []string{stTbV}}, {prCom, tetPerson, []string{stCom}}, {prEvt, "", []string{stEvt}},
+			{prHhs, tetHousehold, []string{stHhs}}},
+		SharedOption: coDonorA, HiddenOption: coDonorB}
 	l.Open, l.Protected, l.Closed = &l.Programs[0], &l.Programs[1], &l.Programs[2]
 	acc := buildAccess(l)
 	sh := func(id string) *sharing {
@@ -235,6 +258,7 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 	}
 	sh(prCom).Public, sh(stCom).Public = acWrite, acWrite // public data access
 	sh(rtMotherChild).Public = acMeta
+	sh(coDonorA).Public, sh(coDonorB).Public = acMeta, acMeta // metadata only: data access comes from grants
 
 	ptea := func(id string, mandatory bool) map[string]any {
 		return map[string]any{"trackedEntityAttribute": ref(id), "mandatory": mandatory, "searchable": true,
@@ -254,6 +278,8 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 		program(prTb, "TB treatment", "CLOSED", []any{ptea(atFirst, true), ptea(atLast, true), ptea(atTbNo, false)},
 			[]string{stTbV}),
 		program(prCom, "community outreach", "OPEN", []any{ptea(atFirst, true), ptea(atPhone, false)}, []string{stCom}),
+		withCombo(program(prHhs, "household survey", "OPEN", []any{ptea(atHhID, false), ptea(atVillage, true)},
+			[]string{stHhs}), tetHousehold, ccDonor),
 		map[string]any{"id": prEvt, "name": "Synthetic facility events", "shortName": "Syn facility events",
 			"programType": "WITHOUT_REGISTRATION", "programStages": refs(stEvt), "organisationUnits": refs(facilities...),
 			"sharing": sh(prEvt).json()},
@@ -274,6 +300,7 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 		stage(stTbV, "TB visit", prTb, 1, true, []any{psde(deSmear, false), psde(deWeight, false)}),
 		stage(stCom, "outreach visit", prCom, 1, true, []any{psde(deNote, false)}),
 		stage(stEvt, "facility event", prEvt, 1, true, []any{psde(deNote, false), psde(deWeight, false)}),
+		stage(stHhs, "household visit", prHhs, 1, true, []any{psde(deNote, false)}),
 	}
 
 	metadata := map[string]any{
@@ -285,7 +312,19 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 				map[string]any{"trackedEntityAttribute": ref(atFirst), "searchable": true, "displayInList": true},
 				map[string]any{"trackedEntityAttribute": ref(atLast), "searchable": true, "displayInList": true},
 				map[string]any{"trackedEntityAttribute": ref(atNatID), "searchable": true, "displayInList": true}},
-			"sharing": sh(tetPerson).json()}},
+			"sharing": sh(tetPerson).json()},
+			map[string]any{"id": tetHousehold, "name": "Synthetic household", "shortName": "Syn household",
+				"trackedEntityTypeAttributes": []any{
+					map[string]any{"trackedEntityAttribute": ref(atHhID), "searchable": true, "displayInList": true},
+					map[string]any{"trackedEntityAttribute": ref(atVillage), "searchable": true, "displayInList": true}},
+				"sharing": sh(tetHousehold).json()}},
+		"categoryOptions": []any{
+			map[string]any{"id": coDonorA, "name": "Synthetic donor A", "shortName": "Syn donor A", "sharing": sh(coDonorA).json()},
+			map[string]any{"id": coDonorB, "name": "Synthetic donor B", "shortName": "Syn donor B", "sharing": sh(coDonorB).json()}},
+		"categories": []any{map[string]any{"id": caDonor, "name": "Synthetic donor", "shortName": "Syn donor",
+			"dataDimensionType": "ATTRIBUTE", "categoryOptions": refs(coDonorA, coDonorB), "sharing": meta}},
+		"categoryCombos": []any{map[string]any{"id": ccDonor, "name": "Synthetic donor", "dataDimensionType": "ATTRIBUTE",
+			"categories": refs(caDonor), "sharing": meta}},
 		"dataElements":  dataElements,
 		"programs":      programs,
 		"programStages": stages,
@@ -320,6 +359,8 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 			{ID: prCom, Name: "Synthetic community outreach", TET: tetPerson, AccessLevel: "OPEN", Stages: []string{stCom},
 				SearchAttr: atFirst, RequiredAttrs: map[string]string{atFirst: "Test"},
 				EventValues: map[string]map[string]string{stCom: {}}},
+			{ID: prHhs, Name: "Synthetic household survey", TET: tetHousehold, AccessLevel: "OPEN", Stages: []string{stHhs},
+				SearchAttr: atVillage, UniqueAttr: atHhID, EventValues: map[string]map[string]string{stHhs: {}}},
 		},
 		Users: map[string]testkit.User{},
 	}

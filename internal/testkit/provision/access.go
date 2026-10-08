@@ -18,12 +18,16 @@ type Layout struct {
 	Facility      string
 	Sibling       string // another facility in the district
 
-	Programs          []ProgramLayout
-	Open              *ProgramLayout // the "open" matrix dimension: the primary program
-	Protected         *ProgramLayout // the "protected" dimension; nil if the profile has none
-	Closed            *ProgramLayout // the "closed" dimension; nil if the profile has none
-	RestrictedStage   string         // hidden from the restricted role; a stage of Open
-	RelationshipTypes []string
+	Programs        []ProgramLayout
+	Open            *ProgramLayout // the "open" matrix dimension: the primary program
+	Protected       *ProgramLayout // the "protected" dimension; nil if the profile has none
+	Closed          *ProgramLayout // the "closed" dimension; nil if the profile has none
+	RestrictedStage string         // hidden from the restricted role; a stage of Open
+	// SharedOption is a category option of an attribute category combo, shared per
+	// the "option" dimension; HiddenOption is shared with no test user. Events carry
+	// them as their attribute option combo.
+	SharedOption, HiddenOption string
+	RelationshipTypes          []string
 }
 
 type ProgramLayout struct {
@@ -95,6 +99,10 @@ func buildAccess(l *Layout) *Access {
 		grant("", grpNurse, acWrite, append([]string{p.ID}, l.stagesOf(p)...)...)
 	}
 	grant("", grpNurse, acWrite, l.tets()...)
+	if l.SharedOption != "" {
+		grant("", grpNurse, acWrite, l.SharedOption)
+		grant("", grpClerk, acRead, l.SharedOption)
+	}
 	grant("", grpNurse, acWrite, l.RelationshipTypes...)
 	if l.RestrictedStage != "" {
 		grant("", grpLab, acWrite, l.RestrictedStage)
@@ -172,6 +180,9 @@ func buildAccess(l *Layout) *Access {
 			grant(s.uid, group, accessOf[dims["lab"]], l.RestrictedStage)
 		}
 		grant(s.uid, group, accessOf[dims["tet"]], l.tets()...)
+		if l.SharedOption != "" {
+			grant(s.uid, group, accessOf[dims["option"]], l.SharedOption)
+		}
 		grant(s.uid, group, acWrite, l.RelationshipTypes...)
 		specs = append(specs, s)
 		a.Matrix = append(a.Matrix, testkit.MatrixUser{User: testkit.User{Username: s.username, UID: s.uid}, Dims: dims})

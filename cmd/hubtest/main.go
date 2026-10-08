@@ -132,7 +132,11 @@ func (r *runFlags) run() error {
 	if err != nil {
 		return err
 	}
-	if !r.reuse {
+	if r.reuse {
+		if err := b.running(name); err != nil {
+			return err
+		}
+	} else {
 		s, err := seed(r.profile, r.version)
 		if err != nil {
 			return err

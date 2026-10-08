@@ -123,12 +123,13 @@ func TestScenarios(t *testing.T) {
 			t.Fatalf("author does not find it: %v", got)
 		}
 		if r := logins[tk.RoleRestricted]; r != nil && p.RestrictedStage != "" {
-			res := r.JSON("GET", "/api/tracker/events?program="+p.ID+"&orgUnit="+m.Facility.ID+"&pageSize=500", nil, 200)
+			// The person's own events: a busy facility has more than a page of them.
+			res := r.JSON("GET", "/api/tracker/events?program="+p.ID+"&orgUnit="+m.Facility.ID+"&trackedEntity="+offline.TE+"&paging=false", nil, 200)
 			evs := uids(res["events"], "event")
 			for i, st := range p.Stages {
 				want := st != p.RestrictedStage
 				if slices.Contains(evs, offline.Events[i]) != want {
-					t.Errorf("restricted user, stage %s: visible=%v", st, !want)
+					t.Errorf("restricted user, stage %s: visible=%v, want %v", st, !want, want)
 				}
 			}
 		}

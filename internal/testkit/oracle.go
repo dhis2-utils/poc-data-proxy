@@ -188,7 +188,7 @@ func Judge(truth *Truth, q Query, user string, cStatus int, cBody []byte, hStatu
 			leaks = append(leaks, uid)
 		case expected[uid] == nil:
 			extra = append(extra, uid) // central shows it, but the facility does not own it
-		case canon(it) != canon(expected[uid]):
+		case canon(truth.narrow(q.Kind, uid, it)) != canon(expected[uid]):
 			differs = append(differs, uid)
 		}
 	}
@@ -217,8 +217,9 @@ func Judge(truth *Truth, q Query, user string, cStatus int, cBody []byte, hStatu
 	return o
 }
 
-// narrow drops from central's tracked entity the enrollments of programs the
-// facility does not own it for: the hub holds only the facility's data.
+// narrow drops from a tracked entity the enrollments of programs the facility does not
+// own it for (the hub holds only the facility's data) and of programs outside the
+// manifest. It is applied to both answers.
 func (t *Truth) narrow(kind, uid string, o map[string]any) map[string]any {
 	enrs, ok := o["enrollments"].([]any)
 	if kind != "trackedEntities" || !ok {
@@ -232,7 +233,10 @@ func (t *Truth) narrow(kind, uid string, o map[string]any) map[string]any {
 	for _, e := range enrs {
 		em, _ := e.(map[string]any)
 		p, _ := em["program"].(string)
-		if owned, known := t.Owned[p]; !known || owned[uid] {
+		// Only programs the oracle knows are judged: enrollments in others (for instance
+		// programs a user reads only through data sharing, without their metadata) are
+		// left out on both sides.
+		if owned, known := t.Owned[p]; known && owned[uid] {
 			kept = append(kept, e)
 		}
 	}

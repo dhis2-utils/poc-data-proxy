@@ -144,6 +144,30 @@ func (b *broker) fresh(name, version, seed, label string) (string, error) {
 	return cur.DevnetURL, nil
 }
 
+// running starts the instance if it is stopped (state is kept).
+func (b *broker) running(name string) error {
+	cur, err := b.instance(name)
+	if err != nil {
+		return err
+	}
+	if cur == nil {
+		return fmt.Errorf("no instance %s", name)
+	}
+	if cur.Status == "running" {
+		return nil
+	}
+	var job struct {
+		Job struct {
+			ID string `json:"id"`
+		} `json:"job"`
+	}
+	log.Printf("starting %s", name)
+	if _, err := b.do("POST", "/instances/"+name+"/start", nil, &job); err != nil {
+		return err
+	}
+	return b.wait(job.Job.ID)
+}
+
 func (b *broker) stop(name string) error {
 	var job struct {
 		Job struct {

@@ -118,8 +118,8 @@ func TestOracle(t *testing.T) {
 // it is reported but does not fail the run. Everything else does.
 func knownGap(o tk.Outcome, q tk.Query, dims map[string]string) string {
 	switch {
-	case o.Verdict == tk.Lenient && strings.Contains(q.Path, "orgUnitMode=ACCESSIBLE") && !strings.Contains(q.Path, "filter="):
-		return "an unfiltered ACCESSIBLE search: central requires an attribute (409), the hub answers from facility data"
+	case o.Verdict == tk.Lenient && strings.Contains(o.Detail, "attributes should be mentioned in the search criteria"):
+		return "an ACCESSIBLE search with fewer attributes than the program requires: central refuses it (409), the hub answers from facility data"
 	case o.Verdict == tk.Missing && q.Kind == "events" && dims["tet"] == "none":
 		return "events for a user without tracked entity type access: central shows them, the hub pulls by tracked entity"
 	}

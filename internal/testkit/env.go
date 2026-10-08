@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -293,4 +294,15 @@ func (e *Env) CentralImport(payload map[string]any) {
 // AndroidUser is an Android client for any user of the manifest (a matrix user).
 func (e *Env) AndroidUser(username string) *Client {
 	return &Client{e: e, Role: username, User: username, basic: true, HTTP: &http.Client{}}
+}
+
+// SetUplink cuts or restores the uplink without failing the test: for control
+// endpoints called from other goroutines (the client drivers).
+func (e *Env) SetUplink(up bool) error {
+	e.Net.SetDown(!up)
+	e.probe()
+	if e.App.Hub.Online() != up {
+		return fmt.Errorf("hub online=%v, want %v", e.App.Hub.Online(), up)
+	}
+	return nil
 }
