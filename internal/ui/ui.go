@@ -3,7 +3,6 @@
 package ui
 
 import (
-	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -14,7 +13,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"time"
 
 	"github.com/dhis2/facility-hub/internal/auth"
 	"github.com/dhis2/facility-hub/internal/core"
@@ -92,6 +90,9 @@ func StatusBody(h *core.Hub) map[string]any {
 	out := map[string]any{"mode": mode, "hubId": h.HubID(), "lastPush": nullable(lastPush), "lastPull": nullable(lastPull),
 		"pending": h.Store.CountObjects(store.SyncPending), "rejected": h.Store.CountObjects(store.SyncRejected),
 		"version": h.Version, "locked": !h.Store.Unlocked(), "setup": h.Mode() == core.ModeSetup}
+	if start, running := h.Stats.Cycle(); start != "" {
+		out["syncStarted"], out["syncing"] = start, running
+	}
 	if h.Retired() {
 		out["retired"] = true
 		out["message"] = "this hub was replaced by another hub for the facility; it only sends its remaining changes"
@@ -255,13 +256,9 @@ func (u *UI) handleSyncNow(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/hub/ui", http.StatusFound)
 		return
 	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		defer cancel()
-		if err := u.Worker.Cycle(ctx); err != nil {
-			slog.Warn("sync now", "err", err)
-		}
-	}()
+	// The scheduler runs it: one cycle at a time, and without a time limit, since a
+	// first pull of a large facility takes longer than any fixed one.
+	u.H.TriggerSync()
 	http.Redirect(w, r, "/hub/ui?msg=Sync+started", http.StatusFound)
 }
 

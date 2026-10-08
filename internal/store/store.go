@@ -222,7 +222,7 @@ func DataPath(path string) string { return path + ".data" }
 // Open opens (and migrates) the key file at path. The store starts locked.
 func Open(path string) (*Store, error) {
 	keys, err := sql.Open("sqlite3", "file:"+(&url.URL{Path: path}).EscapedPath()+
-		"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_pragma=synchronous(NORMAL)&_pragma=secure_delete(1)")
+		"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_pragma=synchronous(NORMAL)&_pragma=secure_delete(1)&_txlock=immediate")
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +322,10 @@ func openData(path string, dk hubcrypto.Key) (*sql.DB, error) {
 		return nil, err
 	}
 	// The key must be set before anything reads the file, so no _pragma in the DSN.
-	db, err := driver.Open(dataDSN(path), func(c *sqlite3.Conn) error {
+	// Write transactions take the write lock when they begin (_txlock=immediate): a
+	// deferred one that reads first fails at once with "database is locked" when another
+	// connection writes meanwhile, whatever the busy timeout (found by cmd/hubload).
+	db, err := driver.Open(dataDSN(path)+"&_txlock=immediate", func(c *sqlite3.Conn) error {
 		return c.Exec(`PRAGMA hexkey='` + key + `'; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=10000;
 PRAGMA synchronous=NORMAL; PRAGMA temp_store=memory`)
 	})

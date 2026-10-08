@@ -152,6 +152,9 @@ type SyncStats struct {
 	LastPull string
 	LastSync string
 	LastErr  string
+	// CycleStart is when the running or last sync cycle began; Syncing whether one runs.
+	CycleStart string
+	Syncing    bool
 }
 
 func (s *SyncStats) Set(fn func(*SyncStats)) {
@@ -164,6 +167,13 @@ func (s *SyncStats) Get() (lastPush, lastPull, lastSync, lastErr string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.LastPush, s.LastPull, s.LastSync, s.LastErr
+}
+
+// Cycle returns when the running or last sync cycle began, and whether one runs.
+func (s *SyncStats) Cycle() (start string, running bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.CycleStart, s.Syncing
 }
 
 // LastPushPull returns the last push and pull times, surviving restarts.
