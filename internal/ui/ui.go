@@ -151,7 +151,10 @@ func (u *UI) admin(next http.HandlerFunc) http.HandlerFunc {
 // Origin on form posts, and Sec-Fetch-Site on every request; a post with neither is
 // refused (REVIEW-2 F9).
 func sameOrigin(r *http.Request) bool {
-	if o := r.Header.Get("Origin"); o != "" {
+	// Hub pages send Referrer-Policy: no-referrer, under which browsers post forms with
+	// "Origin: null"; their Sec-Fetch-Site then tells (every browser login and setup was
+	// refused before this was noticed by hand).
+	if o := r.Header.Get("Origin"); o != "" && o != "null" {
 		return o == "http://"+r.Host || o == "https://"+r.Host
 	}
 	site := r.Header.Get("Sec-Fetch-Site")

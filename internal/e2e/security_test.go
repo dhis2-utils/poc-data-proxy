@@ -445,6 +445,23 @@ func TestHubPageHardening(t *testing.T) {
 	if resp.StatusCode != 403 {
 		t.Fatalf("post without Origin or Sec-Fetch-Site: %d", resp.StatusCode)
 	}
+	// A browser on the hub's own page, under its no-referrer policy: Origin is null.
+	for site, want := range map[string]bool{"same-origin": true, "cross-site": false, "": false} {
+		req, _ := http.NewRequest("POST", e.srv.URL+"/hub/setup", strings.NewReader(url.Values{"step": {"login"}}.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "null")
+		if site != "" {
+			req.Header.Set("Sec-Fetch-Site", site)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if got := resp.StatusCode != 403; got != want {
+			t.Errorf("Origin null, Sec-Fetch-Site %q: status %d", site, resp.StatusCode)
+		}
+	}
 }
 
 // REVIEW-2 F9: a hub the registry marks as replaced stops serving patient data
