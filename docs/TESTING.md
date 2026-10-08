@@ -1,0 +1,88 @@
+# Testing the facility hub
+
+The hub stands in for DHIS2 when the uplink is down. Every place where its answer differs from what central would have answered is a bug: either a user sees something central would hide, or an app breaks. The test framework exists to find those differences across hub code, DHIS2 configurations, DHIS2 versions and client apps, and to keep finding them as each of those changes.
+
+## Supported DHIS2 versions
+
+The hub supports the DHIS2 versions DHIS2 itself supports, from 2.42 on: today **2.42 and 2.43**. DHIS2 releases yearly and supports three versions; when 2.44 is released the window becomes 2.42–2.44, then 2.43–2.45, and so on. Each supported version runs the full test matrix below. A hub release that adds the next version goes out before any country upgrades central.
+
+## What has to be covered
+
+| Axis | Values |
+|---|---|
+| Hub behaviour | online pass-through, offline reads, offline writes, sync, login and sessions, upgrades, security properties |
+| DHIS2 configuration | synthetic edge cases built on an empty instance; Sierra Leone demo; Laos HMIS demo; later, country-like metadata snapshots |
+| DHIS2 version | every supported version (42 now, 43 next) |
+| Client | Capture web app, Android Capture app, and raw API calls |
+| Conditions | network cuts and flapping, reboots, power loss mid-write, full disk, clock skew, scale (data volume and number of devices) |
+
+## How
+
+### 1. Tests are written against roles, not UIDs
+
+Every DHIS2 setup is described by a **manifest**: the facility, a sibling facility and the district, the tracker programs and their stages and attributes, and one user per **role**:
+
+| Role | Meaning |
+|---|---|
+| `admin` | in the setup user group; sets up and administers the hub |
+| `nurse` | captures at the facility with full access to the programs |
+| `restricted` | like `nurse`, but cannot see one program stage |
+| `clerk` | reads the programs, cannot write events |
+| `outsider` | captures at another facility |
+| `district` | district officer: search scope over the district, no capture at the facility, not every program shared |
+| `searchless` | captures at the facility but has no search scope there |
+
+A **profile** turns a DHIS2 instance into that shape and writes the manifest:
+
+- `synthetic` builds everything on an empty instance: org unit tree, tracked entity types, attributes (unique, generated, option sets), open and protected programs, a restricted stage, relationship types, users, sharing and generated data. Its size is a parameter, so the same profile also gives the scale test data. It is where edge cases live, because we control every detail.
+- `sierra-leone` and `laos` start from the demo database seeds. They pick a facility that has tracker data, create the role users and the sharing they need, and keep the rest of the database as it is, with its program rules, option sets and quirks.
+
+The same test code runs against any manifest.
+
+### 2. Two kinds of central
+
+- **fake**: `internal/fakecentral`, in process, milliseconds per test, with fault injection (refusing tokens, disabled accounts, errors). Runs on every commit.
+- **live**: a real DHIS2 instance from the broker, provisioned by a profile. Between hub and central sits an in-process **network switch** (`testkit.Netcut`): a proxy that can cut the line at the connection level, delay it or let it flap, so "offline" is a real network failure on any central.
+
+### 3. Central is the oracle
+
+Hand-written expectations do not scale across configurations. Instead, for each role user and each query, the **differential oracle** asks central directly (online, as that user) and the hub (offline, after a sync), and compares:
+
+- the set of objects, with central's answer narrowed to what the facility owns (the hub holds only the facility's data);
+- for objects in both, every field the query asked for;
+- error status and code for queries the hub refuses or central rejects.
+
+Queries come from a generator: per program and role, every search the Capture apps make (recorded endpoint lists in `testdata/<version>/`), crossed with org unit modes, attribute filters on values sampled from the data, ordering, paging and field selections, plus single-object reads for objects the user may and may not see. A difference is a finding, reported with the user, the request and both answers.
+
+Writes are checked the same way after the fact: what reaches central through the hub's outbox must equal what the same user writing online would have produced, including author, dates and rejections.
+
+### 4. Real clients
+
+Scripted Capture web runs (Playwright) and Android Capture runs (adb and the UI automator) against hub and live central: log in online, work offline, hand over between devices, reconnect. These are the tests that found most real bugs in the POC; they move from manual runs into the repository.
+
+### 5. Conditions
+
+- Network: cut, restore, flap during a push, slow uplink.
+- Process: kill the hub during an import, a push and an upgrade; restart and check that nothing is lost or duplicated.
+- Disk: full data partition.
+- Time: hub clock ahead of or behind central.
+- Scale: a load generator (`cmd/hubload`) simulating N web and Android clients against a synthetic facility of N thousand tracked entities, measuring latency, memory and correctness.
+
+## Running
+
+| Command | What |
+|---|---|
+| `go test ./...` | unit tests, fake-central end-to-end tests, differential tests on the fake |
+| `go run ./cmd/hubtest instance -profile synthetic -version 42` | create a broker instance and provision a profile; writes `manifest.json` |
+| `HUB_MANIFEST=manifest.json go test ./internal/live/...` | the live suite against that instance |
+| `go run ./cmd/hubtest matrix` | every profile × supported version, one instance at a time; writes a report |
+
+Live runs mutate their instance. A run starts from a fresh seed or an empty instance, never from a dirty one.
+
+## Phases
+
+1. **Framework on 2.42** — manifest, network switch, hub runner, synthetic profile, live scenario suite, differential read oracle, `hubtest` CLI.
+2. **Seeded profiles** — Sierra Leone and Laos.
+3. **Real clients** — scripted Capture web and Android runs.
+4. **Conditions** — network, process, disk, time, scale.
+5. **2.43** — record its fixtures, diff them against 2.42, implement the differences, add it to the matrix.
