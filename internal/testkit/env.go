@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -154,11 +155,23 @@ func (e *Env) Setup() {
 	}
 	b, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
+	// On a live instance an earlier run's hub may be registered for the facility:
+	// confirm replacing it, as an installer would.
+	if m := nonceRe.FindSubmatch(b); m != nil && bytes.Contains(b, []byte(`value="confirm"`)) {
+		resp, err = c.PostForm("/hub/setup", url.Values{"step": {"confirm"}, "nonce": {string(m[1])}, "replace": {"yes"}})
+		if err != nil {
+			e.T.Fatal(err)
+		}
+		b, _ = io.ReadAll(resp.Body)
+		resp.Body.Close()
+	}
 	if !bytes.Contains(b, []byte("This hub now serves")) {
 		e.T.Fatalf("setup failed: %.2000s", b)
 	}
 	e.Sync()
 }
+
+var nonceRe = regexp.MustCompile(`name="nonce" value="([^"]+)"`)
 
 // --- clients ------------------------------------------------------------------------
 
@@ -275,4 +288,9 @@ func (e *Env) CentralImport(payload map[string]any) {
 	if err != nil || st != 200 {
 		e.T.Fatalf("central import: %d %v %.1500s", st, err, b)
 	}
+}
+
+// AndroidUser is an Android client for any user of the manifest (a matrix user).
+func (e *Env) AndroidUser(username string) *Client {
+	return &Client{e: e, Role: username, User: username, basic: true, HTTP: &http.Client{}}
 }
