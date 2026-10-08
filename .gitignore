@@ -6,3 +6,4 @@
 *.db-shm
 .pnpm-store/
 testresults/
+perf/results/

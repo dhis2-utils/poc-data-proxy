@@ -6,13 +6,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,6 +35,18 @@ type Env struct {
 	Dir     string
 	App     *app.App
 	Srv     *httptest.Server
+
+	listen string   // fixed address to serve on (ServeOn); default an ephemeral port
+	hosts  []string // extra hub host names
+	recMu  sync.Mutex
+	rec    []Request
+}
+
+// Request is one answer the hub gave, as recorded for Requests.
+type Request struct {
+	Method, Path, Query string
+	Status              int
+	Online              bool
 }
 
 // Target returns the manifest of the central under test: the live instance in
@@ -85,6 +100,7 @@ func (e *Env) Config() config.Config {
 	c.PingTimeout = 5 * time.Second
 	c.ReservedPoolSize = 10
 	c.LogRequests = true
+	c.HubHosts = append(c.HubHosts, e.hosts...)
 	return c
 }
 
@@ -94,7 +110,26 @@ func (e *Env) boot() {
 		e.T.Fatal(err)
 	}
 	e.App = a
-	e.Srv = httptest.NewServer(a.Handler)
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sw := &statusWriter{ResponseWriter: w, status: 200}
+		a.Handler.ServeHTTP(sw, r)
+		e.recMu.Lock()
+		e.rec = append(e.rec, Request{r.Method, r.URL.Path, r.URL.RawQuery, sw.status, !e.Net.Down()})
+		e.recMu.Unlock()
+	})
+	if e.listen == "" {
+		e.Srv = httptest.NewServer(h)
+	} else {
+		l, err := net.Listen("tcp", e.listen)
+		if err != nil {
+			e.T.Fatal(err)
+		}
+		e.Srv = httptest.NewUnstartedServer(h)
+		e.Srv.Listener.Close()
+		e.Srv.Listener = l
+		e.Srv.Start()
+		e.Srv.URL = "http://127.0.0.1:" + strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
+	}
 	e.probe()
 }
 
@@ -103,6 +138,38 @@ func (e *Env) stop() {
 		e.Srv.Close()
 		e.App.Close()
 		e.Srv = nil
+	}
+}
+
+// ServeOn moves the hub to a fixed address (e.g. ":49237", for a device outside this
+// process), reachable also under hosts. Call it before Setup: it reboots the hub.
+func (e *Env) ServeOn(addr string, hosts ...string) {
+	e.listen, e.hosts = addr, hosts
+	e.Reboot()
+}
+
+// Requests returns what the hub has answered so far, and forgets it.
+func (e *Env) Requests() []Request {
+	e.recMu.Lock()
+	defer e.recMu.Unlock()
+	out := e.rec
+	e.rec = nil
+	return out
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *statusWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
 	}
 }
 

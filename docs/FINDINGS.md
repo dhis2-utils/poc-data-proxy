@@ -237,6 +237,8 @@ The differential oracle compares the offline hub with central for every role and
 4. People registered at the facility but enrolled in nothing the user can read were never pulled.
 5. DHIS2 2.42 shows the attributes of **every** tracked entity type on the server, plus the queried program's (`TrackedEntityAggregate.getAllowedAttributeUids`). The hub had assumed the entity's own type only; Sierra Leone's metadata showed the difference.
 6. At login, a user's access was fetched only with a stored token; a user without one got no access list.
+7. A user whose capture org unit is **above** the facility (a district, say) was treated as an outsider: the hub required the facility itself in the user's capture org units. On central the capture scope includes everything below, so the hub refused offline writes central accepts (the write oracle's OVER-REJECT on Laos, `hla_mx07`). The hub now matches the facility's path against the user's capture org units, like central.
+8. A second event in a **non-repeatable stage** was accepted offline and rejected on push with E1039 (LATE on Laos, 67 writes). The hub now fetches each stage's `repeatable` flag and refuses the second event offline, counting the events it holds and earlier ones in the same payload. It can still miss an event created on central that it has not pulled yet; central then rejects it on push, as before.
 
 **DHIS2 behaviour worth knowing:**
 
@@ -248,7 +250,8 @@ The differential oracle compares the offline hub with central for every role and
 
 - Events for users without tracked entity type access (above): central shows them, the hub pulls by tracked entity.
 - Unfiltered `ACCESSIBLE` searches: central rejects them, the hub answers from facility data the user can read anyway.
-- Users without the facility in their capture scope (district officers, for instance) are passed through only, by design (REVIEW-2 F5): offline they see nothing.
+- **Event programs (without registration) are not held offline.** The hub caches tracker programs only, so Android's download of an event program's events (Sierra Leone's "XX MAL RDT - Case Registration") gets 503 offline. A facility that captures event programs loses them offline; whether the hub should cache them is a scope decision.
+- Users without the facility in their capture scope (a district officer with capture elsewhere and only search scope here, for instance) are passed through only, by design (REVIEW-2 F5): offline they see nothing.
 
 ## Capture web app through the hub
 

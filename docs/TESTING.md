@@ -88,6 +88,8 @@ Scripted Capture web runs (Playwright) and Android Capture runs (adb and the UI 
 | `TestScenarios` | the acceptance scenarios (spec 13.3) on the profile's own programs: setup, online and offline writes, access per role, unique conflicts, reconnection, reboot, nothing in plain text on disk |
 | `TestOracle` | every role and matrix user × generated read queries, hub offline against central online; verdicts LEAK, MISSING, DIFFERS, LENIENT, REFUSED, MATCH. Known gaps are named in `knownGap` with their reason |
 | `TestWriteOracle` | every user tries the same writes offline; after reconnection central judges them: DENIED (the hub accepted what central refuses this user) fails the run, OVER-REJECT and LATE are reported |
+| `TestCaptureWeb` | (`HUB_CLIENTS=1`) the real Capture web app with Playwright: working lists and the enrollment dashboard online, then offline; fails if the offline working list does not render, and reports every request the hub refused |
+| `TestCaptureAndroid` | (`HUB_CLIENTS=1`, an emulator on adb) the real Android Capture app: first login and download online, then with the app's data wiped and the uplink cut, a first login and full download offline from the hub; compares the record counts and reports refused requests |
 
 ### Profiles
 
@@ -104,5 +106,5 @@ The **access matrix** (27–30 users per profile) covers every pair of: capture 
 1. **Framework on 2.42** — manifest, network switch, hub runner, synthetic profile, live scenario suite, differential read oracle, `hubtest` CLI.
 2. **Seeded profiles** — Sierra Leone and Laos.
 3. **Real clients** — scripted Capture web and Android runs.
-4. **Conditions** — network, process, disk, time, scale.
+4. **Conditions** — network, process, disk, time, scale. The scale test (Pi-class hardware, 50 users, 100 000 tracked entities, 150 000 enrollments, 500 000 events) is planned in [PERFORMANCE.md](PERFORMANCE.md).
 5. **2.43** — record its fixtures, diff them against 2.42, implement the differences, add it to the matrix.
