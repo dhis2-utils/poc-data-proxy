@@ -167,10 +167,18 @@ func waitUp(timeout time.Duration) {
 
 func waitStatus(ok func(map[string]any) bool, timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
+	lastSeen := time.Now()
 	for time.Now().Before(deadline) {
 		var s map[string]any
-		if json.Unmarshal([]byte(status()), &s) == nil && ok(s) {
-			return
+		if json.Unmarshal([]byte(status()), &s) == nil {
+			lastSeen = time.Now()
+			if ok(s) {
+				return
+			}
+		} else if time.Since(lastSeen) > 2*time.Minute {
+			// The hub is gone (killed for memory, say): waiting out the timeout only
+			// stalls the ladder.
+			log.Fatalf("hub at %s not answering for 2 minutes: %s", *hubURL, status())
 		}
 		time.Sleep(2 * time.Second)
 	}
