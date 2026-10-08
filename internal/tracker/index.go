@@ -24,6 +24,14 @@ type Index struct {
 	store    *store.Store        // set by Load: objects are then held slim (slim.go)
 }
 
+// NewStoreIndex is the index of a hub's store: objects are held slim (slim.go) from
+// the first one, whether the store was unlocked by setup or by a login.
+func NewStoreIndex(s *store.Store) *Index {
+	ix := NewIndex()
+	ix.store = s
+	return ix
+}
+
 func NewIndex() *Index {
 	return &Index{objs: map[string]*Obj{}, byKey: map[string]map[string]bool{}, vis: map[int64]bitmap{},
 		pending: map[string]uint32{}, scopes: map[string][]string{}}
@@ -241,6 +249,8 @@ type Viewer struct {
 	Access      *access.List
 	Facility    string
 	Catalog     *access.Catalog
+
+	payloads map[string]M // full payloads loaded for this request (prefetch)
 }
 
 // accessAllows checks a central-origin object against the user's current access list:

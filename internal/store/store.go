@@ -337,7 +337,7 @@ func openData(path string, dk hubcrypto.Key) (*sql.DB, error) {
 	// connection writes meanwhile, whatever the busy timeout (found by cmd/hubload).
 	db, err := driver.Open(dataDSN(path)+"&_txlock=immediate", func(c *sqlite3.Conn) error {
 		return c.Exec(`PRAGMA hexkey='` + key + `'; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=10000;
-PRAGMA synchronous=NORMAL; PRAGMA temp_store=memory`)
+PRAGMA synchronous=NORMAL; PRAGMA temp_store=memory; PRAGMA cache_size=-16384`)
 	})
 	if err != nil {
 		return nil, err

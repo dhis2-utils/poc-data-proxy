@@ -108,3 +108,84 @@ func (ix *Index) ownedElsewhere(te, program, facility string) bool {
 	}
 	return false
 }
+
+// fullFor is Full, from the payloads prefetched for this request when there.
+func (ix *Index) fullFor(v *Viewer, o *Obj) M {
+	if v != nil && o != nil && o.slim {
+		if d, ok := v.payloads[o.UID]; ok {
+			return d
+		}
+	}
+	return ix.Full(o)
+}
+
+// prefetch loads in one go the full payloads that rendering objs with these fields
+// will read: each object, and under it the enrollments, events and relationships the
+// fields ask for (nil fields: all of them).
+func (ix *Index) prefetch(v *Viewer, objs []*Obj, f *Fields) {
+	if ix.store == nil || v == nil {
+		return
+	}
+	seen := map[string]bool{}
+	var uids []string
+	add := func(os []*Obj) {
+		for _, o := range os {
+			if o != nil && o.slim && !seen[o.UID] {
+				if _, ok := v.payloads[o.UID]; !ok {
+					seen[o.UID] = true
+					uids = append(uids, o.UID)
+				}
+			}
+		}
+	}
+	has := func(f *Fields, name string) bool { return f == nil || f.Has(name) }
+	sub := func(f *Fields, name string) *Fields {
+		if f == nil {
+			return nil
+		}
+		return f.Sub(name)
+	}
+	for _, o := range objs {
+		add([]*Obj{o})
+		switch o.Kind {
+		case store.KindTrackedEntity:
+			// Enrollments always: a program-scoped answer merges their attributes.
+			enrs := ix.EnrollmentsOf(o.UID)
+			add(enrs)
+			if ef := sub(f, "enrollments"); has(f, "enrollments") && has(ef, "events") {
+				add(ix.EventsOfTE(o.UID))
+			}
+			if has(f, "relationships") {
+				add(ix.RelationshipsOf(o.UID))
+			}
+		case store.KindEnrollment:
+			if has(f, "events") {
+				add(ix.EventsOf(o.UID))
+			}
+			if has(f, "relationships") {
+				add(ix.RelationshipsOf(o.UID))
+			}
+		case store.KindEvent:
+			if has(f, "relationships") {
+				add(ix.RelationshipsOf(o.UID))
+			}
+		}
+	}
+	if len(uids) == 0 {
+		return
+	}
+	raw, err := ix.store.Payloads(uids)
+	if err != nil {
+		slog.Warn("prefetching payloads", "err", err)
+		return
+	}
+	if v.payloads == nil {
+		v.payloads = make(map[string]M, len(raw))
+	}
+	for uid, b := range raw {
+		var d M
+		if json.Unmarshal(b, &d) == nil {
+			v.payloads[uid] = d
+		}
+	}
+}

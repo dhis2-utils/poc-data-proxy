@@ -289,9 +289,10 @@ func TestCreatedByKept(t *testing.T) {
 	te["createdBy"] = map[string]any{"username": "someone_else"}
 	te["createdAt"] = "2000-01-01T00:00:00.000"
 	b.json("POST", postSync, upd, 200)
-	o := e.app.Hub.Index.Get("OwnTe000001")
-	if cb, _ := o.Data["createdBy"].(map[string]any); cb["username"] != "nurse_a" || o.Data["createdAt"] == "2000-01-01T00:00:00.000" {
-		t.Fatalf("createdBy %v createdAt %v", o.Data["createdBy"], o.Data["createdAt"])
+	ix := e.app.Hub.Index
+	d := ix.Full(ix.Get("OwnTe000001"))
+	if cb, _ := d["createdBy"].(map[string]any); cb["username"] != "nurse_a" || d["createdAt"] == "2000-01-01T00:00:00.000" {
+		t.Fatalf("createdBy %v createdAt %v", d["createdBy"], d["createdAt"])
 	}
 }
 

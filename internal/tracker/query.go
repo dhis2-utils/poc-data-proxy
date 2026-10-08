@@ -359,13 +359,13 @@ func scopeAttributes(v *Viewer, tet, program string, attrs []any) []any {
 }
 
 func (ix *Index) RenderTE(v *Viewer, o *Obj, f *Fields, program string) M {
-	d := clone(ix.Full(o))
+	d := clone(ix.fullFor(v, o))
 	if program != "" {
 		// Central lists the program's attributes on the tracked entity when program is
 		// given; clients often send them under the enrollment only.
 		for _, e := range ix.EnrollmentsOf(o.UID) {
 			if e.Program == program && ix.CanRead(v, e) {
-				d["attributes"] = mergeList(d["attributes"], ix.Full(e)["attributes"], "attribute")
+				d["attributes"] = mergeList(d["attributes"], ix.fullFor(v, e)["attributes"], "attribute")
 			}
 		}
 	}
@@ -404,7 +404,7 @@ func (ix *Index) RenderTE(v *Viewer, o *Obj, f *Fields, program string) M {
 }
 
 func (ix *Index) RenderEnrollment(v *Viewer, o *Obj, f *Fields) M {
-	d := clone(ix.Full(o))
+	d := clone(ix.fullFor(v, o))
 	if f.Has("attributes") {
 		tet := ""
 		if te := ix.Get(o.TE); te != nil {
@@ -431,7 +431,7 @@ func (ix *Index) RenderEnrollment(v *Viewer, o *Obj, f *Fields) M {
 }
 
 func (ix *Index) RenderEvent(v *Viewer, o *Obj, f *Fields) M {
-	d := clone(ix.Full(o))
+	d := clone(ix.fullFor(v, o))
 	if f.Has("relationships") {
 		d["relationships"] = ix.renderRels(v, o.UID, f.Sub("relationships"))
 	}
@@ -443,7 +443,7 @@ func (ix *Index) renderRels(v *Viewer, uid string, _ *Fields) []any {
 	sortObjs(rels, "createdAt", nil)
 	out := []any{}
 	for _, r := range rels {
-		out = append(out, clone(ix.Full(r)))
+		out = append(out, clone(ix.fullFor(v, r)))
 	}
 	return out
 }
@@ -503,7 +503,7 @@ func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *A
 		render = func(o *Obj) M { return ix.RenderEvent(v, o, fields) }
 	case "relationships":
 		objs, err = ix.searchRelationships(v, q)
-		render = func(o *Obj) M { return clone(ix.Full(o)) }
+		render = func(o *Obj) M { return clone(ix.fullFor(v, o)) }
 	default:
 		return nil, NeedsConnection(collection)
 	}
@@ -512,7 +512,9 @@ func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *A
 	}
 	res := &Result{Collection: collection, Total: len(objs), Page: pg, PageSize: size, Paging: paged, TotalPages: totals,
 		Items: []M{}}
-	for _, o := range page(objs, pg, size, paged) {
+	shown := page(objs, pg, size, paged)
+	ix.prefetch(v, shown, fields)
+	for _, o := range shown {
 		res.Items = append(res.Items, fields.Project(render(o)).(M))
 	}
 	return res, nil
@@ -718,6 +720,14 @@ func (ix *Index) searchEvents(v *Viewer, q url.Values, program string) ([]*Obj, 
 	default:
 		cands = ix.All(store.KindEvent)
 	}
+	byValue := len(filters) > 0
+	for _, p := range splitList(q.Get("order")) {
+		f, _, _ := strings.Cut(p, ":")
+		byValue = byValue || ValidUID(f)
+	}
+	if byValue {
+		ix.prefetch(v, cands, ParseFields("dataValues")) // data value filters and ordering read the full payloads
+	}
 	var out []*Obj
 	for _, o := range ix.visible(v, cands) {
 		if (program != "" && o.Program != program) || (stage != "" && o.Stage != stage) || (te != "" && o.TE != te) ||
@@ -741,7 +751,7 @@ func (ix *Index) searchEvents(v *Viewer, q url.Values, program string) ([]*Obj, 
 			continue
 		}
 		if len(filters) > 0 {
-			vals := attrValues(ix.Full(o), "dataValues", "dataElement")
+			vals := attrValues(ix.fullFor(v, o), "dataValues", "dataElement")
 			match := true
 			for _, f := range filters {
 				if !f.match(vals) {
@@ -756,7 +766,7 @@ func (ix *Index) searchEvents(v *Viewer, q url.Values, program string) ([]*Obj, 
 		out = append(out, o)
 	}
 	sortObjs(out, q.Get("order"), func(o *Obj, de string) string {
-		return attrValues(ix.Full(o), "dataValues", "dataElement")[de]
+		return attrValues(ix.fullFor(v, o), "dataValues", "dataElement")[de]
 	})
 	return out, nil
 }
@@ -797,6 +807,7 @@ func (ix *Index) GetOne(v *Viewer, collection, uid string, q url.Values) (M, *AP
 	if q.Get("fields") == "" {
 		fields = FieldsOrDefault(collection, "")
 	}
+	ix.prefetch(v, []*Obj{o}, fields)
 	switch kind {
 	case store.KindTrackedEntity:
 		if p := q.Get("program"); p != "" {
@@ -815,5 +826,5 @@ func (ix *Index) GetOne(v *Viewer, collection, uid string, q url.Values) (M, *AP
 	case store.KindEvent:
 		return fields.Project(ix.RenderEvent(v, o, fields)).(M), nil
 	}
-	return clone(ix.Full(o)), nil
+	return clone(ix.fullFor(v, o)), nil
 }

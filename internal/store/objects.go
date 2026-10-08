@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Object kinds, origins and sync states (spec 9.2).
@@ -83,6 +84,42 @@ func (s *Store) GetObject(uid string) (*Object, error) {
 	}
 	o.Payload, err = s.OpenBlob(objAAD(o.UID), ct)
 	return o, err
+}
+
+// Payloads returns the decrypted payloads of these objects (missing ones are left
+// out), in batches: a rendered page needs many, and a query per object was most of
+// the cost of serving it (docs/PERFORMANCE.md).
+func (s *Store) Payloads(uids []string) (map[string][]byte, error) {
+	out := make(map[string][]byte, len(uids))
+	const batch = 500
+	for start := 0; start < len(uids); start += batch {
+		part := uids[start:min(start+batch, len(uids))]
+		args := make([]any, len(part))
+		for i, u := range part {
+			args[i] = u
+		}
+		rows, err := s.DB().Query(`SELECT uid, payload_enc FROM objects WHERE uid IN (?`+strings.Repeat(",?", len(part)-1)+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var uid string
+			var ct []byte
+			if err := rows.Scan(&uid, &ct); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			if out[uid], err = s.OpenBlob(objAAD(uid), ct); err != nil {
+				rows.Close()
+				return nil, err
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // AllObjects decrypts every object (used to build the in-memory index on unlock).

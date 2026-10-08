@@ -190,7 +190,7 @@ func (h *Hub) LastPushPull() (push, pull string) {
 
 func New(cfg config.Config, version string, st *store.Store) *Hub {
 	mon := central.NewMonitor(cfg.PingInterval, cfg.PingTimeout)
-	h := &Hub{Cfg: cfg, Version: version, Store: st, Index: tracker.NewIndex(), Monitor: mon,
+	h := &Hub{Cfg: cfg, Version: version, Store: st, Index: tracker.NewStoreIndex(st), Monitor: mon,
 		Sessions: NewSessions(), ReqLog: NewRequestLog(), Started: time.Now(), access: map[int64]*access.List{},
 		SyncNow: make(chan struct{}, 1)}
 	h.Sessions.Idle, h.Sessions.Max = cfg.SessionIdle, cfg.SessionMax
