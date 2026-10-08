@@ -34,7 +34,7 @@ perf/pi.sh ladder pi5     # the scale ladder (below): results and summary.txt in
 perf/pi.sh ladder pi4     # the same with the Pi 4 profile
 ```
 
-`ladder` runs, for each data size (30 000 and 100 000 people, the HC IV target and the pessimistic one, with enrollments and events in the same proportions; `SIZES` to change), a fresh constrained hub, fills it from the generated central, runs the realistic 60-user load (`DURATION`, 5 minutes) and then the hammer run (`HAMMER`, 2 minutes) on it, samples the hub's memory and CPU every 10 seconds, and appends the key numbers per size to `summary.txt`: first pull, latencies per operation, Android download, reconnect, peak memory, and whether the hub was killed for memory. `up`, `load`, `stats` and `reset` remain for single runs.
+`ladder` runs, for each data size (30 000 and 100 000 people; the HC IV target; the same HC IV with all five years, as today's hub keeps them until retention by programme exists; and the pessimistic one; `SIZES` to change), a fresh constrained hub, fills it from the generated central, runs the realistic 60-user load (`DURATION`, 5 minutes) and then the hammer run (`HAMMER`, 2 minutes) on it, samples the hub's memory and CPU every 10 seconds, and appends the key numbers per size to `summary.txt`: first pull, latencies per operation, Android download, reconnect, peak memory, and whether the hub was killed for memory. `up`, `load`, `stats` and `reset` remain for single runs.
 
 The hub's data lives on a Docker volume (`hub-pi-data`), not a bind mount, so the disk limits apply to it. Docker Desktop needs memory for the profile's limit plus the fake central (about 6 GB for `pi5`), and the broker's DHIS2 instances share that VM.
 
@@ -86,7 +86,7 @@ The hammer run has no pass criteria; it reports where the hub saturates and how 
 
 ## Scale ladder
 
-Run the four sizes (30 k, 100 k, 300 k and 700 k people) with 60 users, 18 of them Android, on both profiles (`perf/pi.sh ladder`); fewer users (`USERS=10`) where a size fails, to tell data size from concurrency. The output is one table per profile showing where each criterion first fails, which says what a Pi can carry today and how much headroom the target leaves.
+Run the five sizes (30 k and 100 k people; 300 k with retention, `hc4`; 300 k with five years, `hc4-5y`; 700 k, `pessimistic`) with 60 users, 18 of them Android, on both profiles (`perf/pi.sh ladder`); fewer users (`USERS=10`) where a size fails, to tell data size from concurrency. The output is one table per profile showing where each criterion first fails, which says what a Pi can carry today and how much headroom the target leaves.
 
 ## Order of work
 
@@ -237,4 +237,7 @@ This is an expectation, so it is settled by measurement: a prototype of the two 
 | Target | People | Enrollments | Events | Users | Devices |
 |---|---|---|---|---|---|
 | Busy HC IV, with retention by programme | 300 000 | about 0.5 M (windows plus active) | about 1.2 M | 60 | 18 Android (30 %), with download limits |
+| Busy HC IV, today (no retention yet) | 300 000 | 1.2 M | 3.1 M | 60 | 18 Android |
 | Pessimistic | 700 000 | 1.2 M | 3.1 M | 60 | 18 Android |
+
+The two axes are independent: duplication changes only the number of people (a duplicated walk-in is a second person with the same visits), retention only the enrollments and events. `hc4` is the target once retention by programme exists; `hc4-5y` is what today's hub would hold at the same facility.

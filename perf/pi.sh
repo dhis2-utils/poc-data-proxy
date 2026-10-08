@@ -16,8 +16,9 @@
 #
 # up and load use TES, ENROLLMENTS, EVENTS, USERS (default the busy HC IV target,
 # docs/PERFORMANCE.md: 300000, 500000, 1200000, 60). The ladder's sizes:
-# SIZES="name:tes:enrollments:events ..." (default 30k, 100k, the HC IV target "hc4" and
-# the pessimistic one), DURATION of the realistic load (5m), HAMMER of the hammer run (2m).
+# SIZES="name:tes:enrollments:events ..." (default 30k, 100k, the HC IV target with
+# retention by programme "hc4", the same HC IV with all 5 years as today's hub keeps them
+# "hc4-5y", and the pessimistic one), DURATION of the realistic load (5m), HAMMER of the hammer run (2m).
 #
 # MEM overrides the profile's memory limit (e.g. MEM=2g).
 #
@@ -118,7 +119,7 @@ load)
 ladder)
 	prof=${2:-pi5}
 	limits "$prof" >/dev/null
-	sizes=${SIZES:-"30k:30000:50000:120000 100k:100000:167000:400000 hc4:300000:500000:1200000 pessimistic:700000:1200000:3100000"}
+	sizes=${SIZES:-"30k:30000:50000:120000 100k:100000:167000:400000 hc4:300000:500000:1200000 hc4-5y:300000:1200000:3100000 pessimistic:700000:1200000:3100000"}
 	dir="perf/results/ladder-$prof-$(date +%Y%m%d-%H%M)"
 	mkdir -p "$dir"
 	for s in $sizes; do
