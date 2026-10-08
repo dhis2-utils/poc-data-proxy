@@ -348,7 +348,24 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 	if err := h.Central.JSON(ctx, "GET", path, nil, auth, &resp); err != nil {
 		return nil, err
 	}
-	c := &access.Catalog{Programs: map[string]*access.ProgramMeta{}, TETAttributes: map[string][]access.AttrMeta{}}
+	c := &access.Catalog{Programs: map[string]*access.ProgramMeta{}, TETAttributes: map[string][]access.AttrMeta{},
+		TypeAttributes: map[string]bool{}}
+	var types struct {
+		TrackedEntityTypes []struct {
+			Attributes []struct {
+				TrackedEntityAttribute idRef `json:"trackedEntityAttribute"`
+			} `json:"trackedEntityTypeAttributes"`
+		} `json:"trackedEntityTypes"`
+	}
+	if err := h.Central.JSON(ctx, "GET", central.Q("/api/trackedEntityTypes", "paging", "false",
+		"fields", "trackedEntityTypeAttributes[trackedEntityAttribute[id]]"), nil, auth, &types); err != nil {
+		return nil, err
+	}
+	for _, t := range types.TrackedEntityTypes {
+		for _, a := range t.Attributes {
+			c.TypeAttributes[a.TrackedEntityAttribute.ID] = true
+		}
+	}
 	for _, p := range resp.Programs {
 		pm := &access.ProgramMeta{ID: p.ID, Name: p.Name, TET: p.TrackedEntityType.ID, Attributes: conv(p.ProgramTrackedEntityAttributes)}
 		for _, s := range p.ProgramStages {

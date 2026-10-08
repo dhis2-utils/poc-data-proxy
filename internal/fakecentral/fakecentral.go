@@ -288,6 +288,12 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(p, "/api/apiToken/") && r.Method == "DELETE":
 		c.RevokeToken(strings.TrimPrefix(p, "/api/apiToken/"))
 		writeJSON(w, 200, map[string]any{"status": "OK"})
+	case p == "/api/trackedEntityTypes":
+		at := func(id string) map[string]any {
+			return map[string]any{"trackedEntityAttribute": map[string]any{"id": id}}
+		}
+		writeJSON(w, 200, map[string]any{"trackedEntityTypes": []any{map[string]any{"id": TET,
+			"trackedEntityTypeAttributes": []any{at(AttrFirstName), at(AttrLastName)}}}})
 	case p == "/api/programs":
 		c.programs(w, r, u)
 	case p == "/api/programs/"+Program:

@@ -305,6 +305,11 @@ func (ix *Index) visible(v *Viewer, objs []*Obj) []*Obj {
 	return out
 }
 
+func anyList(v any) []any {
+	l, _ := v.([]any)
+	return l
+}
+
 func filterAttributes(v *Viewer, tet string, attrs any) []any {
 	arr, _ := attrs.([]any)
 	out := []any{}
@@ -317,18 +322,22 @@ func filterAttributes(v *Viewer, tet string, attrs any) []any {
 	return out
 }
 
-// scopeAttributes keeps the attributes central shows for a tracked entity in this
-// context: those of its type, plus, with a program, that program's own. Attributes
-// of the user's other programs stay out, as on central.
+// scopeAttributes keeps the attributes central shows on a tracked entity: those of
+// every tracked entity type, plus, with a program, that program's own
+// (TrackedEntityAggregate.getAllowedAttributeUids in 2.42). Attributes of the user's
+// other programs stay out.
 func scopeAttributes(v *Viewer, tet, program string, attrs []any) []any {
 	if v.Catalog == nil {
 		return []any{}
 	}
 	keep := map[string]bool{}
+	for id := range v.Catalog.TypeAttributes {
+		keep[id] = true
+	}
 	for _, a := range v.Catalog.TETAttributes[tet] {
 		keep[a.ID] = true
 	}
-	if p := v.Catalog.Programs[program]; p != nil {
+	if p := v.Catalog.Programs[program]; p != nil && v.Access.Program(program).Read {
 		for _, a := range p.Attributes {
 			keep[a.ID] = true
 		}
@@ -354,7 +363,7 @@ func (ix *Index) RenderTE(v *Viewer, o *Obj, f *Fields, program string) M {
 		}
 	}
 	if _, ok := d["attributes"]; ok {
-		d["attributes"] = scopeAttributes(v, o.TET, program, filterAttributes(v, o.TET, d["attributes"]))
+		d["attributes"] = scopeAttributes(v, o.TET, program, anyList(d["attributes"]))
 	}
 	enrs := ix.visible(v, ix.EnrollmentsOf(o.UID))
 	if program != "" {

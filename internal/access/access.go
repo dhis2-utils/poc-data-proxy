@@ -106,7 +106,11 @@ type ProgramMeta struct {
 type Catalog struct {
 	Programs      map[string]*ProgramMeta `json:"programs"`
 	TETAttributes map[string][]AttrMeta   `json:"tetAttributes"` // TET uid -> attributes
-	StageProgram  map[string]string       `json:"-"`
+	// TypeAttributes are the attributes of every tracked entity type on central.
+	// DHIS2 2.42 shows them on any tracked entity, whatever its type
+	// (TrackedEntityAggregate.getAllowedAttributeUids).
+	TypeAttributes map[string]bool   `json:"typeAttributes,omitempty"`
+	StageProgram   map[string]string `json:"-"`
 }
 
 // TETs lists the tracked entity types of the catalog's programs, sorted.
@@ -135,6 +139,12 @@ func (c *Catalog) Merge(o *Catalog) {
 		if _, ok := c.TETAttributes[tet]; !ok {
 			c.TETAttributes[tet] = as
 		}
+	}
+	for id := range o.TypeAttributes {
+		if c.TypeAttributes == nil {
+			c.TypeAttributes = map[string]bool{}
+		}
+		c.TypeAttributes[id] = true
 	}
 	c.Index()
 }
