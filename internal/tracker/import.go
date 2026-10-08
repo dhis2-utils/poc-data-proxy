@@ -201,7 +201,7 @@ func (im *Importer) newObj(it *Item, old *Obj) *Obj {
 	o := &Obj{UID: it.UID, Kind: it.Kind, OwnerOrgUnit: im.V.Facility, UpdatedAt: now, Origin: store.OriginLocal,
 		SyncState: store.SyncPending, Data: data}
 	if old != nil {
-		o.Visible = old.Visible
+		o.Slot = old.Slot
 	}
 	return o
 }

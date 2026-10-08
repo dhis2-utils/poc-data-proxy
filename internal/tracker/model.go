@@ -22,8 +22,8 @@ type Obj struct {
 	UID, Kind, TE, Enrollment, Program, Stage, TET, OwnerOrgUnit string
 	UpdatedAt                                                    string
 	Origin, SyncState                                            string
-	Data                                                         M // payload without nested children
-	Visible                                                      map[int64]bool
+	Data                                                         M      // payload without nested children
+	Slot                                                         uint32 // in the visibility bitmaps (visibility.go)
 }
 
 // Children keys that are stored as separate objects, never inside a payload.

@@ -211,6 +211,16 @@ CREATE TABLE reserved_values(id INTEGER PRIMARY KEY AUTOINCREMENT, attribute TEX
   expires_at TEXT NOT NULL DEFAULT '');
 CREATE INDEX reserved_values_attr ON reserved_values(attribute);
 `,
+	// Visibility as per-user bitmaps over object slots instead of a row per object and
+	// user (docs/PERFORMANCE.md). Rows of the old table are converted on first load.
+	`
+ALTER TABLE objects ADD COLUMN slot INTEGER;
+UPDATE objects SET slot = rowid;
+CREATE UNIQUE INDEX objects_slot ON objects(slot);
+CREATE TABLE visibility_bits(user_id INTEGER NOT NULL, chunk INTEGER NOT NULL, bits BLOB NOT NULL,
+  PRIMARY KEY(user_id, chunk));
+CREATE TABLE te_scopes(te_uid TEXT NOT NULL, scope TEXT NOT NULL, PRIMARY KEY(te_uid, scope));
+`,
 }
 
 // SchemaVersion is the number of key file migrations this binary knows.
@@ -450,6 +460,13 @@ func (s *Store) moveLegacy(data *sql.DB) error {
  pw_enc, access_json_enc, access_refreshed_at, last_login_at FROM legacy.users`,
 		`INSERT OR REPLACE INTO main.kv(key, value) SELECT key, value FROM legacy.meta WHERE key IN ('last_push', 'last_pull')`}
 	for _, t := range legacyTables {
+		if t == "objects" { // the data file's objects table has the slot column too
+			stmts = append(stmts, `INSERT OR REPLACE INTO main.objects(uid, kind, te_uid, enrollment_uid, program, stage, tet,
+ owner_org_unit, updated_at, origin, sync_state, payload_enc) SELECT uid, kind, te_uid, enrollment_uid, program, stage, tet,
+ owner_org_unit, updated_at, origin, sync_state, payload_enc FROM legacy.objects`,
+				`UPDATE main.objects SET slot = rowid WHERE slot IS NULL`)
+			continue
+		}
 		stmts = append(stmts, fmt.Sprintf(`INSERT OR REPLACE INTO main.%s SELECT * FROM legacy.%s`, t, t))
 	}
 	tx, err := conn.BeginTx(ctx, nil)

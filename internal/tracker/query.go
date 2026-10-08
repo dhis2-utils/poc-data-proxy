@@ -296,9 +296,16 @@ func sortObjs(objs []*Obj, order string, attrKey func(*Obj, string) string) {
 // --- rendering ---------------------------------------------------------------
 
 func (ix *Index) visible(v *Viewer, objs []*Obj) []*Obj {
+	bm := ix.bitmapOf(v.UserID) // once, not a lock per object
 	var out []*Obj
 	for _, o := range objs {
-		if ix.CanRead(v, o) {
+		ok := false
+		if o.Origin == store.OriginCentral {
+			ok = v.Access != nil && o.OwnerOrgUnit == v.Facility && bm.has(o.Slot) && accessAllows(v, o)
+		} else {
+			ok = ix.CanRead(v, o)
+		}
+		if ok {
 			out = append(out, o)
 		}
 	}

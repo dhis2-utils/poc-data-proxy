@@ -2,7 +2,7 @@ package tracker
 
 import (
 	"encoding/json"
-	"maps"
+	"slices"
 	"sync"
 
 	"github.com/dhis2/facility-hub/internal/access"
@@ -15,42 +15,79 @@ type Index struct {
 	mu    sync.RWMutex
 	objs  map[string]*Obj
 	byKey map[string]map[string]bool // "enr:<te>", "ev:<enr>", "evte:<te>", "rel:<uid>" -> uids
+
+	vis      map[int64]bitmap    // user -> visible central-origin slots (visibility.go)
+	visMu    sync.Mutex          // one visibility change at a time, taken before any transaction
+	nextSlot uint32              // last slot handed out
+	pending  map[string]uint32   // slots handed out to objects not yet in the index
+	scopes   map[string][]string // tracked entity -> pull scopes fetched in full (store.TEScopes)
 }
 
 func NewIndex() *Index {
-	return &Index{objs: map[string]*Obj{}, byKey: map[string]map[string]bool{}}
+	return &Index{objs: map[string]*Obj{}, byKey: map[string]map[string]bool{}, vis: map[int64]bitmap{},
+		pending: map[string]uint32{}, scopes: map[string][]string{}}
+}
+
+// HasScope reports whether the tracked entity was fetched in full for this pull scope.
+func (ix *Index) HasScope(te, scope string) bool {
+	ix.mu.RLock()
+	defer ix.mu.RUnlock()
+	return slices.Contains(ix.scopes[te], scope)
+}
+
+// AddScopes records that these tracked entities were fetched in full for scope.
+func (ix *Index) AddScopes(tes []string, scope string) {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	for _, te := range tes {
+		if !slices.Contains(ix.scopes[te], scope) {
+			ix.scopes[te] = append(ix.scopes[te], scope)
+		}
+	}
 }
 
 // Load rebuilds the index from the store. The store must be unlocked.
 func (ix *Index) Load(s *store.Store) error {
-	vis, err := s.Visibility()
+	chunks, err := s.VisibilityChunks()
 	if err != nil {
 		return err
 	}
 	fresh := NewIndex()
+	if fresh.scopes, err = s.TEScopes(); err != nil {
+		return err
+	}
+	for user, c := range chunks {
+		fresh.vis[user] = bitmapFromChunks(c)
+	}
 	err = s.AllObjects(func(o *store.Object) error {
 		obj, err := FromStore(o)
 		if err != nil {
 			return err
 		}
-		obj.Visible = vis[o.UID]
 		fresh.put(obj)
 		return nil
 	})
 	if err != nil {
 		return err
 	}
+	ix.visMu.Lock()
 	ix.mu.Lock()
-	ix.objs, ix.byKey = fresh.objs, fresh.byKey
+	ix.objs, ix.byKey, ix.vis, ix.pending, ix.scopes = fresh.objs, fresh.byKey, fresh.vis, fresh.pending, fresh.scopes
+	ix.nextSlot = uint32(s.MaxSlot())
 	ix.mu.Unlock()
+	ix.visMu.Unlock()
 	return nil
 }
 
 // Clear empties the index (on lock or reset).
 func (ix *Index) Clear() {
+	ix.visMu.Lock()
 	ix.mu.Lock()
-	ix.objs, ix.byKey = map[string]*Obj{}, map[string]map[string]bool{}
+	ix.objs, ix.byKey, ix.vis, ix.pending = map[string]*Obj{}, map[string]map[string]bool{}, map[int64]bitmap{}, map[string]uint32{}
+	ix.scopes = map[string][]string{}
+	ix.nextSlot = 0
 	ix.mu.Unlock()
+	ix.visMu.Unlock()
 }
 
 func FromStore(o *store.Object) (*Obj, error) {
@@ -60,14 +97,14 @@ func FromStore(o *store.Object) (*Obj, error) {
 	}
 	return &Obj{UID: o.UID, Kind: o.Kind, TE: o.TE, Enrollment: o.Enrollment, Program: o.Program, Stage: o.Stage,
 		TET: o.TET, OwnerOrgUnit: o.OwnerOrgUnit, UpdatedAt: o.UpdatedAt, Origin: o.Origin, SyncState: o.SyncState,
-		Data: data}, nil
+		Data: data, Slot: uint32(o.Slot)}, nil
 }
 
 func (o *Obj) ToStore() *store.Object {
 	b, _ := json.Marshal(o.Data)
 	return &store.Object{UID: o.UID, Kind: o.Kind, TE: o.TE, Enrollment: o.Enrollment, Program: o.Program,
 		Stage: o.Stage, TET: o.TET, OwnerOrgUnit: o.OwnerOrgUnit, UpdatedAt: o.UpdatedAt, Origin: o.Origin,
-		SyncState: o.SyncState, Payload: b}
+		SyncState: o.SyncState, Payload: b, Slot: int64(o.Slot)}
 }
 
 func (ix *Index) keys(o *Obj) []string {
@@ -98,15 +135,16 @@ func (ix *Index) put(o *Obj) {
 	}
 }
 
-// Put adds or replaces an object, keeping its visibility set when o.Visible is nil.
+// Put adds or replaces an object. It keeps the slot the object has.
 func (ix *Index) Put(o *Obj) {
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
-	if o.Visible == nil {
-		if old := ix.objs[o.UID]; old != nil {
-			o.Visible = old.Visible
-		}
+	if old := ix.objs[o.UID]; old != nil && old.Slot != 0 {
+		o.Slot = old.Slot
+	} else if o.Slot == 0 {
+		o.Slot = ix.slotFor(o.UID)
 	}
+	delete(ix.pending, o.UID)
 	ix.put(o)
 }
 
@@ -114,27 +152,6 @@ func (ix *Index) Get(uid string) *Obj {
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()
 	return ix.objs[uid]
-}
-
-// SetVisible adds or removes a user from an object's visibility set.
-func (ix *Index) SetVisible(uid string, userID int64, visible bool) {
-	ix.mu.Lock()
-	defer ix.mu.Unlock()
-	o := ix.objs[uid]
-	if o == nil {
-		return
-	}
-	n := *o
-	n.Visible = maps.Clone(o.Visible)
-	if n.Visible == nil {
-		n.Visible = map[int64]bool{}
-	}
-	if visible {
-		n.Visible[userID] = true
-	} else {
-		delete(n.Visible, userID)
-	}
-	ix.objs[uid] = &n
 }
 
 // SetSyncState replaces an object's sync state.
@@ -201,13 +218,28 @@ type Viewer struct {
 	Catalog     *access.Catalog
 }
 
+// accessAllows checks a central-origin object against the user's current access list:
+// central decided visibility at the last pull, but access lost since (refreshed at
+// each sync and login) hides the object at once, before the next full pull removes it.
+func accessAllows(v *Viewer, o *Obj) bool {
+	switch o.Kind {
+	case store.KindTrackedEntity:
+		return o.TET == "" || v.Access.TET(o.TET).Read
+	case store.KindEnrollment:
+		return v.Access.Program(o.Program).Read
+	case store.KindEvent:
+		return v.Access.Program(o.Program).Read && v.Access.Stage(o.Stage).Read
+	}
+	return true
+}
+
 // CanRead applies spec 8.2.
 func (ix *Index) CanRead(v *Viewer, o *Obj) bool {
 	if o == nil || v.Access == nil || o.OwnerOrgUnit != v.Facility {
 		return false
 	}
 	if o.Origin == store.OriginCentral {
-		return o.Visible[v.UserID]
+		return accessAllows(v, o) && ix.VisibleTo(o, v.UserID)
 	}
 	if !v.SearchScope {
 		return false

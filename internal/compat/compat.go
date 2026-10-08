@@ -32,6 +32,11 @@ type API interface {
 	PATResponse(body []byte) (uid, key string, err error)
 	// PullPath is the tracked entity pull URL for one user and program (spec 11.3).
 	PullPath(facility, program, updatedAfter string, page, pageSize int) string
+	// ListPath is the same query returning only identifiers and update times of the
+	// tracked entities, enrollments, events and relationships (the ID-list pull).
+	ListPath(facility, program, updatedAfter string, page, pageSize int) string
+	// FetchPath returns these tracked entities in full, as PullPath would.
+	FetchPath(facility, program string, trackedEntities []string) string
 	// PullItems extracts the tracked entities and whether another page exists.
 	PullItems(body []byte, page, pageSize int) (items []tracker.M, more bool, err error)
 	// AsyncAccepted is the answer to POST /api/tracker?async=true; JobNotifications

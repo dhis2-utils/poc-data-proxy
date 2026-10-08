@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/tracker"
@@ -159,16 +160,44 @@ func (g *generated) listTEs(w http.ResponseWriter, r *http.Request) bool {
 	if q.Get("orgUnits") != Facility || (q.Get("updatedAfter") != "" && q.Get("updatedAfter") > g.updatedAt) {
 		total = 0
 	}
+	idsOnly := strings.HasPrefix(q.Get("fields"), "trackedEntity,updatedAt")
+	render := func(te, j int) tracker.M {
+		t := g.renderTE(te)
+		if j >= 0 {
+			t["enrollments"] = []any{g.renderEnrollment(j)}
+		}
+		if idsOnly {
+			t = idsOf(t)
+		}
+		return t
+	}
 	items := []any{}
+	if v := q.Get("trackedEntities"); v != "" {
+		// A fetch of named tracked entities: each with its enrollment in the program.
+		for _, uid := range strings.Split(v, ",") {
+			var i int
+			if _, err := fmt.Sscanf(uid, "Te%09d", &i); err != nil || i < 0 || i >= g.TEs {
+				continue
+			}
+			if byType {
+				items = append(items, render(i, -1))
+				continue
+			}
+			for r := 0; i+r*g.TEs < g.Enrollments; r++ {
+				if j := i + r*g.TEs; g.program(j) == program {
+					items = append(items, render(i, j))
+				}
+			}
+		}
+		total = 0
+	}
 	for n := (page - 1) * size; n < total && n < page*size; n++ {
 		if byType {
-			items = append(items, g.renderTE(n))
+			items = append(items, render(n, -1))
 			continue
 		}
 		j := int(g.byProgram[program][n])
-		te := g.renderTE(g.te(j))
-		te["enrollments"] = []any{g.renderEnrollment(j)}
-		items = append(items, te)
+		items = append(items, render(g.te(j), j))
 	}
 	pager := map[string]any{"page": page, "pageSize": size}
 	if page*size < total {
@@ -192,4 +221,26 @@ func (g *generated) has(uid string) bool {
 		return false
 	}
 	return j >= 0 && j < g.Enrollments
+}
+
+// idsOf keeps only identifiers and update times, as central answers the ID listing.
+func idsOf(m tracker.M) tracker.M {
+	out := tracker.M{}
+	for _, k := range []string{"trackedEntity", "enrollment", "event", "relationship", "updatedAt"} {
+		if v, ok := m[k]; ok {
+			out[k] = v
+		}
+	}
+	for _, k := range []string{"enrollments", "events", "relationships"} {
+		if l, ok := m[k].([]any); ok {
+			var sub []any
+			for _, x := range l {
+				if xm, ok := x.(tracker.M); ok {
+					sub = append(sub, idsOf(xm))
+				}
+			}
+			out[k] = orEmpty(sub)
+		}
+	}
+	return out
 }

@@ -426,11 +426,18 @@ func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 	size, _ := strconv.Atoi(q.Get("pageSize"))
 	page, size = max(page, 1), max(size, 1)
 	after := q.Get("updatedAfter")
+	var only map[string]bool
+	if v := q.Get("trackedEntities"); v != "" {
+		only = map[string]bool{}
+		for _, u := range strings.Split(v, ",") {
+			only[u] = true
+		}
+	}
 	c.mu.Lock()
 	var tes []tracker.M
 	for _, uid := range c.order {
 		o := c.objects[uid]
-		if c.kinds[uid] != "trackedEntity" || o["orgUnit"] != q.Get("orgUnits") {
+		if c.kinds[uid] != "trackedEntity" || o["orgUnit"] != q.Get("orgUnits") || (only != nil && !only[uid]) {
 			continue
 		}
 		te := deepCopy(o)

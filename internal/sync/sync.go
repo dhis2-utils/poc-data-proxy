@@ -12,12 +12,14 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	stdsync "sync"
 	"syscall"
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/central"
+	"github.com/dhis2/facility-hub/internal/compat"
 	"github.com/dhis2/facility-hub/internal/core"
 	"github.com/dhis2/facility-hub/internal/store"
 	"github.com/dhis2/facility-hub/internal/tracker"
@@ -39,7 +41,12 @@ func (w *Worker) Exclusive(f func() error) error {
 	return f()
 }
 
-const pullPageSize = 200
+// listPageSize is the page size of the ID listing; fetchBatch how many tracked
+// entities one full fetch asks for (the URL holds their UIDs).
+const (
+	listPageSize = 1000
+	fetchBatch   = 50
+)
 
 // Run loops until ctx ends.
 func (w *Worker) Run(ctx context.Context) {
@@ -430,11 +437,18 @@ func (w *Worker) Pull(ctx context.Context) error {
 			continue
 		}
 		var programs []string
-		full := false
+		// A user whose access changed since their last pull gets a full pull, so what
+		// they gained or lost shows at this sync rather than the next daily one.
+		accKey := "pull_access:" + strconv.FormatInt(u.ID, 10)
+		accJSON, _ := json.Marshal(acc)
+		full := h.Store.Private(accKey) != string(accJSON)
+		failedBefore := len(failed)
+		var unreadable []string // programs the user may not read: a full pull settles them empty
 		for _, p := range cat.ProgramIDs() {
 			pm := cat.Programs[p]
 			if !acc.Program(p).Read || (pm != nil && pm.TET != "" && !acc.TET(pm.TET).Read) {
-				continue // central would refuse the search (E1006 without tracked entity type access)
+				unreadable = append(unreadable, p) // central would refuse the search (E1006 without tracked entity type access)
+				continue
 			}
 			programs = append(programs, p)
 			_, lastFull := h.Store.PullState(u.ID, p)
@@ -492,6 +506,10 @@ func (w *Worker) Pull(ctx context.Context) error {
 			}
 			slog.Info("pulled", "user", u.Username, "program", p, "full", full, "objects", n)
 		}
+		if len(failed) == failedBefore { // this user's pull completed
+			h.Store.SetPrivate(accKey, string(accJSON))
+		}
+		settled = append(settled, unreadable...)
 		if full && len(settled) > 0 {
 			if n := h.RemoveVisibilityExcept(u.ID, settled, seen); n > 0 {
 				slog.Info("full pull removed visibility", "user", u.Username, "objects", n)
@@ -504,50 +522,84 @@ func (w *Worker) Pull(ctx context.Context) error {
 	return errors.Join(failed...)
 }
 
-// pullProgram pages through one user's tracked entities for one program. It returns
-// the newest updatedAt seen (central's clock, used as the next updatedAfter).
-func (w *Worker) pullProgram(ctx context.Context, api interface {
-	PullPath(string, string, string, int, int) string
-	PullItems([]byte, int, int) ([]tracker.M, bool, error)
-}, auth central.Auth, userID int64, facility, program, after string, seen map[string]bool) (string, int, error) {
+// pullProgram pulls one user's view of one program (or "tet:<type>") in two steps:
+// it lists what central shows the user, identifiers and update times only, then
+// fetches in full only the tracked entities the hub lacks or holds older, or has not
+// yet fetched for this program's attributes. Everything listed becomes visible to the
+// user. So central still decides per user, while each record's content crosses the
+// uplink once, whoever is first to see it (docs/PERFORMANCE.md). It returns the
+// newest updatedAt listed (central's clock, used as the next updatedAfter).
+func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.Auth, userID int64,
+	facility, program, after string, seen map[string]bool) (string, int, error) {
+	h := w.H
 	maxUpdated, total := "", 0
+	var stale, current []string
 	for page := 1; ; page++ {
-		resp, err := w.H.Central.Do(ctx, "GET", api.PullPath(facility, program, after, page, pullPageSize), nil, auth, nil)
-		if err != nil {
-			return "", total, err
-		}
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return "", total, &central.HTTPError{Status: resp.StatusCode, Body: b}
-		}
-		items, more, err := api.PullItems(b, page, pullPageSize)
+		items, more, err := w.getPage(ctx, api, auth, api.ListPath(facility, program, after, page, listPageSize), page, listPageSize)
 		if err != nil {
 			return "", total, err
 		}
 		for _, te := range items {
+			uid := tracker.Str(te, "trackedEntity")
+			isStale := !h.Index.HasScope(uid, program)
+			var listed []string
 			for _, it := range tracker.Flatten(tracker.M{"trackedEntities": []any{te}}) {
-				if u := tracker.Str(it.Data, "updatedAt"); u > maxUpdated {
-					maxUpdated = u
+				upd := tracker.Str(it.Data, "updatedAt")
+				maxUpdated = max(maxUpdated, upd)
+				if o := h.Index.Get(it.UID); o == nil || o.UpdatedAt < upd {
+					isStale = true
 				}
+				listed = append(listed, it.UID)
 			}
+			for _, u := range listed {
+				seen[u] = true
+			}
+			total += len(listed)
+			if isStale {
+				stale = append(stale, uid)
+			} else {
+				current = append(current, listed...)
+			}
+		}
+		if !more {
+			break
+		}
+	}
+	for start := 0; start < len(stale); start += fetchBatch {
+		batch := stale[start:min(start+fetchBatch, len(stale))]
+		items, _, err := w.getPage(ctx, api, auth, api.FetchPath(facility, program, batch), 1, len(batch))
+		if err != nil {
+			return "", total, err
 		}
 		anyItems := make([]any, len(items))
 		for i, te := range items {
 			anyItems[i] = te
 		}
-		uids, err := w.H.UpsertCentral(userID, tracker.M{"trackedEntities": anyItems}, true)
-		if err != nil {
+		if _, err := h.UpsertCentral(userID, tracker.M{"trackedEntities": anyItems}, true); err != nil {
 			return "", total, err
 		}
-		for _, u := range uids {
-			seen[u] = true
-		}
-		total += len(uids)
-		if !more {
-			return maxUpdated, total, nil
+		if err := h.RecordScopes(batch, program); err != nil {
+			return "", total, err
 		}
 	}
+	if err := h.MarkVisible(userID, current); err != nil {
+		return "", total, err
+	}
+	slog.Debug("pull listed", "program", program, "objects", total, "fetched", len(stale))
+	return maxUpdated, total, nil
+}
+
+func (w *Worker) getPage(ctx context.Context, api compat.API, auth central.Auth, path string, page, size int) ([]tracker.M, bool, error) {
+	resp, err := w.H.Central.Do(ctx, "GET", path, nil, auth, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, false, &central.HTTPError{Status: resp.StatusCode, Body: b}
+	}
+	return api.PullItems(b, page, size)
 }
 
 // --- reserved values (spec 10.3) -----------------------------------------------------

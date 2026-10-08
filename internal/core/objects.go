@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"slices"
 
 	"github.com/dhis2/facility-hub/internal/store"
@@ -76,7 +77,7 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 		if old != nil {
 			if old.SyncState == store.SyncPending || old.SyncState == store.SyncRejected {
 				// Local version wins until pushed; only record that central showed it.
-				objs = append(objs, &tracker.Obj{UID: old.UID, Kind: "visibility-only"})
+				objs = append(objs, &tracker.Obj{UID: old.UID, Kind: "visibility-only", Slot: old.Slot})
 				batch[it.UID] = old
 				continue
 			}
@@ -91,7 +92,14 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 		batch[it.UID] = o
 		objs = append(objs, o)
 	}
-	var uids []string
+	changes := map[uint32]bool{}
+	for _, o := range objs {
+		if o.Slot == 0 {
+			o.Slot = h.Index.SlotFor(o.UID)
+		}
+		changes[o.Slot] = true
+	}
+	vc := h.Index.PrepareVisibility(userID, changes)
 	err := h.Store.Tx(context.Background(), func(tx *sql.Tx) error {
 		for _, o := range objs {
 			if o.Kind != "visibility-only" {
@@ -99,20 +107,18 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 					return err
 				}
 			}
-			if err := h.Store.AddVisibility(tx, o.UID, userID); err != nil {
-				return err
-			}
 		}
-		return nil
+		return vc.Write(h.Store, tx)
 	})
+	vc.Done(err == nil)
 	if err != nil {
 		return nil, err
 	}
+	var uids []string
 	for _, o := range objs {
 		if o.Kind != "visibility-only" {
 			h.Index.Put(o)
 		}
-		h.Index.SetVisible(o.UID, userID, true)
 		uids = append(uids, o.UID)
 	}
 	return uids, nil
@@ -148,6 +154,9 @@ func (h *Hub) PersistImport(userID int64, out *tracker.ImportOutcome) (int64, er
 		}
 		dep := h.Store.LatestPendingSeqFor(tx, refs)
 		for _, o := range out.Accepted {
+			if o.Slot == 0 {
+				o.Slot = h.Index.SlotFor(o.UID)
+			}
 			if err := h.Store.PutObject(tx, o.ToStore()); err != nil {
 				return err
 			}
@@ -167,21 +176,65 @@ func (h *Hub) PersistImport(userID int64, out *tracker.ImportOutcome) (int64, er
 // RemoveVisibilityExcept drops userID from central-origin objects of the given
 // programs that a full pull did not return (spec 11.3).
 func (h *Hub) RemoveVisibilityExcept(userID int64, programs []string, seen map[string]bool) int {
-	n := 0
+	changes := map[uint32]bool{}
 	for _, kind := range []string{store.KindTrackedEntity, store.KindEnrollment, store.KindEvent, store.KindRelationship} {
 		for _, o := range h.Index.All(kind) {
-			if o.Origin != store.OriginCentral || !o.Visible[userID] || seen[o.UID] {
+			if o.Origin != store.OriginCentral || seen[o.UID] || !h.Index.VisibleTo(o, userID) {
 				continue
 			}
 			if o.Program != "" && !slices.Contains(programs, o.Program) {
 				continue
 			}
-			h.Store.RemoveVisibility(h.Store.DB(), o.UID, userID)
-			h.Index.SetVisible(o.UID, userID, false)
-			n++
+			changes[o.Slot] = false
 		}
 	}
-	return n
+	if len(changes) == 0 {
+		return 0
+	}
+	if err := h.setVisibility(userID, changes); err != nil {
+		slog.Warn("removing visibility", "user", userID, "err", err)
+		return 0
+	}
+	return len(changes)
+}
+
+// MarkVisible records that central showed these objects, already held, to the user
+// (the ID-list pull, spec 11.3). Unknown UIDs are skipped.
+func (h *Hub) MarkVisible(userID int64, uids []string) error {
+	changes := map[uint32]bool{}
+	for _, uid := range uids {
+		if o := h.Index.Get(uid); o != nil && o.Slot != 0 && !h.Index.VisibleTo(o, userID) {
+			changes[o.Slot] = true
+		}
+	}
+	if len(changes) == 0 {
+		return nil
+	}
+	return h.setVisibility(userID, changes)
+}
+
+// RecordScopes notes that these tracked entities were fetched in full for scope.
+func (h *Hub) RecordScopes(tes []string, scope string) error {
+	err := h.Store.Tx(context.Background(), func(tx *sql.Tx) error {
+		for _, te := range tes {
+			if err := h.Store.AddTEScope(tx, te, scope); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err == nil {
+		h.Index.AddScopes(tes, scope)
+	}
+	return err
+}
+
+// setVisibility stores and applies one user's visibility changes.
+func (h *Hub) setVisibility(userID int64, changes map[uint32]bool) error {
+	vc := h.Index.PrepareVisibility(userID, changes)
+	err := h.Store.Tx(context.Background(), func(tx *sql.Tx) error { return vc.Write(h.Store, tx) })
+	vc.Done(err == nil)
+	return err
 }
 
 // ShareByRules adds every user who may read an object under the local-object rules
@@ -192,21 +245,26 @@ func (h *Hub) ShareByRules(uids []string) {
 	if err != nil {
 		return
 	}
-	for _, uid := range uids {
-		o := h.Index.Get(uid)
-		if o == nil {
+	for _, u := range users {
+		v := h.Viewer(u.ID)
+		if !v.Access.InFacility(h.FacilityPath()) {
 			continue
 		}
-		probe := *o
-		probe.Origin = store.OriginLocal
-		for _, u := range users {
-			if o.Visible[u.ID] {
+		changes := map[uint32]bool{}
+		for _, uid := range uids {
+			o := h.Index.Get(uid)
+			if o == nil || o.Slot == 0 || h.Index.VisibleTo(o, u.ID) {
 				continue
 			}
-			v := h.Viewer(u.ID)
-			if v.Access.InFacility(h.FacilityPath()) && h.Index.CanRead(v, &probe) {
-				h.Store.AddVisibility(h.Store.DB(), uid, u.ID)
-				h.Index.SetVisible(uid, u.ID, true)
+			probe := *o
+			probe.Origin = store.OriginLocal
+			if h.Index.CanRead(v, &probe) {
+				changes[o.Slot] = true
+			}
+		}
+		if len(changes) > 0 {
+			if err := h.setVisibility(u.ID, changes); err != nil {
+				slog.Warn("sharing by rules", "user", u.Username, "err", err)
 			}
 		}
 	}
