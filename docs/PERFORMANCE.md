@@ -99,3 +99,21 @@ Run 10 %, 25 %, 50 %, 100 % and 200 % of the target (100 % = 100 k TEs, 150 k en
 - **Concurrent offline writes failed** with `500 database is locked` (6 % of writes with 6 users and no think time). SQLite's busy timeout cannot help a deferred transaction that reads and then needs the write lock; write transactions now begin immediate. Fixed.
 - **"Sync now" in the admin page** ran its own cycle with a 10-minute limit, next to the scheduler's. A first pull at the target size takes longer, so it would have been cut off; it now asks the scheduler, which runs one cycle at a time without a limit. `/hub/status` reports `syncing` and `syncStarted`.
 - **Every user pulls everything they can read.** With 50 users, the first sync moves 50 copies of the facility's data through the uplink and the hub, and so does each daily full pull (`full_pull_interval`). To be measured; a shared pull with per-user filtering would move one.
+
+## First numbers: 10 % in the sandbox (2026-10-08)
+
+10 000 tracked entities, 15 000 enrollments, 50 000 events (75 000 objects), 50 users (30 web with 2–10 s think time, 20 Android), 5 minutes offline. The hub ran unconstrained on 4 Apple Silicon cores, next to the fake central and the load generator; a Pi will be slower.
+
+| | Result | Extrapolated to 100 % |
+|---|---|---|
+| First pull, 50 users | 11 min 50 s | about 2 hours, and more if per-page cost grows with size |
+| Hub memory (RSS) after the pull / under load | 940 MB / 1.13 GB | about 9–11 GB: does not fit a Pi |
+| Store on disk | 311 MB | about 3 GB |
+| Working list, p50 / p95 | 42 / 428 ms | |
+| Search by name, p50 / p95 | 46 / 381 ms | |
+| Dashboard (person, events), p95 | 130 / 209 ms | |
+| Offline event write, p95 | 125 ms, no errors | |
+| Android full download (15 000 people, 300 pages), 20 at once | 82 s each; page p95 459 ms | each page scans the facility, so pages and their cost both grow: hours |
+| Reconnect, 153 queued events | 7 s, none rejected | |
+
+Read with the expected bottlenecks: memory grows with objects × users (the per-user visibility) and every pull and query works on the whole in-memory index. **At 10 % the hub works; at the full target it would not fit a Pi's memory, and the first sync and Android downloads would take hours.** The fixes, in order of effect: visibility per access class instead of per user (memory, and one pull instead of fifty), indexed queries instead of scans (Android pages, working lists), then the container runs to confirm.
