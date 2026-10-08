@@ -12,7 +12,11 @@ import (
 )
 
 type Config struct {
-	CentralURL       string        // optional; asked at setup when empty
+	CentralURL string // optional; asked at setup when empty
+	// CentralHosts are the hosts setup may point a hub at ("hmis.example.org",
+	// "*.hmis.example.org"). Empty: only CentralURL, or, without that, any https URL
+	// with the setup token from the label (REVIEW-2 F1).
+	CentralHosts     []string
 	SetupUserGroup   string        // user group UID allowed to set up a hub
 	Listen           string        // e.g. ":8443"
 	DataDir          string        // e.g. /var/lib/hub
@@ -93,6 +97,8 @@ func (c *Config) set(k, v string) error {
 	switch k {
 	case "central_url":
 		c.CentralURL = strings.TrimRight(v, "/")
+	case "central_hosts":
+		c.CentralHosts = splitList(v)
 	case "setup_user_group":
 		c.SetupUserGroup = v
 	case "listen":
@@ -126,18 +132,23 @@ func (c *Config) set(k, v string) error {
 	case "key_slot_max_age":
 		c.KeySlotMaxAge, err = time.ParseDuration(v)
 	case "hub_hosts":
-		c.HubHosts = nil
-		for _, x := range strings.Split(v, ",") {
-			if x = strings.TrimSpace(x); x != "" {
-				c.HubHosts = append(c.HubHosts, x)
-			}
-		}
+		c.HubHosts = splitList(v)
 	case "log_requests":
 		c.LogRequests, err = strconv.ParseBool(v)
 	default:
 		return fmt.Errorf("unknown key %q", k)
 	}
 	return err
+}
+
+func splitList(v string) []string {
+	var out []string
+	for _, x := range strings.Split(v, ",") {
+		if x = strings.TrimSpace(x); x != "" {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 // stripComment removes a trailing "# ..." comment that is not inside quotes.

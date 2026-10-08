@@ -558,7 +558,7 @@ func Status(h *core.Hub) map[string]any {
 		"lastSync": lastSync, "lastError": lastErr, "pending": h.Store.CountObjects(store.SyncPending),
 		"rejected": h.Store.CountObjects(store.SyncRejected), "pendingOutbox": h.Store.CountOutbox(store.OutboxPending),
 		"stuckOutbox": h.StuckOutbox(),
-		"issues": h.Store.CountIssues(), "diskFreeBytes": diskFree(h.Cfg.DataDir), "lastUpgrade": upgrade,
+		"issues":      h.Store.CountIssues(), "diskFreeBytes": diskFree(h.Cfg.DataDir), "lastUpgrade": upgrade,
 		"needsUpgrade": h.API() == nil && h.ServerVersion() != "", "time": time.Now().UTC().Format(time.RFC3339),
 	}
 }

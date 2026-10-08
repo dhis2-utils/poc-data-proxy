@@ -66,7 +66,7 @@ wait_for() { # wait_for <seconds> <command...>
 }
 
 say "setting up the hub as hub_admin"
-curl -s -c "$WORK/admin.jar" -o "$WORK/setup.html" -X POST "$H/hub/setup" --data-urlencode step=login \
+curl -s -c "$WORK/admin.jar" -o "$WORK/setup.html" -X POST -H "Origin: $H" "$H/hub/setup" --data-urlencode step=login \
   --data-urlencode "central_url=$FC" --data-urlencode username=hub_admin --data-urlencode 'password=Hub-Test-2026!'
 grep -q "This hub now serves" "$WORK/setup.html" || fail "setup"
 HUB_ID=$(status hubId)

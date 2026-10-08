@@ -76,6 +76,9 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 		}}
 	worker.AfterCycle = up.Check
 	u := &ui.UI{H: h, Auth: a, Worker: worker}
+	if err := ui.EnsureSetupToken(h); err != nil {
+		return nil, fmt.Errorf("setup token: %w", err)
+	}
 	u.Reset = func() error { return Reset(h, worker) }
 
 	// The hub's own pages use a ServeMux. Everything else is dispatched by hand: a
@@ -160,6 +163,9 @@ func reset(h *core.Hub, w *hubsync.Worker) error {
 		return err
 	}
 	EnsureIdentity(h.Store)
+	if err := ui.EnsureSetupToken(h); err != nil {
+		slog.Error("reset: setup token", "err", err)
+	}
 	slog.Info("hub reset; back in setup mode", "hubId", h.HubID())
 	return nil
 }

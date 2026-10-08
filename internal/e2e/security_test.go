@@ -2,9 +2,15 @@
 package e2e
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +18,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/core"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 	"github.com/dhis2/facility-hub/internal/store"
+	"github.com/dhis2/facility-hub/internal/ui"
 )
 
 // M2: a write accepted while an upgrade copies the store would be lost with the
@@ -162,29 +169,61 @@ func TestLoginThrottle(t *testing.T) {
 	e.web("nurse_a").login()
 }
 
-// M8: with a central URL in the image defaults, the setup page cannot point the hub
-// elsewhere; without one, only an https URL is accepted.
+// M8, REVIEW-2 F1: nobody at the setup page can choose the central server. With
+// central_url only, the form value is ignored; with central_hosts, the URL must be on
+// them; with neither, setup needs the token from the label. Cross-site posts are
+// refused, and a failed attempt leaves the hub's central URL as it was.
 func TestSetupCentralURL(t *testing.T) {
 	e := newEnv(t)
-	post := func(centralURL string) string {
-		resp, err := e.web("hub_admin").http.PostForm(e.srv.URL+"/hub/setup", url.Values{"step": {"login"},
-			"central_url": {centralURL}, "username": {"hub_admin"}, "password": {fc.Password}})
+	h := e.app.Hub
+	post := func(origin string, form url.Values) (int, string) {
+		form.Set("step", "login")
+		form.Set("username", "hub_admin")
+		form.Set("password", fc.Password)
+		req, _ := http.NewRequest("POST", e.srv.URL+"/hub/setup", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		resp, err := e.web("hub_admin").http.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer resp.Body.Close()
 		b, _ := io.ReadAll(resp.Body)
-		return string(b)
+		return resp.StatusCode, string(b)
 	}
-	e.app.Hub.Cfg.CentralURL = ""
-	if page := post("http://attacker.example"); !strings.Contains(page, "https://") {
+	before := h.Central.BaseURL()
+
+	if st, _ := post("https://evil.example", url.Values{"central_url": {"https://attacker.example"}}); st != 403 {
+		t.Fatalf("cross-site setup post: %d", st)
+	}
+
+	h.Cfg.CentralURL, h.Cfg.CentralHosts = "", nil // token mode
+	if err := ui.EnsureSetupToken(h); err != nil {
+		t.Fatal(err)
+	}
+	if _, page := post(e.srv.URL, url.Values{"central_url": {"https://attacker.example"}}); !strings.Contains(page, "wrong setup token") {
+		t.Fatalf("setup without token: %s", page)
+	}
+	tok, _ := os.ReadFile(filepath.Join(e.dir, "setup-token"))
+	if _, page := post(e.srv.URL, url.Values{"central_url": {"http://attacker.example"}, "setup_token": {string(tok)}}); !strings.Contains(page, "https://") {
 		t.Fatalf("plain http central URL accepted: %s", page)
 	}
-	e.app.Hub.Cfg.CentralURL = e.cSrv.URL
-	if page := post("https://attacker.example"); !strings.Contains(page, "This hub now serves") {
+
+	h.Cfg.CentralURL, h.Cfg.CentralHosts = e.cSrv.URL, []string{"*.hmis.example"}
+	if _, page := post(e.srv.URL, url.Values{"central_url": {"https://attacker.example"}}); !strings.Contains(page, "must be an https URL on") {
+		t.Fatalf("URL outside central_hosts accepted: %s", page)
+	}
+	if got := h.Central.BaseURL(); got != before {
+		t.Fatalf("failed setup changed the central URL to %s", got)
+	}
+
+	h.Cfg.CentralHosts = nil // central_url only: the form value is ignored
+	if _, page := post(e.srv.URL, url.Values{"central_url": {"https://attacker.example"}}); !strings.Contains(page, "This hub now serves") {
 		t.Fatalf("setup with pinned URL failed: %s", page)
 	}
-	if got := e.app.Hub.Central.BaseURL(); got != e.cSrv.URL {
+	if got := h.Central.BaseURL(); got != e.cSrv.URL {
 		t.Fatalf("hub points at %s", got)
 	}
 }
@@ -247,5 +286,42 @@ func TestCreatedByKept(t *testing.T) {
 	o := e.app.Hub.Index.Get("OwnTe000001")
 	if cb, _ := o.Data["createdBy"].(map[string]any); cb["username"] != "nurse_a" || o.Data["createdAt"] == "2000-01-01T00:00:00.000" {
 		t.Fatalf("createdBy %v createdAt %v", o.Data["createdBy"], o.Data["createdAt"])
+	}
+}
+
+// REVIEW-2 F1, F2: a signed release manifest can move hubs to a new central URL (a
+// domain migration); an unsigned one can do nothing, and none of its content is kept.
+func TestCentralMoveBySignedManifest(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	h := e.app.Hub
+	moved := httptest.NewServer(e.central) // the same DHIS2 at a new address
+	t.Cleanup(moved.Close)
+
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	files := map[string][]byte{}
+	channel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, ok := files[strings.TrimPrefix(r.URL.Path, "/")]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write(b)
+	}))
+	t.Cleanup(channel.Close)
+	h.Cfg.ReleaseChannel = channel.URL
+	h.Cfg.ReleasePublicKey = base64.StdEncoding.EncodeToString(pub)
+	manifest := []byte(`{"version":"0.1.0","files":{},"sha256":{},"centralUrl":"` + moved.URL + `","stage":{"percent":100}}`)
+
+	files["release.json"] = manifest // unsigned
+	e.sync()
+	if h.Central.BaseURL() != e.cSrv.URL || strings.Contains(h.Store.Meta("upgrade_unsigned"), "0.1.0") {
+		t.Fatalf("unsigned manifest acted on: %s %q", h.Central.BaseURL(), h.Store.Meta("upgrade_unsigned"))
+	}
+
+	files["release.json.sig"] = []byte(base64.StdEncoding.EncodeToString(ed25519.Sign(priv, manifest)))
+	e.sync()
+	if h.Central.BaseURL() != moved.URL || h.Store.Meta(core.MetaCentralURL) != moved.URL {
+		t.Fatalf("not moved: %s", h.Central.BaseURL())
 	}
 }

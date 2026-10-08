@@ -22,7 +22,9 @@ import (
 	"hash/fnv"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +35,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/central"
 	"github.com/dhis2/facility-hub/internal/core"
 	"github.com/dhis2/facility-hub/internal/store"
 )
@@ -45,6 +48,9 @@ type Manifest struct {
 		Percent int      `json:"percent"`
 		HubIDs  []string `json:"hubIds"`
 	} `json:"stage"`
+	// CentralURL moves every hub reading this manifest to a new central URL (a
+	// domain migration), without a new image or a site visit. Signed like the rest.
+	CentralURL string `json:"centralUrl,omitempty"`
 }
 
 // Marker is written to data_dir/upgrade.json across the re-exec.
@@ -104,6 +110,9 @@ func (u *Upgrader) check(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if m != nil && m.CentralURL != "" {
+		u.followCentral(ctx, m.CentralURL)
+	}
 	if m == nil || CompareVersions(m.Version, u.H.Version) <= 0 {
 		return nil
 	}
@@ -132,7 +141,7 @@ func (u *Upgrader) check(ctx context.Context) error {
 		slog.Warn("upgrading with stuck outbox entries; their authors must log in online", "entries", stuck)
 	}
 	// 2. Download and verify.
-	bin, err := u.get(ctx, m.Files[plat])
+	bin, err := u.get(ctx, m.Files[plat], 512<<20)
 	if err != nil {
 		return err
 	}
@@ -215,27 +224,69 @@ func (u *Upgrader) check(ctx context.Context) error {
 	return Reexec(exe, dk)
 }
 
+// fetchManifest returns the release manifest, or nil if it is not correctly signed.
+// Nothing from an unsigned manifest is used or stored: the channel may be plain HTTP,
+// so its content is only trusted once the signature checks out (REVIEW-2 F2).
 func (u *Upgrader) fetchManifest(ctx context.Context) (*Manifest, error) {
-	raw, err := u.get(ctx, "release.json")
+	raw, err := u.get(ctx, "release.json", 64<<10)
 	if err != nil {
 		return nil, err
 	}
-	sig, err := u.get(ctx, "release.json.sig")
-	m := &Manifest{}
-	if jerr := json.Unmarshal(raw, m); jerr != nil {
-		return nil, fmt.Errorf("release manifest: %w", jerr)
-	}
+	sig, err := u.get(ctx, "release.json.sig", 1<<10)
 	if err != nil || !Verify(u.H.Cfg.ReleasePublicKey, raw, sig) {
-		if CompareVersions(m.Version, u.H.Version) > 0 && u.H.Store.Meta("upgrade_unsigned") != m.Version {
-			u.record(Result{Result: "ignored", From: u.H.Version, To: m.Version, Reason: "release signature missing or invalid"})
-			u.H.Store.SetMeta("upgrade_unsigned", m.Version)
+		sum := sha256.Sum256(raw)
+		id := hex.EncodeToString(sum[:8])
+		if u.H.Store.Meta("upgrade_unsigned") != id { // report each such manifest once
+			u.record(Result{Result: "ignored", From: u.H.Version, Reason: "release channel served a manifest without a valid signature"})
+			u.H.Store.SetMeta("upgrade_unsigned", id)
 		}
 		return nil, nil
+	}
+	m := &Manifest{}
+	if err := json.Unmarshal(raw, m); err != nil {
+		return nil, fmt.Errorf("release manifest: %w", err)
 	}
 	return m, nil
 }
 
-func (u *Upgrader) get(ctx context.Context, name string) ([]byte, error) {
+// followCentral switches the hub to the central URL a signed manifest names, once
+// the new server knows this hub: its registry entry is there and the hub token works.
+// The release key can already ship any code, so it may also move hubs; https is
+// required all the same, except for a local test server.
+func (u *Upgrader) followCentral(ctx context.Context, target string) {
+	h := u.H
+	target = strings.TrimRight(target, "/")
+	if target == h.Central.BaseURL() || h.Runtime() == nil {
+		return
+	}
+	pu, err := url.Parse(target)
+	if err != nil || pu.Hostname() == "" || (pu.Scheme != "https" && !isLoopback(pu.Hostname())) {
+		slog.Warn("release manifest names an unusable central URL; staying", "url", target)
+		return
+	}
+	c := central.NewClient(target, central.NewMonitor(h.Cfg.PingInterval, h.Cfg.PingTimeout))
+	var reg struct {
+		HubID string `json:"hubId"`
+	}
+	if err := c.JSON(ctx, "GET", "/api/dataStore/facility-hub-registry/"+url.PathEscape(h.HubID()), nil, h.HubAuth(), &reg); err != nil || reg.HubID != h.HubID() {
+		slog.Warn("new central URL does not know this hub yet; staying", "url", target, "err", err)
+		return
+	}
+	if err := h.Store.SetMeta(core.MetaCentralURL, target); err != nil {
+		slog.Error("saving new central URL", "err", err)
+		return
+	}
+	h.Central.SetBaseURL(target)
+	slog.Info("moved to new central URL from signed release manifest", "url", target)
+}
+
+func isLoopback(host string) bool {
+	ip := net.ParseIP(host)
+	return host == "localhost" || (ip != nil && ip.IsLoopback())
+}
+
+// get fetches a file from the release channel, refusing more than limit bytes.
+func (u *Upgrader) get(ctx context.Context, name string, limit int64) ([]byte, error) {
 	// The check runs inside the sync cycle; a hung channel must not stall push and pull.
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
@@ -251,7 +302,11 @@ func (u *Upgrader) get(ctx context.Context, name string) ([]byte, error) {
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("release channel %s: HTTP %d", name, resp.StatusCode)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 512<<20))
+	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err == nil && int64(len(b)) > limit {
+		return nil, fmt.Errorf("release channel %s: larger than %d bytes", name, limit)
+	}
+	return b, err
 }
 
 // Verify checks a base64 ed25519 signature with a base64 public key.
