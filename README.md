@@ -54,7 +54,9 @@ The hub has no facility-specific configuration. It reads one small image-default
 
 | Key | Meaning |
 |---|---|
-| `central_url` | Central DHIS2 base URL. When set, setup cannot change it. When empty, setup asks for an `https://` URL |
+| `central_url` | Central DHIS2 base URL. Without `central_hosts`, setup always uses it |
+| `central_hosts` | Hosts setup may point a hub at (`hmis.example.org, *.hmis.example.org`); setup then asks for an `https://` URL on them. With neither key, setup needs the token in `data_dir/setup-token` (printed on the label) |
+| `password_fallback` | Store a user's central password, sealed, when a PAT cannot be created (spec 7.1). Default `false` |
 | `setup_user_group` | UID of the user group whose members may set up, administer and reset a hub |
 | `listen` | Listen address, e.g. `:8443` |
 | `data_dir` | Store (`hub.db` key file, `hub.db.data` encrypted data file), TLS certificate (`ca.crt` for devices, also served at `/hub/ca.crt`), request log, upgrade files |
@@ -65,7 +67,7 @@ The hub has no facility-specific configuration. It reads one small image-default
 | `reserved_pool_size` | Reserved values kept per generated attribute (default 150) |
 | `full_pull_interval` | How often a full, non-incremental pull runs per user (default 24h) |
 | `log_requests` | Log every request and append it to `data_dir/requests.log` (spec 13.1) |
-| `hub_hosts` | Extra host names clients may use for the hub (comma separated). The hub answers 421 to any other `Host`; its own names and addresses are always accepted |
+| `hub_hosts` | Extra host names clients may use for the hub (comma separated; no wildcard). The hub answers 421 to any other `Host`; its own names and addresses are always accepted |
 | `session_idle`, `session_max` | End a hub session after this long without requests (default 1h) or after login (default 12h) |
 | `key_slot_max_age` | Remove the key slot of a user who has not logged in for this long (default 2160h, 90 days); the three most recently used slots are always kept |
 
@@ -79,7 +81,7 @@ The hub has no facility-specific configuration. It reads one small image-default
 2. **Setup.** A member of `setup_user_group` logs in. The hub then:
    - picks the facility from the user's org units, with a picker if there are several;
    - checks that the DHIS2 version is supported;
-   - finds the tracker programs assigned to the facility;
+   - finds the tracker programs assigned to the facility that the setup user can see. Each facility user's online login, and each sync, adds the programs that user can see, since a district officer may not see them all;
    - registers itself in the `facility-hub-registry` data store namespace, offering to retire another active hub for the same facility;
    - creates its hub-level token;
    - starts the first full pull.
@@ -105,9 +107,11 @@ Hub endpoints:
 
 ```bash
 ./hub keygen -out release                    # release.key (keep secret), release.pub (put in release_public_key)
-./hub release -key release.key -dir channel -version 0.2.0 [-percent 25] [-hubs hub-abc,hub-def] \
+./hub release -key release.key -dir channel -version 0.2.0 [-percent 25] [-hubs hub-abc,hub-def] [-central-url https://new.example.org] \
     linux/arm64=hub-linux-arm64 linux/amd64=hub-linux-amd64
 ```
+
+`-central-url` moves every hub that reads the manifest to a new central URL (a domain migration); a hub moves once the new server has its registry entry and accepts its token.
 
 `channel/` is a static folder. Serve it over HTTP(S) and point `release_channel` at it. It contains `release.json` (version, file names, SHA-256 per platform, rollout stage), `release.json.sig` (ed25519 over `release.json`) and the binaries.
 
