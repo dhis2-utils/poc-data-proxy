@@ -60,9 +60,12 @@ type Program struct {
 	Stages          []string `json:"stages"`
 	RestrictedStage string   `json:"restrictedStage,omitempty"` // hidden from the restricted role
 	// Attributes tests can use; empty when the program has none of that kind.
-	SearchAttr    string `json:"searchAttr,omitempty"` // non-unique text, e.g. first name
-	UniqueAttr    string `json:"uniqueAttr,omitempty"`
-	GeneratedAttr string `json:"generatedAttr,omitempty"`
+	SearchAttr string `json:"searchAttr,omitempty"` // non-unique text, e.g. first name
+	// Generated attributes an enrollment must carry: writers reserve a value through
+	// the hub (online from central, offline from its pool) as the apps do.
+	MandatoryGenerated []string `json:"mandatoryGenerated,omitempty"`
+	UniqueAttr         string   `json:"uniqueAttr,omitempty"`
+	GeneratedAttr      string   `json:"generatedAttr,omitempty"`
 	// Valid values for what an enrollment or event must carry: mandatory attributes
 	// (attribute -> value) and, per stage, data elements (data element -> value).
 	// Writers fill these in so every profile's validation passes.

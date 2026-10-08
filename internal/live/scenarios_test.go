@@ -101,6 +101,7 @@ func TestScenarios(t *testing.T) {
 	var online *tk.Person
 	t.Run("online: a write passes through, attributed to its author", func(t *testing.T) {
 		online = m.NewPerson(p, runTag+"online", p.Stages[0])
+		nurse.Complete(p, online)
 		nurse.JSON("POST", tk.SyncImport, online.Payload, 200)
 		o := e.CentralObject("trackedEntities", online.TE)
 		if o == nil {
@@ -115,6 +116,7 @@ func TestScenarios(t *testing.T) {
 	t.Run("offline: a registration is visible to colleagues by their access", func(t *testing.T) {
 		e.Offline()
 		offline = m.NewPerson(p, runTag+"offline", p.Stages...)
+		nurse.Complete(p, offline) // from the hub's pool
 		nurse.JSON("POST", tk.SyncImport, offline.Payload, 200)
 		got := uids(nurse.JSON("GET", search(runTag+"offline"), nil, 200)["trackedEntities"], "trackedEntity")
 		if !slices.Contains(got, offline.TE) {
@@ -153,18 +155,26 @@ func TestScenarios(t *testing.T) {
 
 	var dup *tk.Person
 	t.Run("offline: a unique value taken on central meanwhile", func(t *testing.T) {
+		p := p // the first program with a unique attribute
+		for _, q := range m.Programs {
+			if p.UniqueAttr == "" && q.UniqueAttr != "" {
+				p = q
+			}
+		}
 		if p.UniqueAttr == "" {
-			t.Skip("primary program has no unique attribute")
+			t.Skip("no program has a unique attribute")
 		}
 		value := "T-" + tk.UID()
 		if e.Fake != nil {
 			e.Fake.Seed(tk.UID(), tk.UID(), "Other", value, nil)
 		} else {
 			other := m.NewPerson(p, runTag+"other")
+			e.CentralComplete(p, other)
 			other.SetAttr(p.UniqueAttr, value)
 			e.CentralImport(other.Payload)
 		}
 		dup = m.NewPerson(p, runTag+"dup", p.Stages[0])
+		nurse.Complete(p, dup)
 		dup.SetAttr(p.UniqueAttr, value)
 		nurse.JSON("POST", tk.SyncImport, dup.Payload, 200) // the hub cannot know yet
 	})

@@ -1,6 +1,9 @@
 package testkit
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Person is a tracked entity enrolled in a program, built so the profile's validation
 // passes: mandatory attributes and compulsory data elements come from the manifest,
@@ -74,4 +77,34 @@ func (pr *Person) SetAttr(attr, value string) {
 		}
 	}
 	te["attributes"] = append(attrs, map[string]any{"attribute": attr, "value": value})
+}
+
+// Complete fills the person's mandatory generated attributes with values reserved
+// through the hub as this client, as the Capture apps do before registering.
+func (c *Client) Complete(p Program, pr *Person) {
+	c.e.T.Helper()
+	for _, attr := range p.MandatoryGenerated {
+		st, b := c.Do("GET", "/api/trackedEntityAttributes/"+attr+"/generate", nil)
+		var v struct {
+			Value string `json:"value"`
+		}
+		if json.Unmarshal(b, &v); st != 200 || v.Value == "" {
+			c.e.T.Fatalf("reserving a value of %s as %s: %d %.300s", attr, c.Role, st, b)
+		}
+		pr.SetAttr(attr, v.Value)
+	}
+}
+
+// CentralComplete does the same directly on central, for records written there.
+func (e *Env) CentralComplete(p Program, pr *Person) {
+	e.T.Helper()
+	for _, attr := range p.MandatoryGenerated {
+		var v struct {
+			Value string `json:"value"`
+		}
+		if err := e.Central.JSON("GET", "/api/trackedEntityAttributes/"+attr+"/generate", nil, &v); err != nil {
+			e.T.Fatal(err)
+		}
+		pr.SetAttr(attr, v.Value)
+	}
 }

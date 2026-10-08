@@ -4,9 +4,6 @@
 package provision
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/dhis2/facility-hub/internal/testkit"
 )
 
@@ -62,14 +59,6 @@ const (
 	stEvt = "SynStEvt001"
 
 	rtMotherChild = "SynRtMoChi1"
-
-	roleUser = "SynRole0001"
-
-	grpSetup    = "SynGrpSetup"
-	grpNurse    = "SynGrpNurse"
-	grpLab      = "SynGrpLab01"
-	grpClerk    = "SynGrpClerk"
-	grpDistrict = "SynGrpDistr"
 
 	Password = "Hub-Test-2026!"
 )
@@ -145,29 +134,9 @@ var matrixDims = []struct {
 
 var accessOf = map[string]string{"none": acNone, "metadata": acMeta, "read": acRead, "write": acWrite}
 
-var scopeOUs = map[string][]string{
-	"none": nil, "facility": {ouFac}, "district": {ouNorth}, "sibling": {ouSib},
-	"facility+sibling": {ouFac, ouSib}, "other-district": {ouSouth}, "country": {ouRoot},
-}
-
-type userSpec struct {
-	uid, username, first, surname string
-	capture, search               []string
-	groups                        []string
-	dims                          map[string]string
-}
-
 // metadata builds the whole synthetic setup as one /api/metadata payload, and the
 // manifest that describes it.
 func syntheticMetadata() (map[string]any, *testkit.Manifest) {
-	ref := func(id string) map[string]any { return map[string]any{"id": id} }
-	refs := func(ids ...string) []any {
-		out := []any{}
-		for _, id := range ids {
-			out = append(out, ref(id))
-		}
-		return out
-	}
 	ou := func(id, name, code, parent string) map[string]any {
 		o := map[string]any{"id": id, "name": name, "shortName": name, "code": code, "openingDate": "2020-01-01"}
 		if parent != "" {
@@ -251,113 +220,21 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 		de(deSmear, "smear result", "TEXT", map[string]any{"optionSet": ref(osRes)}),
 	}
 
-	// Sharing per object, filled from the groups (roles) and the matrix users below.
-	sh := map[string]*sharing{}
-	for _, id := range []string{tetPerson, prMat, prHiv, prTb, prCom, prEvt, stAnc, stDel, stLab, stIni, stFup, stTbV,
-		stCom, stEvt, rtMotherChild} {
-		sh[id] = &sharing{}
-	}
-	sh[prCom].Public, sh[stCom].Public = acWrite, acWrite // public data access
-	for _, id := range []string{prMat, prHiv, prTb} {
-		_ = id // no public access: what a user sees comes from their grants
-	}
-	grantGroup := func(group, access string, ids ...string) {
-		for _, id := range ids {
-			sh[id].grant("", group, access)
+	// Role users and the access matrix (access.go), on this setup's programs.
+	l := &Layout{Prefix: "Syn", UserPrefix: "syn_", Root: ouRoot, District: ouNorth, OtherDistrict: ouSouth,
+		Facility: ouFac, Sibling: ouSib, RestrictedStage: stLab, RelationshipTypes: []string{rtMotherChild},
+		Programs: []ProgramLayout{{prMat, tetPerson, []string{stAnc, stDel, stLab}}, {prHiv, tetPerson, []string{stIni, stFup}},
+			{prTb, tetPerson, []string{stTbV}}, {prCom, tetPerson, []string{stCom}}, {prEvt, "", []string{stEvt}}}}
+	l.Open, l.Protected, l.Closed = &l.Programs[0], &l.Programs[1], &l.Programs[2]
+	acc := buildAccess(l)
+	sh := func(id string) *sharing {
+		if acc.Sharing[id] == nil {
+			acc.Sharing[id] = &sharing{}
 		}
+		return acc.Sharing[id]
 	}
-	grantGroup(grpNurse, acWrite, tetPerson, prMat, stAnc, stDel, prHiv, stIni, stFup, prTb, stTbV, prEvt, stEvt, rtMotherChild)
-	grantGroup(grpLab, acWrite, stLab)
-	grantGroup(grpClerk, acRead, prMat, stAnc, stDel, prHiv, stIni, stFup)
-	grantGroup(grpClerk, acWrite, tetPerson)
-	grantGroup(grpDistrict, acRead, tetPerson, prMat, stAnc, stDel)
-	sh[rtMotherChild].Public = acMeta
-
-	// Role users (the scenario tests).
-	roles := []userSpec{
-		{uid: "SynUsrAdmn1", username: "syn_admin", first: "Setup", surname: "Admin", capture: []string{ouFac},
-			search: []string{ouNorth}, groups: []string{grpSetup, grpDistrict}},
-		{uid: "SynUsrNurs1", username: "syn_nurse", first: "Nurse", surname: "Full", capture: []string{ouFac},
-			search: []string{ouNorth}, groups: []string{grpNurse, grpLab}},
-		{uid: "SynUsrRstr1", username: "syn_restricted", first: "Nurse", surname: "Restricted", capture: []string{ouFac},
-			search: []string{ouNorth}, groups: []string{grpNurse}},
-		{uid: "SynUsrClrk1", username: "syn_clerk", first: "Clerk", surname: "Read", capture: []string{ouFac},
-			search: []string{ouNorth}, groups: []string{grpClerk}},
-		{uid: "SynUsrOuts1", username: "syn_outsider", first: "Nurse", surname: "Sibling", capture: []string{ouSib},
-			search: []string{ouNorth}, groups: []string{grpNurse, grpLab}},
-		{uid: "SynUsrDist1", username: "syn_district", first: "District", surname: "Officer", capture: []string{ouNorth},
-			search: []string{ouNorth}, groups: []string{grpDistrict}},
-		{uid: "SynUsrNoSr1", username: "syn_searchless", first: "Nurse", surname: "Searchless", capture: []string{ouFac},
-			search: []string{ouFar}, groups: []string{grpNurse}},
-	}
-	roleNames := []string{testkit.RoleAdmin, testkit.RoleNurse, testkit.RoleRestricted, testkit.RoleClerk,
-		testkit.RoleOutsider, testkit.RoleDistrict, testkit.RoleSearchless}
-
-	// Matrix users: each gets its grants directly or through a group of its own.
-	sizes := make([]int, len(matrixDims))
-	for i, d := range matrixDims {
-		sizes[i] = len(d.Values)
-	}
-	var matrix []userSpec
-	var matrixGroups []any
-	for n, row := range Pairwise(sizes) {
-		dims := map[string]string{}
-		for i, v := range row {
-			dims[matrixDims[i].Name] = matrixDims[i].Values[v]
-		}
-		u := userSpec{uid: fmt.Sprintf("SynUsrMx%03d", n), username: fmt.Sprintf("syn_mx%02d", n), first: "Matrix",
-			surname: fmt.Sprintf("%02d", n), capture: scopeOUs[dims["capture"]], search: scopeOUs[dims["search"]], dims: dims}
-		group := ""
-		if dims["via"] == "group" {
-			group = fmt.Sprintf("SynGrpMx%03d", n)
-			u.groups = []string{group}
-			matrixGroups = append(matrixGroups, map[string]any{"id": group, "name": "Synthetic matrix group " + u.surname,
-				"sharing": (&sharing{Public: acMeta}).json()})
-		}
-		grant := func(access string, ids ...string) {
-			for _, id := range ids {
-				sh[id].grant(u.uid, group, access)
-			}
-		}
-		grant(accessOf[dims["open"]], prMat, stAnc, stDel)
-		grant(accessOf[dims["lab"]], stLab)
-		grant(accessOf[dims["protected"]], prHiv, stIni, stFup)
-		grant(accessOf[dims["closed"]], prTb, stTbV)
-		grant(accessOf[dims["tet"]], tetPerson)
-		grant(acWrite, rtMotherChild)
-		matrix = append(matrix, u)
-	}
-
-	// Group membership is set on the group side.
-	members := map[string][]string{}
-	for _, u := range append(append([]userSpec{}, roles...), matrix...) {
-		for _, g := range u.groups {
-			members[g] = append(members[g], u.uid)
-		}
-	}
-	groups := []any{}
-	for _, g := range []struct{ id, name string }{{grpSetup, "Synthetic hub setup"}, {grpNurse, "Synthetic nurses"},
-		{grpLab, "Synthetic lab access"}, {grpClerk, "Synthetic clerks"}, {grpDistrict, "Synthetic district officers"}} {
-		groups = append(groups, map[string]any{"id": g.id, "name": g.name, "sharing": (&sharing{Public: acMeta}).json()})
-	}
-	groups = append(groups, matrixGroups...)
-	for _, g := range groups {
-		gm := g.(map[string]any)
-		gm["users"] = refs(members[gm["id"].(string)]...)
-	}
-
-	userJSON := func(u userSpec) map[string]any {
-		return map[string]any{"id": u.uid, "username": u.username, "password": Password, "firstName": u.first,
-			"surname": u.surname, "userRoles": refs(roleUser), "organisationUnits": refs(u.capture...),
-			"dataViewOrganisationUnits": refs(u.capture...), "teiSearchOrganisationUnits": refs(u.search...)}
-	}
-	var users []any
-	for _, u := range roles {
-		users = append(users, userJSON(u))
-	}
-	for _, u := range matrix {
-		users = append(users, userJSON(u))
-	}
+	sh(prCom).Public, sh(stCom).Public = acWrite, acWrite // public data access
+	sh(rtMotherChild).Public = acMeta
 
 	ptea := func(id string, mandatory bool) map[string]any {
 		return map[string]any{"trackedEntityAttribute": ref(id), "mandatory": mandatory, "searchable": true,
@@ -367,7 +244,7 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 		return map[string]any{"id": id, "name": "Synthetic " + name, "shortName": "Syn " + name,
 			"programType": "WITH_REGISTRATION", "trackedEntityType": ref(tetPerson), "accessLevel": level,
 			"onlyEnrollOnce": false, "displayIncidentDate": true, "programTrackedEntityAttributes": attrs,
-			"programStages": refs(stages...), "organisationUnits": refs(facilities...), "sharing": sh[id].json()}
+			"programStages": refs(stages...), "organisationUnits": refs(facilities...), "sharing": sh(id).json()}
 	}
 	programs := []any{
 		program(prMat, "maternal care", "OPEN", []any{ptea(atFirst, true), ptea(atLast, true), ptea(atNatID, false),
@@ -379,14 +256,14 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 		program(prCom, "community outreach", "OPEN", []any{ptea(atFirst, true), ptea(atPhone, false)}, []string{stCom}),
 		map[string]any{"id": prEvt, "name": "Synthetic facility events", "shortName": "Syn facility events",
 			"programType": "WITHOUT_REGISTRATION", "programStages": refs(stEvt), "organisationUnits": refs(facilities...),
-			"sharing": sh[prEvt].json()},
+			"sharing": sh(prEvt).json()},
 	}
 	psde := func(id string, compulsory bool) map[string]any {
 		return map[string]any{"dataElement": ref(id), "compulsory": compulsory}
 	}
 	stage := func(id, name, program string, order int, repeatable bool, des []any) map[string]any {
 		return map[string]any{"id": id, "name": "Synthetic " + name, "program": ref(program), "sortOrder": order,
-			"repeatable": repeatable, "programStageDataElements": des, "sharing": sh[id].json()}
+			"repeatable": repeatable, "programStageDataElements": des, "sharing": sh(id).json()}
 	}
 	stages := []any{
 		stage(stAnc, "ANC visit", prMat, 1, true, []any{psde(deWeight, true), psde(deHb, false), psde(deNote, false)}),
@@ -408,7 +285,7 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 				map[string]any{"trackedEntityAttribute": ref(atFirst), "searchable": true, "displayInList": true},
 				map[string]any{"trackedEntityAttribute": ref(atLast), "searchable": true, "displayInList": true},
 				map[string]any{"trackedEntityAttribute": ref(atNatID), "searchable": true, "displayInList": true}},
-			"sharing": sh[tetPerson].json()}},
+			"sharing": sh(tetPerson).json()}},
 		"dataElements":  dataElements,
 		"programs":      programs,
 		"programStages": stages,
@@ -416,15 +293,14 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 			"fromToName": "mother of", "toFromName": "child of", "bidirectional": false,
 			"fromConstraint": map[string]any{"relationshipEntity": "TRACKED_ENTITY_INSTANCE", "trackedEntityType": ref(tetPerson)},
 			"toConstraint":   map[string]any{"relationshipEntity": "TRACKED_ENTITY_INSTANCE", "trackedEntityType": ref(tetPerson)},
-			"sharing":        sh[rtMotherChild].json()}},
-		"userRoles": []any{map[string]any{"id": roleUser, "name": "Synthetic tracker user",
-			"authorities": []string{"M_dhis-web-capture", "M_dhis-web-dashboard", "F_UNCOMPLETE_EVENT"}}},
-		"userGroups": groups,
-		"users":      users,
+			"sharing":        sh(rtMotherChild).json()}},
+		"userRoles":  []any{acc.Role},
+		"userGroups": acc.Groups,
+		"users":      acc.Users,
 	}
 
 	m := &testkit.Manifest{
-		Profile: "synthetic", Password: Password, SetupGroup: grpSetup,
+		Profile: "synthetic", Password: Password, SetupGroup: acc.Setup,
 		Facility: testkit.OrgUnit{ID: ouFac, Name: "North clinic", Code: "SYN_N1", Path: "/" + ouRoot + "/" + ouNorth + "/" + ouFac},
 		Sibling:  testkit.OrgUnit{ID: ouSib, Name: "North health post", Code: "SYN_N2", Path: "/" + ouRoot + "/" + ouNorth + "/" + ouSib},
 		District: testkit.OrgUnit{ID: ouNorth, Name: "North district", Code: "SYN_N", Path: "/" + ouRoot + "/" + ouNorth},
@@ -447,20 +323,6 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 		},
 		Users: map[string]testkit.User{},
 	}
-	for i, u := range roles {
-		m.Users[roleNames[i]] = testkit.User{Username: u.username, UID: u.uid}
-	}
-	for _, u := range matrix {
-		m.Matrix = append(m.Matrix, testkit.MatrixUser{User: testkit.User{Username: u.username, UID: u.uid}, Dims: u.dims})
-	}
+	m.Users, m.Matrix = acc.Roles, acc.Matrix
 	return metadata, m
-}
-
-// describe is a short summary of a matrix user's settings, for test names.
-func describe(dims map[string]string) string {
-	var parts []string
-	for _, d := range matrixDims {
-		parts = append(parts, d.Name+"="+dims[d.Name])
-	}
-	return strings.Join(parts, " ")
 }
