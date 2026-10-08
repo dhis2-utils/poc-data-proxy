@@ -109,7 +109,7 @@ func (a *API) learn(sess *core.Session, r *http.Request, body []byte, res *proxy
 		return
 	}
 	acc := a.H.Access(sess.UserID)
-	if !acc.InFacility(a.H.Facility()) {
+	if !acc.InFacility(a.H.FacilityPath()) {
 		return
 	}
 	switch {
@@ -249,7 +249,7 @@ func (a *API) usable(w http.ResponseWriter, sess *core.Session) bool {
 		a.H.WebError(w, http.StatusForbidden, "needs connection: user is not assigned to the hub facility", "E1000")
 	case a.H.Facility() == "":
 		a.H.NeedsConnection(w, "hub is not set up")
-	case !a.H.Access(sess.UserID).InFacility(a.H.Facility()):
+	case !a.H.Access(sess.UserID).InFacility(a.H.FacilityPath()):
 		a.H.WebError(w, http.StatusForbidden, "needs connection: user is not assigned to the hub facility", "E1000")
 	default:
 		return true

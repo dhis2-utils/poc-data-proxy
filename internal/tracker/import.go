@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -380,6 +381,9 @@ func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport
 	if !im.V.Access.Program(program).Write {
 		return nil, false, im.errf(it, "E1091", "User: `%s`, has no data write access to Program: `%s`.", im.UserUID, program)
 	}
+	if old == nil && im.stageTaken(it.UID, enr, program, stage) {
+		return nil, false, im.errf(it, "E1039", "ProgramStage: `%s`, is not repeatable and an event already exists.", stage)
+	}
 	o := im.newObj(it, old)
 	o.TE, o.Enrollment, o.Program, o.Stage = parent.TE, enr, program, stage
 	o.Data["program"], o.Data["programStage"], o.Data["enrollment"], o.Data["trackedEntity"] = program, stage, enr, parent.TE
@@ -387,6 +391,27 @@ func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport
 		o.Data["status"] = "ACTIVE"
 	}
 	return o, old == nil, nil
+}
+
+// stageTaken reports whether a new event would be a second one in a non-repeatable
+// stage of the enrollment, counting events the hub holds and earlier ones in this
+// payload, as central does (E1039).
+func (im *Importer) stageTaken(uid, enr, program, stage string) bool {
+	p := im.V.Catalog.Programs[program]
+	if p == nil || !slices.Contains(p.NonRepeatable, stage) {
+		return false
+	}
+	for _, ev := range im.Ix.EventsOf(enr) {
+		if ev.UID != uid && ev.Stage == stage && ev.Data["deleted"] != true {
+			return true
+		}
+	}
+	for _, ev := range im.pending {
+		if ev.UID != uid && ev.Kind == store.KindEvent && ev.Enrollment == enr && ev.Stage == stage {
+			return true
+		}
+	}
+	return false
 }
 
 func (im *Importer) validateRelationship(it *Item, old *Obj) (*Obj, bool, []ErrorReport) {

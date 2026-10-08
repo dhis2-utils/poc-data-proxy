@@ -394,7 +394,7 @@ func (c *Central) programs(w http.ResponseWriter, r *http.Request, u *User) {
 	}
 	var stages []any
 	for i, s := range []string{Stage1, Stage2, Stage3} {
-		stages = append(stages, map[string]any{"id": s, "sortOrder": i + 1, "access": dataPerm(u.StageRead[s], u.StageWrite[s])})
+		stages = append(stages, map[string]any{"id": s, "sortOrder": i + 1, "repeatable": true, "access": dataPerm(u.StageRead[s], u.StageWrite[s])})
 	}
 	prog := map[string]any{"id": Program, "name": "TB program", "access": dataPerm(u.ProgramRead, u.ProgramWrite),
 		"trackedEntityType": map[string]any{"id": TET, "access": dataPerm(true, true),

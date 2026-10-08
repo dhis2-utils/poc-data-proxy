@@ -35,10 +35,19 @@ func Parse(b []byte) (*List, error) {
 	return l, json.Unmarshal(b, l)
 }
 
-// InFacility reports whether the user has the facility in their capture org units.
-// Users without it may not use hub-local tracker calls (spec 8.1).
-func (l *List) InFacility(facility string) bool {
-	return l != nil && slices.Contains(l.OrgUnits, facility)
+// InFacility reports whether the facility, with this path ("/root/.../facility"), is
+// in the user's capture scope: one of their capture org units or below one, as on
+// central. Users without it may not use hub-local tracker calls (spec 8.1).
+func (l *List) InFacility(facilityPath string) bool {
+	if l == nil || facilityPath == "" {
+		return false
+	}
+	for _, id := range l.OrgUnits {
+		if strings.Contains(facilityPath+"/", "/"+id+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // SearchesIn reports whether the org unit with this path ("/a/b/c") is in the user's
@@ -100,6 +109,9 @@ type ProgramMeta struct {
 	TET        string     `json:"trackedEntityType"`
 	Stages     []string   `json:"programStages"`
 	Attributes []AttrMeta `json:"attributes"` // program attributes
+	// NonRepeatable are the stages that take one event per enrollment. Catalogs from
+	// before this field have none, so the hub then leaves the check to central.
+	NonRepeatable []string `json:"nonRepeatableStages,omitempty"`
 }
 
 // Catalog is the facility's program set plus tracked entity type attributes.

@@ -204,7 +204,7 @@ func (h *Hub) ShareByRules(uids []string) {
 				continue
 			}
 			v := h.Viewer(u.ID)
-			if v.Access.InFacility(v.Facility) && h.Index.CanRead(v, &probe) {
+			if v.Access.InFacility(h.FacilityPath()) && h.Index.CanRead(v, &probe) {
 				h.Store.AddVisibility(h.Store.DB(), uid, u.ID)
 				h.Index.SetVisible(uid, u.ID, true)
 			}

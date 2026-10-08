@@ -334,8 +334,9 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 				TrackedEntityTypeAttributes []attr `json:"trackedEntityTypeAttributes"`
 			} `json:"trackedEntityType"`
 			ProgramStages []struct {
-				ID        string `json:"id"`
-				SortOrder int    `json:"sortOrder"`
+				ID         string `json:"id"`
+				SortOrder  int    `json:"sortOrder"`
+				Repeatable bool   `json:"repeatable"`
 			} `json:"programStages"`
 			ProgramTrackedEntityAttributes []attr `json:"programTrackedEntityAttributes"`
 		} `json:"programs"`
@@ -343,7 +344,7 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 	af := "trackedEntityAttribute[id,generated,unique,pattern]"
 	path := central.Q("/api/programs", "filter", "programType:eq:WITH_REGISTRATION",
 		"filter", "organisationUnits.id:eq:"+facility,
-		"fields", "id,name,trackedEntityType[id,trackedEntityTypeAttributes["+af+"]],programStages[id,sortOrder],programTrackedEntityAttributes["+af+"]",
+		"fields", "id,name,trackedEntityType[id,trackedEntityTypeAttributes["+af+"]],programStages[id,sortOrder,repeatable],programTrackedEntityAttributes["+af+"]",
 		"paging", "false")
 	if err := h.Central.JSON(ctx, "GET", path, nil, auth, &resp); err != nil {
 		return nil, err
@@ -370,6 +371,9 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 		pm := &access.ProgramMeta{ID: p.ID, Name: p.Name, TET: p.TrackedEntityType.ID, Attributes: conv(p.ProgramTrackedEntityAttributes)}
 		for _, s := range p.ProgramStages {
 			pm.Stages = append(pm.Stages, s.ID)
+			if !s.Repeatable {
+				pm.NonRepeatable = append(pm.NonRepeatable, s.ID)
+			}
 		}
 		c.Programs[p.ID] = pm
 		c.TETAttributes[p.TrackedEntityType.ID] = conv(p.TrackedEntityType.TrackedEntityTypeAttributes)

@@ -221,6 +221,19 @@ func (h *Hub) Facility() string {
 	return ""
 }
 
+// FacilityPath is the facility's org unit path, or "/<facility>" until the first sync
+// has fetched it.
+func (h *Hub) FacilityPath() string {
+	rt := h.Runtime()
+	switch {
+	case rt == nil || rt.Facility == "":
+		return ""
+	case rt.FacilityPath != "":
+		return rt.FacilityPath
+	}
+	return "/" + rt.Facility
+}
+
 func (h *Hub) Catalog() *access.Catalog {
 	if rt := h.Runtime(); rt != nil && rt.Catalog != nil {
 		return rt.Catalog

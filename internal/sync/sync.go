@@ -420,7 +420,7 @@ func (w *Worker) Pull(ctx context.Context) error {
 			continue
 		}
 		acc := h.Access(u.ID)
-		if !acc.InFacility(facility) {
+		if !acc.InFacility(h.FacilityPath()) {
 			continue
 		}
 		auth, err := h.UpstreamAuth(u.ID)

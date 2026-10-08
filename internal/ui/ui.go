@@ -213,7 +213,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			cred = "password (PAT fallback)"
 		}
 		rows = append(rows, userRow{Username: us.Username, LastLogin: us.LastLoginAt, AccessRefreshed: us.AccessRefreshedAt,
-			PATExpires: us.PATExpires, Credential: cred, NeedsLogin: us.NeedsLogin, InFacility: h.Access(us.ID).InFacility(h.Facility())})
+			PATExpires: us.PATExpires, Credential: cred, NeedsLogin: us.NeedsLogin, InFacility: h.Access(us.ID).InFacility(h.FacilityPath())})
 	}
 	type issueRow struct {
 		*store.Issue
