@@ -34,7 +34,7 @@ var (
 	central  = flag.String("central", "http://perf-central:8090", "the fake central (for /fake/down and /fake/up)")
 	password = flag.String("password", fc.Password, "password of all users")
 	users    = flag.Int("users", 50, "concurrent users perf_001 …")
-	webShare = flag.Float64("web", 0.6, "share of users that behave as Capture web; the rest as Android")
+	webShare = flag.Float64("web", 5.0/7, "share of users that behave as Capture web; the rest as Android (default 5:2)")
 	programs = flag.Int("programs", 6, "generated programs")
 	duration = flag.Duration("duration", 10*time.Minute, "offline load duration")
 	think    = flag.String("think", "2s-10s", `pause between a web user's actions ("0" for the hammer run)`)
