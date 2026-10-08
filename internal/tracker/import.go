@@ -356,6 +356,11 @@ func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport
 	if aoc := Str(it.Data, "attributeOptionCombo"); aoc != "" && aoc != im.DefaultAOC {
 		return nil, false, im.errf(it, "E1055", "needs connection: events with a non-default attribute option combo are not supported offline")
 	}
+	if p := im.V.Catalog.Programs[program]; p != nil && p.AttributeCombo {
+		// Central requires a non-default attribute option combo here (E1055), and
+		// those are not supported offline: say so now instead of on push.
+		return nil, false, im.errf(it, "E1055", "needs connection: events in a program with an attribute category combination are not supported offline")
+	}
 	enr := it.Enrollment
 	if enr == "" && old != nil {
 		enr = old.Enrollment
@@ -374,13 +379,12 @@ func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport
 	if errs := im.orgUnitOK(it, old); errs != nil {
 		return nil, false, errs
 	}
-	// Central checks the stage first (E1095 for a program-read-only user, see
-	// testdata/2.42/tracker_post_access_denied.json).
+	// An event in a tracker program needs write access to its stage (E1095, see
+	// testdata/2.42/tracker_post_access_denied.json), not to the program: central
+	// accepts it from a user who may only read the program's data (the write oracle,
+	// synthetic profile). Reading the enrollment above needs program read access.
 	if !im.V.Access.Stage(stage).Write {
 		return nil, false, im.errf(it, "E1095", "User: `%s` has no data write access to ProgramStage: `%s`.", im.UserUID, stage)
-	}
-	if !im.V.Access.Program(program).Write {
-		return nil, false, im.errf(it, "E1091", "User: `%s`, has no data write access to Program: `%s`.", im.UserUID, program)
 	}
 	if old == nil && im.stageTaken(it.UID, enr, program, stage) {
 		return nil, false, im.errf(it, "E1039", "ProgramStage: `%s`, is not repeatable and an event already exists.", stage)

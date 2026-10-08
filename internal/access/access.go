@@ -112,6 +112,9 @@ type ProgramMeta struct {
 	// NonRepeatable are the stages that take one event per enrollment. Catalogs from
 	// before this field have none, so the hub then leaves the check to central.
 	NonRepeatable []string `json:"nonRepeatableStages,omitempty"`
+	// AttributeCombo: the program has a non-default category combination, so its
+	// events need an attribute option combo.
+	AttributeCombo bool `json:"attributeCombo,omitempty"`
 }
 
 // Catalog is the facility's program set plus tracked entity type attributes.

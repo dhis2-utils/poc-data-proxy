@@ -339,13 +339,16 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 				SortOrder  int    `json:"sortOrder"`
 				Repeatable bool   `json:"repeatable"`
 			} `json:"programStages"`
+			CategoryCombo struct {
+				IsDefault *bool `json:"isDefault"`
+			} `json:"categoryCombo"`
 			ProgramTrackedEntityAttributes []attr `json:"programTrackedEntityAttributes"`
 		} `json:"programs"`
 	}
 	af := "trackedEntityAttribute[id,generated,unique,pattern]"
 	path := central.Q("/api/programs", "filter", "programType:eq:WITH_REGISTRATION",
 		"filter", "organisationUnits.id:eq:"+facility,
-		"fields", "id,name,trackedEntityType[id,trackedEntityTypeAttributes["+af+"]],programStages[id,sortOrder,repeatable],programTrackedEntityAttributes["+af+"]",
+		"fields", "id,name,trackedEntityType[id,trackedEntityTypeAttributes["+af+"]],programStages[id,sortOrder,repeatable],categoryCombo[isDefault],programTrackedEntityAttributes["+af+"]",
 		"paging", "false")
 	if err := h.Central.JSON(ctx, "GET", path, nil, auth, &resp); err != nil {
 		return nil, err
@@ -369,7 +372,8 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 		}
 	}
 	for _, p := range resp.Programs {
-		pm := &access.ProgramMeta{ID: p.ID, Name: p.Name, TET: p.TrackedEntityType.ID, Attributes: conv(p.ProgramTrackedEntityAttributes)}
+		pm := &access.ProgramMeta{ID: p.ID, Name: p.Name, TET: p.TrackedEntityType.ID, Attributes: conv(p.ProgramTrackedEntityAttributes),
+			AttributeCombo: p.CategoryCombo.IsDefault != nil && !*p.CategoryCombo.IsDefault}
 		for _, s := range p.ProgramStages {
 			pm.Stages = append(pm.Stages, s.ID)
 			if !s.Repeatable {
