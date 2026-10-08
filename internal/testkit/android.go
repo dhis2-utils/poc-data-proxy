@@ -41,8 +41,12 @@ func (a *Android) Available() bool {
 // Reset clears the app's data and starts it. Notifications are granted up front, so
 // the permission prompt does not cover the sync screens.
 func (a *Android) Reset() error {
-	if out, err := adb(30*time.Second, "shell", "pm", "clear", a.Package); err != nil {
-		return fmt.Errorf("pm clear: %v %s", err, out)
+	if _, err := adb(30*time.Second, "shell", "pm", "clear", a.Package); err != nil {
+		// pm clear can hang while the app is busy (seen once mid-sync): stop it, retry.
+		adb(30*time.Second, "shell", "am", "force-stop", a.Package)
+		if out, err := adb(60*time.Second, "shell", "pm", "clear", a.Package); err != nil {
+			return fmt.Errorf("pm clear: %v %s", err, out)
+		}
 	}
 	adb(15*time.Second, "shell", "pm", "grant", a.Package, "android.permission.POST_NOTIFICATIONS")
 	// pm clear removes the old task asynchronously, and its timeout kills a process
@@ -107,9 +111,15 @@ func (a *Android) Screen() ([]Node, error) {
 	return out, nil
 }
 
-// Find returns the first node whose text or description contains s (case-insensitive).
+// Find returns the first node whose text or description is s, or else contains it
+// (case-insensitive): a button's label is often also part of a longer sentence.
 func Find(nodes []Node, s string) (Node, bool) {
 	s = strings.ToLower(s)
+	for _, n := range nodes {
+		if strings.ToLower(n.Text) == s || strings.ToLower(n.Desc) == s {
+			return n, true
+		}
+	}
 	for _, n := range nodes {
 		if strings.Contains(strings.ToLower(n.Text), s) || strings.Contains(strings.ToLower(n.Desc), s) {
 			return n, true
@@ -262,7 +272,89 @@ func (a *Android) ScrollTo(text string, swipes int) ([]Node, error) {
 		if i == swipes {
 			return nodes, fmt.Errorf("%q not found after %d swipes", text, swipes)
 		}
-		adb(15*time.Second, "shell", "input", "swipe", "540", "1800", "540", "900", "400")
+		w, h := a.size()
+		adb(15*time.Second, "shell", "input", "swipe", strconv.Itoa(w/2), strconv.Itoa(h*3/4), strconv.Itoa(w/2), strconv.Itoa(h*3/8), "400")
 		time.Sleep(time.Second)
 	}
+}
+
+var sizeRe = regexp.MustCompile(`(\d+)x(\d+)`)
+
+// size returns the screen size (wm size), or a common phone size if unknown.
+func (a *Android) size() (int, int) {
+	out, _ := adb(15*time.Second, "shell", "wm", "size")
+	if m := sizeRe.FindStringSubmatch(out); m != nil {
+		w, _ := strconv.Atoi(m[1])
+		h, _ := strconv.Atoi(m[2])
+		return w, h
+	}
+	return 1080, 2400
+}
+
+// TapAt taps a point as a share of the screen (0..1), for unlabelled controls.
+func (a *Android) TapAt(fx, fy float64) error {
+	w, h := a.size()
+	_, err := adb(15*time.Second, "shell", "input", "tap", strconv.Itoa(int(fx*float64(w))), strconv.Itoa(int(fy*float64(h))))
+	return err
+}
+
+// Transfer transfers the person whose list entry shows label, in the open program's
+// list, to the org unit named to: dashboard, top-right menu, Transfer, pick, confirm.
+func (a *Android) Transfer(label, to string) error {
+	_, nodes, err := a.Wait(time.Minute, label)
+	if err != nil {
+		return err
+	}
+	n, _ := Find(nodes, label)
+	a.Tap(n)
+	if _, _, err := a.Wait(time.Minute, "Owned by"); err != nil {
+		return err
+	}
+	a.TapAt(0.93, 0.065) // the dashboard's menu button has no label
+	if _, nodes, err = a.Wait(30*time.Second, "Transfer"); err != nil {
+		return err
+	}
+	n, _ = Find(nodes, "Transfer")
+	a.Tap(n)
+	if _, nodes, err = a.Wait(30*time.Second, to); err != nil {
+		return err
+	}
+	n, _ = Find(nodes, to)
+	a.Tap(n)
+	time.Sleep(time.Second)
+	if nodes, err = a.Screen(); err != nil {
+		return err
+	}
+	n, _ = Find(nodes, "Transfer") // the confirm button; the title is "Transfer person"
+	a.Tap(n)
+	if _, _, err := a.Wait(30*time.Second, "Owned by:  "+to); err != nil {
+		return fmt.Errorf("after the transfer: %w", err)
+	}
+	a.Key("4")
+	return nil
+}
+
+// SyncRecord, on a program's list, taps the Sync of the first person whose card
+// shows marker (e.g. "Owned by:  <org unit>") and confirms sending their changes.
+func (a *Android) SyncRecord(marker string) error {
+	seen, nodes, err := a.Wait(time.Minute, marker, "Sync needed")
+	if err != nil {
+		return err
+	}
+	if seen == "Sync needed" { // the app asks again after a failed send
+		s, _ := Find(nodes, "Send")
+		return a.Tap(s)
+	}
+	card, _ := Find(nodes, marker)
+	for _, n := range nodes {
+		if n.Text == "Sync" && n.Y1 > card.Y1 && n.Y1 < card.Y1+400 {
+			a.Tap(n)
+			if _, nodes, err = a.Wait(30*time.Second, "Send"); err != nil {
+				return err
+			}
+			s, _ := Find(nodes, "Send")
+			return a.Tap(s)
+		}
+	}
+	return fmt.Errorf("no Sync button on the card with %q: nothing to send", marker)
 }
