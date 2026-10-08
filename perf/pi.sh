@@ -19,6 +19,8 @@
 # 10, 25, 50, 100 and 200 % of the target), DURATION of the realistic load (5m), HAMMER of
 # the hammer run (2m).
 #
+# MEM overrides the profile's memory limit (e.g. MEM=6g for pi5 in an 8 GB Docker VM).
+#
 # IO=0 skips the disk limits (for instance if Docker refuses the device). DEVICE is the
 # block device the limits apply to: in Docker Desktop, the VM's disk, /dev/vda.
 set -eu
@@ -46,6 +48,18 @@ limits() {
 	none) set -- ;;
 	*) echo "profile must be pi4, pi5 or none" >&2; exit 2 ;;
 	esac
+	if [ -n "${MEM:-}" ]; then # a smaller memory limit, e.g. when the Docker VM itself is small
+		out=""
+		while [ $# -gt 0 ]; do
+			case "$1" in
+			--memory | --memory-swap) out="$out $1 $MEM"; shift ;;
+			*) out="$out $1" ;;
+			esac
+			shift
+		done
+		echo "$out"
+		return
+	fi
 	echo "$@"
 }
 
@@ -163,7 +177,7 @@ reset)
 	docker volume rm hub-pi-data
 	;;
 *)
-	sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
 	exit 2
 	;;
 esac
