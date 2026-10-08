@@ -1,0 +1,110 @@
+// Package testkit runs the hub against a central DHIS2, fake or real, described by a
+// manifest of roles (docs/TESTING.md). Tests ask for "the nurse" or "the primary
+// program", never for a UID, so the same test runs on every DHIS2 setup.
+package testkit
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+)
+
+// Roles a manifest may define (docs/TESTING.md).
+const (
+	RoleAdmin      = "admin"      // in the setup user group
+	RoleNurse      = "nurse"      // captures at the facility, full program access
+	RoleRestricted = "restricted" // like nurse, but one stage hidden
+	RoleClerk      = "clerk"      // reads, cannot write events
+	RoleOutsider   = "outsider"   // captures at another facility
+	RoleDistrict   = "district"   // district officer: district scope, not every program
+	RoleSearchless = "searchless" // captures at the facility without search scope there
+)
+
+type Manifest struct {
+	Profile      string `json:"profile"`      // synthetic, sierra-leone, laos, fake
+	DHIS2Version string `json:"dhis2Version"` // e.g. 2.42.3
+	CentralURL   string `json:"centralUrl"`
+	// Superuser for provisioning and for reading central's state in tests.
+	AdminUser     string `json:"adminUser"`
+	AdminPassword string `json:"adminPassword"`
+
+	Password   string          `json:"password"` // every role user's
+	SetupGroup string          `json:"setupGroup"`
+	Facility   OrgUnit         `json:"facility"`
+	Sibling    OrgUnit         `json:"sibling"` // another facility in the same district
+	District   OrgUnit         `json:"district"`
+	Programs   []Program       `json:"programs"`
+	Users      map[string]User `json:"users"` // role -> user
+	// Matrix users cover combinations of capture and search scope and of program,
+	// stage and tracked entity type sharing; the differential oracle checks each.
+	Matrix []MatrixUser `json:"matrix,omitempty"`
+}
+
+type MatrixUser struct {
+	User
+	Dims map[string]string `json:"dims"` // e.g. capture=district, search=none, open=read
+}
+
+type OrgUnit struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Code string `json:"code"`
+	Path string `json:"path"`
+}
+
+type Program struct {
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	TET             string   `json:"tet"`
+	AccessLevel     string   `json:"accessLevel"` // OPEN, AUDITED, PROTECTED, CLOSED
+	Stages          []string `json:"stages"`
+	RestrictedStage string   `json:"restrictedStage,omitempty"` // hidden from the restricted role
+	// Attributes tests can use; empty when the program has none of that kind.
+	SearchAttr    string `json:"searchAttr,omitempty"` // non-unique text, e.g. first name
+	UniqueAttr    string `json:"uniqueAttr,omitempty"`
+	GeneratedAttr string `json:"generatedAttr,omitempty"`
+	// Valid values for what an enrollment or event must carry: mandatory attributes
+	// (attribute -> value) and, per stage, data elements (data element -> value).
+	// Writers fill these in so every profile's validation passes.
+	RequiredAttrs map[string]string            `json:"requiredAttrs,omitempty"`
+	EventValues   map[string]map[string]string `json:"eventValues,omitempty"`
+	// Shared with the district role (the setup user may not see every program).
+	DistrictSees bool `json:"districtSees"`
+}
+
+type User struct {
+	Username string `json:"username"`
+	UID      string `json:"uid"`
+}
+
+// Primary is the program most tests use: the first one.
+func (m *Manifest) Primary() Program { return m.Programs[0] }
+
+// User returns the role's user, or ok=false if this setup has no such role.
+func (m *Manifest) User(role string) (User, bool) {
+	u, ok := m.Users[role]
+	return u, ok
+}
+
+func LoadManifest(path string) (*Manifest, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	m := &Manifest{}
+	if err := json.Unmarshal(b, m); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if len(m.Programs) == 0 || m.Facility.ID == "" || m.Users[RoleAdmin].Username == "" {
+		return nil, fmt.Errorf("%s: needs a facility, a program and an admin user", path)
+	}
+	return m, nil
+}
+
+func (m *Manifest) Save(path string) error {
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(b, '\n'), 0o644)
+}

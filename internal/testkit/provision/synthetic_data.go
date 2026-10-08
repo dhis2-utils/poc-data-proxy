@@ -1,0 +1,292 @@
+package provision
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"math/rand"
+	"time"
+
+	"github.com/dhis2/facility-hub/internal/testkit"
+)
+
+// Synthetic provisions an empty DHIS2 instance (docs/TESTING.md) and returns its
+// manifest. size scales the generated population (1 is about 100 tracked entities).
+func Synthetic(c *testkit.Central, size int) (*testkit.Manifest, error) {
+	md, m := syntheticMetadata()
+	var info struct {
+		Version string `json:"version"`
+	}
+	if err := c.JSON("GET", "/api/system/info?fields=version", nil, &info); err != nil {
+		return nil, err
+	}
+	m.DHIS2Version, m.CentralURL, m.AdminUser, m.AdminPassword = info.Version, c.Base, c.User, c.Password
+
+	log.Printf("synthetic: importing metadata (%d users)", len(md["users"].([]any)))
+	if err := importMetadata(c, md); err != nil {
+		return nil, err
+	}
+	// The superuser writes the generated data, so it needs the whole tree in scope.
+	if err := c.JSON("PATCH", "/api/users/"+meID(c), []map[string]any{
+		{"op": "add", "path": "/organisationUnits", "value": []any{map[string]any{"id": ouRoot}}},
+		{"op": "add", "path": "/teiSearchOrganisationUnits", "value": []any{map[string]any{"id": ouRoot}}},
+	}, nil); err != nil {
+		return nil, fmt.Errorf("superuser scope: %w", err)
+	}
+	if err := syntheticData(c, size); err != nil {
+		return nil, err
+	}
+	return m, verifyLogins(c, m)
+}
+
+func meID(c *testkit.Central) string {
+	var me struct {
+		ID string `json:"id"`
+	}
+	c.JSON("GET", "/api/me?fields=id", nil, &me)
+	return me.ID
+}
+
+func importMetadata(c *testkit.Central, md map[string]any) error {
+	var rep struct {
+		Status string `json:"status"`
+		Stats  any    `json:"stats"`
+	}
+	st, b, err := c.Do("POST", "/api/metadata?importStrategy=CREATE_AND_UPDATE&atomicMode=ALL&mergeMode=REPLACE", md)
+	if err != nil {
+		return err
+	}
+	json.Unmarshal(b, &rep)
+	if st/100 != 2 || (rep.Status != "OK" && rep.Status != "WARNING") {
+		return fmt.Errorf("metadata import: HTTP %d %s: %.4000s", st, rep.Status, b)
+	}
+	log.Printf("metadata import: %s %v", rep.Status, rep.Stats)
+	return nil
+}
+
+// verifyLogins checks that every role and matrix user can authenticate.
+func verifyLogins(c *testkit.Central, m *testkit.Manifest) error {
+	check := func(u testkit.User) error {
+		st, b, err := c.As(u.Username, m.Password).Do("GET", "/api/me?fields=id", nil)
+		if err != nil || st != 200 {
+			return fmt.Errorf("login %s: %d %v %.200s", u.Username, st, err, b)
+		}
+		return nil
+	}
+	for _, u := range m.Users {
+		if err := check(u); err != nil {
+			return err
+		}
+	}
+	for _, u := range m.Matrix {
+		if err := check(u.User); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var (
+	firstNames = []string{"Amina", "Amélie", "Phouthavong", "Ngozi", "Fatmata", "N'Diaye", "Mariama", "Souk", "Grace",
+		"Esther", "Aïcha", "Bounmy", "Kadiatu", "Maria José", "AMINA", "amina", "Zainab", "Vilayphone"}
+	lastNames = []string{"Kamara", "Sesay", "Koroma", "Vongsavath", "Bangura", "Conteh", "O'Brien", "Turay", "Keomany",
+		"Jalloh", "Phommachanh", "Mansaray"}
+)
+
+// syntheticData writes the population: people at the facility, its sibling and the
+// other district, enrolled in the programs in different combinations, and the quirks
+// the hub must get right (docs/TESTING.md).
+func syntheticData(c *testkit.Central, size int) error {
+	rng := rand.New(rand.NewSource(42))
+	base := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+	day := func(n int) string { return base.AddDate(0, 0, n).Format("2006-01-02") }
+	seq := 0
+	uid := func(prefix string) string { seq++; return fmt.Sprintf("%s%06d", prefix, seq) } // 11 chars
+
+	type enrollment struct{ program, ou string }
+	var tes, events []any
+	var rels []any
+	var transfers [][3]string // te, program, new owner
+	var deleteTEs, deleteEvents []string
+	byFacility := map[string][]string{}
+
+	person := func(ou string, enrol []enrollment) string {
+		te := uid("SynTe")
+		first := firstNames[rng.Intn(len(firstNames))]
+		attrs := []any{
+			map[string]any{"attribute": atFirst, "value": first},
+			map[string]any{"attribute": atLast, "value": lastNames[rng.Intn(len(lastNames))]},
+			map[string]any{"attribute": atNatID, "value": fmt.Sprintf("SYN-%06d", seq)},
+			map[string]any{"attribute": atSex, "value": []string{"M", "F"}[rng.Intn(2)]},
+			map[string]any{"attribute": atDob, "value": day(-365*(18+rng.Intn(40)) - rng.Intn(300))},
+		}
+		if rng.Intn(3) == 0 {
+			attrs = append(attrs, map[string]any{"attribute": atPhone, "value": fmt.Sprintf("+23276%06d", rng.Intn(1000000))})
+		}
+		enrs := []any{} // "enrollments": null makes 2.42 answer 500
+		for _, e := range enrol {
+			en := uid("SynEn")
+			start := rng.Intn(200)
+			status := "ACTIVE"
+			if rng.Intn(5) == 0 {
+				status = "COMPLETED"
+			}
+			var evs []any
+			addEvent := func(stage, ou string, offset int, values map[string]string) {
+				ev := uid("SynEv")
+				dvs := []any{}
+				for d, v := range values {
+					dvs = append(dvs, map[string]any{"dataElement": d, "value": v})
+				}
+				st := "COMPLETED"
+				e := map[string]any{"event": ev, "programStage": stage, "orgUnit": ou, "occurredAt": day(start + offset),
+					"status": st, "dataValues": dvs}
+				if rng.Intn(6) == 0 { // a scheduled visit in the future
+					e["status"], e["scheduledAt"] = "SCHEDULE", day(start+offset+400)
+					delete(e, "occurredAt")
+					e["dataValues"] = []any{}
+				}
+				evs = append(evs, e)
+				if rng.Intn(25) == 0 {
+					deleteEvents = append(deleteEvents, ev)
+				}
+			}
+			switch e.program {
+			case prMat:
+				for i := 0; i < 1+rng.Intn(4); i++ {
+					where := e.ou
+					if rng.Intn(8) == 0 {
+						where = ouSib // a visit at another facility
+					}
+					addEvent(stAnc, where, i*28, map[string]string{deWeight: fmt.Sprint(50 + rng.Intn(40)),
+						deHb: fmt.Sprintf("%d.%d", 9+rng.Intn(5), rng.Intn(10))})
+				}
+				if rng.Intn(3) == 0 {
+					addEvent(stDel, e.ou, 150, map[string]string{deDeliv: day(start + 150)})
+				}
+				if rng.Intn(3) == 0 {
+					addEvent(stLab, e.ou, 30, map[string]string{deLab: "Hb low", deHivRes: []string{"POS", "NEG"}[rng.Intn(2)]})
+				}
+			case prHiv:
+				addEvent(stIni, e.ou, 0, map[string]string{deHivRes: "POS", deArv: "true"})
+				for i := 0; i < rng.Intn(4); i++ {
+					addEvent(stFup, e.ou, 30*(i+1), map[string]string{deWeight: fmt.Sprint(45 + rng.Intn(40)), deArv: "true"})
+				}
+			case prTb:
+				addEvent(stTbV, e.ou, 0, map[string]string{deSmear: []string{"POS", "NEG"}[rng.Intn(2)]})
+			case prCom:
+				addEvent(stCom, e.ou, 10, map[string]string{deNote: "home visit"})
+			}
+			enrs = append(enrs, map[string]any{"enrollment": en, "program": e.program, "orgUnit": e.ou,
+				"enrolledAt": day(start), "occurredAt": day(start), "status": status, "events": evs})
+		}
+		tes = append(tes, map[string]any{"trackedEntity": te, "trackedEntityType": tetPerson, "orgUnit": ou,
+			"attributes": attrs, "enrollments": enrs})
+		byFacility[ou] = append(byFacility[ou], te)
+		return te
+	}
+
+	n := 40 * size
+	for i := 0; i < n; i++ {
+		enrol := []enrollment{{prMat, ouFac}}
+		if i%3 == 0 {
+			enrol = append(enrol, enrollment{prHiv, ouFac})
+		}
+		if i%5 == 0 {
+			enrol = append(enrol, enrollment{prTb, ouFac})
+		}
+		if i%4 == 0 {
+			enrol = append(enrol, enrollment{prCom, ouFac})
+		}
+		if i%11 == 0 {
+			enrol = enrol[1:] // not in the open program at all
+		}
+		person(ouFac, enrol)
+	}
+	for i := 0; i < 15*size; i++ { // the sibling facility: same district, not this hub's
+		enrol := []enrollment{{prMat, ouSib}}
+		if i%3 == 0 {
+			enrol = append(enrol, enrollment{prHiv, ouSib})
+		}
+		person(ouSib, enrol)
+	}
+	for i := 0; i < 8*size; i++ { // the other district
+		person(ouFar, []enrollment{{prMat, ouFar}, {prHiv, ouFar}})
+	}
+	// Registered at the sibling, enrolled at the facility (owner = facility for that program).
+	for i := 0; i < 3*size; i++ {
+		person(ouSib, []enrollment{{prMat, ouFac}})
+	}
+	// Ownership moved in and out of the facility after registration.
+	for i := 0; i < 3*size; i++ {
+		transfers = append(transfers, [3]string{byFacility[ouSib][i], prMat, ouFac})                        // into the facility
+		transfers = append(transfers, [3]string{byFacility[ouFac][3*i], prHiv, ouSib})                      // out of it, one program only
+		transfers = append(transfers, [3]string{byFacility[ouFar][i%len(byFacility[ouFar])], prHiv, ouFac}) // from the other district
+	}
+	// Mothers and children, within the facility and across facilities.
+	for i := 0; i+1 < 10*size && i+1 < len(byFacility[ouFac]); i += 2 {
+		to := byFacility[ouFac][i+1]
+		if i%6 == 0 {
+			to = byFacility[ouSib][i%len(byFacility[ouSib])]
+		}
+		rels = append(rels, map[string]any{"relationship": uid("SynRl"), "relationshipType": rtMotherChild,
+			"from": map[string]any{"trackedEntity": map[string]any{"trackedEntity": byFacility[ouFac][i]}},
+			"to":   map[string]any{"trackedEntity": map[string]any{"trackedEntity": to}}})
+	}
+	// Records that were deleted: the hub must not resurrect them.
+	deleteTEs = append(deleteTEs, byFacility[ouFac][len(byFacility[ouFac])-1], byFacility[ouFac][len(byFacility[ouFac])-2])
+	// Events of the event program at the facility.
+	for i := 0; i < 10*size; i++ {
+		events = append(events, map[string]any{"event": uid("SynEv"), "program": prEvt, "programStage": stEvt,
+			"orgUnit": ouFac, "occurredAt": day(i), "status": "COMPLETED",
+			"dataValues": []any{map[string]any{"dataElement": deWeight, "value": fmt.Sprint(60 + i%20)}}})
+	}
+
+	log.Printf("synthetic: %d tracked entities, %d relationships, %d ownership transfers, %d event-program events",
+		len(tes), len(rels), len(transfers), len(events))
+	for i := 0; i < len(tes); i += 50 {
+		if err := trackerImport(c, map[string]any{"trackedEntities": tes[i:min(i+50, len(tes))]}, ""); err != nil {
+			return err
+		}
+	}
+	if err := trackerImport(c, map[string]any{"relationships": rels, "events": events}, ""); err != nil {
+		return err
+	}
+	for _, t := range transfers {
+		if err := c.JSON("PUT", fmt.Sprintf("/api/tracker/ownership/transfer?trackedEntity=%s&program=%s&ou=%s", t[0], t[1], t[2]), nil, nil); err != nil {
+			return fmt.Errorf("ownership transfer: %w", err)
+		}
+	}
+	var del []any
+	for _, ev := range deleteEvents {
+		del = append(del, map[string]any{"event": ev})
+	}
+	if err := trackerImport(c, map[string]any{"events": del}, "DELETE"); err != nil {
+		return err
+	}
+	del = nil
+	for _, te := range deleteTEs {
+		del = append(del, map[string]any{"trackedEntity": te})
+	}
+	return trackerImport(c, map[string]any{"trackedEntities": del}, "DELETE")
+}
+
+func trackerImport(c *testkit.Central, payload map[string]any, strategy string) error {
+	q := "/api/tracker?async=false&atomicMode=ALL"
+	if strategy != "" {
+		q += "&importStrategy=" + strategy
+	}
+	st, b, err := c.Do("POST", q, payload)
+	if err != nil {
+		return err
+	}
+	var rep struct {
+		Status string `json:"status"`
+		Stats  any    `json:"stats"`
+	}
+	json.Unmarshal(b, &rep)
+	if st != 200 || rep.Status != "OK" {
+		return fmt.Errorf("tracker import %s: HTTP %d %s: %.3000s", strategy, st, rep.Status, b)
+	}
+	return nil
+}
