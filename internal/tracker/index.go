@@ -21,6 +21,7 @@ type Index struct {
 	nextSlot uint32              // last slot handed out
 	pending  map[string]uint32   // slots handed out to objects not yet in the index
 	scopes   map[string][]string // tracked entity -> pull scopes fetched in full (store.TEScopes)
+	store    *store.Store        // set by Load: objects are then held slim (slim.go)
 }
 
 func NewIndex() *Index {
@@ -53,6 +54,7 @@ func (ix *Index) Load(s *store.Store) error {
 		return err
 	}
 	fresh := NewIndex()
+	fresh.store = s
 	if fresh.scopes, err = s.TEScopes(); err != nil {
 		return err
 	}
@@ -73,6 +75,7 @@ func (ix *Index) Load(s *store.Store) error {
 	ix.visMu.Lock()
 	ix.mu.Lock()
 	ix.objs, ix.byKey, ix.vis, ix.pending, ix.scopes = fresh.objs, fresh.byKey, fresh.vis, fresh.pending, fresh.scopes
+	ix.store = s
 	ix.nextSlot = uint32(s.MaxSlot())
 	ix.mu.Unlock()
 	ix.visMu.Unlock()
@@ -101,18 +104,26 @@ func FromStore(o *store.Object) (*Obj, error) {
 }
 
 func (o *Obj) ToStore() *store.Object {
+	if o.slim {
+		panic("tracker: storing the slim copy of " + o.UID + " would lose its payload; use Index.Full")
+	}
 	b, _ := json.Marshal(o.Data)
 	return &store.Object{UID: o.UID, Kind: o.Kind, TE: o.TE, Enrollment: o.Enrollment, Program: o.Program,
 		Stage: o.Stage, TET: o.TET, OwnerOrgUnit: o.OwnerOrgUnit, UpdatedAt: o.UpdatedAt, Origin: o.Origin,
 		SyncState: o.SyncState, Payload: b, Slot: int64(o.Slot)}
 }
 
+// keys are the lists an object is on: its parents', and for queries its type's or
+// program's ("tet:", "penr:", "pev:"), so a search starts from candidates instead of
+// every object.
 func (ix *Index) keys(o *Obj) []string {
 	switch o.Kind {
+	case store.KindTrackedEntity:
+		return []string{"tet:" + o.TET}
 	case store.KindEnrollment:
-		return []string{"enr:" + o.TE}
+		return []string{"enr:" + o.TE, "penr:" + o.Program}
 	case store.KindEvent:
-		return []string{"ev:" + o.Enrollment, "evte:" + o.TE}
+		return []string{"ev:" + o.Enrollment, "evte:" + o.TE, "pev:" + o.Program}
 	case store.KindRelationship:
 		from, to := RelRef(asM(o.Data["from"])), RelRef(asM(o.Data["to"]))
 		return []string{"rel:" + from.UID, "rel:" + to.UID}
@@ -121,6 +132,9 @@ func (ix *Index) keys(o *Obj) []string {
 }
 
 func (ix *Index) put(o *Obj) {
+	if ix.store != nil && !o.slim {
+		o = slimmed(o)
+	}
 	if old := ix.objs[o.UID]; old != nil {
 		for _, k := range ix.keys(old) {
 			delete(ix.byKey[k], old.UID)
@@ -182,6 +196,17 @@ func (ix *Index) EnrollmentsOf(te string) []*Obj    { return ix.related("enr:" +
 func (ix *Index) EventsOf(enrollment string) []*Obj { return ix.related("ev:" + enrollment) }
 func (ix *Index) EventsOfTE(te string) []*Obj       { return ix.related("evte:" + te) }
 func (ix *Index) RelationshipsOf(uid string) []*Obj { return ix.related("rel:" + uid) }
+
+// byUIDs returns the objects of kind among uids.
+func (ix *Index) byUIDs(kind string, uids []string) []*Obj {
+	var out []*Obj
+	for _, uid := range uids {
+		if o := ix.Get(uid); o != nil && o.Kind == kind {
+			out = append(out, o)
+		}
+	}
+	return out
+}
 
 // All returns every object of kind.
 func (ix *Index) All(kind string) []*Obj {

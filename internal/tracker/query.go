@@ -359,13 +359,13 @@ func scopeAttributes(v *Viewer, tet, program string, attrs []any) []any {
 }
 
 func (ix *Index) RenderTE(v *Viewer, o *Obj, f *Fields, program string) M {
-	d := clone(o.Data)
+	d := clone(ix.Full(o))
 	if program != "" {
 		// Central lists the program's attributes on the tracked entity when program is
 		// given; clients often send them under the enrollment only.
 		for _, e := range ix.EnrollmentsOf(o.UID) {
 			if e.Program == program && ix.CanRead(v, e) {
-				d["attributes"] = mergeList(d["attributes"], e.Data["attributes"], "attribute")
+				d["attributes"] = mergeList(d["attributes"], ix.Full(e)["attributes"], "attribute")
 			}
 		}
 	}
@@ -404,7 +404,7 @@ func (ix *Index) RenderTE(v *Viewer, o *Obj, f *Fields, program string) M {
 }
 
 func (ix *Index) RenderEnrollment(v *Viewer, o *Obj, f *Fields) M {
-	d := clone(o.Data)
+	d := clone(ix.Full(o))
 	if f.Has("attributes") {
 		tet := ""
 		if te := ix.Get(o.TE); te != nil {
@@ -431,7 +431,7 @@ func (ix *Index) RenderEnrollment(v *Viewer, o *Obj, f *Fields) M {
 }
 
 func (ix *Index) RenderEvent(v *Viewer, o *Obj, f *Fields) M {
-	d := clone(o.Data)
+	d := clone(ix.Full(o))
 	if f.Has("relationships") {
 		d["relationships"] = ix.renderRels(v, o.UID, f.Sub("relationships"))
 	}
@@ -443,7 +443,7 @@ func (ix *Index) renderRels(v *Viewer, uid string, _ *Fields) []any {
 	sortObjs(rels, "createdAt", nil)
 	out := []any{}
 	for _, r := range rels {
-		out = append(out, clone(r.Data))
+		out = append(out, clone(ix.Full(r)))
 	}
 	return out
 }
@@ -503,7 +503,7 @@ func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *A
 		render = func(o *Obj) M { return ix.RenderEvent(v, o, fields) }
 	case "relationships":
 		objs, err = ix.searchRelationships(v, q)
-		render = func(o *Obj) M { return clone(o.Data) }
+		render = func(o *Obj) M { return clone(ix.Full(o)) }
 	default:
 		return nil, NeedsConnection(collection)
 	}
@@ -537,8 +537,27 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) ([]*Obj, *AP
 	}
 	upd := timeFilter{"updatedAt", "updatedAfter", "updatedBefore"}
 	enrolled := timeFilter{"enrolledAt", "enrollmentEnrolledAfter", "enrollmentEnrolledBefore"}
+	var cands []*Obj
+	switch {
+	case len(uids) > 0:
+		cands = ix.byUIDs(store.KindTrackedEntity, uids)
+	case program != "":
+		seen := map[string]bool{}
+		for _, e := range ix.related("penr:" + program) {
+			if !seen[e.TE] {
+				seen[e.TE] = true
+				if o := ix.Get(e.TE); o != nil {
+					cands = append(cands, o)
+				}
+			}
+		}
+	case tet != "":
+		cands = ix.related("tet:" + tet)
+	default:
+		cands = ix.All(store.KindTrackedEntity)
+	}
 	var out []*Obj
-	for _, o := range ix.visible(v, ix.All(store.KindTrackedEntity)) {
+	for _, o := range ix.visible(v, cands) {
 		if tet != "" && o.TET != tet {
 			continue
 		}
@@ -598,8 +617,19 @@ func (ix *Index) searchEnrollments(v *Viewer, q url.Values, program string) ([]*
 	}
 	status := cmp.Or(q.Get("status"), q.Get("enrollmentStatus"), q.Get("programStatus"))
 	tfs := []timeFilter{{"updatedAt", "updatedAfter", "updatedBefore"}, {"enrolledAt", "enrolledAfter", "enrolledBefore"}}
+	var cands []*Obj
+	switch {
+	case len(uids) > 0:
+		cands = ix.byUIDs(store.KindEnrollment, uids)
+	case te != "":
+		cands = ix.EnrollmentsOf(te)
+	case program != "":
+		cands = ix.related("penr:" + program)
+	default:
+		cands = ix.All(store.KindEnrollment)
+	}
 	var out []*Obj
-	for _, o := range ix.visible(v, ix.All(store.KindEnrollment)) {
+	for _, o := range ix.visible(v, cands) {
 		if (program != "" && o.Program != program) || (te != "" && o.TE != te) ||
 			(len(uids) > 0 && !slices.Contains(uids, o.UID)) || (status != "" && Str(o.Data, "status") != status) {
 			continue
@@ -673,8 +703,23 @@ func (ix *Index) searchEvents(v *Viewer, q url.Values, program string) ([]*Obj, 
 	}
 	tfs := []timeFilter{{"updatedAt", "updatedAfter", "updatedBefore"}, {"occurredAt", "occurredAfter", "occurredBefore"},
 		{"scheduledAt", "scheduledAfter", "scheduledBefore"}}
+	var cands []*Obj
+	switch {
+	case len(uids) > 0:
+		cands = ix.byUIDs(store.KindEvent, uids)
+	case len(enrs) > 0:
+		for _, e := range enrs {
+			cands = append(cands, ix.EventsOf(e)...)
+		}
+	case te != "":
+		cands = ix.EventsOfTE(te)
+	case program != "":
+		cands = ix.related("pev:" + program)
+	default:
+		cands = ix.All(store.KindEvent)
+	}
 	var out []*Obj
-	for _, o := range ix.visible(v, ix.All(store.KindEvent)) {
+	for _, o := range ix.visible(v, cands) {
 		if (program != "" && o.Program != program) || (stage != "" && o.Stage != stage) || (te != "" && o.TE != te) ||
 			(len(enrs) > 0 && !slices.Contains(enrs, o.Enrollment)) || (len(uids) > 0 && !slices.Contains(uids, o.UID)) ||
 			(status != "" && Str(o.Data, "status") != status) {
@@ -696,7 +741,7 @@ func (ix *Index) searchEvents(v *Viewer, q url.Values, program string) ([]*Obj, 
 			continue
 		}
 		if len(filters) > 0 {
-			vals := attrValues(o.Data, "dataValues", "dataElement")
+			vals := attrValues(ix.Full(o), "dataValues", "dataElement")
 			match := true
 			for _, f := range filters {
 				if !f.match(vals) {
@@ -711,7 +756,7 @@ func (ix *Index) searchEvents(v *Viewer, q url.Values, program string) ([]*Obj, 
 		out = append(out, o)
 	}
 	sortObjs(out, q.Get("order"), func(o *Obj, de string) string {
-		return attrValues(o.Data, "dataValues", "dataElement")[de]
+		return attrValues(ix.Full(o), "dataValues", "dataElement")[de]
 	})
 	return out, nil
 }
@@ -765,5 +810,5 @@ func (ix *Index) GetOne(v *Viewer, collection, uid string, q url.Values) (M, *AP
 	case store.KindEvent:
 		return fields.Project(ix.RenderEvent(v, o, fields)).(M), nil
 	}
-	return clone(o.Data), nil
+	return clone(ix.Full(o)), nil
 }

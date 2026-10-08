@@ -81,7 +81,7 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 				batch[it.UID] = old
 				continue
 			}
-			o.Data = tracker.Merge(old.Data, it.Data)
+			o.Data = tracker.Merge(h.Index.Full(old), it.Data)
 			if o.TET == "" {
 				o.TET = old.TET
 			}

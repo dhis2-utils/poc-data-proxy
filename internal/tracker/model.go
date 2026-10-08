@@ -24,6 +24,9 @@ type Obj struct {
 	Origin, SyncState                                            string
 	Data                                                         M      // payload without nested children
 	Slot                                                         uint32 // in the visibility bitmaps (visibility.go)
+	// slim: Data holds only what queries filter and sort on (slim.go); the full
+	// payload is in the store (Index.Full).
+	slim bool
 }
 
 // Children keys that are stored as separate objects, never inside a payload.
