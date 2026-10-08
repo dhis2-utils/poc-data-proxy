@@ -240,6 +240,8 @@ func (a *API) usable(w http.ResponseWriter, sess *core.Session) bool {
 	switch {
 	case a.H.API() == nil:
 		a.H.NeedsConnection(w, "hub needs upgrade for DHIS2 "+a.H.ServerVersion())
+	case a.H.Retired():
+		a.H.NeedsConnection(w, "this hub was replaced by another hub for the facility; use the new hub")
 	case !a.H.Store.Unlocked():
 		a.H.NeedsConnection(w, "first login must be online")
 	case sess.UserID == 0:

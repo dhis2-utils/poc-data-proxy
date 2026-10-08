@@ -445,3 +445,34 @@ func TestHubPageHardening(t *testing.T) {
 		t.Fatalf("post without Origin or Sec-Fetch-Site: %d", resp.StatusCode)
 	}
 }
+
+// REVIEW-2 F9: a hub the registry marks as replaced stops serving patient data
+// offline, keeps pushing, wipes nothing, and serves again if the entry is restored.
+func TestRetiredHubStopsServing(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.sync()
+	h := e.app.Hub
+	setStatus := func(status string) {
+		v := e.central.DataStoreValue("facility-hub-registry", h.HubID())
+		v["status"] = status
+		b, _ := json.Marshal(v)
+		e.central.DataStore["facility-hub-registry"][h.HubID()] = b
+		e.sync()
+	}
+	search := "/api/tracker/trackedEntities?orgUnits=" + fc.Facility + "&program=" + fc.Program
+
+	setStatus("retired")
+	e.offline()
+	a.json("POST", postSync, newPatient("RetTe000001", "RetEn000001", "Ret", "", nil), 503)
+	a.json("GET", search, nil, 503)
+	if h.Index.Len() == 0 {
+		t.Fatal("retired hub wiped its data")
+	}
+	e.online()
+	setStatus("active")
+	e.offline()
+	a.json("GET", search, nil, 200)
+}

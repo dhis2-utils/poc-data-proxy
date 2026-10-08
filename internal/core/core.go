@@ -30,7 +30,15 @@ const (
 	MetaServerVersion = "server_version"
 	MetaPublicKey     = "hub_public_key"
 	MetaUpgrade       = "last_upgrade" // JSON of the last upgrade attempt
+	MetaRetired       = "retired"      // "1" while the registry says another hub replaced this one
 )
+
+// Retired reports whether the registry marks this hub as replaced. A retired hub stops
+// serving patient data from its store but keeps pushing its outbox. It never wipes
+// itself: on 2.42 the registry namespace is writable by any user until protected, so
+// a forged entry must cost at most offline service, and it ends when the entry is
+// active again (REVIEW-2 F9).
+func (h *Hub) Retired() bool { return h.Store.Meta(MetaRetired) == "1" }
 
 const (
 	ModeSetup  = "setup"

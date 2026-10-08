@@ -105,6 +105,7 @@ func (w *Worker) cycle(ctx context.Context) error {
 	if err := h.RenewHubToken(ctx); err != nil {
 		errs = append(errs, err)
 	}
+	w.checkRegistry(ctx)
 	if rt := h.Runtime(); rt != nil && rt.FacilityPath == "" {
 		var ou struct {
 			Path string `json:"path"`
@@ -161,6 +162,29 @@ func (w *Worker) cycle(ctx context.Context) error {
 	}
 	w.heartbeat(ctx)
 	return errors.Join(errs...)
+}
+
+// checkRegistry reads this hub's registry entry and records whether another hub
+// replaced it (FINDINGS item 16, REVIEW-2 F9).
+func (w *Worker) checkRegistry(ctx context.Context) {
+	h := w.H
+	var reg struct {
+		Status string `json:"status"`
+	}
+	if err := h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-registry/"+h.HubID(), nil, h.HubAuth(), &reg); err != nil {
+		return // unknown: keep the last answer
+	}
+	retired := reg.Status == "retired"
+	if retired != h.Retired() {
+		v := ""
+		if retired {
+			v = "1"
+			slog.Warn("registry marks this hub as replaced: no longer serving patient data offline; pushing its outbox")
+		} else {
+			slog.Info("registry marks this hub active again")
+		}
+		h.Store.SetMeta(core.MetaRetired, v)
+	}
 }
 
 // --- push (spec 11.1) -------------------------------------------------------------
@@ -558,8 +582,8 @@ func Status(h *core.Hub) map[string]any {
 		"uptimeSeconds": int(time.Since(h.Started).Seconds()), "lastPush": lastPush, "lastPull": lastPull,
 		"lastSync": lastSync, "lastError": lastErr, "pending": h.Store.CountObjects(store.SyncPending),
 		"rejected": h.Store.CountObjects(store.SyncRejected), "pendingOutbox": h.Store.CountOutbox(store.OutboxPending),
-		"stuckOutbox": h.StuckOutbox(),
-		"issues":      h.Store.CountIssues(), "diskFreeBytes": diskFree(h.Cfg.DataDir), "lastUpgrade": upgrade,
+		"stuckOutbox": h.StuckOutbox(), "retired": h.Retired(),
+		"issues": h.Store.CountIssues(), "diskFreeBytes": diskFree(h.Cfg.DataDir), "lastUpgrade": upgrade,
 		"needsUpgrade": h.API() == nil && h.ServerVersion() != "", "time": time.Now().UTC().Format(time.RFC3339),
 	}
 }

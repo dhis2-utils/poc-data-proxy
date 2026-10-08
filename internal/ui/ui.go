@@ -92,6 +92,10 @@ func StatusBody(h *core.Hub) map[string]any {
 	out := map[string]any{"mode": mode, "hubId": h.HubID(), "lastPush": nullable(lastPush), "lastPull": nullable(lastPull),
 		"pending": h.Store.CountObjects(store.SyncPending), "rejected": h.Store.CountObjects(store.SyncRejected),
 		"version": h.Version, "locked": !h.Store.Unlocked(), "setup": h.Mode() == core.ModeSetup}
+	if h.Retired() {
+		out["retired"] = true
+		out["message"] = "this hub was replaced by another hub for the facility; it only sends its remaining changes"
+	}
 	if n := h.StuckOutbox(); n > 0 {
 		out["stuckOutbox"] = n
 		out["message"] = fmt.Sprintf("%d queued change(s) wait for their author to log in online; ask them to, or an admin to review", n)
