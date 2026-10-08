@@ -403,7 +403,8 @@ func canSeeEvent(u *User, ev tracker.M) bool { return u.StageRead[tracker.Str(ev
 
 func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 	q := r.URL.Query()
-	if q.Get("program") != Program || !u.ProgramRead {
+	byType := q.Get("program") == "" && q.Get("trackedEntityType") == TET // registered here, no enrollments
+	if !byType && (q.Get("program") != Program || !u.ProgramRead) {
 		webMessage(w, 400, "Program is specified but does not exist", "E1003")
 		return
 	}
@@ -438,6 +439,13 @@ func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 			}
 			en["events"] = orEmpty(evs)
 			enrs = append(enrs, en)
+		}
+		if byType {
+			if after == "" || latest >= after {
+				te["relationships"] = []any{}
+				tes = append(tes, te)
+			}
+			continue
 		}
 		if len(enrs) == 0 || (after != "" && latest < after) {
 			continue

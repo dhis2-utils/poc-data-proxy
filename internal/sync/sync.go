@@ -414,6 +414,7 @@ func (w *Worker) Pull(ctx context.Context) error {
 	}
 	facility := h.Facility()
 	cat := h.Catalog()
+	var failed []error
 	for _, u := range users {
 		if u.NeedsLogin || (!u.HasPAT && !u.HasPassword) {
 			continue
@@ -429,8 +430,9 @@ func (w *Worker) Pull(ctx context.Context) error {
 		var programs []string
 		full := false
 		for _, p := range cat.ProgramIDs() {
-			if !acc.Program(p).Read {
-				continue
+			pm := cat.Programs[p]
+			if !acc.Program(p).Read || (pm != nil && pm.TET != "" && !acc.TET(pm.TET).Read) {
+				continue // central would refuse the search (E1006 without tracked entity type access)
 			}
 			programs = append(programs, p)
 			_, lastFull := h.Store.PullState(u.ID, p)
@@ -438,7 +440,15 @@ func (w *Worker) Pull(ctx context.Context) error {
 				full = true
 			}
 		}
+		// Also each readable tracked entity type, for people enrolled in nothing the
+		// user can read (found by the differential oracle, docs/TESTING.md).
+		for _, tet := range cat.TETs() {
+			if acc.TET(tet).Read {
+				programs = append(programs, "tet:"+tet)
+			}
+		}
 		seen := map[string]bool{}
+		var settled []string // programs whose visibility this pull may decide
 		for _, p := range programs {
 			lastPull, _ := h.Store.PullState(u.ID, p)
 			after := ""
@@ -447,12 +457,27 @@ func (w *Worker) Pull(ctx context.Context) error {
 			}
 			maxUpdated, n, err := w.pullProgram(ctx, api, auth, u.ID, facility, p, after, seen)
 			if err != nil {
-				if central.Status(err) == http.StatusUnauthorized {
+				st := central.Status(err)
+				switch {
+				case central.IsNetwork(err):
+					return fmt.Errorf("pull %s/%s: %w", u.Username, p, err)
+				case st == http.StatusUnauthorized:
 					h.Store.SetNeedsLogin(u.ID, true)
-					break
+				case st >= 400 && st < 500:
+					// Central refuses this user the program: they lose what they saw of
+					// it, and the other users' pulls go on.
+					slog.Warn("pull refused by central", "user", u.Username, "program", p, "err", err)
+					settled = append(settled, p)
+					continue
+				default:
+					// A server error says nothing about access: keep what the user sees.
+					slog.Warn("pull failed", "user", u.Username, "program", p, "err", err)
+					failed = append(failed, fmt.Errorf("pull %s/%s: %w", u.Username, p, err))
+					continue
 				}
-				return fmt.Errorf("pull %s/%s: %w", u.Username, p, err)
+				break
 			}
+			settled = append(settled, p)
 			if maxUpdated == "" {
 				maxUpdated = lastPull
 			}
@@ -465,8 +490,8 @@ func (w *Worker) Pull(ctx context.Context) error {
 			}
 			slog.Info("pulled", "user", u.Username, "program", p, "full", full, "objects", n)
 		}
-		if full && len(programs) > 0 {
-			if n := h.RemoveVisibilityExcept(u.ID, programs, seen); n > 0 {
+		if full && len(settled) > 0 {
+			if n := h.RemoveVisibilityExcept(u.ID, settled, seen); n > 0 {
 				slog.Info("full pull removed visibility", "user", u.Username, "objects", n)
 			}
 		}
@@ -474,7 +499,7 @@ func (w *Worker) Pull(ctx context.Context) error {
 	now := store.Now()
 	h.Stats.Set(func(s *core.SyncStats) { s.LastPull = now })
 	h.Store.SetPrivate("last_pull", now)
-	return nil
+	return errors.Join(failed...)
 }
 
 // pullProgram pages through one user's tracked entities for one program. It returns

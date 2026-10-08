@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/dhis2/facility-hub/internal/tracker"
 )
@@ -183,11 +184,19 @@ func (v42) PullPath(facility, program, updatedAfter string, page, pageSize int) 
 	q := url.Values{}
 	q.Set("orgUnits", facility)
 	q.Set("orgUnitMode", "SELECTED")
-	q.Set("program", program)
+	q.Set("fields", "*,enrollments[*,events[*]],relationships[*]")
+	if tet, ok := strings.CutPrefix(program, "tet:"); ok {
+		// People of this type registered at the facility, including those enrolled in
+		// nothing the user can read. Without enrollments: through a type search central
+		// also shows enrollments other facilities own.
+		q.Set("trackedEntityType", tet)
+		q.Set("fields", "*,!enrollments,!programOwners,relationships[*]")
+	} else {
+		q.Set("program", program)
+	}
 	if updatedAfter != "" {
 		q.Set("updatedAfter", updatedAfter)
 	}
-	q.Set("fields", "*,enrollments[*,events[*]],relationships[*]")
 	q.Set("page", strconv.Itoa(page))
 	q.Set("pageSize", strconv.Itoa(pageSize))
 	return "/api/tracker/trackedEntities?" + q.Encode()

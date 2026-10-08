@@ -317,6 +317,31 @@ func filterAttributes(v *Viewer, tet string, attrs any) []any {
 	return out
 }
 
+// scopeAttributes keeps the attributes central shows for a tracked entity in this
+// context: those of its type, plus, with a program, that program's own. Attributes
+// of the user's other programs stay out, as on central.
+func scopeAttributes(v *Viewer, tet, program string, attrs []any) []any {
+	if v.Catalog == nil {
+		return []any{}
+	}
+	keep := map[string]bool{}
+	for _, a := range v.Catalog.TETAttributes[tet] {
+		keep[a.ID] = true
+	}
+	if p := v.Catalog.Programs[program]; p != nil {
+		for _, a := range p.Attributes {
+			keep[a.ID] = true
+		}
+	}
+	out := []any{}
+	for _, a := range attrs {
+		if m, _ := a.(M); keep[Str(m, "attribute")] {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 func (ix *Index) RenderTE(v *Viewer, o *Obj, f *Fields, program string) M {
 	d := clone(o.Data)
 	if program != "" {
@@ -329,9 +354,14 @@ func (ix *Index) RenderTE(v *Viewer, o *Obj, f *Fields, program string) M {
 		}
 	}
 	if _, ok := d["attributes"]; ok {
-		d["attributes"] = filterAttributes(v, o.TET, d["attributes"])
+		d["attributes"] = scopeAttributes(v, o.TET, program, filterAttributes(v, o.TET, d["attributes"]))
 	}
 	enrs := ix.visible(v, ix.EnrollmentsOf(o.UID))
+	if program != "" {
+		// Like central: a program-scoped answer carries that program's enrollments only
+		// (the differential oracle found the hub listing all readable ones).
+		enrs = slices.DeleteFunc(enrs, func(e *Obj) bool { return e.Program != program })
+	}
 	sortObjs(enrs, "enrolledAt", nil)
 	if _, ok := d["programOwners"]; !ok || o.Origin == store.OriginLocal {
 		owners := []any{}
@@ -467,7 +497,7 @@ func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *A
 	res := &Result{Collection: collection, Total: len(objs), Page: pg, PageSize: size, Paging: paged, TotalPages: totals,
 		Items: []M{}}
 	for _, o := range page(objs, pg, size, paged) {
-		res.Items = append(res.Items, render(o))
+		res.Items = append(res.Items, fields.Project(render(o)).(M))
 	}
 	return res, nil
 }
@@ -713,11 +743,11 @@ func (ix *Index) GetOne(v *Viewer, collection, uid string, q url.Values) (M, *AP
 				return nil, err
 			}
 		}
-		return ix.RenderTE(v, o, fields, q.Get("program")), nil
+		return fields.Project(ix.RenderTE(v, o, fields, q.Get("program"))).(M), nil
 	case store.KindEnrollment:
-		return ix.RenderEnrollment(v, o, fields), nil
+		return fields.Project(ix.RenderEnrollment(v, o, fields)).(M), nil
 	case store.KindEvent:
-		return ix.RenderEvent(v, o, fields), nil
+		return fields.Project(ix.RenderEvent(v, o, fields)).(M), nil
 	}
 	return clone(o.Data), nil
 }

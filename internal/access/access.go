@@ -109,6 +109,18 @@ type Catalog struct {
 	StageProgram  map[string]string       `json:"-"`
 }
 
+// TETs lists the tracked entity types of the catalog's programs, sorted.
+func (c *Catalog) TETs() []string {
+	var out []string
+	for _, p := range c.Programs {
+		if p.TET != "" && !slices.Contains(out, p.TET) {
+			out = append(out, p.TET)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // Merge adds o's programs and tracked entity type attributes that c lacks.
 func (c *Catalog) Merge(o *Catalog) {
 	if o == nil {
