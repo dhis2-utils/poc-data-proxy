@@ -37,10 +37,8 @@ func TestBitmapChunksRoundTrip(t *testing.T) {
 
 // A change is invisible until it commits, and a failed one leaves nothing behind.
 func TestVisibilityChangeAppliesOnCommit(t *testing.T) {
-	ix := NewIndex()
-	o := &Obj{UID: "TeAaaaaaaa1", Kind: store.KindTrackedEntity, Origin: store.OriginCentral}
-	ix.Put(o)
-	o = ix.Get(o.UID)
+	ix := NewStoreIndex(nil)
+	o := &Obj{UID: "TeAaaaaaaa1", Kind: store.KindTrackedEntity, Origin: store.OriginCentral, Slot: ix.SlotFor("TeAaaaaaaa1")}
 	vc := ix.PrepareVisibility(7, map[uint32]bool{o.Slot: true})
 	if ix.VisibleTo(o, 7) || len(vc.Chunks) != 1 {
 		t.Fatal("visible before commit, or no chunk to write")

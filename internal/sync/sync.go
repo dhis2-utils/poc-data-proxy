@@ -241,7 +241,6 @@ func (w *Worker) Push(ctx context.Context) error {
 
 func (w *Worker) setState(uid, state string) {
 	w.H.Store.SetSyncState(w.H.Store.DB(), uid, state)
-	w.H.Index.SetSyncState(uid, state)
 }
 
 func (w *Worker) reject(e *store.OutboxEntry, it *tracker.Item, errorReports []tracker.ErrorReport, message string) {
@@ -549,14 +548,27 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 		if err != nil {
 			return "", total, err
 		}
-		for _, te := range items {
+		// What the hub holds of the page's objects, read in one go.
+		flat := make([][]*tracker.Item, len(items))
+		var uids []string
+		for i, te := range items {
+			flat[i] = tracker.Flatten(tracker.M{"trackedEntities": []any{te}})
+			for _, it := range flat[i] {
+				uids = append(uids, it.UID)
+			}
+		}
+		held, err := h.Store.UpdatedAts(uids)
+		if err != nil {
+			return "", total, err
+		}
+		for i, te := range items {
 			uid := tracker.Str(te, "trackedEntity")
 			isStale := !h.Index.HasScope(uid, program)
 			var listed []string
-			for _, it := range tracker.Flatten(tracker.M{"trackedEntities": []any{te}}) {
+			for _, it := range flat[i] {
 				upd := tracker.Str(it.Data, "updatedAt")
 				maxUpdated = max(maxUpdated, upd)
-				if o := h.Index.Get(it.UID); o == nil || o.UpdatedAt < upd {
+				if have, ok := held[it.UID]; !ok || have < upd {
 					isStale = true
 				}
 				listed = append(listed, it.UID)
@@ -629,9 +641,9 @@ func (w *Worker) checkOwnership(ctx context.Context, api compat.API, facility st
 			}
 		}
 		suspects := map[string]bool{}
-		for _, e := range h.Index.All(store.KindEnrollment) {
-			if e.Program == program && e.OwnerOrgUnit == facility && e.SyncState == store.SyncSynced && !owned[e.TE] {
-				suspects[e.TE] = true
+		for _, te := range h.Index.EnrolledTEs(program, facility) {
+			if !owned[te] {
+				suspects[te] = true
 			}
 		}
 		for te := range suspects {

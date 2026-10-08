@@ -318,17 +318,19 @@ func (ix *Index) visible(v *Viewer, objs []*Obj) []*Obj {
 	bm := ix.bitmapOf(v.UserID) // once, not a lock per object
 	var out []*Obj
 	for _, o := range objs {
-		ok := false
-		if o.Origin == store.OriginCentral {
-			ok = v.Access != nil && o.OwnerOrgUnit == v.Facility && bm.has(o.Slot) && accessAllows(v, o)
-		} else {
-			ok = ix.CanRead(v, o)
-		}
-		if ok {
+		if ix.visibleWith(v, bm, o) {
 			out = append(out, o)
 		}
 	}
 	return out
+}
+
+// visibleWith is CanRead with the user's bitmap already in hand.
+func (ix *Index) visibleWith(v *Viewer, bm bitmap, o *Obj) bool {
+	if o.Origin == store.OriginCentral {
+		return v.Access != nil && o.OwnerOrgUnit == v.Facility && bm.has(o.Slot) && accessAllows(v, o)
+	}
+	return ix.CanRead(v, o)
 }
 
 func anyList(v any) []any {
@@ -382,7 +384,7 @@ func (ix *Index) RenderTE(v *Viewer, o *Obj, f *Fields, program string) M {
 	if program != "" {
 		// Central lists the program's attributes on the tracked entity when program is
 		// given; clients often send them under the enrollment only.
-		for _, e := range ix.EnrollmentsOf(o.UID) {
+		for _, e := range ix.enrollmentsFor(v, o.UID) {
 			if e.Program == program && ix.CanRead(v, e) {
 				d["attributes"] = mergeList(d["attributes"], ix.fullFor(v, e)["attributes"], "attribute")
 			}
@@ -391,7 +393,7 @@ func (ix *Index) RenderTE(v *Viewer, o *Obj, f *Fields, program string) M {
 	if _, ok := d["attributes"]; ok {
 		d["attributes"] = scopeAttributes(v, o.TET, program, anyList(d["attributes"]))
 	}
-	enrs := ix.visible(v, ix.EnrollmentsOf(o.UID))
+	enrs := ix.visible(v, ix.enrollmentsFor(v, o.UID))
 	if program != "" {
 		// Like central: a program-scoped answer carries that program's enrollments only
 		// (the differential oracle found the hub listing all readable ones).
@@ -434,7 +436,7 @@ func (ix *Index) RenderEnrollment(v *Viewer, o *Obj, f *Fields) M {
 		delete(d, "attributes")
 	}
 	if f.Has("events") {
-		evs := ix.visible(v, ix.EventsOf(o.UID))
+		evs := ix.visible(v, ix.eventsFor(v, o.UID))
 		sortObjs(evs, "occurredAt,scheduledAt", nil)
 		sub := f.Sub("events")
 		out := []any{}
@@ -458,373 +460,13 @@ func (ix *Index) RenderEvent(v *Viewer, o *Obj, f *Fields) M {
 }
 
 func (ix *Index) renderRels(v *Viewer, uid string, _ *Fields) []any {
-	rels := ix.visible(v, ix.RelationshipsOf(uid))
+	rels := ix.visible(v, ix.relationshipsFor(v, uid))
 	sortObjs(rels, "createdAt", nil)
 	out := []any{}
 	for _, r := range rels {
 		out = append(out, clone(ix.fullFor(v, r)))
 	}
 	return out
-}
-
-// --- queries -------------------------------------------------------------------
-
-func page(objs []*Obj, pg, size int, paged bool) []*Obj {
-	if !paged {
-		return objs
-	}
-	if pg-1 >= (len(objs)+size-1)/size { // compared before multiplying: page and size are unbounded
-		return nil
-	}
-	start := (pg - 1) * size
-	return objs[start:min(start+size, len(objs))]
-}
-
-func (ix *Index) programCheck(v *Viewer, program string) *APIError {
-	if program == "" {
-		return nil
-	}
-	if v.Catalog == nil || v.Catalog.Programs[program] == nil {
-		return NeedsConnection("program " + program + " is not cached on this hub")
-	}
-	if !v.Access.Program(program).Read {
-		return &APIError{Status: 403, Message: "User has no access to program: " + program}
-	}
-	return nil
-}
-
-// Search runs a collection query (spec 10.1).
-func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *APIError) {
-	if err := checkParams(collection, q); err != nil {
-		return nil, err
-	}
-	pg, size, paged, totals, perr := paging(q)
-	if perr != nil {
-		return nil, perr
-	}
-	program := q.Get("program")
-	if err := ix.programCheck(v, program); err != nil {
-		return nil, err
-	}
-	fields := FieldsOrDefault(collection, q.Get("fields"))
-	var objs []*Obj
-	var render func(*Obj) M
-	var err *APIError
-	key := ix.resultKey(v, collection, q)
-	cached, hit := []*Obj(nil), false
-	if paged && pg > 1 {
-		cached, hit = ix.cachedResult(key)
-	}
-	switch collection {
-	case "trackedEntities":
-		if !hit {
-			objs, err = ix.searchTEs(v, q, program)
-		}
-		render = func(o *Obj) M { return ix.RenderTE(v, o, fields, program) }
-	case "enrollments":
-		if !hit {
-			objs, err = ix.searchEnrollments(v, q, program)
-		}
-		render = func(o *Obj) M { return ix.RenderEnrollment(v, o, fields) }
-	case "events":
-		if !hit {
-			objs, err = ix.searchEvents(v, q, program)
-		}
-		render = func(o *Obj) M { return ix.RenderEvent(v, o, fields) }
-	case "relationships":
-		if !hit {
-			objs, err = ix.searchRelationships(v, q)
-		}
-		render = func(o *Obj) M { return clone(ix.fullFor(v, o)) }
-	default:
-		return nil, NeedsConnection(collection)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if hit {
-		objs = ix.visible(v, cached) // access may have changed since page 1
-	} else if paged {
-		ix.cacheResult(key, objs)
-	}
-	res := &Result{Collection: collection, Total: len(objs), Page: pg, PageSize: size, Paging: paged, TotalPages: totals,
-		Items: []M{}}
-	shown := page(objs, pg, size, paged)
-	ix.prefetch(v, shown, fields)
-	for _, o := range shown {
-		res.Items = append(res.Items, fields.Project(render(o)).(M))
-	}
-	return res, nil
-}
-
-func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) ([]*Obj, *APIError) {
-	if err := checkOrgUnits(v, q, len(listParam(q, "trackedEntities", "trackedEntity")) == 0); err != nil {
-		return nil, err
-	}
-	tet := q.Get("trackedEntityType")
-	if program == "" && tet == "" && len(listParam(q, "trackedEntities", "trackedEntity")) == 0 {
-		return nil, badRequest("Either `program`, `trackedEntityType` or `trackedEntities` should be specified")
-	}
-	filters, err := parseFilters(q)
-	if err != nil {
-		return nil, err
-	}
-	uids := listParam(q, "trackedEntities", "trackedEntity")
-	status := cmp.Or(q.Get("enrollmentStatus"), q.Get("programStatus"))
-	if status != "" && program == "" {
-		return nil, badRequest("`program` must be defined when `enrollmentStatus` is specified")
-	}
-	upd := timeFilter{"updatedAt", "updatedAfter", "updatedBefore"}
-	enrolled := timeFilter{"enrolledAt", "enrollmentEnrolledAfter", "enrollmentEnrolledBefore"}
-	// With a program: the people with a visible enrollment in it that passes the
-	// status and enrolment-date filters, found from the program's enrollments in one
-	// pass (looking up each person's enrollments again was a sixth of a search).
-	var inProgram map[string]bool
-	if program != "" {
-		inProgram = map[string]bool{}
-		for _, e := range ix.visible(v, ix.related("penr:"+program)) {
-			if inProgram[e.TE] || (status != "" && Str(e.Data, "status") != status) {
-				continue
-			}
-			ok, err := enrolled.match(e.Data, q)
-			if err != nil {
-				return nil, err
-			}
-			if ok {
-				inProgram[e.TE] = true
-			}
-		}
-	}
-	var cands []*Obj
-	switch {
-	case len(uids) > 0:
-		cands = ix.byUIDs(store.KindTrackedEntity, uids)
-	case program != "":
-		for te := range inProgram {
-			if o := ix.Get(te); o != nil {
-				cands = append(cands, o)
-			}
-		}
-	case tet != "":
-		cands = ix.related("tet:" + tet)
-	default:
-		cands = ix.All(store.KindTrackedEntity)
-	}
-	var out []*Obj
-	for _, o := range ix.visible(v, cands) {
-		if tet != "" && o.TET != tet {
-			continue
-		}
-		if len(uids) > 0 && !slices.Contains(uids, o.UID) {
-			continue
-		}
-		if ok, err := ix.updatedMatch(v, o, upd, q); err != nil {
-			return nil, err
-		} else if !ok {
-			continue
-		}
-		if program != "" && !inProgram[o.UID] {
-			continue
-		}
-		if len(filters) > 0 {
-			vals := attrValues(M{"attributes": filterAttributes(v, o.TET, o.Data["attributes"])}, "attributes", "attribute")
-			match := true
-			for _, f := range filters {
-				if !f.match(vals) {
-					match = false
-					break
-				}
-			}
-			if !match {
-				continue
-			}
-		}
-		out = append(out, o)
-	}
-	sortObjs(out, q.Get("order"), func(o *Obj, attr string) string {
-		return attrValues(o.Data, "attributes", "attribute")[attr]
-	})
-	return out, nil
-}
-
-func (ix *Index) searchEnrollments(v *Viewer, q url.Values, program string) ([]*Obj, *APIError) {
-	te := q.Get("trackedEntity")
-	uids := listParam(q, "enrollments")
-	if err := checkOrgUnits(v, q, te == "" && len(uids) == 0); err != nil {
-		return nil, err
-	}
-	status := cmp.Or(q.Get("status"), q.Get("enrollmentStatus"), q.Get("programStatus"))
-	tfs := []timeFilter{{"updatedAt", "updatedAfter", "updatedBefore"}, {"enrolledAt", "enrolledAfter", "enrolledBefore"}}
-	var cands []*Obj
-	switch {
-	case len(uids) > 0:
-		cands = ix.byUIDs(store.KindEnrollment, uids)
-	case te != "":
-		cands = ix.EnrollmentsOf(te)
-	case program != "":
-		cands = ix.related("penr:" + program)
-	default:
-		cands = ix.All(store.KindEnrollment)
-	}
-	var out []*Obj
-	for _, o := range ix.visible(v, cands) {
-		if (program != "" && o.Program != program) || (te != "" && o.TE != te) ||
-			(len(uids) > 0 && !slices.Contains(uids, o.UID)) || (status != "" && Str(o.Data, "status") != status) {
-			continue
-		}
-		ok, err := matchAll(o.Data, q, tfs[1:])
-		if ok && err == nil {
-			ok, err = ix.updatedMatch(v, o, tfs[0], q)
-		}
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			out = append(out, o)
-		}
-	}
-	sortObjs(out, q.Get("order"), nil)
-	return out, nil
-}
-
-// updatedMatch applies updatedAfter/updatedBefore. Objects written on the hub always
-// match: their timestamps come from the hub's clock, while clients compare against a
-// watermark from central's clock, and re-sending them is harmless. A tracked entity
-// counts as updated when anything under it was (central bumps it too).
-func (ix *Index) updatedMatch(v *Viewer, o *Obj, tf timeFilter, q url.Values) (bool, *APIError) {
-	if q.Get(tf.after) == "" && q.Get(tf.before) == "" {
-		return true, nil
-	}
-	objs := []*Obj{o}
-	if o.Kind == store.KindTrackedEntity {
-		objs = append(objs, ix.visible(v, ix.EnrollmentsOf(o.UID))...)
-		objs = append(objs, ix.visible(v, ix.EventsOfTE(o.UID))...)
-	}
-	newest := M{}
-	for _, x := range objs {
-		if x.Origin == store.OriginLocal {
-			return true, nil
-		}
-		if u := Str(x.Data, "updatedAt"); u > Str(newest, "updatedAt") {
-			newest = M{"updatedAt": u}
-		}
-	}
-	return tf.match(newest, q)
-}
-
-func matchAll(d M, q url.Values, tfs []timeFilter) (bool, *APIError) {
-	for _, tf := range tfs {
-		ok, err := tf.match(d, q)
-		if err != nil || !ok {
-			return false, err
-		}
-	}
-	return true, nil
-}
-
-func (ix *Index) searchEvents(v *Viewer, q url.Values, program string) ([]*Obj, *APIError) {
-	te := q.Get("trackedEntity")
-	enrs := listParam(q, "enrollment", "enrollments")
-	uids := listParam(q, "events", "event")
-	if err := checkOrgUnits(v, q, te == "" && len(enrs) == 0 && len(uids) == 0); err != nil {
-		return nil, err
-	}
-	stage := q.Get("programStage")
-	if stage != "" && !v.Access.Stage(stage).Read {
-		return nil, &APIError{Status: 403, Code: "E1006", Message: "User has no access to program stage: " + stage}
-	}
-	status := q.Get("status")
-	enrStatus := cmp.Or(q.Get("enrollmentStatus"), q.Get("programStatus"))
-	filters, err := parseFilters(q)
-	if err != nil {
-		return nil, err
-	}
-	tfs := []timeFilter{{"updatedAt", "updatedAfter", "updatedBefore"}, {"occurredAt", "occurredAfter", "occurredBefore"},
-		{"scheduledAt", "scheduledAfter", "scheduledBefore"}}
-	var cands []*Obj
-	switch {
-	case len(uids) > 0:
-		cands = ix.byUIDs(store.KindEvent, uids)
-	case len(enrs) > 0:
-		for _, e := range enrs {
-			cands = append(cands, ix.EventsOf(e)...)
-		}
-	case te != "":
-		cands = ix.EventsOfTE(te)
-	case program != "":
-		cands = ix.related("pev:" + program)
-	default:
-		cands = ix.All(store.KindEvent)
-	}
-	byValue := len(filters) > 0
-	for _, p := range splitList(q.Get("order")) {
-		f, _, _ := strings.Cut(p, ":")
-		byValue = byValue || ValidUID(f)
-	}
-	if byValue {
-		ix.prefetch(v, cands, ParseFields("dataValues")) // data value filters and ordering read the full payloads
-	}
-	var out []*Obj
-	for _, o := range ix.visible(v, cands) {
-		if (program != "" && o.Program != program) || (stage != "" && o.Stage != stage) || (te != "" && o.TE != te) ||
-			(len(enrs) > 0 && !slices.Contains(enrs, o.Enrollment)) || (len(uids) > 0 && !slices.Contains(uids, o.UID)) ||
-			(status != "" && Str(o.Data, "status") != status) {
-			continue
-		}
-		if enrStatus != "" {
-			if e := ix.Get(o.Enrollment); e == nil || Str(e.Data, "status") != enrStatus {
-				continue
-			}
-		}
-		ok, err := matchAll(o.Data, q, tfs[1:])
-		if ok && err == nil {
-			ok, err = ix.updatedMatch(v, o, tfs[0], q)
-		}
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			continue
-		}
-		if len(filters) > 0 {
-			vals := attrValues(ix.fullFor(v, o), "dataValues", "dataElement")
-			match := true
-			for _, f := range filters {
-				if !f.match(vals) {
-					match = false
-					break
-				}
-			}
-			if !match {
-				continue
-			}
-		}
-		out = append(out, o)
-	}
-	sortObjs(out, q.Get("order"), func(o *Obj, de string) string {
-		return attrValues(ix.fullFor(v, o), "dataValues", "dataElement")[de]
-	})
-	return out, nil
-}
-
-func (ix *Index) searchRelationships(v *Viewer, q url.Values) ([]*Obj, *APIError) {
-	var uid string
-	n := 0
-	for _, k := range []string{"trackedEntity", "enrollment", "event"} {
-		if s := q.Get(k); s != "" {
-			uid = s
-			n++
-		}
-	}
-	if n != 1 {
-		return nil, badRequest("Only one parameter of 'trackedEntity', 'enrollment' or 'event' must be specified. Got: %d", n)
-	}
-	if o := ix.Get(uid); !ix.CanRead(v, o) {
-		return nil, NeedsConnection(uid + " is not available offline")
-	}
-	out := ix.visible(v, ix.RelationshipsOf(uid))
-	sortObjs(out, q.Get("order"), nil)
-	return out, nil
 }
 
 // GetOne renders a single object for /api/tracker/<collection>/<uid>.

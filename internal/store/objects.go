@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 )
 
 // Object kinds, origins and sync states (spec 9.2).
@@ -38,14 +39,25 @@ type Object struct {
 	Origin       string
 	SyncState    string
 	// Slot is the object's stable number in the visibility bitmaps (never 0 once stored).
-	Slot    int64
-	Payload []byte
+	Slot int64
+	// What queries filter and sort on: the payload's createdAt and status, a
+	// relationship's ends, and Slim, the JSON of the fields the remaining filters read
+	// (tracker's slim objects). Reads without the payload return Slim instead.
+	CreatedAt, Status string
+	RelFrom, RelTo    string
+	Slim              []byte
+	Attrs             []Attr // a tracked entity's attribute values
+	Payload           []byte
 }
+
+// Attr is one attribute value of a tracked entity, as queries search it.
+type Attr struct{ Attr, Value string }
 
 func objAAD(uid string) string { return "obj:" + uid }
 
 // PutObject inserts or replaces an object row. An object keeps the slot it was first
-// stored with.
+// stored with. An enrollment's row carries its person's creation date (te_created),
+// so a program's list of people reads in that order from an index.
 func (s *Store) PutObject(q Execer, o *Object) error {
 	if o.Slot <= 0 {
 		return fmt.Errorf("object %s has no slot", o.UID)
@@ -54,18 +66,38 @@ func (s *Store) PutObject(q Execer, o *Object) error {
 	if err != nil {
 		return err
 	}
-	_, err = q.Exec(`INSERT INTO objects(uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at,
- origin, sync_state, payload_enc, slot) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+	_, err = s.exec(q, `INSERT INTO objects(uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at,
+ origin, sync_state, payload_enc, slot, created_at, status, rel_from, rel_to, slim, te_created)
+ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+ CASE WHEN ?2 = 'enrollment' THEN coalesce((SELECT created_at FROM objects WHERE uid = ?3 AND kind = 'trackedEntity'), '') ELSE '' END)
 ON CONFLICT(uid) DO UPDATE SET kind=excluded.kind, te_uid=excluded.te_uid, enrollment_uid=excluded.enrollment_uid,
  program=excluded.program, stage=excluded.stage, tet=excluded.tet, owner_org_unit=excluded.owner_org_unit,
  updated_at=excluded.updated_at, origin=excluded.origin, sync_state=excluded.sync_state, payload_enc=excluded.payload_enc,
- slot=coalesce(objects.slot, excluded.slot)`,
-		o.UID, o.Kind, o.TE, o.Enrollment, o.Program, o.Stage, o.TET, o.OwnerOrgUnit, o.UpdatedAt, o.Origin, o.SyncState, ct, o.Slot)
-	return err
+ slot=coalesce(objects.slot, excluded.slot), created_at=excluded.created_at, status=excluded.status,
+ rel_from=excluded.rel_from, rel_to=excluded.rel_to, slim=excluded.slim, te_created=excluded.te_created`,
+		o.UID, o.Kind, o.TE, o.Enrollment, o.Program, o.Stage, o.TET, o.OwnerOrgUnit, o.UpdatedAt, o.Origin, o.SyncState, ct,
+		o.Slot, o.CreatedAt, o.Status, o.RelFrom, o.RelTo, string(o.Slim))
+	if err != nil || o.Kind != KindTrackedEntity {
+		return err
+	}
+	if _, err := s.exec(q, `UPDATE objects INDEXED BY objects_te SET te_created = ? WHERE te_uid = ? AND kind = 'enrollment' AND te_created <> ?`,
+		o.CreatedAt, o.UID, o.CreatedAt); err != nil {
+		return err
+	}
+	if _, err := s.exec(q, `DELETE FROM te_attrs WHERE te_uid = ?`, o.UID); err != nil {
+		return err
+	}
+	for _, a := range o.Attrs {
+		if _, err := s.exec(q, `INSERT OR REPLACE INTO te_attrs(te_uid, attr, value, value_lc) VALUES(?,?,?,?)`,
+			o.UID, a.Attr, a.Value, strings.ToLower(a.Value)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) SetSyncState(q Execer, uid, state string) error {
-	_, err := q.Exec(`UPDATE objects SET sync_state=? WHERE uid=?`, state, uid)
+	_, err := s.exec(q, `UPDATE objects SET sync_state=? WHERE uid=?`, state, uid)
 	return err
 }
 
@@ -98,7 +130,7 @@ func (s *Store) Payloads(uids []string) (map[string][]byte, error) {
 		for i, u := range part {
 			args[i] = u
 		}
-		rows, err := s.DB().Query(`SELECT uid, payload_enc FROM objects WHERE uid IN (?`+strings.Repeat(",?", len(part)-1)+`)`, args...)
+		rows, err := s.query(`SELECT uid, payload_enc FROM objects WHERE uid IN (?`+strings.Repeat(",?", len(part)-1)+`)`, args...)
 		if err != nil {
 			return nil, err
 		}
@@ -122,7 +154,170 @@ func (s *Store) Payloads(uids []string) (map[string][]byte, error) {
 	return out, nil
 }
 
-// AllObjects decrypts every object (used to build the in-memory index on unlock).
+// objectColumns are the columns ScanObject reads, without the payload.
+var objectColumns = []string{"uid", "kind", "te_uid", "enrollment_uid", "program", "stage", "tet", "owner_org_unit",
+	"updated_at", "origin", "sync_state", "slot", "created_at", "status", "rel_from", "rel_to", "slim"}
+
+var objectCols = ObjectCols("")
+
+// ObjectCols lists the columns ScanObject reads, of the objects table under alias.
+func ObjectCols(alias string) string {
+	out := make([]string, len(objectColumns))
+	for i, c := range objectColumns {
+		if alias != "" {
+			c = alias + "." + c
+		}
+		if strings.HasSuffix(c, "slim") {
+			c = "coalesce(" + c + ", '')"
+		}
+		out[i] = c
+	}
+	return strings.Join(out, ", ")
+}
+
+// ScanObject reads a row of ObjectCols, followed by any extra columns.
+func ScanObject(sc interface{ Scan(...any) error }, extra ...any) (*Object, error) {
+	o := &Object{}
+	var slim string
+	err := sc.Scan(append([]any{&o.UID, &o.Kind, &o.TE, &o.Enrollment, &o.Program, &o.Stage, &o.TET, &o.OwnerOrgUnit,
+		&o.UpdatedAt, &o.Origin, &o.SyncState, &o.Slot, &o.CreatedAt, &o.Status, &o.RelFrom, &o.RelTo, &slim}, extra...)...)
+	o.Slim = []byte(slim)
+	return o, err
+}
+
+// QueryObjects runs a query whose columns are ObjectCols and returns every row,
+// without payloads. The rows are read in full before returning, so the caller may run
+// other queries on what it gets: holding a connection while querying on another can
+// exhaust the pool under load.
+func (s *Store) QueryObjects(query string, args ...any) ([]*Object, error) {
+	rows, err := s.query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Object
+	for rows.Next() {
+		o, err := ScanObject(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+// QueryObjectPairs is QueryObjects for rows of two objects: ObjectCols of one, then of
+// the other.
+func (s *Store) QueryObjectPairs(query string, args ...any) ([][2]*Object, error) {
+	rows, err := s.query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out [][2]*Object
+	for rows.Next() {
+		b := &Object{}
+		var slim string
+		a, err := ScanObject(rows, &b.UID, &b.Kind, &b.TE, &b.Enrollment, &b.Program, &b.Stage, &b.TET, &b.OwnerOrgUnit,
+			&b.UpdatedAt, &b.Origin, &b.SyncState, &b.Slot, &b.CreatedAt, &b.Status, &b.RelFrom, &b.RelTo, &slim)
+		if err != nil {
+			return nil, err
+		}
+		b.Slim = []byte(slim)
+		out = append(out, [2]*Object{a, b})
+	}
+	return out, rows.Err()
+}
+
+// ObjectsByUID returns these objects without payloads (missing ones are left out).
+func (s *Store) ObjectsByUID(uids []string) (map[string]*Object, error) {
+	out := make(map[string]*Object, len(uids))
+	const batch = 500
+	for start := 0; start < len(uids); start += batch {
+		part := uids[start:min(start+batch, len(uids))]
+		args := make([]any, len(part))
+		for i, u := range part {
+			args[i] = u
+		}
+		objs, err := s.QueryObjects(`SELECT `+objectCols+` FROM objects WHERE uid IN (?`+strings.Repeat(",?", len(part)-1)+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range objs {
+			out[o.UID] = o
+		}
+	}
+	return out, nil
+}
+
+// UpdatedAts returns the stored updatedAt of these objects, by uid (missing ones are
+// left out).
+func (s *Store) UpdatedAts(uids []string) (map[string]string, error) {
+	out := make(map[string]string, len(uids))
+	const batch = 500
+	for start := 0; start < len(uids); start += batch {
+		part := uids[start:min(start+batch, len(uids))]
+		args := make([]any, len(part))
+		for i, u := range part {
+			args[i] = u
+		}
+		rows, err := s.query(`SELECT uid, updated_at FROM objects WHERE uid IN (?`+strings.Repeat(",?", len(part)-1)+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var uid, upd string
+			if err := rows.Scan(&uid, &upd); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out[uid] = upd
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// UnfilledObjects returns up to limit objects, with payloads, whose query columns
+// were never filled (rows stored before schema 3).
+func (s *Store) UnfilledObjects(limit int) ([]*Object, error) {
+	rows, err := s.DB().Query(`SELECT uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at,
+ origin, sync_state, payload_enc, slot FROM objects WHERE slim IS NULL LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Object
+	for rows.Next() {
+		o := &Object{}
+		var ct []byte
+		if err := rows.Scan(&o.UID, &o.Kind, &o.TE, &o.Enrollment, &o.Program, &o.Stage, &o.TET, &o.OwnerOrgUnit,
+			&o.UpdatedAt, &o.Origin, &o.SyncState, &ct, &o.Slot); err != nil {
+			return nil, err
+		}
+		if o.Payload, err = s.OpenBlob(objAAD(o.UID), ct); err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+// CountKind is how many objects there are, of one kind or ("") all.
+func (s *Store) CountKind(kind string) int {
+	var n int
+	if kind == "" {
+		s.DB().QueryRow(`SELECT count(*) FROM objects`).Scan(&n)
+	} else {
+		s.DB().QueryRow(`SELECT count(*) FROM objects WHERE kind=?`, kind).Scan(&n)
+	}
+	return n
+}
+
+// AllObjects decrypts every object (the storage benchmarks).
 func (s *Store) AllObjects(fn func(*Object) error) error {
 	rows, err := s.DB().Query(`SELECT uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at,
  origin, sync_state, payload_enc, slot FROM objects`)
@@ -180,7 +375,7 @@ func (s *Store) VisibilityChunks() (map[int64]map[int64][]byte, error) {
 
 // PutVisibilityChunk stores one chunk of a user's visibility bitmap.
 func (s *Store) PutVisibilityChunk(q Execer, user, chunk int64, bits []byte) error {
-	_, err := q.Exec(`INSERT INTO visibility_bits(user_id, chunk, bits) VALUES(?,?,?)
+	_, err := s.exec(q, `INSERT INTO visibility_bits(user_id, chunk, bits) VALUES(?,?,?)
 ON CONFLICT(user_id, chunk) DO UPDATE SET bits=excluded.bits`, user, chunk, bits)
 	return err
 }
@@ -206,8 +401,20 @@ func (s *Store) TEScopes() (map[string][]string, error) {
 }
 
 func (s *Store) AddTEScope(q Execer, te, scope string) error {
-	_, err := q.Exec(`INSERT OR IGNORE INTO te_scopes(te_uid, scope) VALUES(?,?)`, te, scope)
+	_, err := s.exec(q, `INSERT OR IGNORE INTO te_scopes(te_uid, scope) VALUES(?,?)`, te, scope)
 	return err
+}
+
+// SlotOf is the stored object's slot, or 0.
+func (s *Store) SlotOf(uid string) int64 {
+	var n int64
+	if rows, err := s.query(`SELECT slot FROM objects WHERE uid = ?`, uid); err == nil {
+		if rows.Next() {
+			rows.Scan(&n)
+		}
+		rows.Close()
+	}
+	return n
 }
 
 // MaxSlot is the highest slot in use.
@@ -255,6 +462,69 @@ func (s *Store) convertLegacyVisibility() error {
 		_, err = tx.Exec(`DELETE FROM visibility`)
 		return err
 	})
+}
+
+// stmtCache holds statements prepared once on the data file: a pull stores thousands
+// of objects, and preparing each statement for each of them was a large part of it.
+type stmtCache struct {
+	mu sync.Mutex
+	db *sql.DB
+	m  map[string]*sql.Stmt
+}
+
+// stmt returns the statement for query, prepared once on the data file; nil when
+// there are too many to keep (queries with lists of values vary in length).
+func (s *Store) stmt(db *sql.DB, query string) (*sql.Stmt, error) {
+	s.stmts.mu.Lock()
+	defer s.stmts.mu.Unlock()
+	if s.stmts.db != db {
+		s.stmts.db, s.stmts.m = db, map[string]*sql.Stmt{}
+	}
+	if st := s.stmts.m[query]; st != nil {
+		return st, nil
+	}
+	if len(s.stmts.m) >= 1000 {
+		return nil, nil
+	}
+	st, err := db.Prepare(query)
+	if err == nil {
+		s.stmts.m[query] = st
+	}
+	return st, err
+}
+
+// exec runs query on q, the data file or a transaction on it, through a statement
+// prepared once.
+func (s *Store) exec(q Execer, query string, args ...any) (sql.Result, error) {
+	db := s.DB()
+	st, err := s.stmt(db, query)
+	if err != nil {
+		return nil, err
+	}
+	switch t := q.(type) {
+	case *sql.Tx:
+		if st != nil {
+			return t.Stmt(st).Exec(args...)
+		}
+	case *sql.DB:
+		if t == db && st != nil {
+			return st.Exec(args...)
+		}
+	}
+	return q.Exec(query, args...)
+}
+
+// query runs a read on the data file through a statement prepared once.
+func (s *Store) query(query string, args ...any) (*sql.Rows, error) {
+	db := s.DB()
+	st, err := s.stmt(db, query)
+	if err != nil {
+		return nil, err
+	}
+	if st == nil {
+		return db.Query(query, args...)
+	}
+	return st.Query(args...)
 }
 
 // Execer is satisfied by *sql.DB and *sql.Tx.

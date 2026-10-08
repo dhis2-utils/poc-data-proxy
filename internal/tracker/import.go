@@ -290,10 +290,8 @@ func (im *Importer) checkUnique(it *Item) []ErrorReport {
 		if !unique[attr] || val == "" || val == "<nil>" {
 			continue
 		}
-		for _, o := range im.Ix.All(store.KindTrackedEntity) {
-			if o.UID != it.UID && attrValues(o.Data, "attributes", "attribute")[attr] == val {
-				return im.errf(it, "E1064", "Non-unique attribute value `%s` for attribute `%s`", val, attr)
-			}
+		if im.Ix.AttributeValueTaken(attr, val, it.UID) {
+			return im.errf(it, "E1064", "Non-unique attribute value `%s` for attribute `%s`", val, attr)
 		}
 	}
 	return nil

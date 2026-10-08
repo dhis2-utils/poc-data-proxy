@@ -89,7 +89,8 @@ func BenchmarkGetObject(b *testing.B) {
 	}
 }
 
-// BenchmarkAllObjects reads and decrypts everything, as startup does (Index.Load).
+// BenchmarkAllObjects reads and decrypts everything, as the first unlock after an
+// upgrade does (Index.Load fills the query columns).
 func BenchmarkAllObjects(b *testing.B) {
 	s := benchStore(b)
 	fill(b, s, 10000)

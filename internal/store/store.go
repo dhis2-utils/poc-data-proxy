@@ -45,6 +45,7 @@ type Store struct {
 	mu    sync.RWMutex
 	dk    hubcrypto.Key
 	data  *sql.DB // the encrypted data file, while unlocked
+	stmts stmtCache
 	empty *sql.DB // stands in for the data file while locked: empty and read-only
 }
 
@@ -220,6 +221,37 @@ CREATE UNIQUE INDEX objects_slot ON objects(slot);
 CREATE TABLE visibility_bits(user_id INTEGER NOT NULL, chunk INTEGER NOT NULL, bits BLOB NOT NULL,
   PRIMARY KEY(user_id, chunk));
 CREATE TABLE te_scopes(te_uid TEXT NOT NULL, scope TEXT NOT NULL, PRIMARY KEY(te_uid, scope));
+`,
+	// Queries read the data file instead of an in-memory copy of every object
+	// (docs/PERFORMANCE.md, "The query index in SQLite"): the columns lists filter and
+	// sort on, each object's slim JSON (what the remaining filters read), and a tracked
+	// entity's attribute values. Rows of schema 2 have slim NULL until the first unlock
+	// fills them (tracker.Index.Load). The indexes are not partial: a query with a
+	// bound value cannot use an index restricted to non-empty values. A person's and an
+	// enrollment's children are indexed with their kind, so that index wins over the
+	// list indexes, which also start with kind (without statistics the planner chose
+	// those, and storing a person walked every enrollment).
+	`
+ALTER TABLE objects ADD COLUMN created_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE objects ADD COLUMN status TEXT NOT NULL DEFAULT '';
+ALTER TABLE objects ADD COLUMN te_created TEXT NOT NULL DEFAULT '';
+ALTER TABLE objects ADD COLUMN rel_from TEXT NOT NULL DEFAULT '';
+ALTER TABLE objects ADD COLUMN rel_to TEXT NOT NULL DEFAULT '';
+ALTER TABLE objects ADD COLUMN slim TEXT;
+DROP INDEX objects_te;
+CREATE INDEX objects_te ON objects(te_uid, kind);
+CREATE INDEX objects_enrollment ON objects(enrollment_uid, kind);
+CREATE INDEX objects_rel_from ON objects(rel_from);
+CREATE INDEX objects_rel_to ON objects(rel_to);
+CREATE INDEX objects_type ON objects(kind, tet, owner_org_unit, created_at, uid);
+CREATE INDEX objects_program ON objects(kind, program, owner_org_unit, te_created, te_uid);
+CREATE INDEX objects_program_desc ON objects(kind, program, owner_org_unit, te_created DESC, te_uid);
+CREATE INDEX objects_unfilled ON objects(uid) WHERE slim IS NULL;
+CREATE INDEX objects_updated ON objects(updated_at, kind, uid, te_uid);
+CREATE INDEX objects_local ON objects(kind, uid, te_uid) WHERE origin = 'local';
+CREATE TABLE te_attrs(te_uid TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT NULL, value_lc TEXT NOT NULL,
+  PRIMARY KEY(te_uid, attr));
+CREATE INDEX te_attrs_value ON te_attrs(attr, value);
 `,
 }
 

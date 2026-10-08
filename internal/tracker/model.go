@@ -1,5 +1,5 @@
 // Package tracker holds the hub's tracker data model: flattening nested payloads into
-// stored objects, the in-memory index (spec 9.3), visibility rules (spec 8.2), local
+// stored objects, the index over the store (spec 9.3), visibility rules (spec 8.2), local
 // queries (spec 10.1) and offline import validation (spec 10.2).
 package tracker
 
@@ -27,6 +27,8 @@ type Obj struct {
 	// slim: Data holds only what queries filter and sort on (slim.go); the full
 	// payload is in the store (Index.Full).
 	slim bool
+	// raw: a search's row whose slim data is not decoded yet (Data is nil; withData).
+	raw []byte
 }
 
 // Children keys that are stored as separate objects, never inside a payload.

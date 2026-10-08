@@ -22,12 +22,26 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 		return nil, nil
 	}
 	items := tracker.Flatten(payload)
+	// Everything the batch refers to, read in one go, with the payloads merges need.
+	var refs []string
+	for _, it := range items {
+		refs = append(refs, it.UID, it.TE, it.Enrollment, it.From.UID, it.To.UID)
+	}
+	known := h.Index.GetMany(slices.DeleteFunc(refs, func(u string) bool { return u == "" }))
+	get := func(uid string) *tracker.Obj { return known[uid] }
+	var olds []*tracker.Obj
+	for _, it := range items {
+		if o := known[it.UID]; o != nil {
+			olds = append(olds, o)
+		}
+	}
+	fulls := h.Index.FullMany(olds)
 	batch := map[string]*tracker.Obj{}
 	owned := func(uid string) bool {
 		if o := batch[uid]; o != nil {
 			return true
 		}
-		o := h.Index.Get(uid)
+		o := get(uid)
 		return o != nil && o.OwnerOrgUnit == facility
 	}
 	// Program owners as central reports them in this answer (programOwners), else as
@@ -46,7 +60,7 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 		if ou, ok := owners[te+"|"+program]; ok {
 			return ou
 		}
-		return tracker.ProgramOwner(h.Index.Get(te), program)
+		return tracker.ProgramOwner(get(te), program)
 	}
 	skipped := map[string]bool{}
 	var objs []*tracker.Obj
@@ -54,9 +68,12 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 		if !tracker.ValidUID(it.UID) {
 			continue
 		}
-		old := h.Index.Get(it.UID)
+		old := get(it.UID)
 		o := &tracker.Obj{UID: it.UID, Kind: it.Kind, Origin: store.OriginCentral, SyncState: store.SyncSynced,
 			OwnerOrgUnit: facility}
+		if old != nil {
+			o.Slot = old.Slot
+		}
 		ou := tracker.Str(it.Data, "orgUnit")
 		switch it.Kind {
 		case store.KindTrackedEntity:
@@ -86,14 +103,14 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 			if o.TE == "" {
 				if e := batch[o.Enrollment]; e != nil {
 					o.TE = e.TE
-				} else if e := h.Index.Get(o.Enrollment); e != nil {
+				} else if e := get(o.Enrollment); e != nil {
 					o.TE = e.TE
 				}
 			}
 			if forceFacility {
 				break
 			}
-			if e := h.Index.Get(it.Enrollment); skipped[it.Enrollment] || (e != nil && e.OwnerOrgUnit != facility) ||
+			if e := get(it.Enrollment); skipped[it.Enrollment] || (e != nil && e.OwnerOrgUnit != facility) ||
 				!(ou == facility || owned(it.Enrollment)) {
 				continue
 			}
@@ -109,7 +126,11 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 				batch[it.UID] = old
 				continue
 			}
-			o.Data = tracker.Merge(h.Index.Full(old), it.Data)
+			full := fulls[old.UID]
+			if full == nil {
+				full = h.Index.Full(old)
+			}
+			o.Data = tracker.Merge(full, it.Data)
 			if o.TET == "" {
 				o.TET = old.TET
 			}
@@ -205,16 +226,15 @@ func (h *Hub) PersistImport(userID int64, out *tracker.ImportOutcome) (int64, er
 // programs that a full pull did not return (spec 11.3).
 func (h *Hub) RemoveVisibilityExcept(userID int64, programs []string, seen map[string]bool) int {
 	changes := map[uint32]bool{}
-	for _, kind := range []string{store.KindTrackedEntity, store.KindEnrollment, store.KindEvent, store.KindRelationship} {
-		for _, o := range h.Index.All(kind) {
-			if o.Origin != store.OriginCentral || seen[o.UID] || !h.Index.VisibleTo(o, userID) {
-				continue
-			}
-			if o.Program != "" && !slices.Contains(programs, o.Program) {
-				continue
-			}
-			changes[o.Slot] = false
+	slots, progs := h.Index.VisibleCentral(userID)
+	for uid, slot := range slots {
+		if seen[uid] {
+			continue
 		}
+		if p := progs[uid]; p != "" && !slices.Contains(programs, p) {
+			continue
+		}
+		changes[slot] = false
 	}
 	if len(changes) == 0 {
 		return 0
@@ -230,8 +250,8 @@ func (h *Hub) RemoveVisibilityExcept(userID int64, programs []string, seen map[s
 // (the ID-list pull, spec 11.3). Unknown UIDs are skipped.
 func (h *Hub) MarkVisible(userID int64, uids []string) error {
 	changes := map[uint32]bool{}
-	for _, uid := range uids {
-		if o := h.Index.Get(uid); o != nil && o.Slot != 0 && !h.Index.VisibleTo(o, userID) {
+	for _, o := range h.Index.GetMany(uids) {
+		if o.Slot != 0 && !h.Index.VisibleTo(o, userID) {
 			changes[o.Slot] = true
 		}
 	}

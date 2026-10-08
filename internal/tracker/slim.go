@@ -3,15 +3,15 @@ package tracker
 import (
 	"encoding/json"
 	"log/slog"
+	"strings"
 
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
-// Objects in a loaded index are held slim: top-level scalar fields (identifiers,
-// status, dates), a tracked entity's attribute values and a relationship's ends, which
-// is what queries filter and sort on. Rendering and merging read the full payload
-// from the store. A decoded event with its data values took about 6 KB in memory
-// (docs/PERFORMANCE.md).
+// Objects read from the index are slim: top-level scalar fields (identifiers, status,
+// dates), a tracked entity's attribute values and a relationship's ends, which is what
+// queries filter and sort on, stored as each row's slim JSON. Rendering and merging read
+// the full payload, which is sealed per row (docs/PERFORMANCE.md).
 
 func slimmed(o *Obj) *Obj {
 	n := *o
@@ -52,7 +52,7 @@ func (ix *Index) Full(o *Obj) M {
 	}
 	so, err := ix.store.GetObject(o.UID)
 	if err != nil || so == nil {
-		slog.Warn("payload not readable; using the index copy", "uid", o.UID, "err", err)
+		slog.Warn("payload not readable; using the slim copy", "uid", o.UID, "err", err)
 		return o.Data
 	}
 	var d M
@@ -60,6 +60,34 @@ func (ix *Index) Full(o *Obj) M {
 		return o.Data
 	}
 	return d
+}
+
+// FullMany returns the full payloads of these objects, by uid, read in one go.
+func (ix *Index) FullMany(objs []*Obj) map[string]M {
+	out := map[string]M{}
+	var uids []string
+	for _, o := range objs {
+		if o.slim {
+			uids = append(uids, o.UID)
+		} else {
+			out[o.UID] = o.Data
+		}
+	}
+	if len(uids) == 0 || ix.store == nil {
+		return out
+	}
+	raw, err := ix.store.Payloads(uids)
+	if err != nil {
+		slog.Warn("reading payloads", "err", err)
+		return out
+	}
+	for uid, b := range raw {
+		var d M
+		if json.Unmarshal(b, &d) == nil {
+			out[uid] = d
+		}
+	}
+	return out
 }
 
 // ProgramOwner returns the org unit that owns the tracked entity in the program, as
@@ -145,29 +173,32 @@ func (ix *Index) prefetch(v *Viewer, objs []*Obj, f *Fields) {
 		}
 		return f.Sub(name)
 	}
+	ix.loadChildren(v, objs, f)
 	for _, o := range objs {
 		add([]*Obj{o})
 		switch o.Kind {
 		case store.KindTrackedEntity:
 			// Enrollments always: a program-scoped answer merges their attributes.
-			enrs := ix.EnrollmentsOf(o.UID)
+			enrs := ix.enrollmentsFor(v, o.UID)
 			add(enrs)
 			if ef := sub(f, "enrollments"); has(f, "enrollments") && has(ef, "events") {
-				add(ix.EventsOfTE(o.UID))
+				for _, e := range enrs {
+					add(ix.eventsFor(v, e.UID)) // as RenderEnrollment will ask
+				}
 			}
 			if has(f, "relationships") {
-				add(ix.RelationshipsOf(o.UID))
+				add(ix.relationshipsFor(v, o.UID))
 			}
 		case store.KindEnrollment:
 			if has(f, "events") {
-				add(ix.EventsOf(o.UID))
+				add(ix.eventsFor(v, o.UID))
 			}
 			if has(f, "relationships") {
-				add(ix.RelationshipsOf(o.UID))
+				add(ix.relationshipsFor(v, o.UID))
 			}
 		case store.KindEvent:
 			if has(f, "relationships") {
-				add(ix.RelationshipsOf(o.UID))
+				add(ix.relationshipsFor(v, o.UID))
 			}
 		}
 	}
@@ -188,4 +219,85 @@ func (ix *Index) prefetch(v *Viewer, objs []*Obj, f *Fields) {
 			v.payloads[uid] = d
 		}
 	}
+}
+
+// loadChildren reads the children rendering objs will ask for, for all of them at
+// once, into the request's lookups (a page of 50 people asked for each one's
+// enrollments and each enrollment's events separately).
+func (ix *Index) loadChildren(v *Viewer, objs []*Obj, f *Fields) {
+	has := func(f *Fields, name string) bool { return f == nil || f.Has(name) }
+	var tes, enrs, rels []string
+	for _, o := range objs {
+		switch o.Kind {
+		case store.KindTrackedEntity:
+			tes = append(tes, o.UID)
+		case store.KindEnrollment:
+			enrs = append(enrs, o.UID)
+		}
+		if has(f, "relationships") {
+			rels = append(rels, o.UID)
+		}
+	}
+	for _, e := range ix.memoChildren(v, "enr:", "te_uid", store.KindEnrollment, tes) {
+		enrs = append(enrs, e.UID)
+	}
+	ix.memoChildren(v, "ev:", "enrollment_uid", store.KindEvent, enrs)
+	if len(rels) > 0 {
+		ix.memoChildren(v, "rel:", "", store.KindRelationship, rels)
+	}
+}
+
+// memoChildren loads the children of kind under these parents, by the parent's column
+// (relationships: either end), into the request's lookups under prefix+parent, and
+// returns them.
+func (ix *Index) memoChildren(v *Viewer, prefix, col, kind string, parents []string) []*Obj {
+	if v == nil || len(parents) == 0 {
+		return nil
+	}
+	if v.related == nil {
+		v.related = map[string][]*Obj{}
+	}
+	var need []string
+	for _, p := range parents {
+		if _, ok := v.related[prefix+p]; !ok {
+			need = append(need, p)
+		}
+	}
+	groups := map[string][]*Obj{}
+	var all []*Obj
+	const batch = 400
+	for start := 0; start < len(need); start += batch {
+		part := need[start:min(start+batch, len(need))]
+		args := make([]any, 0, 2*len(part)+1)
+		marks := "?" + strings.Repeat(",?", len(part)-1)
+		for _, p := range part {
+			args = append(args, p)
+		}
+		var objs []*Obj
+		if col == "" {
+			args = append(args, args...)
+			objs = ix.objects(`SELECT `+store.ObjectCols("")+` FROM objects WHERE rel_from IN (`+marks+`) OR rel_to IN (`+marks+`)`, args...)
+		} else {
+			objs = ix.objects(`SELECT `+store.ObjectCols("")+` FROM objects WHERE `+col+` IN (`+marks+`) AND kind = ?`, append(args, kind)...)
+		}
+		for _, o := range objs {
+			switch col {
+			case "te_uid":
+				groups[o.TE] = append(groups[o.TE], o)
+			case "enrollment_uid":
+				groups[o.Enrollment] = append(groups[o.Enrollment], o)
+			default:
+				from, to := RelRef(asM(o.Data["from"])).UID, RelRef(asM(o.Data["to"])).UID
+				groups[from] = append(groups[from], o)
+				if to != from {
+					groups[to] = append(groups[to], o)
+				}
+			}
+		}
+		all = append(all, objs...)
+	}
+	for _, p := range need {
+		v.related[prefix+p] = groups[p]
+	}
+	return all
 }
