@@ -129,3 +129,7 @@ scripts/test-upgrade.sh     # scenario 11: unsigned release ignored, signed upgr
 - **`internal/compat`** checks the 2.42 response shapes against the recorded fixtures.
 - **Live DHIS2 instance.** `testdata/2.42/setup_instance.py` creates the test users (`hub_admin`, `nurse_a`, `nurse_b`, `clerk_c`, `outsider_d`), groups and sharing on a Sierra Leone 2.42 demo database. `testdata/2.42/SETUP.md` lists the UIDs.
 - **Manual steps with the real Capture apps** (spec 13.3 scenarios 2 and 2a) and their results are in docs/FINDINGS.md.
+
+## License
+
+BSD 3-Clause. Copyright (c) 2026, University of Oslo. See [LICENSE](LICENSE).
