@@ -154,6 +154,14 @@ func (c *client) doHost(host, method, path string, body any) (int, []byte) {
 	return resp.StatusCode, b
 }
 
+// postForm posts a form like a browser on the hub's own page: with an Origin header.
+func (c *client) postForm(path string, form url.Values) (*http.Response, error) {
+	req, _ := http.NewRequest("POST", c.e.srv.URL+path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", c.e.srv.URL)
+	return c.http.Do(req)
+}
+
 func (c *client) login() {
 	c.e.t.Helper()
 	st, b := c.do("POST", "/api/auth/login", map[string]string{"username": c.user, "password": fc.Password})
@@ -177,7 +185,7 @@ func (e *env) setup() {
 	e.t.Helper()
 	c := e.web("hub_admin")
 	form := url.Values{"step": {"login"}, "central_url": {e.cSrv.URL}, "username": {"hub_admin"}, "password": {fc.Password}}
-	resp, err := c.http.PostForm(e.srv.URL+"/hub/setup", form)
+	resp, err := c.postForm("/hub/setup", form)
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -243,7 +251,7 @@ func TestAcceptance(t *testing.T) {
 	e := newEnv(t)
 	t.Run("10 setup: nurse_a cannot set up a hub", func(t *testing.T) {
 		c := e.web("nurse_a")
-		resp, _ := c.http.PostForm(e.srv.URL+"/hub/setup", url.Values{"step": {"login"}, "central_url": {e.cSrv.URL},
+		resp, _ := c.postForm("/hub/setup", url.Values{"step": {"login"}, "central_url": {e.cSrv.URL},
 			"username": {"nurse_a"}, "password": {fc.Password}})
 		b, _ := io.ReadAll(resp.Body)
 		if !strings.Contains(string(b), "not allowed to set up a hub") {
@@ -625,7 +633,7 @@ func TestResetHub(t *testing.T) {
 	oldID := e.app.Hub.HubID()
 	admin := e.web("hub_admin")
 	admin.login()
-	resp, err := admin.http.PostForm(e.srv.URL+"/hub/ui/reset", url.Values{"confirm": {"RESET"}})
+	resp, err := admin.postForm("/hub/ui/reset", url.Values{"confirm": {"RESET"}})
 	if err != nil {
 		t.Fatal(err)
 	}

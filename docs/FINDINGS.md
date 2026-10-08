@@ -121,6 +121,33 @@ Options:
 2. **Recovery code.** Print a one-time recovery code at setup and use it as an extra key slot.
 3. **Hub token slot.** Wrap DK under the hub-level token. This only helps while central is reachable, since the token itself must be verified.
 
+### Changing the central server URL
+
+Countries move DHIS2 to new domains and hosting, so a hub's central URL must be changeable without a new image or a site visit. It must still not be choosable by whoever stands next to a hub in setup mode (REVIEW-2 F1): the hub forwards every staff login to that server.
+
+Before this round, a set-up hub kept its central URL in its own store and ignored the config file, so moving a fleet meant resetting and setting up every hub again. The design now in the code:
+
+1. **An allowlist instead of one URL.** `central_hosts` in the image lists permitted hosts (`hmis.example.org`, `*.hmis.example.org`). Setup accepts any https URL on those hosts. `central_url`, if set, is the default and is always allowed.
+2. **Fleet-wide moves through the signed release channel.** The signed release manifest may carry `centralUrl`. A hub that reads it checks that the URL is allowed and that the new server knows the hub (its registry entry is there and the hub token works), then switches. Only the holder of the release key can move hubs, and no visit or new image is needed.
+3. **A one-time setup token for images with neither.** If the image sets neither `central_url` nor `central_hosts`, setup requires the token the hub writes at first boot to `data_dir/setup-token`, printed on the label at the depot. Only someone holding the device can choose the server.
+
+### Offline search covers this facility only, and Capture should say so
+
+Online, a search with `orgUnitMode=ACCESSIBLE` covers the user's whole search scope, often the district. Offline, the hub answers it from this facility's data: refusing it broke registration (item 2 under "Things in the spec"). A patient registered at another clinic therefore comes back as "no results", and the nurse may register a duplicate. Central's uniqueness check on push catches duplicates only through unique attributes such as a national ID, not names.
+
+The hub cannot tell the user on its own. The tracker API has no field for partial results, and the apps believe they are online, because the hub answers `/api/ping` itself. Answering "offline" instead would switch Capture into its own offline mode, which is not wanted either.
+
+**Requirement for Capture web, the app runtime and Android:**
+
+1. A state "connected through a facility hub, central unreachable", read from the hub (`GET /hub/status` reports `"mode": "offline"`; every offline answer from the hub carries `X-Hub-Mode: offline`). Show it next to the online indicator.
+2. On search results in that state, a note: "Searched this facility only. Patients registered elsewhere won't appear." Offline searches that the hub narrowed carry `X-Hub-Scope: facility`. Optionally, before a new registration: "Check online before registering, if possible."
+
+The hub side of this exists; the Capture side is to build.
+
+### Shared metadata cache (REVIEW-2 F4)
+
+Offline, a user whose own cache misses a metadata URL is served another user's copy (spec 5.1 deviation, item 11 under "Things in the spec"). Some metadata URLs are the same for every user while central's answer is not. The web app's `organisationUnits?withinUserHierarchy=true` and `?userDataViewFallback=true` return each user's own org unit tree; tracked entity filters and working lists depend on sharing. These are no longer shared between users: a user who never loaded them online gets "needs connection" for them.
+
 ### Long-term TLS
 
 POC: at first boot the hub creates a CA limited by name constraints to its own names and private address ranges, issues a server certificate for `hub.local`, the host name, `localhost` and the LAN IPs, and discards the CA key. Test devices install `ca.crt` (served at `/hub/ca.crt`). An earlier version made the server certificate itself a CA, so anyone reading its key could have minted certificates for any site. Options for production:
@@ -175,10 +202,10 @@ Either way, **protect the namespaces**. By default any user can read and write a
 10. **Unique attributes.** Offline, the hub also rejects a unique attribute value that already exists in its own store (E1064). Central stays authoritative on push (scenario 7 uses a value created on central while the hub was offline).
 11. **Static app files.** Spec 5.1 caches GETs per user. App static files (`/dhis-web-*/…`, `/api/apps/…` with file extensions) hold no user data. Offline, the hub serves them from any user's cache entry, so a user who never opened Capture through the hub online can still load it. API responses stay strictly per user.
 12. **Logging.** Request logs (spec 13.1) record parameter **names** only. Query values can carry patient search terms (`filter=<attr>:like:<name>`), and an early version logged them in plain text.
-13. **Two-factor authentication.** Offline login checks only the password, so 2FA cannot be enforced offline. Online, 2FA users log in through central as usual. With a missing or wrong code, central answers 200 with `loginStatus: INCORRECT_TWO_FACTOR_CODE_TOTP`. Basic auth for a 2FA user gets 401, so Android 2FA users cannot use the hub's Basic path.
+13. **Two-factor authentication.** Offline login checks only the password, so 2FA cannot be enforced offline. Online, 2FA users log in through central as usual. With a missing or wrong code, central answers 200 with `loginStatus: INCORRECT_TWO_FACTOR_CODE_TOTP`. Basic auth for a 2FA user gets 401, so Android 2FA users cannot use the hub's Basic path. Web 2FA users still get a key slot at online login, so offline they log in with the password alone: a country that relies on 2FA should know that the hub weakens it offline.
 14. **`depends_on_seq` is a single value.** The hub records the latest pending entry that holds any object the new entry references or updates. Before pushing an entry, it also checks each object's parents in the store and blocks objects whose parent was rejected, so an object depending on two earlier entries is still handled.
 15. **Upgrades must not lock the store.** A re-exec loses the in-memory data key, which would leave the hub locked (and not syncing) after every upgrade until a staff member logs in. The upgrader hands the key to the new process over an inherited pipe (`HUB_DK_FD`). Rollback does the same.
-16. **Retired hubs.** Setup marks the previous hub `retired` in the registry, but the retired hub does not notice and keeps running. A hub should check its registry entry on each sync and stop syncing if retired.
+16. **Retired hubs.** Setup marks the previous hub `retired` in the registry. The old hub now reads its entry on each sync; while it is retired, the hub stops serving patient data offline and only pushes its outbox. It never wipes itself, because on 2.42 anyone can write the registry namespace until it is protected: a forged entry costs offline service, no data, and ends when the entry is active again.
 17. **Generated values come in pairs on 2.42.6.** Central's `generateAndReserve` for the `RANDOM(##########)` pattern returns values in related pairs: `1916135085, 0916135085, 9066229890, 0066229890, …` (checked directly against central). Both are reserved on central, so this is not a duplicate. It does mean half the "random" IDs are predictable from the other half, which is worth reporting to DHIS2 core.
 18. **Dates must be normalised.** Clients post `"occurredAt":"2026-10-07"`, and central stores and returns `"2026-10-07T00:00:00.000"`. The hub first returned dates as posted. The Android SDK failed with `ParseException: Unparseable date: "2026-10-07"`, silently skipped the object, and still reported the sync as successful. The hub now normalises the date fields of offline writes to central's form.
 19. **Online writes and visibility.** The hub records objects that users write while online. Spec 8.2 gives central-origin objects visibility only through each user's own pull, so a patient registered on a tablet seconds before the uplink went down stayed invisible to the web user until their next pull. Objects learned from online writes, including Android's async job reports, are now shared by the same rules as local objects. The next pull then replaces this with central's view.
@@ -192,6 +219,11 @@ Either way, **protect the namespaces**. By default any user can read and write a
 26. **Spec 8.3 and revocation.** Fine-grained access cannot be re-checked offline, but a disabled account or a changed password can be detected cheaply while online. The hub re-checks cached Basic credentials with central every 5 minutes, ends all sessions of a user central refuses, and refuses that user offline until an online login succeeds. Sessions also expire (`session_idle`, `session_max`).
 27. **Spec 11.2's hub token expires.** It is a PAT with `pat_expiry_days`; nothing in the spec renews it. The hub renews it on sync a week before expiry.
 28. **Spec 12a's store copy needs writes stopped.** Writes accepted while the upgrade copies the store were lost with the old store. The hub refuses local writes (503, `Retry-After`) for the duration; online writes still pass through to central.
+
+29. **Spec 6.2 step 6 lists programs with the setup user's access.** The catalog came from the hub token, so the setup user's metadata access. A district officer often cannot see every program facility staff work in, and those programs were never cached or pulled. The catalog is now the union of what the hub token and every registered user can see, extended at each online login and rebuilt on sync.
+30. **Spec 12a: "push the outbox until empty" can block upgrades for good.** An entry whose author central no longer accepts may never push. Since the store copy carries the outbox over, the upgrade proceeds when only such entries remain; they are reported as `stuckOutbox`.
+31. **Spec 7.1's password fallback.** Storing a user's central password whenever PAT creation fails was never needed on 2.42 and is now off by default (`password_fallback`). Without a PAT, the user can work online and read offline, but offline changes are refused: they could never be sent.
+32. **Who registers on the hub.** Spec 7.1 registers any user who logs in online. The hub now registers only users with the facility in their capture org units or in the setup user group; others are passed through to central.
 
 ## Capture web app through the hub
 

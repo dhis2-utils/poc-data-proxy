@@ -2,6 +2,7 @@ package core
 
 import (
 	"net"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -30,7 +31,7 @@ func (h *Hub) HostAllowed(hostport string) bool {
 		return false
 	}
 	for _, x := range h.Cfg.HubHosts {
-		if x == "*" || strings.EqualFold(x, host) {
+		if strings.EqualFold(x, host) {
 			return true
 		}
 	}
@@ -40,6 +41,51 @@ func (h *Hub) HostAllowed(hostport string) bool {
 		h.hosts.allowed, h.hosts.at = ownHosts(), time.Now()
 	}
 	return h.hosts.allowed[host]
+}
+
+// SetupMode is how setup chooses the central server (REVIEW-2 F1).
+const (
+	SetupPinned    = "pinned"    // central_url only: the form has no URL field
+	SetupAllowlist = "allowlist" // central_hosts: any https URL on those hosts
+	SetupToken     = "token"     // neither: any https URL, with the setup token from the label
+)
+
+func (h *Hub) SetupMode() string {
+	switch {
+	case len(h.Cfg.CentralHosts) > 0:
+		return SetupAllowlist
+	case h.Cfg.CentralURL != "":
+		return SetupPinned
+	}
+	return SetupToken
+}
+
+// CentralAllowed reports whether setup may point the hub at this central URL: the
+// image's central_url, or an https URL on a host in central_hosts (or, in token mode,
+// any https URL).
+func (h *Hub) CentralAllowed(raw string) bool {
+	raw = strings.TrimRight(raw, "/")
+	if raw != "" && raw == h.Cfg.CentralURL {
+		return true
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
+		return false
+	}
+	switch h.SetupMode() {
+	case SetupPinned:
+		return false
+	case SetupToken:
+		return true
+	}
+	host := strings.ToLower(u.Hostname())
+	for _, x := range h.Cfg.CentralHosts {
+		x = strings.ToLower(x)
+		if host == x || (strings.HasPrefix(x, "*.") && strings.HasSuffix(host, x[1:])) {
+			return true
+		}
+	}
+	return false
 }
 
 func ownHosts() map[string]bool {

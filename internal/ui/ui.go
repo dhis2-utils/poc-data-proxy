@@ -92,6 +92,14 @@ func StatusBody(h *core.Hub) map[string]any {
 	out := map[string]any{"mode": mode, "hubId": h.HubID(), "lastPush": nullable(lastPush), "lastPull": nullable(lastPull),
 		"pending": h.Store.CountObjects(store.SyncPending), "rejected": h.Store.CountObjects(store.SyncRejected),
 		"version": h.Version, "locked": !h.Store.Unlocked(), "setup": h.Mode() == core.ModeSetup}
+	if h.Retired() {
+		out["retired"] = true
+		out["message"] = "this hub was replaced by another hub for the facility; it only sends its remaining changes"
+	}
+	if n := h.StuckOutbox(); n > 0 {
+		out["stuckOutbox"] = n
+		out["message"] = fmt.Sprintf("%d queued change(s) wait for their author to log in online; ask them to, or an admin to review", n)
+	}
 	if h.ServerVersion() != "" && h.API() == nil {
 		out["needsUpgrade"] = true
 		out["message"] = "hub needs upgrade: DHIS2 " + h.ServerVersion() + " is not supported by this hub release"
@@ -138,14 +146,15 @@ func (u *UI) admin(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// sameOrigin refuses cross-site form posts to the admin pages. Without an Origin
-// header it relies on Sec-Fetch-Site, which browsers send on every request.
+// sameOrigin refuses cross-site form posts to the setup and admin pages. Browsers send
+// Origin on form posts, and Sec-Fetch-Site on every request; a post with neither is
+// refused (REVIEW-2 F9).
 func sameOrigin(r *http.Request) bool {
 	if o := r.Header.Get("Origin"); o != "" {
 		return o == "http://"+r.Host || o == "https://"+r.Host
 	}
 	site := r.Header.Get("Sec-Fetch-Site")
-	return site == "" || site == "same-origin" || site == "none"
+	return site == "same-origin" || site == "none"
 }
 
 func (u *UI) handleLogin(w http.ResponseWriter, r *http.Request) {

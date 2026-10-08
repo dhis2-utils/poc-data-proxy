@@ -2,16 +2,25 @@
 package e2e
 
 import (
+	"bytes"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/config"
 	"github.com/dhis2/facility-hub/internal/core"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 	"github.com/dhis2/facility-hub/internal/store"
+	"github.com/dhis2/facility-hub/internal/ui"
 )
 
 // M2: a write accepted while an upgrade copies the store would be lost with the
@@ -81,6 +90,10 @@ func TestHostHeader(t *testing.T) {
 	st, body := a.doHost("alias.test", "GET", "/dhis-web-capture/index.html", nil)
 	if st != 200 || !strings.Contains(string(body), `content="http://alias.test"`) {
 		t.Fatalf("online, base URL not pointed at the hub: %d %s", st, body)
+	}
+	// The cache holds central's own form, never the requesting Host.
+	if c, _ := e.app.Hub.Store.GetCacheAnyUser("GET", "/dhis-web-capture/index.html"); c == nil || bytes.Contains(c.Body, []byte("alias.test")) {
+		t.Fatalf("cached copy carries the requesting Host: %v", c)
 	}
 	e.offline()
 	st, body = b.do("GET", "/dhis-web-capture/index.html", nil) // served from nurse_a's cache entry
@@ -162,29 +175,61 @@ func TestLoginThrottle(t *testing.T) {
 	e.web("nurse_a").login()
 }
 
-// M8: with a central URL in the image defaults, the setup page cannot point the hub
-// elsewhere; without one, only an https URL is accepted.
+// M8, REVIEW-2 F1: nobody at the setup page can choose the central server. With
+// central_url only, the form value is ignored; with central_hosts, the URL must be on
+// them; with neither, setup needs the token from the label. Cross-site posts are
+// refused, and a failed attempt leaves the hub's central URL as it was.
 func TestSetupCentralURL(t *testing.T) {
 	e := newEnv(t)
-	post := func(centralURL string) string {
-		resp, err := e.web("hub_admin").http.PostForm(e.srv.URL+"/hub/setup", url.Values{"step": {"login"},
-			"central_url": {centralURL}, "username": {"hub_admin"}, "password": {fc.Password}})
+	h := e.app.Hub
+	post := func(origin string, form url.Values) (int, string) {
+		form.Set("step", "login")
+		form.Set("username", "hub_admin")
+		form.Set("password", fc.Password)
+		req, _ := http.NewRequest("POST", e.srv.URL+"/hub/setup", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		resp, err := e.web("hub_admin").http.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer resp.Body.Close()
 		b, _ := io.ReadAll(resp.Body)
-		return string(b)
+		return resp.StatusCode, string(b)
 	}
-	e.app.Hub.Cfg.CentralURL = ""
-	if page := post("http://attacker.example"); !strings.Contains(page, "https://") {
+	before := h.Central.BaseURL()
+
+	if st, _ := post("https://evil.example", url.Values{"central_url": {"https://attacker.example"}}); st != 403 {
+		t.Fatalf("cross-site setup post: %d", st)
+	}
+
+	h.Cfg.CentralURL, h.Cfg.CentralHosts = "", nil // token mode
+	if err := ui.EnsureSetupToken(h); err != nil {
+		t.Fatal(err)
+	}
+	if _, page := post(e.srv.URL, url.Values{"central_url": {"https://attacker.example"}}); !strings.Contains(page, "wrong setup token") {
+		t.Fatalf("setup without token: %s", page)
+	}
+	tok, _ := os.ReadFile(filepath.Join(e.dir, "setup-token"))
+	if _, page := post(e.srv.URL, url.Values{"central_url": {"http://attacker.example"}, "setup_token": {string(tok)}}); !strings.Contains(page, "https://") {
 		t.Fatalf("plain http central URL accepted: %s", page)
 	}
-	e.app.Hub.Cfg.CentralURL = e.cSrv.URL
-	if page := post("https://attacker.example"); !strings.Contains(page, "This hub now serves") {
+
+	h.Cfg.CentralURL, h.Cfg.CentralHosts = e.cSrv.URL, []string{"*.hmis.example"}
+	if _, page := post(e.srv.URL, url.Values{"central_url": {"https://attacker.example"}}); !strings.Contains(page, "must be an https URL on") {
+		t.Fatalf("URL outside central_hosts accepted: %s", page)
+	}
+	if got := h.Central.BaseURL(); got != before {
+		t.Fatalf("failed setup changed the central URL to %s", got)
+	}
+
+	h.Cfg.CentralHosts = nil // central_url only: the form value is ignored
+	if _, page := post(e.srv.URL, url.Values{"central_url": {"https://attacker.example"}}); !strings.Contains(page, "This hub now serves") {
 		t.Fatalf("setup with pinned URL failed: %s", page)
 	}
-	if got := e.app.Hub.Central.BaseURL(); got != e.cSrv.URL {
+	if got := h.Central.BaseURL(); got != e.cSrv.URL {
 		t.Fatalf("hub points at %s", got)
 	}
 }
@@ -248,4 +293,186 @@ func TestCreatedByKept(t *testing.T) {
 	if cb, _ := o.Data["createdBy"].(map[string]any); cb["username"] != "nurse_a" || o.Data["createdAt"] == "2000-01-01T00:00:00.000" {
 		t.Fatalf("createdBy %v createdAt %v", o.Data["createdBy"], o.Data["createdAt"])
 	}
+}
+
+// REVIEW-2 F1, F2: a signed release manifest can move hubs to a new central URL (a
+// domain migration); an unsigned one can do nothing, and none of its content is kept.
+func TestCentralMoveBySignedManifest(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	h := e.app.Hub
+	moved := httptest.NewServer(e.central) // the same DHIS2 at a new address
+	t.Cleanup(moved.Close)
+
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	files := map[string][]byte{}
+	channel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, ok := files[strings.TrimPrefix(r.URL.Path, "/")]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write(b)
+	}))
+	t.Cleanup(channel.Close)
+	h.Cfg.ReleaseChannel = channel.URL
+	h.Cfg.ReleasePublicKey = base64.StdEncoding.EncodeToString(pub)
+	manifest := []byte(`{"version":"0.1.0","files":{},"sha256":{},"centralUrl":"` + moved.URL + `","stage":{"percent":100}}`)
+
+	files["release.json"] = manifest // unsigned
+	e.sync()
+	if h.Central.BaseURL() != e.cSrv.URL || strings.Contains(h.Store.Meta("upgrade_unsigned"), "0.1.0") {
+		t.Fatalf("unsigned manifest acted on: %s %q", h.Central.BaseURL(), h.Store.Meta("upgrade_unsigned"))
+	}
+
+	files["release.json.sig"] = []byte(base64.StdEncoding.EncodeToString(ed25519.Sign(priv, manifest)))
+	e.sync()
+	if h.Central.BaseURL() != moved.URL || h.Store.Meta(core.MetaCentralURL) != moved.URL {
+		t.Fatalf("not moved: %s", h.Central.BaseURL())
+	}
+}
+
+// The setup user (often a district officer) may not see every program facility staff
+// work in. The hub caches the union of the programs its users can see.
+func TestProgramsBeyondSetupUser(t *testing.T) {
+	e := newEnv(t)
+	e.central.Users["hub_admin"].NoProgramMeta = true
+	e.setup()
+	if n := len(e.app.Hub.Catalog().Programs); n != 0 {
+		t.Fatalf("setup user sees %d programs", n)
+	}
+	a := e.web("nurse_a")
+	a.login()
+	if e.app.Hub.Catalog().Programs[fc.Program] == nil {
+		t.Fatal("nurse_a's program not added at login")
+	}
+	e.sync()
+	if e.app.Hub.Catalog().Programs[fc.Program] == nil {
+		t.Fatal("program dropped on sync")
+	}
+	e.offline()
+	got := uids(a.json("GET", "/api/tracker/trackedEntities?orgUnits="+fc.Facility+"&program="+fc.Program, nil, 200)["trackedEntities"], "trackedEntity")
+	if !contains(got, "SeedTe00001") {
+		t.Fatalf("program not pulled for nurse_a: %v", got)
+	}
+}
+
+// REVIEW-2 F5: a central user outside the facility gets no key slot or stored token.
+func TestOutsiderNotRegistered(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.web("outsider_d").login()
+	if u, _ := e.app.Hub.Store.UserByName("outsider_d"); u != nil {
+		t.Fatal("outsider got a key slot")
+	}
+}
+
+// REVIEW-2 F4: per-user metadata is not served from another user's cache offline;
+// offline answers say so in X-Hub-Mode, and narrowed searches in X-Hub-Scope.
+func TestPerUserMetadataNotShared(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	b := e.web("nurse_b")
+	b.login()
+	tree := "/api/42/organisationUnits?fields=id&withinUserHierarchy=true"
+	a.do("GET", tree, nil)
+	a.do("GET", "/api/organisationUnits/"+fc.Facility+"?fields=id", nil)
+	e.offline()
+	if st, _ := b.do("GET", tree, nil); st != 503 {
+		t.Fatalf("nurse_b got nurse_a's org unit tree offline: %d", st)
+	}
+	if st, _ := b.do("GET", "/api/organisationUnits/"+fc.Facility+"?fields=id", nil); st != 200 {
+		t.Fatalf("one org unit by UID not shared: %d", st)
+	}
+	req, _ := http.NewRequest("GET", e.srv.URL+"/api/tracker/trackedEntities?orgUnitMode=ACCESSIBLE&program="+fc.Program, nil)
+	req.SetBasicAuth("nurse_a", fc.Password)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 || resp.Header.Get("X-Hub-Mode") != "offline" || resp.Header.Get("X-Hub-Scope") != "facility" {
+		t.Fatalf("offline search headers: %d %v", resp.StatusCode, resp.Header)
+	}
+}
+
+// REVIEW-2 F8: without password_fallback, a user the hub cannot create a PAT for has
+// no stored password, and offline changes are refused rather than queued for ever.
+func TestNoPasswordFallback(t *testing.T) {
+	e := newEnv(t)
+	e.central.Users["nurse_a"].NoPAT = true
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	if u, _ := e.app.Hub.Store.UserByName("nurse_a"); u == nil || u.HasPAT || u.HasPassword {
+		t.Fatalf("user: %+v", u)
+	}
+	e.offline()
+	a.json("POST", postSync, newPatient("NoPatTe0001", "NoPatEn0001", "NoPat", "", nil), 503)
+	if n := e.app.Hub.Store.CountOutbox(store.OutboxPending); n != 0 {
+		t.Fatalf("%d entries queued without a way to send them", n)
+	}
+}
+
+// REVIEW-2 F7, F9: no wildcard Host, security headers on hub pages, and form posts
+// without Origin or Sec-Fetch-Site are refused.
+func TestHubPageHardening(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "hub.yaml")
+	os.WriteFile(f, []byte("hub_hosts: *\n"), 0o644)
+	if _, err := config.Load(f); err == nil {
+		t.Fatal(`hub_hosts: "*" accepted`)
+	}
+	e := newEnv(t)
+	resp, err := http.Get(e.srv.URL + "/hub/setup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	for _, k := range []string{"Content-Security-Policy", "X-Frame-Options", "X-Content-Type-Options"} {
+		if resp.Header.Get(k) == "" {
+			t.Errorf("missing %s", k)
+		}
+	}
+	resp, err = http.PostForm(e.srv.URL+"/hub/setup", url.Values{"step": {"login"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 403 {
+		t.Fatalf("post without Origin or Sec-Fetch-Site: %d", resp.StatusCode)
+	}
+}
+
+// REVIEW-2 F9: a hub the registry marks as replaced stops serving patient data
+// offline, keeps pushing, wipes nothing, and serves again if the entry is restored.
+func TestRetiredHubStopsServing(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.sync()
+	h := e.app.Hub
+	setStatus := func(status string) {
+		v := e.central.DataStoreValue("facility-hub-registry", h.HubID())
+		v["status"] = status
+		b, _ := json.Marshal(v)
+		e.central.DataStore["facility-hub-registry"][h.HubID()] = b
+		e.sync()
+	}
+	search := "/api/tracker/trackedEntities?orgUnits=" + fc.Facility + "&program=" + fc.Program
+
+	setStatus("retired")
+	e.offline()
+	a.json("POST", postSync, newPatient("RetTe000001", "RetEn000001", "Ret", "", nil), 503)
+	a.json("GET", search, nil, 503)
+	if h.Index.Len() == 0 {
+		t.Fatal("retired hub wiped its data")
+	}
+	e.online()
+	setStatus("active")
+	e.offline()
+	a.json("GET", search, nil, 200)
 }

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -82,8 +83,11 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet {
-		u.render(w, "setup", map[string]any{"CentralURL": firstNonEmpty(h.Cfg.CentralURL, h.Central.BaseURL()), "Pinned": h.Cfg.CentralURL != "",
-			"HubID": h.HubID(), "Step": ""})
+		u.render(w, "setup", u.setupForm(nil))
+		return
+	}
+	if !sameOrigin(r) {
+		http.Error(w, "cross-origin request refused", http.StatusForbidden)
 		return
 	}
 	r.ParseForm()
@@ -97,6 +101,12 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 		if f := u.Auth.Throttled(src, user); f != nil {
 			err = errors.New("too many failed logins; try again later")
 			break
+		}
+		if h.SetupMode() == core.SetupToken {
+			if err = checkSetupToken(h, r.FormValue("setup_token")); err != nil {
+				u.Auth.Count(src, user, true)
+				break
+			}
 		}
 		p, err = u.setupLogin(ctx, r.FormValue("central_url"), user, r.FormValue("password"))
 		u.Auth.Count(src, user, err != nil)
@@ -123,8 +133,9 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		u.render(w, "setup", map[string]any{"Error": err.Error(), "Pinned": h.Cfg.CentralURL != "", "CentralURL": firstNonEmpty(h.Cfg.CentralURL, r.FormValue("central_url"),
-			h.Central.BaseURL(), h.Cfg.CentralURL), "HubID": h.HubID(), "Pending": p, "Step": ""})
+		data := u.setupForm(p)
+		data["Error"] = err.Error()
+		u.render(w, "setup", data)
 		return
 	}
 	switch {
@@ -142,29 +153,52 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 		u.setup.mu.Lock()
 		u.setup.pending = nil
 		u.setup.mu.Unlock()
+		os.Remove(setupTokenPath(h)) // used; a reset makes a new one
 		core.SetSessionCookie(w, sess, h.Cfg.TLS, h.Sessions.Max)
 		u.render(w, "setup_done", map[string]any{"Facility": p.Facility, "HubID": h.HubID()})
 	}
 }
 
+// setupForm is the data for the first setup page. The URL shown comes only from the
+// image, never from an earlier submission, which a cross-site post could have made.
+func (u *UI) setupForm(p *pendingSetup) map[string]any {
+	h := u.H
+	return map[string]any{"CentralURL": h.Cfg.CentralURL, "Pinned": h.SetupMode() == core.SetupPinned,
+		"NeedToken": h.SetupMode() == core.SetupToken, "Hosts": strings.Join(h.Cfg.CentralHosts, ", "),
+		"HubID": h.HubID(), "Pending": p, "Step": ""}
+}
+
 // setupLogin runs spec 6.2 steps 2-5.
-func (u *UI) setupLogin(ctx context.Context, centralURL, username, password string) (*pendingSetup, error) {
+func (u *UI) setupLogin(ctx context.Context, centralURL, username, password string) (p *pendingSetup, err error) {
 	h := u.H
 	centralURL = strings.TrimRight(strings.TrimSpace(centralURL), "/")
-	if h.Cfg.CentralURL != "" {
-		// The image pins the server: whoever reaches the setup page first must not
-		// point the hub, and every later staff login, at another server (review M8).
+	switch {
+	case h.SetupMode() == core.SetupPinned || centralURL == "":
 		centralURL = h.Cfg.CentralURL
-	} else if pu, err := url.ParseRequestURI(centralURL); err != nil || pu.Scheme != "https" || pu.Host == "" {
+	case !h.CentralAllowed(centralURL):
+		// Whoever reaches the setup page must not point the hub, and every later staff
+		// login, at another server (review M8, REVIEW-2 F1).
+		if len(h.Cfg.CentralHosts) > 0 {
+			return nil, fmt.Errorf("the central server must be an https URL on %s", strings.Join(h.Cfg.CentralHosts, ", "))
+		}
 		return nil, errors.New("enter the central server's https:// URL")
 	}
+	if centralURL == "" {
+		return nil, errors.New("enter the central server's https:// URL")
+	}
+	prev := h.Central.BaseURL()
+	defer func() {
+		if err != nil {
+			h.Central.SetBaseURL(prev) // a failed attempt leaves nothing behind
+		}
+	}()
 	h.Central.SetBaseURL(centralURL)
 	if !h.Monitor.Probe(ctx, centralURL) {
 		return nil, errors.New("central server is not reachable; the hub must be online during setup")
 	}
 	auth := central.Auth{Username: username, Password: password}
 	me := &setupMe{}
-	err := h.Central.JSON(ctx, "GET", central.Q("/api/me", "fields", "id,username,userGroups[id],organisationUnits[id,name,code,level,path]"), nil, auth, me)
+	err = h.Central.JSON(ctx, "GET", central.Q("/api/me", "fields", "id,username,userGroups[id],organisationUnits[id,name,code,level,path]"), nil, auth, me)
 	if err != nil {
 		if central.Status(err) == 401 {
 			return nil, errors.New("wrong username or password")
@@ -181,8 +215,8 @@ func (u *UI) setupLogin(ctx context.Context, centralURL, username, password stri
 	if compat.For(version) == nil {
 		return nil, fmt.Errorf("this hub release does not support DHIS2 %s (supported: %v); upgrade the hub first", version, compat.SupportedMajors())
 	}
-	p := &pendingSetup{Nonce: core.NewUID(), CentralURL: centralURL, Username: username, Password: password, Me: me,
-		Version: version, Expires: time.Now().Add(15 * time.Minute)}
+	p = &pendingSetup{Nonce: core.NewUID(), CentralURL: centralURL, Username: username, Password: password, Me: me,
+		Version: version, Expires: time.Now().Add(5 * time.Minute)} // holds the password
 	if len(me.OrganisationUnits) == 1 {
 		f := me.OrganisationUnits[0]
 		p.Facility = &f

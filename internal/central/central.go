@@ -284,16 +284,36 @@ func (m *Monitor) ForcedOffline() bool {
 
 // Probe pings central once and updates the state: offline after 2 failures,
 // online after 1 success.
+// probeClient does not follow redirects: a captive portal redirects to itself.
+var probeClient = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
+// isCentral tells central's answer to an anonymous ping from a captive portal or a
+// proxy error page (REVIEW-2 F9): "pong", 401, or a redirect to central's own login
+// page (what 2.42 answers) count; anything else does not.
+func isCentral(baseURL string, resp *http.Response) bool {
+	switch {
+	case resp.StatusCode == http.StatusOK:
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 64))
+		return strings.TrimSpace(string(b)) == "pong"
+	case resp.StatusCode == http.StatusUnauthorized:
+		return true
+	case resp.StatusCode >= 300 && resp.StatusCode < 400:
+		loc, err := resp.Request.URL.Parse(resp.Header.Get("Location"))
+		base, berr := url.Parse(baseURL)
+		return err == nil && berr == nil && strings.EqualFold(loc.Host, base.Host)
+	}
+	return false
+}
+
 func (m *Monitor) Probe(ctx context.Context, baseURL string) bool {
 	ok := false
 	if baseURL != "" {
 		ctx, cancel := context.WithTimeout(ctx, m.Timeout)
 		defer cancel()
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/system/ping", nil)
-		if resp, err := http.DefaultClient.Do(req); err == nil {
-			io.Copy(io.Discard, resp.Body)
+		if resp, err := probeClient.Do(req); err == nil {
+			ok = isCentral(baseURL, resp)
 			resp.Body.Close()
-			ok = resp.StatusCode < 500
 		}
 	}
 	m.mu.Lock()

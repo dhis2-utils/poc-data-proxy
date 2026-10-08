@@ -51,7 +51,7 @@ The image holds **no secrets**. Each hub gets its own data key, hub ID and signi
 
 1. Flash the image onto the SSDs, for example with a USB duplicator or `rpi-imager --cli` in a loop.
 2. Assemble the kits and power each one on once on the depot network. This runs first boot, sets the clock, creates the hub ID and checks that it can reach central.
-3. Print and stick the label (hub ID, address, QR code). The depot list of hub IDs becomes the inventory; it matches the `facility-hub-registry` namespace on central.
+3. Print and stick the label (hub ID, address, QR code, and the setup token from `data_dir/setup-token` if the image names no central server). The depot list of hub IDs becomes the inventory; it matches the `facility-hub-registry` namespace on central.
 4. Pack it with a one-page installation card.
 
 No facility is assigned at the depot. Any box can go anywhere.
@@ -72,7 +72,7 @@ No facility is assigned at the depot. Any box can go anywhere.
 
 ### Replacing or moving a hub
 
-- **Replacement:** set up a spare at the facility and confirm "replace the old hub". The old one is marked retired in the registry. Anything the old hub had not pushed is lost, which is why the UPS and SSD matter.
+- **Replacement:** set up a spare at the facility and confirm "replace the old hub". The old one is marked retired in the registry; if it is still running and online, it stops serving patient data and only sends what it has not pushed. Then collect it and reset it. Anything an old hub that is dead had not pushed is lost, which is why the UPS and SSD matter.
 - **Decommissioning:** use "Reset hub" in the admin page. It pushes the outbox, wipes the store and returns to setup mode. Then revoke its PATs centrally.
 - **Theft:** the store is unreadable without a staff password, because the data key is only in memory. It is only as strong as the weakest password among the users with a key slot, though: whoever holds the SSD can test password guesses offline against each slot, and a cracked password is also that user's central DHIS2 password. Treat a stolen hub as a possible password leak: ask its users to change their passwords. Revoke the hub's and users' PATs on central **(to build: a "revoke all tokens of this hub" action)**.
 
@@ -208,7 +208,7 @@ A hub only serves its own facility. A community health worker's tablet that visi
 
 ### Security operations
 
-- **Protect the data store namespaces** on central (`facility-hub-*`). By default any user can write them (FINDINGS.md).
+- **Protect the data store namespaces** on central (`facility-hub-*`) before the first hub goes out. By default any user can write them (FINDINGS.md): a forged registry entry can retire a hub (it then stops serving offline, though it keeps its data) or block setup of a facility.
 - **Hub token:** use a dedicated low-privilege "hub system" user per country, not the setup user's personal token (FINDINGS.md).
 - **PAT hygiene:**
   - PATs expire after `pat_expiry_days` (default 90) and renew at online login.
@@ -216,7 +216,9 @@ A hub only serves its own facility. A community health worker's tablet that visi
   - Hubs show those users as "needs online login".
 - **Physical access:** data at rest is encrypted, and the key is only in memory after a staff login. A stolen hub reveals no patient data without a staff password, but a powered-on hub that is moved keeps its key until it loses power.
 - **Passwords protect the disk.** Each key slot can be attacked offline by whoever holds the SSD (Argon2id slows this down; it does not stop weak passwords). Enforce central's password policy for hub users. The hub removes slots of users who have not logged in for `key_slot_max_age`.
-- **TPM (recommended for production).** A TPM add-on board (about USD 25 for the Pi) could hold a device secret mixed into every key slot, so an SSD on its own is useless and the TPM limits how fast passwords can be guessed **(to build)**.
+- **TPM (a requirement for a national rollout).** A TPM add-on board (about USD 25 for the Pi) could hold a device secret mixed into every key slot, so an SSD on its own is useless and the TPM limits how fast passwords can be guessed **(to build)**.
+- **What the encryption does not cover.** AES-XTS keeps the data file confidential but does not detect tampering outside the sealed rows; someone with write access to the disk can corrupt it. And once a staff member logs in, the whole facility's data is decrypted in the hub's memory: a running hub is a more valuable target than its disk.
+- **Central server address:** set `central_url` (and `central_hosts` for alternatives) in the image so nobody at a hub can choose another server. Domain migrations go through a signed release (`hub release -central-url`), not new images.
 - **Host names:** if devices reach the hub by a name other than its host name, `hub.local` or its IP (for example a router DNS name), list it in `hub_hosts`; the hub refuses unknown `Host` headers.
 
 ## 7. Rollout plan

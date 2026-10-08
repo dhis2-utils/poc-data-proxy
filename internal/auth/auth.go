@@ -188,6 +188,12 @@ func (a *Auth) registerOnline(ctx context.Context, username, password string, wi
 		slog.Warn("login: /api/me failed", "user", username, "err", err)
 		return h.Sessions.New(0, username, with)
 	}
+	if facility := h.Facility(); facility != "" && !me.Belongs(facility, h.Cfg.SetupUserGroup) {
+		// Only facility staff and hub admins get a key slot and a stored token. Anyone
+		// else is passed through to central, as when the store is locked (REVIEW-2 F5).
+		slog.Info("login: user is not facility staff; pass-through only", "user", username)
+		return h.Sessions.New(0, username, with)
+	}
 	userID, err := a.ensureKeySlot(username, me.ID, password)
 	if err != nil {
 		slog.Warn("login: user not registered on hub", "user", username, "err", err)
@@ -201,7 +207,8 @@ func (a *Auth) registerOnline(ctx context.Context, username, password string, wi
 		slog.Warn("login: PAT", "user", username, "err", err)
 	}
 	h.Store.SetNeedsLogin(userID, false) // central just accepted the password
-	if err := h.RefreshAccess(ctx, userID); err != nil {
+	h.AddUserPrograms(ctx, with)
+	if err := h.RefreshAccessWith(ctx, userID, with); err != nil {
 		slog.Warn("login: access refresh", "user", username, "err", err)
 	}
 	a.storeMe(ctx, userID)

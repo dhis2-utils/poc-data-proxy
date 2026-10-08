@@ -43,12 +43,14 @@ func release(args []string) error {
 	percent := fs.Int("percent", 100, "staged rollout percentage")
 	hubs := fs.String("hubs", "", "comma-separated hub IDs always in the stage")
 	unsigned := fs.Bool("unsigned", false, "publish without a signature (to test that hubs ignore it)")
+	centralURL := fs.String("central-url", "", "move every hub to this central URL (domain migration)")
 	fs.Parse(args)
 	if *ver == "" || fs.NArg() == 0 {
 		return fmt.Errorf("need -version and at least one os/arch=binary")
 	}
 	m := upgrade.Manifest{Version: *ver, Files: map[string]string{}, SHA256: map[string]string{}}
 	m.Stage.Percent = *percent
+	m.CentralURL = *centralURL
 	if *hubs != "" {
 		m.Stage.HubIDs = strings.Split(*hubs, ",")
 	}

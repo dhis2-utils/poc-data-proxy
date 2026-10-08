@@ -76,6 +76,9 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 		}}
 	worker.AfterCycle = up.Check
 	u := &ui.UI{H: h, Auth: a, Worker: worker}
+	if err := ui.EnsureSetupToken(h); err != nil {
+		return nil, fmt.Errorf("setup token: %w", err)
+	}
 	u.Reset = func() error { return Reset(h, worker) }
 
 	// The hub's own pages use a ServeMux. Everything else is dispatched by hand: a
@@ -100,6 +103,11 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 		}
 		switch {
 		case p == "/hub" || strings.HasPrefix(p, "/hub/"):
+			hdr := w.Header()
+			hdr.Set("X-Content-Type-Options", "nosniff")
+			hdr.Set("X-Frame-Options", "DENY")
+			hdr.Set("Referrer-Policy", "no-referrer")
+			hdr.Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; form-action 'self'")
 			hubMux.ServeHTTP(w, r)
 		case p == "/api/auth/login":
 			a.HandleLogin(w, r)
@@ -160,6 +168,9 @@ func reset(h *core.Hub, w *hubsync.Worker) error {
 		return err
 	}
 	EnsureIdentity(h.Store)
+	if err := ui.EnsureSetupToken(h); err != nil {
+		slog.Error("reset: setup token", "err", err)
+	}
 	slog.Info("hub reset; back in setup mode", "hubId", h.HubID())
 	return nil
 }
@@ -194,7 +205,7 @@ func logRequests(cfg config.Config, next http.Handler) http.Handler {
 		t := time.Now()
 		sw := &statusWriter{ResponseWriter: w, status: 200}
 		next.ServeHTTP(sw, r)
-		slog.Info("request", "method", r.Method, "path", r.URL.Path, "query", core.SafeQuery(r.URL.Query()), "client", core.ClientKind(r),
+		slog.Info("request", "method", r.Method, "path", core.Template(r.URL.Path), "query", core.SafeQuery(r.URL.Query()), "client", core.ClientKind(r),
 			"status", sw.status, "ms", time.Since(t).Milliseconds())
 	})
 }
