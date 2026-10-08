@@ -40,7 +40,7 @@ var payload = []byte(`{"event":"%s","program":"PrgAbcdefgh","programStage":"StgA
 func obj(i int) *Object {
 	uid := fmt.Sprintf("Ev%09d", i)
 	return &Object{UID: uid, Kind: KindEvent, TE: "Te0000000001", Enrollment: "En000000001", Program: "PrgAbcdefgh",
-		Stage: "StgAbcdefgh", Origin: OriginCentral, SyncState: "synced", Payload: []byte(fmt.Sprintf(string(payload), uid))}
+		Stage: "StgAbcdefgh", Origin: OriginCentral, SyncState: "synced", Slot: int64(i + 1), Payload: []byte(fmt.Sprintf(string(payload), uid))}
 }
 
 func fill(b *testing.B, s *Store, n int) {
