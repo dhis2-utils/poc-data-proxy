@@ -19,7 +19,7 @@
 # SIZES="name:tes:enrollments:events ..." (default 30k, 100k, the HC IV target "hc4" and
 # the pessimistic one), DURATION of the realistic load (5m), HAMMER of the hammer run (2m).
 #
-# MEM overrides the profile's memory limit (e.g. MEM=6g for pi5 in an 8 GB Docker VM).
+# MEM overrides the profile's memory limit (e.g. MEM=2g).
 #
 # IO=0 skips the disk limits (for instance if Docker refuses the device). DEVICE is the
 # block device the limits apply to: in Docker Desktop, the VM's disk, /dev/vda.
@@ -38,13 +38,13 @@ USERS=${USERS:-60}
 # "bench" against a real Pi and adjust (docs/PERFORMANCE.md, "Mimicking a Pi").
 limits() {
 	case "$1" in
-	pi4) # Pi 4, 4 GB, SD card
-		set -- --cpus 0.8 --memory 4g --memory-swap 4g
+	pi4) # Pi 4, 1 GB, SD card
+		set -- --cpus 0.8 --memory 1g --memory-swap 1g
 		[ "$IO" = 1 ] && set -- "$@" --device-write-bps "$DEVICE:10mb" --device-read-bps "$DEVICE:40mb" \
 			--device-write-iops "$DEVICE:500" --device-read-iops "$DEVICE:1500"
 		;;
-	pi5) # Pi 5, 8 GB, USB SSD: CPU and memory only
-		set -- --cpus 1.6 --memory 8g --memory-swap 8g ;;
+	pi5) # Pi 5, 4 GB, USB SSD: CPU and memory only
+		set -- --cpus 1.6 --memory 4g --memory-swap 4g ;;
 	none) set -- ;;
 	*) echo "profile must be pi4, pi5 or none" >&2; exit 2 ;;
 	esac

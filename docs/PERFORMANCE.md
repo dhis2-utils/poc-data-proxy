@@ -36,12 +36,12 @@ perf/pi.sh ladder pi4     # the same with the Pi 4 profile
 
 `ladder` runs, for each data size (30 000 and 100 000 people, the HC IV target and the pessimistic one, with enrollments and events in the same proportions; `SIZES` to change), a fresh constrained hub, fills it from the generated central, runs the realistic 60-user load (`DURATION`, 5 minutes) and then the hammer run (`HAMMER`, 2 minutes) on it, samples the hub's memory and CPU every 10 seconds, and appends the key numbers per size to `summary.txt`: first pull, latencies per operation, Android download, reconnect, peak memory, and whether the hub was killed for memory. `up`, `load`, `stats` and `reset` remain for single runs.
 
-The hub's data lives on a Docker volume (`hub-pi-data`), not a bind mount, so the disk limits apply to it. Docker Desktop needs memory for the profile's limit plus the fake central (about 10 GB for `pi5`), and the broker's DHIS2 instances share that VM.
+The hub's data lives on a Docker volume (`hub-pi-data`), not a bind mount, so the disk limits apply to it. Docker Desktop needs memory for the profile's limit plus the fake central (about 6 GB for `pi5`), and the broker's DHIS2 instances share that VM.
 
 | Profile | Models | `--cpus` | `--memory` | Disk |
 |---|---|---|---|---|
-| `pi4` | Pi 4, 4 GB, SD card | 0.8 | 4g | 10 MB/s and 500 IOPS write, 40 MB/s and 1 500 IOPS read |
-| `pi5` | Pi 5, 8 GB, USB SSD | 1.6 | 8g | unrestricted |
+| `pi4` | Pi 4, 1 GB, SD card | 0.8 | 1g | 10 MB/s and 500 IOPS write, 40 MB/s and 1 500 IOPS read |
+| `pi5` | Pi 5, 4 GB, USB SSD | 1.6 | 4g | unrestricted |
 
 `--cpus` caps total CPU time, not per-core speed, and one Apple Silicon core is roughly 2.5–3 times as fast as a Pi 5 core. The numbers above are starting points. **Calibrate them:** run the same benchmarks (`perf/pi.sh bench`: sealing, writing, reading and opening encrypted objects from `internal/store/bench_test.go`, plus `fio` 4k random write and read) on a real Pi and in the container, then adjust `--cpus` and the I/O limits until they match. One real Pi run settles any remaining doubt. Device I/O limits in Docker Desktop apply to the VM's disk (`/dev/vda`); if `fio` shows they have no effect, rely on the real Pi for the disk numbers.
 
