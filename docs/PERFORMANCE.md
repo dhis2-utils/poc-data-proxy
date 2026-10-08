@@ -158,3 +158,81 @@ Hammer run in the sandbox (unconstrained, 10 %, 50 users, no think time), before
 | Errors | none | none |
 
 Searches remain linear in the facility's size (about half of a search is now the sort); keeping each program's people pre-sorted is the next step if the ladder shows it is needed.
+
+## Sizing for a busy urban HC IV, and what follows (2026-10-08)
+
+Sizing for one very busy HC IV: an effective catchment of about 250 000 people, 250 working days a year, a 5-year horizon, each service its own tracker program.
+
+| Program | Peak clients / day | Enrollments / year | Events / year | Enrollments, 5 yrs | Events, 5 yrs |
+|---|---|---|---|---|---|
+| OPD | 800 | 120 000 | 200 000 | 600 000 | 1 000 000 |
+| Inpatient | 30 admissions | 7 000 | 30 000 | 35 000 | 150 000 |
+| ANC | 150 | 6 000 | 36 000 | 30 000 | 180 000 |
+| Maternity / delivery | 25 | 4 000 | 12 000 | 20 000 | 60 000 |
+| Postnatal | 60 | 4 000 | 12 000 | 20 000 | 60 000 |
+| Immunisation | 400 | 7 000 | 50 000 | 35 000 | 250 000 |
+| Family planning | 100 | 5 000 | 20 000 | 25 000 | 100 000 |
+| HIV testing | 150 | 20 000 | 20 000 | 100 000 | 100 000 |
+| HIV care / ART | 300 | 800 new + 6 000 existing | 48 000 → 72 000 | 10 000 | 300 000 |
+| TB | 40 | 500 | 5 000 | 2 500 | 25 000 |
+| Nutrition | 80 | 4 000 | 16 000 | 20 000 | 80 000 |
+| NCD (hypertension, diabetes) | 150 | 1 500 new + 3 000 existing | 40 000 → 100 000 | 10 500 | 400 000 |
+| Laboratory | 400 requests | 50 000 | 80 000 | 250 000 | 400 000 |
+| **Total** | ~2 700 contacts (~1 500 unique clients) | ~230 000 | ~570 000 → 650 000 | ~1.2 M | ~3.1 M |
+
+Notes on the sizing:
+
+- **Backlogs:** ART and NCD start with existing patients, and their visits grow each year (year 1 → year 5).
+- **Pharmacy** is folded into the other programs.
+- **Episodes:** OPD, HIV testing and the laboratory enrol per episode, so their enrollments come close to their visits.
+- **Peak day:** summing the per-program peaks into one day is deliberately pessimistic.
+- **Comparison:** the busiest HC IV in the 27 September use report (Butenga) averaged 175 clients per recorded day, so these bounds are 5–10 times what eRegisters shows today.
+
+**People.** About one person per enrollment (1.2 M) would mean nobody ever searches before registering; OPD alone would make most of it. Even with poor deduplication most returning patients are found. The targets are **300 000** people (catchment plus migration, lightly duplicated) and **700 000** (systematic duplication of OPD walk-ins).
+
+**Load per hour.** Dividing the daily volumes over 9–15 core hours:
+
+| | Per day | Per hour | Per second |
+|---|---|---|---|
+| New people (300 k / 700 k over 5 years) | 240 / 560 | 16–62 | ≤ 0.02 |
+| New enrollments | 920 | 61–102 | ~0.03 |
+| New events (year 5) | 2 600 | 173–289 | ~0.08 |
+| Reads (about 10 per service contact) | 27 000 | 1 800–3 000 | 0.5–0.8 |
+| Android incremental syncs (35 devices, every 15 min) | | 140 | 0.04 |
+
+That is about one request per second on average, perhaps five in a morning peak. The "realistic" load run (50 users, 2–10 s between actions, about 10 requests per second) and the hammer run (about 100 per second) remain stress tests above that. The ladder gets a third, **paced** run: writes and reads at these per-hour rates (peak = 5 times the average), which is the one the pass criteria apply to.
+
+**Android downloads.** With the Android Settings App, devices download a limited number of people per program and org unit (the default is 500), not the whole facility. The load runs should use the limit the deployment configures. "Every device downloads everything" stays as the worst case.
+
+**What this means for the hub.** 1.2 M enrollments, 3.1 M events and 0.3–0.7 M people are about 5 M records; at about 2 KB per record in memory under load (measured after today's fixes) that is around 10 GB, beyond a 4 or 8 GB device. Two changes, in this order.
+
+### 1. Retention by programme
+
+Keeping five years of everything locally is not needed. All people are kept, so search and deduplication work offline; each program keeps its enrollments and events for a window of its own.
+
+- **The table.** Program → months (for example OPD 3, laboratory 6, maternal 24, HIV care and NCD "while active"), with a default. It lives in central's dataStore next to the hub registry, so a country sets it once; the hub reads it at each sync, like the catalog.
+- **Pulls.** A program pull asks for enrollments that are active (any age) or enrolled within that program's window (`enrollmentStatus=ACTIVE`, `enrollmentEnrolledAfter=…`). An active ART patient keeps their full history.
+- **People.** Everyone registered at the facility is already pulled without enrollments (the per-type pull), so keeping all people needs no new mechanism.
+- **Pruning.** A periodic job deletes synced enrollments, with their events, that fell out of their window: completed or cancelled, enrolled before the cut-off, nothing pending.
+- **Offline behaviour.** A returning patient is found; their old enrollment answers "needs connection"; a new episode can be enrolled as usual. In a program that allows only one enrollment ever, Capture cannot see the old completed one offline, and central rejects a second one on push, unless the hub keeps a list of who was ever enrolled in such programs. To decide.
+- **Tests.** The oracle narrows central's answer to each program's window, as it narrows it to the facility's ownership today.
+
+### 2. The query index in SQLite (prototype first)
+
+Today a working list scans all of a program's people in memory and sorts them on every request, which is linear in the facility's size and about half of a search's cost in today's profiles. With indexed columns in the data file (program, owner, status, dates, attribute values), the same list reads its page from an index whatever the size. Single-record lookups become a fraction of a millisecond slower; free-text name search is a scan either way unless restricted to prefix matches. Memory stays flat (about the page cache), and the hub has one store instead of a store plus an in-memory mirror. The visibility bitmaps stay in memory: they are small.
+
+This is an expectation, so it is settled by measurement: a prototype of the two queries that matter (working lists, paged downloads) in SQLite, run on the same ladder against the current in-memory version.
+
+**Security.**
+
+- **Confidentiality unchanged.** The data file is encrypted page by page (AES-256-XTS, key derived from the data key, which exists only in memory), so indexed columns are as encrypted at rest as everything else in it. The objects table already keeps program, stage and owner as such columns.
+- **What changes.** Today each record's payload also has its own authenticated encryption (AES-GCM) inside the encrypted file; attribute values copied into index columns would have only the file's encryption, which hides them but does not detect tampering. Someone able to write to the disk can already alter the visibility bitmaps and object columns, which have the same protection, so the threat model does not change.
+- **No plaintext on disk.** Sorting stays in memory (`temp_store=memory`), and the journal and WAL go through the same encrypting layer. The scenario test that greps the disk for plaintext covers this, and gets a search on attribute values added.
+- **Plaintext in memory.** Decrypted pages sit in SQLite's page cache, as decrypted objects sit in today's index.
+
+### Next ladder targets
+
+| Target | People | Enrollments | Events | Users | Devices |
+|---|---|---|---|---|---|
+| Busy HC IV, with retention by programme | 300 000 | about 0.5 M (windows plus active) | about 1.2 M | 60 | 35, with Android download limits |
+| Pessimistic | 700 000 | 1.2 M | 3.1 M | 60 | 35 |
