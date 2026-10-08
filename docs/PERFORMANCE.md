@@ -10,7 +10,7 @@ Question: can a hub on Raspberry Pi-class hardware serve **50 users working offl
 | Enrollments | over 5 years, 6 programs (about 80 new per day: a busy facility) | 150 k |
 | Events | about 3.3 per enrollment | 500 k |
 | Payload | ~1 KB per TE and event, ~0.5 KB per enrollment, as JSON | ~0.7 GB raw |
-| Users | 36 Capture web, 14 Android (at most 2 Android to 5 web users), all registered with the hub while online | 50 |
+| Users | 35 Capture web, 15 Android (30 %), all registered with the hub while online | 50 |
 
 ## Expected bottlenecks (from reading the code; the test confirms or refutes them)
 
@@ -55,8 +55,8 @@ Importing this volume into DHIS2 for one facility would take hours. Instead, a r
 
 The 50 virtual users log in while the hub is online, then the uplink is cut (Netcut, as in the live suite). Request patterns come from what the real apps send (recorded by `clients/capture_web.py` and the Android exploration):
 
-- **Web user** (36): open a working list (page 1, newest first), search by name or ID, open the enrollment dashboard (TE, enrollments, events, relationships), add an event, then edit data values. Think time is 2–10 s in the *realistic* run and zero in the *hammer* run.
-- **Android user** (14): a first full download of the user's programs (the heaviest request set), then incremental syncs every 5 minutes and uploads of new events.
+- **Web user** (35): open a working list (page 1, newest first), search by name or ID, open the enrollment dashboard (TE, enrollments, events, relationships), add an event, then edit data values. Think time is 2–10 s in the *realistic* run and zero in the *hammer* run.
+- **Android user** (15): a first full download of the user's programs (the heaviest request set), then incremental syncs every 5 minutes and uploads of new events.
 - **Reconnect**: after the offline period, the uplink comes back with the backlog of all 50 users' writes, and the push must finish without loss or duplicates.
 
 ## What is measured
@@ -198,7 +198,7 @@ Notes on the sizing:
 | New enrollments | 920 | 61–102 | ~0.03 |
 | New events (year 5) | 2 600 | 173–289 | ~0.08 |
 | Reads (about 10 per service contact) | 27 000 | 1 800–3 000 | 0.5–0.8 |
-| Android incremental syncs (17 devices, every 15 min) | | 68 | 0.02 |
+| Android incremental syncs (18 devices, every 15 min) | | 72 | 0.02 |
 
 That is about one request per second on average, perhaps five in a morning peak. The "realistic" load run (50 users, 2–10 s between actions, about 10 requests per second) and the hammer run (about 100 per second) remain stress tests above that. The ladder gets a third, **paced** run: writes and reads at these per-hour rates (peak = 5 times the average), which is the one the pass criteria apply to.
 
@@ -234,5 +234,5 @@ This is an expectation, so it is settled by measurement: a prototype of the two 
 
 | Target | People | Enrollments | Events | Users | Devices |
 |---|---|---|---|---|---|
-| Busy HC IV, with retention by programme | 300 000 | about 0.5 M (windows plus active) | about 1.2 M | 60 | 17 Android (2 Android to 5 web users), with download limits |
-| Pessimistic | 700 000 | 1.2 M | 3.1 M | 60 | 17 Android |
+| Busy HC IV, with retention by programme | 300 000 | about 0.5 M (windows plus active) | about 1.2 M | 60 | 18 Android (30 %), with download limits |
+| Pessimistic | 700 000 | 1.2 M | 3.1 M | 60 | 18 Android |
