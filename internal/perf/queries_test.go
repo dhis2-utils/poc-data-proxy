@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -38,7 +39,8 @@ func TestQueries(t *testing.T) {
 	report := []string{
 		fmt.Sprintf("scale: %d TEs, %d enrollments, %d events, %d users; %d objects", s.TEs, s.Enrollments, s.Events, users,
 			e.App.Hub.Index.Len()),
-		fmt.Sprintf("first pull: %s; heap %.0f MB; store on disk %.0f MB", pull.Round(time.Millisecond), heapMB(), dirMB(e.Dir)),
+		fmt.Sprintf("first pull: %s; heap %.0f MB; store on disk %.0f MB (%s)", pull.Round(time.Millisecond), heapMB(),
+			dirMB(e.Dir), files(e.Dir)),
 	}
 
 	c := clients[0]
@@ -103,6 +105,18 @@ func TestQueries(t *testing.T) {
 	if p := os.Getenv("HUB_PERF_OUT"); p != "" {
 		os.WriteFile(p, []byte(out+"\n"), 0o644)
 	}
+}
+
+// files lists the store's files over 1 MB with their sizes.
+func files(dir string) string {
+	var out []string
+	filepath.Walk(dir, func(p string, fi os.FileInfo, err error) error {
+		if err == nil && !fi.IsDir() && fi.Size() > 1<<20 {
+			out = append(out, fmt.Sprintf("%s %.0f MB", filepath.Base(p), float64(fi.Size())/(1<<20)))
+		}
+		return nil
+	})
+	return strings.Join(out, ", ")
 }
 
 const androidFields = "&fields=trackedEntity,orgUnit,attributes[attribute,value],enrollments[enrollment,program,status," +

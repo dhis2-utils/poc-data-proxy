@@ -436,6 +436,10 @@ func (s *Store) SetDK(k hubcrypto.Key) error {
 		db.Close()
 		return fmt.Errorf("moving data out of the key file: %w", err)
 	}
+	if err := s.prepareWrites(db); err != nil {
+		db.Close()
+		return fmt.Errorf("preparing statements: %w", err)
+	}
 	s.mu.Lock()
 	s.dk, s.data = k, db
 	s.mu.Unlock()

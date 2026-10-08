@@ -53,6 +53,40 @@ type Object struct {
 // Attr is one attribute value of a tracked entity, as queries search it.
 type Attr struct{ Attr, Value string }
 
+// The writes run inside transactions. They are prepared when the store unlocks
+// (prepareWrites): preparing takes a connection of its own, which a transaction must
+// not wait for while other writers hold the rest of the pool waiting for its lock.
+const (
+	sqlPutObject = `INSERT INTO objects(uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at,
+ origin, sync_state, payload_enc, slot, created_at, status, rel_from, rel_to, slim, te_created)
+ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+ CASE WHEN ?2 = 'enrollment' THEN coalesce((SELECT created_at FROM objects WHERE uid = ?3 AND kind = 'trackedEntity'), '') ELSE '' END)
+ON CONFLICT(uid) DO UPDATE SET kind=excluded.kind, te_uid=excluded.te_uid, enrollment_uid=excluded.enrollment_uid,
+ program=excluded.program, stage=excluded.stage, tet=excluded.tet, owner_org_unit=excluded.owner_org_unit,
+ updated_at=excluded.updated_at, origin=excluded.origin, sync_state=excluded.sync_state, payload_enc=excluded.payload_enc,
+ slot=coalesce(objects.slot, excluded.slot), created_at=excluded.created_at, status=excluded.status,
+ rel_from=excluded.rel_from, rel_to=excluded.rel_to, slim=excluded.slim, te_created=excluded.te_created`
+	sqlTECreated     = `UPDATE objects INDEXED BY objects_te SET te_created = ? WHERE te_uid = ? AND kind = 'enrollment' AND te_created <> ?`
+	sqlDeleteAttrs   = `DELETE FROM te_attrs WHERE te_uid = ?`
+	sqlInsertAttr    = `INSERT OR REPLACE INTO te_attrs(te_uid, attr, value, value_lc) VALUES(?,?,?,?)`
+	sqlSetSyncState  = `UPDATE objects SET sync_state=? WHERE uid=?`
+	sqlPutVisibility = `INSERT INTO visibility_bits(user_id, chunk, bits) VALUES(?,?,?)
+ON CONFLICT(user_id, chunk) DO UPDATE SET bits=excluded.bits`
+	sqlAddTEScope = `INSERT OR IGNORE INTO te_scopes(te_uid, scope) VALUES(?,?)`
+)
+
+var writeStatements = []string{sqlPutObject, sqlTECreated, sqlDeleteAttrs, sqlInsertAttr, sqlSetSyncState, sqlPutVisibility, sqlAddTEScope}
+
+// prepareWrites prepares the write statements on the data file.
+func (s *Store) prepareWrites(db *sql.DB) error {
+	for _, q := range writeStatements {
+		if _, err := s.stmt(db, q); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func objAAD(uid string) string { return "obj:" + uid }
 
 // PutObject inserts or replaces an object row. An object keeps the slot it was first
@@ -66,29 +100,21 @@ func (s *Store) PutObject(q Execer, o *Object) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.exec(q, `INSERT INTO objects(uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at,
- origin, sync_state, payload_enc, slot, created_at, status, rel_from, rel_to, slim, te_created)
- VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
- CASE WHEN ?2 = 'enrollment' THEN coalesce((SELECT created_at FROM objects WHERE uid = ?3 AND kind = 'trackedEntity'), '') ELSE '' END)
-ON CONFLICT(uid) DO UPDATE SET kind=excluded.kind, te_uid=excluded.te_uid, enrollment_uid=excluded.enrollment_uid,
- program=excluded.program, stage=excluded.stage, tet=excluded.tet, owner_org_unit=excluded.owner_org_unit,
- updated_at=excluded.updated_at, origin=excluded.origin, sync_state=excluded.sync_state, payload_enc=excluded.payload_enc,
- slot=coalesce(objects.slot, excluded.slot), created_at=excluded.created_at, status=excluded.status,
- rel_from=excluded.rel_from, rel_to=excluded.rel_to, slim=excluded.slim, te_created=excluded.te_created`,
+	_, err = s.exec(q, sqlPutObject,
 		o.UID, o.Kind, o.TE, o.Enrollment, o.Program, o.Stage, o.TET, o.OwnerOrgUnit, o.UpdatedAt, o.Origin, o.SyncState, ct,
 		o.Slot, o.CreatedAt, o.Status, o.RelFrom, o.RelTo, string(o.Slim))
 	if err != nil || o.Kind != KindTrackedEntity {
 		return err
 	}
-	if _, err := s.exec(q, `UPDATE objects INDEXED BY objects_te SET te_created = ? WHERE te_uid = ? AND kind = 'enrollment' AND te_created <> ?`,
+	if _, err := s.exec(q, sqlTECreated,
 		o.CreatedAt, o.UID, o.CreatedAt); err != nil {
 		return err
 	}
-	if _, err := s.exec(q, `DELETE FROM te_attrs WHERE te_uid = ?`, o.UID); err != nil {
+	if _, err := s.exec(q, sqlDeleteAttrs, o.UID); err != nil {
 		return err
 	}
 	for _, a := range o.Attrs {
-		if _, err := s.exec(q, `INSERT OR REPLACE INTO te_attrs(te_uid, attr, value, value_lc) VALUES(?,?,?,?)`,
+		if _, err := s.exec(q, sqlInsertAttr,
 			o.UID, a.Attr, a.Value, strings.ToLower(a.Value)); err != nil {
 			return err
 		}
@@ -97,7 +123,7 @@ ON CONFLICT(uid) DO UPDATE SET kind=excluded.kind, te_uid=excluded.te_uid, enrol
 }
 
 func (s *Store) SetSyncState(q Execer, uid, state string) error {
-	_, err := s.exec(q, `UPDATE objects SET sync_state=? WHERE uid=?`, state, uid)
+	_, err := s.exec(q, sqlSetSyncState, state, uid)
 	return err
 }
 
@@ -375,8 +401,7 @@ func (s *Store) VisibilityChunks() (map[int64]map[int64][]byte, error) {
 
 // PutVisibilityChunk stores one chunk of a user's visibility bitmap.
 func (s *Store) PutVisibilityChunk(q Execer, user, chunk int64, bits []byte) error {
-	_, err := s.exec(q, `INSERT INTO visibility_bits(user_id, chunk, bits) VALUES(?,?,?)
-ON CONFLICT(user_id, chunk) DO UPDATE SET bits=excluded.bits`, user, chunk, bits)
+	_, err := s.exec(q, sqlPutVisibility, user, chunk, bits)
 	return err
 }
 
@@ -401,7 +426,7 @@ func (s *Store) TEScopes() (map[string][]string, error) {
 }
 
 func (s *Store) AddTEScope(q Execer, te, scope string) error {
-	_, err := s.exec(q, `INSERT OR IGNORE INTO te_scopes(te_uid, scope) VALUES(?,?)`, te, scope)
+	_, err := s.exec(q, sqlAddTEScope, te, scope)
 	return err
 }
 
@@ -493,14 +518,17 @@ func (s *Store) stmt(db *sql.DB, query string) (*sql.Stmt, error) {
 	return st, err
 }
 
-// exec runs query on q, the data file or a transaction on it, through a statement
-// prepared once.
+// exec runs query on q, the data file or a transaction on it, through its statement
+// prepared at unlock; anything else runs unprepared, so a transaction never needs a
+// second connection.
 func (s *Store) exec(q Execer, query string, args ...any) (sql.Result, error) {
 	db := s.DB()
-	st, err := s.stmt(db, query)
-	if err != nil {
-		return nil, err
+	s.stmts.mu.Lock()
+	var st *sql.Stmt
+	if s.stmts.db == db {
+		st = s.stmts.m[query]
 	}
+	s.stmts.mu.Unlock()
 	switch t := q.(type) {
 	case *sql.Tx:
 		if st != nil {

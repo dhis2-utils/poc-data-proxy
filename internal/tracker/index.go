@@ -350,7 +350,7 @@ type Viewer struct {
 	Facility    string
 	Catalog     *access.Catalog
 
-	payloads map[string]M       // full payloads loaded for this request (prefetch)
+	payloads map[string]M      // full payloads loaded for this request (prefetch)
 	related  map[string][]*Obj // children looked up for this request (enrollmentsFor and the like)
 }
 

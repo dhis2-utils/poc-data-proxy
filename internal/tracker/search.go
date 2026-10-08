@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -127,6 +128,11 @@ func (ix *Index) run(v *Viewer, p *plan, want int) ([]*Obj, bool, *APIError) {
 	var out []*Obj
 	early := want > 0 && p.order != ""
 	query := p.sel
+	if !p.needData {
+		// Nothing reads the rows' slim data: leave it out (the page's objects are read
+		// again in full by Search).
+		query = slimCol.ReplaceAllString(query, "''")
+	}
 	if p.order != "" {
 		query += " ORDER BY " + p.order
 	}
@@ -134,7 +140,7 @@ func (ix *Index) run(v *Viewer, p *plan, want int) ([]*Obj, bool, *APIError) {
 	// and nothing holds a connection while the checks run their own queries.
 	chunk := 0
 	if early {
-		chunk = 64
+		chunk = want + 1 // a page and one more, to know whether more follow
 	}
 	for off := 0; ; off += chunk {
 		q, args := query, p.args
@@ -194,6 +200,9 @@ func (ix *Index) run(v *Viewer, p *plan, want int) ([]*Obj, bool, *APIError) {
 	}
 	return out, false, nil
 }
+
+// slimCol matches the slim column in store.ObjectCols.
+var slimCol = regexp.MustCompile(`coalesce\(([a-z]+\.)?slim, ''\)`)
 
 // row converts a row; without needData its slim data stays encoded until rendering
 // asks for it (withData).
@@ -317,9 +326,20 @@ func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *A
 	if more {
 		res.Total++ // the page is full and more follow; the exact total was not asked for
 	}
-	shown := page(objs, pg, size, paged)
+	shown := slices.Clone(page(objs, pg, size, paged))
+	var bare []string
+	for _, o := range shown {
+		if o.Data == nil && len(o.raw) == 0 {
+			bare = append(bare, o.UID)
+		}
+	}
+	got := ix.GetMany(bare) // rows read without their slim data
 	for i, o := range shown {
-		shown[i] = withData(o)
+		if n := got[o.UID]; n != nil {
+			shown[i] = n
+		} else {
+			shown[i] = withData(o)
+		}
 	}
 	ix.prefetch(v, shown, fields)
 	for _, o := range shown {
@@ -368,12 +388,18 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *API
 		w.add("t.tet = ?", tet)
 	}
 	w.in("t.uid", uids)
+	// With a program the filter refers to the enrollment's person, so SQLite applies it
+	// before looking the person up.
+	person := "t.uid"
+	if program != "" {
+		person = "e.te_uid"
+	}
 	for _, f := range filters {
 		cond, val := "a.value_lc LIKE ? ESCAPE '\\'", likePattern(f.value)
 		if f.op == "eq" {
 			cond, val = "a.value_lc = ?", strings.ToLower(f.value)
 		}
-		w.add("EXISTS (SELECT 1 FROM te_attrs a WHERE a.te_uid = t.uid AND a.attr = ? AND "+cond+")", f.uid, val)
+		w.add("EXISTS (SELECT 1 FROM te_attrs a WHERE a.te_uid = "+person+" AND a.attr = ? AND "+cond+")", f.uid, val)
 	}
 	// Changed people are found once: as a list when few (an incremental sync), else
 	// checked per row.
