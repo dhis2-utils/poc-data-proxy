@@ -26,14 +26,13 @@ Points 1 and 2 together probably exceed a 4 GB Pi and leave little headroom on 8
 The sandbox has no Docker, so the constrained hub runs on the **host** as a container on `dev-net`, and the load generator runs outside it (in the sandbox), so that it does not steal the hub's CPU:
 
 ```bash
-perf/pi.sh build                                   # image: hub, fake central, hubload, benchmarks (perf/Dockerfile)
-perf/pi.sh bench pi5                               # calibration numbers into perf/results/
-TES=10000 ENROLLMENTS=15000 EVENTS=50000 perf/pi.sh up pi5   # 10 % first; without the variables, the full target
-perf/pi.sh load -setup -fill -duration 10m         # set up, fill, 10 minutes offline load, reconnect: perf/results/load-*.txt
-perf/pi.sh load -duration 10m -think 0             # the hammer run on the same filled hub
-perf/pi.sh stats                                   # CPU and memory, once (run it during the load)
-perf/pi.sh reset                                   # remove the containers and the hub's data
+perf/pi.sh build          # image: hub, fake central, hubload, benchmarks (perf/Dockerfile)
+perf/pi.sh bench pi5      # calibration numbers into perf/results/
+perf/pi.sh ladder pi5     # the scale ladder (below): results and summary.txt in perf/results/ladder-pi5-*
+perf/pi.sh ladder pi4     # the same with the Pi 4 profile
 ```
+
+`ladder` runs, for each data size (10, 25, 50, 100 and 200 % of the target; `SIZES` to change), a fresh constrained hub, fills it from the generated central, runs the realistic 50-user load (`DURATION`, 5 minutes) and then the hammer run (`HAMMER`, 2 minutes) on it, samples the hub's memory and CPU every 10 seconds, and appends the key numbers per size to `summary.txt`: first pull, latencies per operation, Android download, reconnect, peak memory, and whether the hub was killed for memory. `up`, `load`, `stats` and `reset` remain for single runs.
 
 The hub's data lives on a Docker volume (`hub-pi-data`), not a bind mount, so the disk limits apply to it. Docker Desktop needs memory for the profile's limit plus the fake central (about 10 GB for `pi5`), and the broker's DHIS2 instances share that VM.
 
@@ -85,7 +84,7 @@ The hammer run has no pass criteria; it reports where the hub saturates and how 
 
 ## Scale ladder
 
-Run 10 %, 25 %, 50 %, 100 % and 200 % of the target (100 % = 100 k TEs, 150 k enrollments, 500 k events), each with 5, 10, 25 and 50 users, on both profiles. The output is one table per profile showing where each criterion first fails, which says what a Pi can carry today and how much headroom the target leaves.
+Run 10 %, 25 %, 50 %, 100 % and 200 % of the target (100 % = 100 k TEs, 150 k enrollments, 500 k events) with 50 users, on both profiles (`perf/pi.sh ladder`); fewer users (`USERS=10`) where a size fails, to tell data size from concurrency. The output is one table per profile showing where each criterion first fails, which says what a Pi can carry today and how much headroom the target leaves.
 
 ## Order of work
 

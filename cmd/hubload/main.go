@@ -55,6 +55,7 @@ func main() {
 		log.Print(s)
 		report = append(report, s)
 	}
+	waitUp(3 * time.Minute)
 	if *doSetup {
 		setup()
 		note("hub set up")
@@ -149,6 +150,19 @@ func status() string {
 	b, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	return string(b)
+}
+
+// waitUp waits until the hub answers at all (a container that has just started).
+func waitUp(timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if resp, err := http0.Get(*hubURL + "/hub/status"); err == nil {
+			resp.Body.Close()
+			return
+		}
+		time.Sleep(2 * time.Second)
+	}
+	log.Fatalf("hub at %s not answering after %s", *hubURL, timeout)
 }
 
 func waitStatus(ok func(map[string]any) bool, timeout time.Duration) {
