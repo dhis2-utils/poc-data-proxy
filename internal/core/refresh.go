@@ -44,11 +44,12 @@ type Me struct {
 	UserGroups                 []idRef  `json:"userGroups"`
 }
 
-// Belongs reports whether the user may register on the hub: the facility is one of
-// their capture org units, or they are in the setup user group.
-func (m *Me) Belongs(facility, setupGroup string) bool {
+// Belongs reports whether the user may register on the hub: the facility (with this
+// path) is in their capture scope, or they are in the setup user group.
+func (m *Me) Belongs(facilityPath, setupGroup string) bool {
+	// The facility, or an org unit above it: capture scope includes what is below.
 	for _, o := range m.OrganisationUnits {
-		if o.ID == facility {
+		if strings.Contains(facilityPath+"/", "/"+o.ID+"/") {
 			return true
 		}
 	}
