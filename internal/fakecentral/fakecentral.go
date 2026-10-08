@@ -73,6 +73,7 @@ type Central struct {
 	Version   string
 	// Requests counts calls per "METHOD path" for assertions.
 	Requests map[string]int
+	gen      *generated // Generate: performance-test data
 	jobs     map[string][]byte
 	jobN     int
 }
@@ -401,13 +402,20 @@ func (c *Central) programs(w http.ResponseWriter, r *http.Request, u *User) {
 			"trackedEntityTypeAttributes": []any{attr(AttrFirstName, false, false), attr(AttrLastName, false, false)}},
 		"programStages":                  stages,
 		"programTrackedEntityAttributes": []any{attr(AttrNationalI, false, true), attr(AttrTBID, true, true)}}
-	writeJSON(w, 200, map[string]any{"programs": []any{prog}})
+	progs := []any{prog}
+	if c.gen != nil {
+		progs = append(progs, c.gen.programMeta()...)
+	}
+	writeJSON(w, 200, map[string]any{"programs": progs})
 }
 
 // canSeeEvent applies stage read access (central drops unreadable events silently).
 func canSeeEvent(u *User, ev tracker.M) bool { return u.StageRead[tracker.Str(ev, "programStage")] }
 
 func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
+	if c.gen != nil && c.gen.listTEs(w, r) {
+		return
+	}
 	q := r.URL.Query()
 	byType := q.Get("program") == "" && q.Get("trackedEntityType") == TET // registered here, no enrollments
 	if !byType && (q.Get("program") != Program || !u.ProgramRead) {
@@ -571,6 +579,9 @@ func (c *Central) importTracker(w http.ResponseWriter, r *http.Request, u *User)
 			if failed[it.Enrollment] {
 				failed[it.UID] = true // ignored without an error report of its own (as observed)
 				continue
+			}
+			if c.gen.has(it.Enrollment) {
+				break // a generated enrollment: every generated user may write in it
 			}
 			if !u.StageWrite[tracker.Str(it.Data, "programStage")] {
 				fail("E1095", "User has no data write access to ProgramStage")

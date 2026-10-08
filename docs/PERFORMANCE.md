@@ -26,11 +26,13 @@ Points 1 and 2 together probably exceed a 4 GB Pi and leave little headroom on 8
 The sandbox has no Docker, so the constrained hub runs on the **host** as a container on `dev-net`, and the load generator runs outside it (in the sandbox), so that it does not steal the hub's CPU:
 
 ```bash
-perf/pi.sh build          # image with the hub, the fake central and the benchmarks (perf/Dockerfile)
-perf/pi.sh bench pi5      # calibration numbers into perf/results/
-perf/pi.sh up pi5         # fake central + constrained hub on dev-net: http://hub-pi:8080
-perf/pi.sh stats          # CPU and memory, once
-perf/pi.sh down           # remove the containers; reset also deletes the data volume
+perf/pi.sh build                                   # image: hub, fake central, hubload, benchmarks (perf/Dockerfile)
+perf/pi.sh bench pi5                               # calibration numbers into perf/results/
+TES=10000 ENROLLMENTS=15000 EVENTS=50000 perf/pi.sh up pi5   # 10 % first; without the variables, the full target
+perf/pi.sh load -setup -fill -duration 10m         # set up, fill, 10 minutes offline load, reconnect: perf/results/load-*.txt
+perf/pi.sh load -duration 10m -think 0             # the hammer run on the same filled hub
+perf/pi.sh stats                                   # CPU and memory, once (run it during the load)
+perf/pi.sh reset                                   # remove the containers and the hub's data
 ```
 
 The hub's data lives on a Docker volume (`hub-pi-data`), not a bind mount, so the disk limits apply to it. Docker Desktop needs memory for the profile's limit plus the fake central (about 10 GB for `pi5`), and the broker's DHIS2 instances share that VM.
@@ -87,8 +89,13 @@ Run 10 %, 25 %, 50 %, 100 % and 200 % of the target (100 % = 100 k TEs, 150 k en
 
 ## Order of work
 
-1. `fakecentral` generator mode and snapshotting; micro-benchmarks.
-2. `cmd/hubload` with the web and Android user models; a sandbox soft-limit pass up the ladder, to find the knee early.
-3. Dockerfile and host container profiles; calibration against a real Pi if one is available.
-4. The full ladder on both profiles; findings go to `docs/FINDINGS.md`.
-5. Design and fix whatever breaks first (likely the in-memory index and per-user visibility), then re-run.
+1. **Done:** the generated central (`fakecentral -tes -enrollments -events -users`, `internal/fakecentral/generate.go`), the storage benchmarks, `cmd/hubload` (web and Android users, the uplink cut, the reconnect), `internal/perf` (`HUB_PERF_SCALE=… go test ./internal/perf`: first pull, memory, disk, reboot in process) and the container (`perf/`).
+2. A sandbox pass up the ladder with soft limits, to find the knee early.
+3. Calibration against a real Pi, if one is available; the full ladder in the container on both profiles. Findings go to `docs/FINDINGS.md`.
+4. Design and fix whatever breaks first, then re-run.
+
+## Found so far
+
+- **Concurrent offline writes failed** with `500 database is locked` (6 % of writes with 6 users and no think time). SQLite's busy timeout cannot help a deferred transaction that reads and then needs the write lock; write transactions now begin immediate. Fixed.
+- **"Sync now" in the admin page** ran its own cycle with a 10-minute limit, next to the scheduler's. A first pull at the target size takes longer, so it would have been cut off; it now asks the scheduler, which runs one cycle at a time without a limit. `/hub/status` reports `syncing` and `syncStarted`.
+- **Every user pulls everything they can read.** With 50 users, the first sync moves 50 copies of the facility's data through the uplink and the hub, and so does each daily full pull (`full_pull_interval`). To be measured; a shared pull with per-user filtering would move one.

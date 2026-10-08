@@ -1,4 +1,4 @@
-# The hub, the fake central and the calibration benchmarks in one image, for the
+# The hub, the fake central, the load generator and the calibration benchmarks in one image, for the
 # performance test (docs/PERFORMANCE.md). Build from the repository root:
 #   docker build -f perf/Dockerfile -t facility-hub-perf .
 # On Apple Silicon the image is linux/arm64, the Raspberry Pi's architecture.
@@ -10,6 +10,7 @@ COPY . .
 ENV CGO_ENABLED=0
 RUN go build -o /out/hub ./cmd/hub \
  && go build -o /out/fakecentral ./cmd/fakecentral \
+ && go build -o /out/hubload ./cmd/hubload \
  && go test -c -o /out/store.bench ./internal/store
 
 FROM alpine:3.22
