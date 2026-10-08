@@ -22,6 +22,7 @@ type Index struct {
 	pending  map[string]uint32   // slots handed out to objects not yet in the index
 	scopes   map[string][]string // tracked entity -> pull scopes fetched in full (store.TEScopes)
 	store    *store.Store        // set by Load: objects are then held slim (slim.go)
+	results  resultCache         // sorted results kept for later pages (results.go)
 }
 
 // NewStoreIndex is the index of a hub's store: objects are held slim (slim.go) from
@@ -87,6 +88,7 @@ func (ix *Index) Load(s *store.Store) error {
 	ix.nextSlot = uint32(s.MaxSlot())
 	ix.mu.Unlock()
 	ix.visMu.Unlock()
+	ix.clearResults()
 	return nil
 }
 
@@ -99,6 +101,7 @@ func (ix *Index) Clear() {
 	ix.nextSlot = 0
 	ix.mu.Unlock()
 	ix.visMu.Unlock()
+	ix.clearResults()
 }
 
 func FromStore(o *store.Object) (*Obj, error) {

@@ -153,7 +153,8 @@ func paging(q url.Values) (page, size int, paged, totals bool, err *APIError) {
 
 // parseTime accepts the date forms DHIS2 accepts in query parameters.
 func parseTime(s string) (time.Time, bool) {
-	for _, l := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.000", "2006-01-02T15:04:05", "2006-01-02T15:04", "2006-01-02"} {
+	// DHIS2's own form first: stored values use it.
+	for _, l := range []string{"2006-01-02T15:04:05.000", time.RFC3339Nano, "2006-01-02T15:04:05", "2006-01-02T15:04", "2006-01-02"} {
 		if t, err := time.Parse(l, s); err == nil {
 			return t, true
 		}
@@ -167,6 +168,9 @@ type timeFilter struct {
 }
 
 func (f timeFilter) match(data M, q url.Values) (bool, *APIError) {
+	if q.Get(f.after) == "" && q.Get(f.before) == "" {
+		return true, nil // no bound: nothing to parse (this ran for every object of every search)
+	}
 	val, _ := parseTime(Str(data, f.field))
 	if s := q.Get(f.after); s != "" {
 		t, ok := parseTime(s)
@@ -271,18 +275,30 @@ func sortObjs(objs []*Obj, order string, attrKey func(*Obj, string) string) {
 		keys = []key{{"createdAt", false}}
 	}
 	keys = append(keys, key{"uid", false}) // stable tie-breaker
-	slices.SortStableFunc(objs, func(a, b *Obj) int {
-		for _, k := range keys {
-			var va, vb string
+	// Each object's sort values once, not on every comparison (map lookups in the
+	// comparator were a seventh of a search's cost; docs/PERFORMANCE.md).
+	type row struct {
+		o    *Obj
+		vals []string
+	}
+	rows := make([]row, len(objs))
+	for i, o := range objs {
+		vals := make([]string, len(keys))
+		for j, k := range keys {
 			switch {
 			case k.field == "uid":
-				va, vb = a.UID, b.UID
+				vals[j] = o.UID
 			case ValidUID(k.field) && attrKey != nil:
-				va, vb = attrKey(a, k.field), attrKey(b, k.field)
+				vals[j] = attrKey(o, k.field)
 			default:
-				va, vb = Str(a.Data, k.field), Str(b.Data, k.field)
+				vals[j] = Str(o.Data, k.field)
 			}
-			if c := strings.Compare(va, vb); c != 0 {
+		}
+		rows[i] = row{o, vals}
+	}
+	slices.SortStableFunc(rows, func(a, b row) int {
+		for j, k := range keys {
+			if c := strings.Compare(a.vals[j], b.vals[j]); c != 0 {
 				if k.desc {
 					return -c
 				}
@@ -291,6 +307,9 @@ func sortObjs(objs []*Obj, order string, attrKey func(*Obj, string) string) {
 		}
 		return 0
 	})
+	for i, r := range rows {
+		objs[i] = r.o
+	}
 }
 
 // --- rendering ---------------------------------------------------------------
@@ -491,24 +510,42 @@ func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *A
 	var objs []*Obj
 	var render func(*Obj) M
 	var err *APIError
+	key := ix.resultKey(v, collection, q)
+	cached, hit := []*Obj(nil), false
+	if paged && pg > 1 {
+		cached, hit = ix.cachedResult(key)
+	}
 	switch collection {
 	case "trackedEntities":
-		objs, err = ix.searchTEs(v, q, program)
+		if !hit {
+			objs, err = ix.searchTEs(v, q, program)
+		}
 		render = func(o *Obj) M { return ix.RenderTE(v, o, fields, program) }
 	case "enrollments":
-		objs, err = ix.searchEnrollments(v, q, program)
+		if !hit {
+			objs, err = ix.searchEnrollments(v, q, program)
+		}
 		render = func(o *Obj) M { return ix.RenderEnrollment(v, o, fields) }
 	case "events":
-		objs, err = ix.searchEvents(v, q, program)
+		if !hit {
+			objs, err = ix.searchEvents(v, q, program)
+		}
 		render = func(o *Obj) M { return ix.RenderEvent(v, o, fields) }
 	case "relationships":
-		objs, err = ix.searchRelationships(v, q)
+		if !hit {
+			objs, err = ix.searchRelationships(v, q)
+		}
 		render = func(o *Obj) M { return clone(ix.fullFor(v, o)) }
 	default:
 		return nil, NeedsConnection(collection)
 	}
 	if err != nil {
 		return nil, err
+	}
+	if hit {
+		objs = ix.visible(v, cached) // access may have changed since page 1
+	} else if paged {
+		ix.cacheResult(key, objs)
 	}
 	res := &Result{Collection: collection, Total: len(objs), Page: pg, PageSize: size, Paging: paged, TotalPages: totals,
 		Items: []M{}}
@@ -539,18 +576,33 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) ([]*Obj, *AP
 	}
 	upd := timeFilter{"updatedAt", "updatedAfter", "updatedBefore"}
 	enrolled := timeFilter{"enrolledAt", "enrollmentEnrolledAfter", "enrollmentEnrolledBefore"}
+	// With a program: the people with a visible enrollment in it that passes the
+	// status and enrolment-date filters, found from the program's enrollments in one
+	// pass (looking up each person's enrollments again was a sixth of a search).
+	var inProgram map[string]bool
+	if program != "" {
+		inProgram = map[string]bool{}
+		for _, e := range ix.visible(v, ix.related("penr:"+program)) {
+			if inProgram[e.TE] || (status != "" && Str(e.Data, "status") != status) {
+				continue
+			}
+			ok, err := enrolled.match(e.Data, q)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				inProgram[e.TE] = true
+			}
+		}
+	}
 	var cands []*Obj
 	switch {
 	case len(uids) > 0:
 		cands = ix.byUIDs(store.KindTrackedEntity, uids)
 	case program != "":
-		seen := map[string]bool{}
-		for _, e := range ix.related("penr:" + program) {
-			if !seen[e.TE] {
-				seen[e.TE] = true
-				if o := ix.Get(e.TE); o != nil {
-					cands = append(cands, o)
-				}
+		for te := range inProgram {
+			if o := ix.Get(te); o != nil {
+				cands = append(cands, o)
 			}
 		}
 	case tet != "":
@@ -571,24 +623,8 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) ([]*Obj, *AP
 		} else if !ok {
 			continue
 		}
-		if program != "" {
-			found := false
-			for _, e := range ix.visible(v, ix.EnrollmentsOf(o.UID)) {
-				if e.Program != program || (status != "" && Str(e.Data, "status") != status) {
-					continue
-				}
-				ok, err := enrolled.match(e.Data, q)
-				if err != nil {
-					return nil, err
-				}
-				if ok {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
+		if program != "" && !inProgram[o.UID] {
+			continue
 		}
 		if len(filters) > 0 {
 			vals := attrValues(M{"attributes": filterAttributes(v, o.TET, o.Data["attributes"])}, "attributes", "attribute")

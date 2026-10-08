@@ -135,3 +135,26 @@ In-process, 10 % of the target, 10 users (the sandbox, unconstrained):
 | Working list / name search, offline | 28 / 31 ms | (noisy run) | 14 / 16 ms |
 
 Next: the 50-user hubload run at 10 % and up the ladder, then your container runs for Pi numbers.
+
+## First ladder run and the fixes it led to (2026-10-08)
+
+`perf/pi.sh ladder pi5` (6 GB limit, the Docker VM being 8 GB) on the redesign: 10 % and 25 % ran without errors, every offline write reached central on reconnect, but memory grew about 0.11 GB per percent (1.25 GB at 10 %, 2.8 GB at 25 %) and 50 % and 100 % were killed for memory. At 25 % the working list and search exceeded 1 s at p95 and an Android first download did not finish in 5 minutes.
+
+Profiling (`HUB_PPROF`) found:
+
+1. **A hub that was set up and not yet restarted kept every full payload in memory.** Setup unlocks the store without loading the index, so the index never had the store and never went slim. The index now has its store from the start: live heap under load 2.5 times smaller.
+2. **Rendering read each object's payload with its own query.** A page now loads the payloads its fields need in one query; the data file's page cache is 16 MB per connection.
+3. **Each page of a paged query searched and sorted everything again**, so an Android download cost the square of the facility's size. Page 1 is computed fresh and kept for a minute; later pages of the same query by the same user reuse it, after checking visibility again.
+4. **Searches spent their time in sort comparisons, date parsing and enrollment lookups.** Sort keys are computed once, dates are parsed only when a query has a date bound, and a program search checks the program's enrollments in one pass.
+5. **Go let the heap grow to twice what is live.** The hub now sets the garbage collector's soft limit to 70 % of its container's memory limit, or of the device's RAM.
+
+Hammer run in the sandbox (unconstrained, 10 %, 50 users, no think time), before and after 2–4:
+
+| | Before | After |
+|---|---|---|
+| Web requests per second | 42 | 100 |
+| Working list p50 / p95 | 150 / 430 ms | 44 / 212 ms |
+| Android full download, 20 at once | 80 s | 56 s |
+| Errors | none | none |
+
+Searches remain linear in the facility's size (about half of a search is now the sort); keeping each program's people pre-sorted is the next step if the ladder shows it is needed.
