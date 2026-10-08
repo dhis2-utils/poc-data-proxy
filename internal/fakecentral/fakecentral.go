@@ -54,6 +54,7 @@ type User struct {
 	Disabled       bool
 	SearchOrgUnits []string // defaults to OrgUnits
 	NoProgramMeta  bool     // the program's metadata is not shared with this user
+	NoPAT          bool     // this user may not create personal access tokens
 }
 
 type Central struct {
@@ -273,6 +274,8 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, map[string]any{"id": u.UID, "username": u.Username, "organisationUnits": ous,
 			"teiSearchOrganisationUnits": search, "authorities": []string{"M_dhis-web-capture"}, "userGroups": groups})
+	case p == "/api/apiToken" && r.Method == "POST" && u.NoPAT:
+		webMessage(w, 403, "Access is denied", "")
 	case p == "/api/apiToken" && r.Method == "POST":
 		c.mu.Lock()
 		c.tokenSeq++

@@ -31,7 +31,7 @@ func (h *Hub) HostAllowed(hostport string) bool {
 		return false
 	}
 	for _, x := range h.Cfg.HubHosts {
-		if x == "*" || strings.EqualFold(x, host) {
+		if strings.EqualFold(x, host) {
 			return true
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -34,12 +35,15 @@ type Config struct {
 	// the facility's data (spec 10.1 says refuse; Capture needs it, see FINDINGS.md).
 	OfflineSearchFacility bool
 	// HubHosts are extra host names or addresses clients may use to reach the hub
-	// (comma separated), e.g. a DNS name on the facility router. "*" accepts any Host;
-	// for development only.
+	// (comma separated), e.g. a DNS name on the facility router.
 	HubHosts []string
 	// SessionIdle and SessionMax end hub sessions after inactivity and after login.
 	SessionIdle time.Duration
 	SessionMax  time.Duration
+	// PasswordFallback stores a user's central password (sealed) when the hub cannot
+	// create a PAT for them (spec 7.1). Off by default: it was never needed on 2.42,
+	// and the password is the most valuable secret the hub could hold (REVIEW-2 F8).
+	PasswordFallback bool
 	// KeySlotMaxAge removes the key slot of a user who has not logged in for this long.
 	KeySlotMaxAge time.Duration
 }
@@ -129,10 +133,16 @@ func (c *Config) set(k, v string) error {
 		c.SessionIdle, err = time.ParseDuration(v)
 	case "session_max":
 		c.SessionMax, err = time.ParseDuration(v)
+	case "password_fallback":
+		c.PasswordFallback, err = strconv.ParseBool(v)
 	case "key_slot_max_age":
 		c.KeySlotMaxAge, err = time.ParseDuration(v)
 	case "hub_hosts":
 		c.HubHosts = splitList(v)
+		if slices.Contains(c.HubHosts, "*") {
+			// It would switch off the Host check on every hub with this image (REVIEW-2 F7).
+			return fmt.Errorf("hub_hosts: list names; \"*\" is not allowed")
+		}
 	case "log_requests":
 		c.LogRequests, err = strconv.ParseBool(v)
 	default:

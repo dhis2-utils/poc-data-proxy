@@ -208,7 +208,7 @@ func (a *Auth) registerOnline(ctx context.Context, username, password string, wi
 	}
 	h.Store.SetNeedsLogin(userID, false) // central just accepted the password
 	h.AddUserPrograms(ctx, with)
-	if err := h.RefreshAccess(ctx, userID); err != nil {
+	if err := h.RefreshAccessWith(ctx, userID, with); err != nil {
 		slog.Warn("login: access refresh", "user", username, "err", err)
 	}
 	a.storeMe(ctx, userID)

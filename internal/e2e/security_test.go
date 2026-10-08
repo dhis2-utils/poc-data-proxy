@@ -2,6 +2,7 @@
 package e2e
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/config"
 	"github.com/dhis2/facility-hub/internal/core"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 	"github.com/dhis2/facility-hub/internal/store"
@@ -88,6 +90,10 @@ func TestHostHeader(t *testing.T) {
 	st, body := a.doHost("alias.test", "GET", "/dhis-web-capture/index.html", nil)
 	if st != 200 || !strings.Contains(string(body), `content="http://alias.test"`) {
 		t.Fatalf("online, base URL not pointed at the hub: %d %s", st, body)
+	}
+	// The cache holds central's own form, never the requesting Host.
+	if c, _ := e.app.Hub.Store.GetCacheAnyUser("GET", "/dhis-web-capture/index.html"); c == nil || bytes.Contains(c.Body, []byte("alias.test")) {
+		t.Fatalf("cached copy carries the requesting Host: %v", c)
 	}
 	e.offline()
 	st, body = b.do("GET", "/dhis-web-capture/index.html", nil) // served from nurse_a's cache entry
@@ -389,5 +395,53 @@ func TestPerUserMetadataNotShared(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != 200 || resp.Header.Get("X-Hub-Mode") != "offline" || resp.Header.Get("X-Hub-Scope") != "facility" {
 		t.Fatalf("offline search headers: %d %v", resp.StatusCode, resp.Header)
+	}
+}
+
+// REVIEW-2 F8: without password_fallback, a user the hub cannot create a PAT for has
+// no stored password, and offline changes are refused rather than queued for ever.
+func TestNoPasswordFallback(t *testing.T) {
+	e := newEnv(t)
+	e.central.Users["nurse_a"].NoPAT = true
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	if u, _ := e.app.Hub.Store.UserByName("nurse_a"); u == nil || u.HasPAT || u.HasPassword {
+		t.Fatalf("user: %+v", u)
+	}
+	e.offline()
+	a.json("POST", postSync, newPatient("NoPatTe0001", "NoPatEn0001", "NoPat", "", nil), 503)
+	if n := e.app.Hub.Store.CountOutbox(store.OutboxPending); n != 0 {
+		t.Fatalf("%d entries queued without a way to send them", n)
+	}
+}
+
+// REVIEW-2 F7, F9: no wildcard Host, security headers on hub pages, and form posts
+// without Origin or Sec-Fetch-Site are refused.
+func TestHubPageHardening(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "hub.yaml")
+	os.WriteFile(f, []byte("hub_hosts: *\n"), 0o644)
+	if _, err := config.Load(f); err == nil {
+		t.Fatal(`hub_hosts: "*" accepted`)
+	}
+	e := newEnv(t)
+	resp, err := http.Get(e.srv.URL + "/hub/setup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	for _, k := range []string{"Content-Security-Policy", "X-Frame-Options", "X-Content-Type-Options"} {
+		if resp.Header.Get(k) == "" {
+			t.Errorf("missing %s", k)
+		}
+	}
+	resp, err = http.PostForm(e.srv.URL+"/hub/setup", url.Values{"step": {"login"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 403 {
+		t.Fatalf("post without Origin or Sec-Fetch-Site: %d", resp.StatusCode)
 	}
 }

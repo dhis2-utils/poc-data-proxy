@@ -117,6 +117,12 @@ func (h *Hub) RefreshAccess(ctx context.Context, userID int64) error {
 	if err != nil {
 		return err
 	}
+	return h.RefreshAccessWith(ctx, userID, auth)
+}
+
+// RefreshAccessWith is RefreshAccess with a given credential: at login, the one the
+// user just logged in with, which works even when the hub could not store a token.
+func (h *Hub) RefreshAccessWith(ctx context.Context, userID int64, auth central.Auth) error {
 	l, err := h.FetchAccess(ctx, auth)
 	if err != nil {
 		if central.Status(err) == http.StatusUnauthorized {
@@ -143,6 +149,9 @@ func (h *Hub) EnsurePAT(ctx context.Context, u *store.User, with central.Auth, p
 	exp := time.Now().Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
 	uid, key, err := h.CreatePAT(ctx, with, exp)
 	if err != nil {
+		if !h.Cfg.PasswordFallback {
+			return fmt.Errorf("PAT creation failed; this user's offline changes cannot be sent: %w", err)
+		}
 		if storeErr := h.Store.SetPassword(u.ID, password); storeErr != nil {
 			return storeErr
 		}

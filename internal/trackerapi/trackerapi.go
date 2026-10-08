@@ -282,6 +282,11 @@ func (a *API) serveLocal(w http.ResponseWriter, r *http.Request, sess *core.Sess
 		}
 		core.WriteJSON(w, 200, obj)
 	case r.Method == http.MethodPost && coll == "":
+		if _, err := a.H.UpstreamAuth(sess.UserID); err != nil {
+			// Nothing to push it with later: no PAT, and no stored password.
+			a.H.NeedsConnection(w, "the hub holds no token for this user; changes need a connection")
+			return
+		}
 		if !a.H.BeginLocalWrite() {
 			a.H.UpgradingError(w)
 			return

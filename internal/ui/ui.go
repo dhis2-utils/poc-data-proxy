@@ -142,14 +142,15 @@ func (u *UI) admin(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// sameOrigin refuses cross-site form posts to the admin pages. Without an Origin
-// header it relies on Sec-Fetch-Site, which browsers send on every request.
+// sameOrigin refuses cross-site form posts to the setup and admin pages. Browsers send
+// Origin on form posts, and Sec-Fetch-Site on every request; a post with neither is
+// refused (REVIEW-2 F9).
 func sameOrigin(r *http.Request) bool {
 	if o := r.Header.Get("Origin"); o != "" {
 		return o == "http://"+r.Host || o == "https://"+r.Host
 	}
 	site := r.Header.Get("Sec-Fetch-Site")
-	return site == "" || site == "same-origin" || site == "none"
+	return site == "same-origin" || site == "none"
 }
 
 func (u *UI) handleLogin(w http.ResponseWriter, r *http.Request) {

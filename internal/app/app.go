@@ -103,6 +103,11 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 		}
 		switch {
 		case p == "/hub" || strings.HasPrefix(p, "/hub/"):
+			hdr := w.Header()
+			hdr.Set("X-Content-Type-Options", "nosniff")
+			hdr.Set("X-Frame-Options", "DENY")
+			hdr.Set("Referrer-Policy", "no-referrer")
+			hdr.Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; form-action 'self'")
 			hubMux.ServeHTTP(w, r)
 		case p == "/api/auth/login":
 			a.HandleLogin(w, r)
@@ -200,7 +205,7 @@ func logRequests(cfg config.Config, next http.Handler) http.Handler {
 		t := time.Now()
 		sw := &statusWriter{ResponseWriter: w, status: 200}
 		next.ServeHTTP(sw, r)
-		slog.Info("request", "method", r.Method, "path", r.URL.Path, "query", core.SafeQuery(r.URL.Query()), "client", core.ClientKind(r),
+		slog.Info("request", "method", r.Method, "path", core.Template(r.URL.Path), "query", core.SafeQuery(r.URL.Query()), "client", core.ClientKind(r),
 			"status", sw.status, "ms", time.Since(t).Milliseconds())
 	})
 }
