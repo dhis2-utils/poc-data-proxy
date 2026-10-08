@@ -1,5 +1,10 @@
 # Facility hub (proof of concept)
 
+> ![Maturity: Experimental](https://img.shields.io/badge/maturity-Experimental-orange)  
+> Intended use: PoC hub that temporarily forwards/stores data of all users in one facility while offline, allowing share of data locally.  
+> Maintainers: HISP Centre implementation team.
+
+
 A small device on a facility LAN that caches the facility's DHIS2 tracker data and relays tracker writes to the central DHIS2 server. When central is unreachable, the DHIS2 Capture web app and the Android Capture app keep working against the hub, and each user still sees only what central lets them see. The specification is [SPEC-facility-hub-poc.md](docs/SPEC-facility-hub-poc.md). Answers to its open questions, and the places where the spec turned out wrong, are in [FINDINGS.md](docs/FINDINGS.md).
 
 Target DHIS2 version: **2.42** (verified against 2.42.6). 2.43 is mapped to the same request and response handling but has not been tested.
