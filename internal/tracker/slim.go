@@ -31,6 +31,9 @@ func slimmed(o *Obj) *Obj {
 			}
 		}
 		d["attributes"] = attrs
+		if po, ok := o.Data["programOwners"]; ok {
+			d["programOwners"] = po
+		}
 	case store.KindRelationship:
 		d["from"], d["to"] = o.Data["from"], o.Data["to"]
 	}
@@ -57,4 +60,51 @@ func (ix *Index) Full(o *Obj) M {
 		return o.Data
 	}
 	return d
+}
+
+// ProgramOwner returns the org unit that owns the tracked entity in the program, as
+// central last reported it (programOwners), or "" when unknown.
+func ProgramOwner(te *Obj, program string) string {
+	if te == nil {
+		return ""
+	}
+	for _, x := range anyList(te.Data["programOwners"]) {
+		if m, ok := x.(M); ok && Str(m, "program") == program {
+			return Str(m, "orgUnit")
+		}
+	}
+	return ""
+}
+
+// SetProgramOwner returns a copy of a tracked entity payload with the program's owner
+// set.
+func SetProgramOwner(d M, te, program, owner string) M {
+	n := clone(d)
+	var out []any
+	for _, x := range anyList(d["programOwners"]) {
+		if m, ok := x.(M); ok && Str(m, "program") == program {
+			continue
+		}
+		out = append(out, x)
+	}
+	n["programOwners"] = append(out, M{"orgUnit": owner, "trackedEntity": te, "program": program})
+	return n
+}
+
+// WithData returns a copy of the object holding this full payload (for writing back).
+func (o *Obj) WithData(d M) *Obj {
+	n := *o
+	n.Data, n.slim = d, false
+	return &n
+}
+
+// ownedElsewhere reports whether the hub holds an enrollment of te in program that is
+// no longer the facility's (Hub.ApplyTransfer).
+func (ix *Index) ownedElsewhere(te, program, facility string) bool {
+	for _, e := range ix.EnrollmentsOf(te) {
+		if e.Program == program && e.OwnerOrgUnit != facility {
+			return true
+		}
+	}
+	return false
 }

@@ -30,6 +30,25 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 		o := h.Index.Get(uid)
 		return o != nil && o.OwnerOrgUnit == facility
 	}
+	// Program owners as central reports them in this answer (programOwners), else as
+	// last known. An enrollment owned elsewhere is not the facility's, even when the
+	// person was registered or enrolled here: a user may have read it online through
+	// temporary ownership ("break the glass"), which must not outlive the connection.
+	owners := map[string]string{} // te|program -> org unit
+	for _, it := range items {
+		if it.Kind == store.KindTrackedEntity {
+			for _, po := range listOf(it.Data["programOwners"]) {
+				owners[it.UID+"|"+tracker.Str(po, "program")] = tracker.Str(po, "orgUnit")
+			}
+		}
+	}
+	ownerOf := func(te, program string) string {
+		if ou, ok := owners[te+"|"+program]; ok {
+			return ou
+		}
+		return tracker.ProgramOwner(h.Index.Get(te), program)
+	}
+	skipped := map[string]bool{}
 	var objs []*tracker.Obj
 	for _, it := range items {
 		if !tracker.ValidUID(it.UID) {
@@ -53,7 +72,12 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 			}
 		case store.KindEnrollment:
 			o.TE, o.Program = it.TE, tracker.Str(it.Data, "program")
-			if !(forceFacility || ou == facility || owned(it.TE)) {
+			if forceFacility {
+				break
+			}
+			if owner := ownerOf(it.TE, o.Program); (owner != "" && owner != facility) ||
+				(owner == "" && !(ou == facility || owned(it.TE))) {
+				skipped[it.UID] = true
 				continue
 			}
 		case store.KindEvent:
@@ -66,7 +90,11 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 					o.TE = e.TE
 				}
 			}
-			if !(forceFacility || ou == facility || owned(it.Enrollment)) {
+			if forceFacility {
+				break
+			}
+			if e := h.Index.Get(it.Enrollment); skipped[it.Enrollment] || (e != nil && e.OwnerOrgUnit != facility) ||
+				!(ou == facility || owned(it.Enrollment)) {
 				continue
 			}
 		case store.KindRelationship:
@@ -268,4 +296,56 @@ func (h *Hub) ShareByRules(uids []string) {
 			}
 		}
 	}
+}
+
+// ApplyTransfer records that the facility no longer owns the tracked entity in the
+// program (a transfer out, through the hub or found by the ownership check): the
+// enrollments and their events are marked as owned by owner ("" when unknown), which
+// hides them from everyone offline, and every user's visibility of them is cleared.
+func (h *Hub) ApplyTransfer(teUID, program, owner string) error {
+	if owner == h.Facility() {
+		return nil // a transfer in: the next pull brings it
+	}
+	var objs []*tracker.Obj
+	if te := h.Index.Get(teUID); te != nil && owner != "" {
+		objs = append(objs, te.WithData(tracker.SetProgramOwner(h.Index.Full(te), teUID, program, owner)))
+	}
+	slots := map[uint32]bool{}
+	for _, e := range h.Index.EnrollmentsOf(teUID) {
+		if e.Program != program {
+			continue
+		}
+		related := append([]*tracker.Obj{e}, h.Index.EventsOf(e.UID)...)
+		for _, x := range related {
+			n := x.WithData(h.Index.Full(x))
+			n.OwnerOrgUnit = owner
+			objs = append(objs, n)
+			slots[x.Slot] = false
+		}
+	}
+	err := h.Store.Tx(context.Background(), func(tx *sql.Tx) error {
+		for _, o := range objs {
+			if err := h.Store.PutObject(tx, o.ToStore()); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, o := range objs {
+		h.Index.Put(o)
+	}
+	users, err := h.Store.Users()
+	if err != nil {
+		return err
+	}
+	for _, u := range users {
+		if err := h.setVisibility(u.ID, slots); err != nil {
+			return err
+		}
+	}
+	slog.Info("ownership moved away", "trackedEntity", teUID, "program", program, "owner", owner, "objects", len(objs))
+	return nil
 }

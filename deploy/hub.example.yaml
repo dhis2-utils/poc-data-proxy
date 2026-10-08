@@ -17,6 +17,7 @@ release_public_key: ""                     # base64 ed25519 key from `hub keygen
 # ping_timeout: 5s
 # reserved_pool_size: 150   # reserved values kept per generated attribute (spec 10.3)
 # full_pull_interval: 24h   # full (non-incremental) pull per user at most this often
+# ownership_check_interval: 1h  # check that the facility still owns what the hub holds (transfers out)
 # log_requests: false       # log every request and write data_dir/requests.log (spec 13.1)
 # session_idle: 1h          # end a hub session after this long without requests
 # session_max: 12h          # end a hub session this long after login

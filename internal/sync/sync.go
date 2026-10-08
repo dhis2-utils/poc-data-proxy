@@ -424,6 +424,7 @@ func (w *Worker) Pull(ctx context.Context) error {
 	facility := h.Facility()
 	cat := h.Catalog()
 	var failed []error
+	readers := map[string]central.Auth{} // program -> a user whose pull of it succeeded
 	for _, u := range users {
 		if u.NeedsLogin || (!u.HasPAT && !u.HasPassword) {
 			continue
@@ -494,6 +495,9 @@ func (w *Worker) Pull(ctx context.Context) error {
 				break
 			}
 			settled = append(settled, p)
+			if _, ok := readers[p]; !ok && !strings.HasPrefix(p, "tet:") {
+				readers[p] = auth
+			}
 			if maxUpdated == "" {
 				maxUpdated = lastPull
 			}
@@ -515,6 +519,12 @@ func (w *Worker) Pull(ctx context.Context) error {
 				slog.Info("full pull removed visibility", "user", u.Username, "objects", n)
 			}
 		}
+	}
+	if err := w.checkOwnership(ctx, api, facility, readers); err != nil {
+		if central.IsNetwork(err) {
+			return err
+		}
+		failed = append(failed, fmt.Errorf("ownership check: %w", err))
 	}
 	now := store.Now()
 	h.Stats.Set(func(s *core.SyncStats) { s.LastPull = now })
@@ -587,6 +597,88 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 	}
 	slog.Debug("pull listed", "program", program, "objects", total, "fetched", len(stale))
 	return maxUpdated, total, nil
+}
+
+// ownershipVerifyMax bounds the single reads of one ownership check.
+const ownershipVerifyMax = 500
+
+// checkOwnership finds enrollments the hub holds as the facility's that central no
+// longer lists as owned by it: a transfer out does not show in incremental pulls, and
+// waiting for the daily full pull would leave the person visible offline. Per program
+// it lists the owned tracked entities' identifiers (as a user who just pulled it), and
+// each held one missing from the list is read once to learn its owner. Runs at most
+// every ownership_check_interval.
+func (w *Worker) checkOwnership(ctx context.Context, api compat.API, facility string, readers map[string]central.Auth) error {
+	h := w.H
+	if last := store.ParseTime(h.Store.Private("last_ownership_check")); !last.IsZero() && time.Since(last) < h.Cfg.OwnershipCheckInterval {
+		return nil
+	}
+	verified := 0
+	for program, auth := range readers {
+		owned := map[string]bool{}
+		for page := 1; ; page++ {
+			items, more, err := w.getPage(ctx, api, auth, api.OwnedPath(facility, program, page, ownedPageSize), page, ownedPageSize)
+			if err != nil {
+				return err
+			}
+			for _, te := range items {
+				owned[tracker.Str(te, "trackedEntity")] = true
+			}
+			if !more {
+				break
+			}
+		}
+		suspects := map[string]bool{}
+		for _, e := range h.Index.All(store.KindEnrollment) {
+			if e.Program == program && e.OwnerOrgUnit == facility && e.SyncState == store.SyncSynced && !owned[e.TE] {
+				suspects[e.TE] = true
+			}
+		}
+		for te := range suspects {
+			if verified >= ownershipVerifyMax {
+				slog.Warn("ownership check: more suspects than one check reads; the rest wait", "program", program)
+				break
+			}
+			verified++
+			owner, err := w.ownerOf(ctx, auth, te, program)
+			if err != nil {
+				return err
+			}
+			if owner != facility {
+				if err := h.ApplyTransfer(te, program, owner); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	h.Store.SetPrivate("last_ownership_check", store.Now())
+	return nil
+}
+
+const ownedPageSize = 10000
+
+// ownerOf reads who owns te in program: "" when the user may not open it there
+// (owned where they have no access) or it is gone.
+func (w *Worker) ownerOf(ctx context.Context, auth central.Auth, te, program string) (string, error) {
+	var res struct {
+		ProgramOwners []struct {
+			OrgUnit string `json:"orgUnit"`
+			Program string `json:"program"`
+		} `json:"programOwners"`
+	}
+	path := central.Q("/api/tracker/trackedEntities/"+te, "program", program, "fields", "programOwners")
+	if err := w.H.Central.JSON(ctx, "GET", path, nil, auth, &res); err != nil {
+		if st := central.Status(err); st == http.StatusForbidden || st == http.StatusNotFound {
+			return "", nil
+		}
+		return "", err
+	}
+	for _, po := range res.ProgramOwners {
+		if po.Program == program {
+			return po.OrgUnit, nil
+		}
+	}
+	return w.H.Facility(), nil // no owner recorded: still the facility's (registered here)
 }
 
 func (w *Worker) getPage(ctx context.Context, api compat.API, auth central.Auth, path string, page, size int) ([]tracker.M, bool, error) {

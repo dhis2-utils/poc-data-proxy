@@ -803,6 +803,11 @@ func (ix *Index) GetOne(v *Viewer, collection, uid string, q url.Values) (M, *AP
 			if err := ix.programCheck(v, p); err != nil {
 				return nil, err
 			}
+			// Owned by another facility in this program: central decides whether this
+			// user may open it (ownership, temporary ownership), so offline it may not.
+			if owner := ProgramOwner(o, p); (owner != "" && owner != v.Facility) || ix.ownedElsewhere(o.UID, p, v.Facility) {
+				return nil, NeedsConnection("tracked entity " + uid + " is owned by another org unit in program " + p)
+			}
 		}
 		return fields.Project(ix.RenderTE(v, o, fields, q.Get("program"))).(M), nil
 	case store.KindEnrollment:

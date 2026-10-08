@@ -195,6 +195,14 @@ func (v42) FetchPath(facility, program string, trackedEntities []string) string 
 	return "/api/tracker/trackedEntities?" + q.Encode()
 }
 
+func (v42) OwnedPath(facility, program string, page, pageSize int) string {
+	q := pullValues(facility, program, true)
+	q.Set("fields", "trackedEntity")
+	q.Set("page", strconv.Itoa(page))
+	q.Set("pageSize", strconv.Itoa(pageSize))
+	return "/api/tracker/trackedEntities?" + q.Encode()
+}
+
 func pullQuery(facility, program, updatedAfter string, page, pageSize int, idsOnly bool) string {
 	q := pullValues(facility, program, idsOnly)
 	if updatedAfter != "" {

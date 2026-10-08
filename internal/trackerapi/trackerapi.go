@@ -113,6 +113,12 @@ func (a *API) learn(sess *core.Session, r *http.Request, body []byte, res *proxy
 		return
 	}
 	switch {
+	case r.Method == http.MethodPut && res.Status == http.StatusOK && strings.HasSuffix(r.URL.Path, "/tracker/ownership/transfer"):
+		// A transfer out through the hub takes effect offline at once.
+		q := r.URL.Query()
+		if err := a.H.ApplyTransfer(q.Get("trackedEntity"), q.Get("program"), q.Get("ou")); err != nil {
+			slog.Warn("apply ownership transfer", "err", err)
+		}
 	case r.Method == http.MethodGet && res.Status == http.StatusOK && !strings.HasPrefix(r.URL.Path, "/api/tracker/jobs/"):
 		var payload tracker.M
 		if json.Unmarshal(res.Body, &payload) != nil {

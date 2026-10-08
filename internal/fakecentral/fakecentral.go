@@ -74,8 +74,18 @@ type Central struct {
 	// Requests counts calls per "METHOD path" for assertions.
 	Requests map[string]int
 	gen      *generated // Generate: performance-test data
-	jobs     map[string][]byte
-	jobN     int
+
+	// Program ownership (ownership.go): owner per tracked entity and program, and
+	// temporary ownership ("break the glass") per user, tracked entity and program.
+	owners map[string]string
+	temp   map[string]time.Time
+	// Protected makes the program PROTECTED: only users whose capture scope holds the
+	// owner, or who broke the glass, may read a person's enrollment.
+	Protected bool
+	// TempAccess is how long temporary ownership lasts.
+	TempAccess time.Duration
+	jobs       map[string][]byte
+	jobN       int
 }
 
 func New() *Central {
@@ -92,6 +102,7 @@ func New() *Central {
 		tokens: map[string]string{}, tokenIDs: map[string]string{}, sessions: map[string]string{},
 		objects: map[string]tracker.M{}, kinds: map[string]string{}, DataStore: map[string]map[string]json.RawMessage{},
 		Version: Version, Requests: map[string]int{}, jobs: map[string][]byte{},
+		owners: map[string]string{}, temp: map[string]time.Time{}, TempAccess: time.Hour,
 	}
 	return c
 }
@@ -305,6 +316,12 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"id": Facility, "name": "Ngelehun CHC", "code": "OU_559"})
 	case p == "/api/tracker/trackedEntities":
 		c.listTEs(w, r, u)
+	case strings.HasPrefix(p, "/api/tracker/trackedEntities/"):
+		c.getTE(w, r, u, strings.TrimPrefix(p, "/api/tracker/trackedEntities/"))
+	case p == "/api/tracker/ownership/transfer" && r.Method == "PUT":
+		c.transfer(w, r, u)
+	case p == "/api/tracker/ownership/override" && r.Method == "POST":
+		c.override(w, r, u)
 	case strings.HasPrefix(p, "/api/tracker/jobs/") && strings.HasSuffix(p, "/report"):
 		c.mu.Lock()
 		b, ok := c.jobs[strings.Split(strings.TrimPrefix(p, "/api/tracker/jobs/"), "/")[0]]
@@ -437,8 +454,14 @@ func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 	var tes []tracker.M
 	for _, uid := range c.order {
 		o := c.objects[uid]
-		if c.kinds[uid] != "trackedEntity" || o["orgUnit"] != q.Get("orgUnits") || (only != nil && !only[uid]) {
+		if c.kinds[uid] != "trackedEntity" || (only != nil && !only[uid]) {
 			continue
+		}
+		if byType && o["orgUnit"] != q.Get("orgUnits") {
+			continue // registered elsewhere
+		}
+		if !byType && (c.owner(uid) != q.Get("orgUnits") || !c.canRead(u, uid)) {
+			continue // owned elsewhere for the program, or protected from this user
 		}
 		te := deepCopy(o)
 		var enrs []any
@@ -473,6 +496,7 @@ func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 		}
 		te["enrollments"] = enrs
 		te["relationships"] = []any{}
+		te["programOwners"] = []any{tracker.M{"orgUnit": c.owner(uid), "trackedEntity": uid, "program": Program}}
 		tes = append(tes, te)
 	}
 	c.mu.Unlock()

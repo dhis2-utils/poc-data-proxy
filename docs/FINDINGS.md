@@ -242,10 +242,15 @@ The differential oracle compares the offline hub with central for every role and
 
 9. **A user who lost read access to a program kept seeing its data offline.** The pull skipped programs the user can no longer read, so nothing removed what they had been shown before, and offline reads trusted that. Programs a user may not read are now settled empty on a full pull, a changed access list triggers a full pull at the next sync, and offline reads of central records also check the current access list (`TestAccessChangeOfOneUser`). Access changes that the access list does not show, such as category option sharing, still take effect at the daily full pull.
 
+10. **A person transferred out of the facility stayed visible offline.** Incremental pulls list what the facility owns, so a transfer out never showed; only the daily full pull removed it. On Laos (protected programs) central answered the nurse 404 while the hub showed the enrollment offline. The hub now checks ownership every `ownership_check_interval` (1 hour): it lists the facility-owned tracked entities per program (identifiers only) and reads each held one that is missing to learn its owner. A transfer made through the hub applies at once. Enrollments and events owned elsewhere are hidden from everyone, and opening the person in that program offline answers "needs connection" (`TestTransferOnCentral`, `TestTransferThroughHub`, `TestOwnershipLive`).
+11. **Breaking the glass online left the person visible offline.** The hub learned the online read as facility data, because the person was registered and enrolled at the facility, although another facility owned them in the protected program. Temporary ownership then outlived the connection and its own expiry. The hub now keeps what it learns from online reads only when the program owner (`programOwners`) is the facility, and refuses offline to open a person in a program that another org unit owns (`TestBreakTheGlass`, `TestOwnershipLive`).
+
 **DHIS2 behaviour worth knowing:**
 
 - `/api/tracker/events` shows events to a user who has program and stage access but **no access to the tracked entity type**; a tracked entity search refuses that user (E1006). Event access does not depend on tracked entity type sharing.
 - An unfiltered `orgUnitMode=ACCESSIBLE` search answers 409 "At least 1 attributes should be mentioned in the search criteria".
+- An ownership transfer bumps the tracked entity's `updatedAt`, so a transfer **in** shows in an incremental pull; a transfer out does not, since the facility no longer owns the person.
+- Central caches ownership per user: a user who read a person shortly before the person was transferred away can still open them for a while afterwards (Laos, protected program: 200 with the enrollment right after the transfer, while a user who had not read them got 404).
 - Small 500s on `null` lists: `"enrollments": null` in a tracker import, and `"userAccesses": null` in `POST /api/sharing`. Both work with `[]`.
 
 **Known gaps, reported by the oracle without failing:**

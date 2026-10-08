@@ -30,7 +30,10 @@ type Config struct {
 	TLS              bool   // self-signed TLS (spec 12); false for local development
 	ReservedPoolSize int    // target number of reserved values per generated attribute
 	FullPullInterval time.Duration
-	LogRequests      bool // log every request with method, path and query (spec 13.1)
+	// OwnershipCheckInterval: how often the hub checks that the facility still owns the
+	// enrollments it holds (transfers out do not show in incremental pulls).
+	OwnershipCheckInterval time.Duration
+	LogRequests            bool // log every request with method, path and query (spec 13.1)
 	// OfflineSearchFacility answers orgUnitMode=ACCESSIBLE/CAPTURE searches offline from
 	// the facility's data (spec 10.1 says refuse; Capture needs it, see FINDINGS.md).
 	OfflineSearchFacility bool
@@ -50,19 +53,20 @@ type Config struct {
 
 func Default() Config {
 	return Config{
-		Listen:                ":8443",
-		DataDir:               "/var/lib/hub",
-		SyncInterval:          5 * time.Minute,
-		PingInterval:          15 * time.Second,
-		PingTimeout:           5 * time.Second,
-		PATExpiryDays:         90,
-		TLS:                   true,
-		ReservedPoolSize:      150,
-		FullPullInterval:      24 * time.Hour,
-		OfflineSearchFacility: true,
-		SessionIdle:           time.Hour,
-		SessionMax:            12 * time.Hour,
-		KeySlotMaxAge:         90 * 24 * time.Hour,
+		Listen:                 ":8443",
+		DataDir:                "/var/lib/hub",
+		SyncInterval:           5 * time.Minute,
+		PingInterval:           15 * time.Second,
+		PingTimeout:            5 * time.Second,
+		PATExpiryDays:          90,
+		TLS:                    true,
+		ReservedPoolSize:       150,
+		FullPullInterval:       24 * time.Hour,
+		OwnershipCheckInterval: time.Hour,
+		OfflineSearchFacility:  true,
+		SessionIdle:            time.Hour,
+		SessionMax:             12 * time.Hour,
+		KeySlotMaxAge:          90 * 24 * time.Hour,
 	}
 }
 
@@ -117,6 +121,8 @@ func (c *Config) set(k, v string) error {
 		c.PingTimeout, err = time.ParseDuration(v)
 	case "full_pull_interval":
 		c.FullPullInterval, err = time.ParseDuration(v)
+	case "ownership_check_interval":
+		c.OwnershipCheckInterval, err = time.ParseDuration(v)
 	case "pat_expiry_days":
 		c.PATExpiryDays, err = strconv.Atoi(v)
 	case "reserved_pool_size":

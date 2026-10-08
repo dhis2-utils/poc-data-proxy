@@ -99,6 +99,7 @@ func (e *Env) Config() config.Config {
 	c.SyncInterval = time.Hour // tests run cycles by hand
 	c.PingTimeout = 5 * time.Second
 	c.ReservedPoolSize = 10
+	c.OwnershipCheckInterval = 0 // every cycle: tests sync by hand
 	c.LogRequests = true
 	c.HubHosts = append(c.HubHosts, e.hosts...)
 	return c

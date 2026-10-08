@@ -37,6 +37,9 @@ type API interface {
 	ListPath(facility, program, updatedAfter string, page, pageSize int) string
 	// FetchPath returns these tracked entities in full, as PullPath would.
 	FetchPath(facility, program string, trackedEntities []string) string
+	// OwnedPath lists the identifiers of the tracked entities the facility owns in the
+	// program (the ownership check).
+	OwnedPath(facility, program string, page, pageSize int) string
 	// PullItems extracts the tracked entities and whether another page exists.
 	PullItems(body []byte, page, pageSize int) (items []tracker.M, more bool, err error)
 	// AsyncAccepted is the answer to POST /api/tracker?async=true; JobNotifications
