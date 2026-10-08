@@ -117,3 +117,22 @@ Run 10 %, 25 %, 50 %, 100 % and 200 % of the target (100 % = 100 k TEs, 150 k en
 | Reconnect, 153 queued events | 7 s, none rejected | |
 
 Read with the expected bottlenecks: memory grows with objects × users (the per-user visibility) and every pull and query works on the whole in-memory index. **At 10 % the hub works; at the full target it would not fit a Pi's memory, and the first sync and Android downloads would take hours.** The fixes, in order of effect: visibility per access class instead of per user (memory, and one pull instead of fifty), indexed queries instead of scans (Android pages, working lists), then the container runs to confirm.
+
+## The redesign (branch `id-list-pull`)
+
+Three changes, each verified with the oracles on all profiles:
+
+1. **Visibility as bitmaps.** Each object has a stable slot; each user a bitmap over slots, stored in 512-byte chunks written in the same transaction as the objects. 50 users × 750 000 objects is under 5 MB, against about 37 million rows and map entries before.
+2. **ID-list pull.** A user's pull lists what central shows them: identifiers and update times only. The hub then fetches in full only tracked entities it lacks, holds older, or has not fetched for that program's attributes (central shows a program's attributes only when asked with it), 50 per request. Central still decides visibility per user; each record crosses the uplink once.
+3. **Slim index and candidate lists.** The index keeps what queries filter and sort on; rendering reads the full payload from the store. Searches start from the objects of the requested program, type, tracked entity or enrollment.
+
+In-process, 10 % of the target, 10 users (the sandbox, unconstrained):
+
+| | Before | After 1–2 | After 1–3 |
+|---|---|---|---|
+| First pull | 2 min 28 s | 13 s | 16 s |
+| Index memory after a reboot | 418 MB | 390 MB | 203 MB |
+| Store on disk | 155 MB | 119 MB | 119 MB |
+| Working list / name search, offline | 28 / 31 ms | (noisy run) | 14 / 16 ms |
+
+Next: the 50-user hubload run at 10 % and up the ladder, then your container runs for Pi numbers.
