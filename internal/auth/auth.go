@@ -201,6 +201,7 @@ func (a *Auth) registerOnline(ctx context.Context, username, password string, wi
 		slog.Warn("login: PAT", "user", username, "err", err)
 	}
 	h.Store.SetNeedsLogin(userID, false) // central just accepted the password
+	h.AddUserPrograms(ctx, with)
 	if err := h.RefreshAccess(ctx, userID); err != nil {
 		slog.Warn("login: access refresh", "user", username, "err", err)
 	}

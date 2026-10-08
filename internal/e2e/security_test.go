@@ -325,3 +325,28 @@ func TestCentralMoveBySignedManifest(t *testing.T) {
 		t.Fatalf("not moved: %s", h.Central.BaseURL())
 	}
 }
+
+// The setup user (often a district officer) may not see every program facility staff
+// work in. The hub caches the union of the programs its users can see.
+func TestProgramsBeyondSetupUser(t *testing.T) {
+	e := newEnv(t)
+	e.central.Users["hub_admin"].NoProgramMeta = true
+	e.setup()
+	if n := len(e.app.Hub.Catalog().Programs); n != 0 {
+		t.Fatalf("setup user sees %d programs", n)
+	}
+	a := e.web("nurse_a")
+	a.login()
+	if e.app.Hub.Catalog().Programs[fc.Program] == nil {
+		t.Fatal("nurse_a's program not added at login")
+	}
+	e.sync()
+	if e.app.Hub.Catalog().Programs[fc.Program] == nil {
+		t.Fatal("program dropped on sync")
+	}
+	e.offline()
+	got := uids(a.json("GET", "/api/tracker/trackedEntities?orgUnits="+fc.Facility+"&program="+fc.Program, nil, 200)["trackedEntities"], "trackedEntity")
+	if !contains(got, "SeedTe00001") {
+		t.Fatalf("program not pulled for nurse_a: %v", got)
+	}
+}

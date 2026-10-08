@@ -109,6 +109,24 @@ type Catalog struct {
 	StageProgram  map[string]string       `json:"-"`
 }
 
+// Merge adds o's programs and tracked entity type attributes that c lacks.
+func (c *Catalog) Merge(o *Catalog) {
+	if o == nil {
+		return
+	}
+	for id, p := range o.Programs {
+		if c.Programs[id] == nil {
+			c.Programs[id] = p
+		}
+	}
+	for tet, as := range o.TETAttributes {
+		if _, ok := c.TETAttributes[tet]; !ok {
+			c.TETAttributes[tet] = as
+		}
+	}
+	c.Index()
+}
+
 func (c *Catalog) Index() {
 	c.StageProgram = map[string]string{}
 	for _, p := range c.Programs {

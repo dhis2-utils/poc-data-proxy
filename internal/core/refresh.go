@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -207,6 +208,77 @@ func (h *Hub) RefreshServerVersion(ctx context.Context, auth central.Auth) (stri
 		h.Store.SetMeta(MetaServerVersion, info.Version)
 	}
 	return info.Version, nil
+}
+
+// RefreshCatalog rebuilds the facility's programs as the union of what the hub token
+// and each registered user can see. The setup user, often a district officer, may
+// lack metadata access to programs facility staff work in; a catalog from the hub
+// token alone would never cache those. If any user's view cannot be read, programs
+// already known are kept, so a transient failure does not drop a program.
+func (h *Hub) RefreshCatalog(ctx context.Context) error {
+	facility := h.Facility()
+	cat, err := h.FetchCatalog(ctx, h.HubAuth(), facility)
+	if central.IsNetwork(err) {
+		return err
+	}
+	complete := err == nil
+	if cat == nil {
+		cat = &access.Catalog{Programs: map[string]*access.ProgramMeta{}, TETAttributes: map[string][]access.AttrMeta{}}
+	}
+	users, uerr := h.Store.Users()
+	if uerr != nil {
+		return uerr
+	}
+	for _, u := range users {
+		if u.NeedsLogin || (!u.HasPAT && !u.HasPassword) {
+			continue
+		}
+		auth, aerr := h.UpstreamAuth(u.ID)
+		if aerr != nil {
+			complete = false
+			continue
+		}
+		uc, ferr := h.FetchCatalog(ctx, auth, facility)
+		if central.IsNetwork(ferr) {
+			return ferr
+		}
+		if ferr != nil {
+			complete = false
+			continue
+		}
+		cat.Merge(uc)
+	}
+	if !complete {
+		cat.Merge(h.Catalog())
+	}
+	if uerr := h.UpdateRuntime(func(rt *Runtime) { rt.Catalog = cat }); uerr != nil {
+		return uerr
+	}
+	if err != nil {
+		return fmt.Errorf("catalog with hub token: %w", err)
+	}
+	return nil
+}
+
+// AddUserPrograms merges the programs one user can see into the catalog (at login,
+// so a new user's programs are cached without waiting for the next sync).
+func (h *Hub) AddUserPrograms(ctx context.Context, auth central.Auth) {
+	if h.Runtime() == nil {
+		return
+	}
+	uc, err := h.FetchCatalog(ctx, auth, h.Facility())
+	if err != nil {
+		slog.Warn("login: user's programs", "err", err)
+		return
+	}
+	cat := *h.Catalog()
+	cat.Programs = maps.Clone(cat.Programs)
+	cat.TETAttributes = maps.Clone(cat.TETAttributes)
+	before := len(cat.Programs)
+	cat.Merge(uc)
+	if len(cat.Programs) > before {
+		h.UpdateRuntime(func(rt *Runtime) { rt.Catalog = &cat })
+	}
 }
 
 // FetchCatalog derives the cached programs: tracker programs assigned to the facility

@@ -115,9 +115,10 @@ func (w *Worker) cycle(ctx context.Context) error {
 			h.UpdateRuntime(func(rt *core.Runtime) { rt.FacilityPath = ou.Path })
 		}
 	}
-	if c, err := h.FetchCatalog(ctx, h.HubAuth(), h.Facility()); err == nil {
-		h.UpdateRuntime(func(rt *core.Runtime) { rt.Catalog = c })
-	} else {
+	if err := h.RefreshCatalog(ctx); err != nil {
+		if central.IsNetwork(err) {
+			return err
+		}
 		errs = append(errs, fmt.Errorf("catalog: %w", err))
 	}
 	users, err := h.Store.Users()
