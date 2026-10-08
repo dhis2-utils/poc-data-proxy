@@ -1,6 +1,8 @@
 # Performance test plan: a Raspberry Pi-class hub under load
 
-Question: can a hub on Raspberry Pi-class hardware serve **50 users working offline at once** after it has pulled **5 years of data: 100 000 tracked entities, 150 000 enrollments in several programs and 500 000 events**?
+Question: can a hub on Raspberry Pi-class hardware serve **60 users working offline at once** at a busy urban HC IV: **300 000 people, about 0.5 million enrollments and 1.2 million events** (the sizing below, with retention by programme), and how far towards the pessimistic **700 000 people, 1.2 million enrollments and 3.1 million events** does it go?
+
+The first target was 50 users over 100 000 tracked entities, 150 000 enrollments and 500 000 events; the results sections below dated before the sizing quote percentages of that target.
 
 ## The load in numbers
 
@@ -32,7 +34,7 @@ perf/pi.sh ladder pi5     # the scale ladder (below): results and summary.txt in
 perf/pi.sh ladder pi4     # the same with the Pi 4 profile
 ```
 
-`ladder` runs, for each data size (10, 25, 50, 100 and 200 % of the target; `SIZES` to change), a fresh constrained hub, fills it from the generated central, runs the realistic 50-user load (`DURATION`, 5 minutes) and then the hammer run (`HAMMER`, 2 minutes) on it, samples the hub's memory and CPU every 10 seconds, and appends the key numbers per size to `summary.txt`: first pull, latencies per operation, Android download, reconnect, peak memory, and whether the hub was killed for memory. `up`, `load`, `stats` and `reset` remain for single runs.
+`ladder` runs, for each data size (30 000 and 100 000 people, the HC IV target and the pessimistic one, with enrollments and events in the same proportions; `SIZES` to change), a fresh constrained hub, fills it from the generated central, runs the realistic 60-user load (`DURATION`, 5 minutes) and then the hammer run (`HAMMER`, 2 minutes) on it, samples the hub's memory and CPU every 10 seconds, and appends the key numbers per size to `summary.txt`: first pull, latencies per operation, Android download, reconnect, peak memory, and whether the hub was killed for memory. `up`, `load`, `stats` and `reset` remain for single runs.
 
 The hub's data lives on a Docker volume (`hub-pi-data`), not a bind mount, so the disk limits apply to it. Docker Desktop needs memory for the profile's limit plus the fake central (about 10 GB for `pi5`), and the broker's DHIS2 instances share that VM.
 
@@ -84,7 +86,7 @@ The hammer run has no pass criteria; it reports where the hub saturates and how 
 
 ## Scale ladder
 
-Run 10 %, 25 %, 50 %, 100 % and 200 % of the target (100 % = 100 k TEs, 150 k enrollments, 500 k events) with 50 users, on both profiles (`perf/pi.sh ladder`); fewer users (`USERS=10`) where a size fails, to tell data size from concurrency. The output is one table per profile showing where each criterion first fails, which says what a Pi can carry today and how much headroom the target leaves.
+Run the four sizes (30 k, 100 k, 300 k and 700 k people) with 60 users, 18 of them Android, on both profiles (`perf/pi.sh ladder`); fewer users (`USERS=10`) where a size fails, to tell data size from concurrency. The output is one table per profile showing where each criterion first fails, which says what a Pi can carry today and how much headroom the target leaves.
 
 ## Order of work
 

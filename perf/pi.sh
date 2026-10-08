@@ -4,7 +4,7 @@
 #
 #   perf/pi.sh build                build the image (hub, fake central, hubload, benchmarks)
 #   perf/pi.sh ladder pi5|pi4|none  the scale ladder: per data size a fresh hub, filled, the
-#                                   realistic 50-user load, the hammer run, memory and CPU
+#                                   realistic 60-user load, the hammer run, memory and CPU
 #                                   sampled; results and summary.txt in perf/results/ladder-*
 #   perf/pi.sh bench pi5|pi4|none   calibration: storage benchmarks and fio in the same limits
 #   perf/pi.sh up pi5|pi4|none      start the fake central (generated data) and the constrained hub on dev-net
@@ -14,10 +14,10 @@
 #   perf/pi.sh down                 stop and remove the containers (the hub's data volume stays)
 #   perf/pi.sh reset                down, and delete the hub's data volume
 #
-# up and load use TES, ENROLLMENTS, EVENTS, USERS (default the plan's target: 100000,
-# 150000, 500000, 50). The ladder's sizes: SIZES="pct:tes:enrollments:events ..." (default
-# 10, 25, 50, 100 and 200 % of the target), DURATION of the realistic load (5m), HAMMER of
-# the hammer run (2m).
+# up and load use TES, ENROLLMENTS, EVENTS, USERS (default the busy HC IV target,
+# docs/PERFORMANCE.md: 300000, 500000, 1200000, 60). The ladder's sizes:
+# SIZES="name:tes:enrollments:events ..." (default 30k, 100k, the HC IV target "hc4" and
+# the pessimistic one), DURATION of the realistic load (5m), HAMMER of the hammer run (2m).
 #
 # MEM overrides the profile's memory limit (e.g. MEM=6g for pi5 in an 8 GB Docker VM).
 #
@@ -29,10 +29,10 @@ IMAGE=facility-hub-perf
 NET=dev-net
 DEVICE=${DEVICE:-/dev/vda}
 IO=${IO:-1}
-TES=${TES:-100000}
-ENROLLMENTS=${ENROLLMENTS:-150000}
-EVENTS=${EVENTS:-500000}
-USERS=${USERS:-50}
+TES=${TES:-300000}
+ENROLLMENTS=${ENROLLMENTS:-500000}
+EVENTS=${EVENTS:-1200000}
+USERS=${USERS:-60}
 
 # Profile limits. --cpus caps total CPU time, not per-core speed: calibrate with
 # "bench" against a real Pi and adjust (docs/PERFORMANCE.md, "Mimicking a Pi").
@@ -118,32 +118,32 @@ load)
 ladder)
 	prof=${2:-pi5}
 	limits "$prof" >/dev/null
-	sizes=${SIZES:-"10:10000:15000:50000 25:25000:37500:125000 50:50000:75000:250000 100:100000:150000:500000 200:200000:300000:1000000"}
+	sizes=${SIZES:-"30k:30000:50000:120000 100k:100000:167000:400000 hc4:300000:500000:1200000 pessimistic:700000:1200000:3100000"}
 	dir="perf/results/ladder-$prof-$(date +%Y%m%d-%H%M)"
 	mkdir -p "$dir"
 	for s in $sizes; do
-		pct=${s%%:*}
+		name=${s%%:*}
 		rest=${s#*:}
 		TES=${rest%%:*}
 		rest=${rest#*:}
 		ENROLLMENTS=${rest%%:*}
 		EVENTS=${rest#*:}
-		echo "== $pct %: $TES tracked entities, $ENROLLMENTS enrollments, $EVENTS events"
+		echo "== $name: $TES tracked entities, $ENROLLMENTS enrollments, $EVENTS events"
 		docker rm -f perf-central hub-pi >/dev/null 2>&1 || true
 		docker volume rm hub-pi-data >/dev/null 2>&1 || true
 		up_ "$prof"
-		sample "$dir/stats-$pct.txt" &
+		sample "$dir/stats-$name.txt" &
 		spid=$!
-		load_ "$dir/load-$pct-realistic.txt" -setup -fill -duration "${DURATION:-5m}" || echo "realistic run failed"
-		load_ "$dir/load-$pct-hammer.txt" -duration "${HAMMER:-2m}" -think 0 || echo "hammer run failed"
+		load_ "$dir/load-$name-realistic.txt" -setup -fill -duration "${DURATION:-5m}" || echo "realistic run failed"
+		load_ "$dir/load-$name-hammer.txt" -duration "${HAMMER:-2m}" -think 0 || echo "hammer run failed"
 		kill "$spid" 2>/dev/null || true
 		{
-			echo "== $pct %: $TES tracked entities, $ENROLLMENTS enrollments, $EVENTS events, $USERS users, $prof"
-			echo "peak hub memory: $(peak "$dir/stats-$pct.txt"); killed for memory: $(docker inspect -f '{{.State.OOMKilled}}' hub-pi 2>/dev/null || echo unknown)"
+			echo "== $name: $TES tracked entities, $ENROLLMENTS enrollments, $EVENTS events, $USERS users, $prof"
+			echo "peak hub memory: $(peak "$dir/stats-$name.txt"); killed for memory: $(docker inspect -f '{{.State.OOMKilled}}' hub-pi 2>/dev/null || echo unknown)"
 			for run in realistic hammer; do
 				echo "-- $run"
 				grep -E "registered|first pull|working list|search by name|dashboard|new event|full download|download page|upload|reconnect|failed" \
-					"$dir/load-$pct-$run.txt" 2>/dev/null || echo "(no report)"
+					"$dir/load-$name-$run.txt" 2>/dev/null || echo "(no report)"
 			done
 			echo
 		} >>"$dir/summary.txt"
