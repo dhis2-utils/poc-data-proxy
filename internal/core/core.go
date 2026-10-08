@@ -103,6 +103,30 @@ func (h *Hub) FreezeLocalWrites() {
 
 func (h *Hub) ThawLocalWrites() { h.Upgrading.Store(false) }
 
+// StuckOutbox counts pending outbox entries that cannot be pushed until their author
+// logs in online again (central refused their token). Such an entry may never push,
+// for instance when the author has left (REVIEW-2 F3).
+func (h *Hub) StuckOutbox() int {
+	entries, err := h.Store.PendingOutbox()
+	if err != nil {
+		return 0
+	}
+	blocked := map[int64]bool{}
+	n := 0
+	for _, e := range entries {
+		b, seen := blocked[e.UserID]
+		if !seen {
+			u, _ := h.Store.UserByID(e.UserID)
+			b = u == nil || u.NeedsLogin
+			blocked[e.UserID] = b
+		}
+		if b {
+			n++
+		}
+	}
+	return n
+}
+
 // UpgradingError answers a local write refused during an upgrade.
 func (h *Hub) UpgradingError(w http.ResponseWriter) {
 	w.Header().Set("Retry-After", "120")

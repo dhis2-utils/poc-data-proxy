@@ -118,10 +118,18 @@ func (u *Upgrader) check(ctx context.Context) error {
 	if m.Files[plat] == "" || m.SHA256[plat] == "" {
 		return fmt.Errorf("release %s has no binary for %s", m.Version, plat)
 	}
-	// 1. Push the outbox until empty (or only rejected entries remain).
+	// 1. Push the outbox until empty (or only rejected entries remain). Entries whose
+	// author must log in online again may never push; they carry over in the store
+	// copy, so they do not hold back the upgrade, which may be a security fix
+	// (REVIEW-2 F3). The status page and heartbeat report them as stuck.
 	pending, err := u.Drain(ctx)
-	if err != nil || pending > 0 {
-		return fmt.Errorf("outbox not drained (%d pending): %v", pending, err)
+	if err != nil {
+		return fmt.Errorf("outbox not drained: %w", err)
+	}
+	if stuck := u.H.StuckOutbox(); pending > stuck {
+		return fmt.Errorf("outbox not drained (%d pending)", pending)
+	} else if stuck > 0 {
+		slog.Warn("upgrading with stuck outbox entries; their authors must log in online", "entries", stuck)
 	}
 	// 2. Download and verify.
 	bin, err := u.get(ctx, m.Files[plat])

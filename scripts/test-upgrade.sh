@@ -4,6 +4,7 @@
 #   1. An unsigned release is ignored.
 #   2. A signed release: the hub pushes its outbox, migrates a store copy, swaps the
 #      binary, re-execs, passes the health check and reports "ok" in its heartbeat.
+#      An outbox entry whose author central no longer accepts does not hold it back.
 #   3. A signed release that fails its health check: the hub rolls back to the previous
 #      binary and store and reports "failed" in its heartbeat.
 #
@@ -71,6 +72,8 @@ grep -q "This hub now serves" "$WORK/setup.html" || fail "setup"
 HUB_ID=$(status hubId)
 curl -s -c "$WORK/nurse.jar" -X POST "$H/api/auth/login" -H 'Content-Type: application/json' \
   -d '{"username":"nurse_a","password":"Hub-Test-2026!"}' | grep -q SUCCESS || fail "nurse_a login"
+curl -s -c "$WORK/nurse_b.jar" -X POST "$H/api/auth/login" -H 'Content-Type: application/json' \
+  -d '{"username":"nurse_b","password":"Hub-Test-2026!"}' | grep -q SUCCESS || fail "nurse_b login"
 echo "hub $HUB_ID version $(status version)"
 
 say "queueing offline data so the upgrade has an outbox to push"
@@ -90,11 +93,22 @@ wait_for 15 sh -c "curl -s -u hub_admin:Hub-Test-2026! $FC/api/dataStore/facilit
 [ "$(status version)" = 0.1.0 ] || fail "unsigned release was installed"
 echo "heartbeat lastUpgrade: $(heartbeat_upgrade)"
 
+say "an entry whose author central no longer accepts is stuck"
+curl -s -X POST "$FC/fake/down" >/dev/null
+wait_for 10 is mode offline || fail "hub did not go offline"
+curl -s -b "$WORK/nurse_b.jar" -X POST "$H/api/tracker?async=false" -H 'Content-Type: application/json' -d '{"trackedEntities":[{"trackedEntity":"UpgTe000002","trackedEntityType":"nEenWmSyUEp","orgUnit":"DiszpKrYNg8","attributes":[{"attribute":"w75KJ2mc4zz","value":"Stuck"}]}]}' | grep -q '"status":"OK"' || fail "offline write by nurse_b"
+curl -s -X POST "$FC/fake/revoke?user=nurse_b" >/dev/null
+curl -s -X POST "$FC/fake/up" >/dev/null
+wait_for 10 is mode online || fail "hub did not come back online"
+sync_now
+wait_for 15 is stuckOutbox 1 || fail "stuck entry not reported"
+
 say "2. signed release 0.2.0 installs and passes the health check"
 "$WORK/hub-0.1.0" release -key "$WORK/release.key" -dir "$WORK/channel" -version 0.2.0 "$PLAT=$WORK/hub-0.2.0"
 sync_now
 wait_for 30 is version 0.2.0 || fail "did not upgrade to 0.2.0"
 kill -0 $HUB_PID || fail "hub process gone (re-exec should keep the PID)"
+[ "$(status stuckOutbox)" = 1 ] || fail "stuck entry lost in the upgrade"
 [ "$(status locked)" = False ] || fail "store locked after upgrade (data key hand-over failed)"
 curl -sf -b "$WORK/nurse.jar" "$H/hub/status" >/dev/null
 wait_for 10 sh -c "grep -q 'upgrade result=ok' $WORK/hub.log" || fail "no ok result logged"
