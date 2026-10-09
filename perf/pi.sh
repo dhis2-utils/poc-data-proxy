@@ -5,7 +5,7 @@
 #   perf/pi.sh build                build the image (hub, fake central, hubload, benchmarks)
 #   perf/pi.sh ladder pi5|pi4|none  the scale ladder: per data size a fresh hub, filled, the
 #                                   realistic 60-user load, the hammer run, memory and CPU
-#                                   sampled; results and summary.txt in perf/results/ladder-*
+#                                   sampled; results, hub logs and summary.txt in perf/results/ladder-*
 #   perf/pi.sh bench pi5|pi4|none   calibration: storage benchmarks and fio in the same limits
 #   perf/pi.sh up pi5|pi4|none      start the fake central (generated data) and the constrained hub on dev-net
 #   perf/pi.sh load [hubload flags] the load generator against a running hub (cmd/hubload)
@@ -138,6 +138,7 @@ ladder)
 		load_ "$dir/load-$name-realistic.txt" -setup -fill -duration "${DURATION:-5m}" || echo "realistic run failed"
 		load_ "$dir/load-$name-hammer.txt" -duration "${HAMMER:-2m}" -think 0 || echo "hammer run failed"
 		kill "$spid" 2>/dev/null || true
+		docker logs hub-pi >"$dir/hub-$name.log" 2>&1 || true
 		{
 			echo "== $name: $TES tracked entities, $ENROLLMENTS enrollments, $EVENTS events, $USERS users, $prof"
 			echo "peak hub memory: $(peak "$dir/stats-$name.txt"); killed for memory: $(docker inspect -f '{{.State.OOMKilled}}' hub-pi 2>/dev/null || echo unknown)"
