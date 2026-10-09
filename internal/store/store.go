@@ -46,6 +46,8 @@ type Store struct {
 	dk    hubcrypto.Key
 	data  *sql.DB // the encrypted data file, while unlocked
 	stmts stmtCache
+	// writeMu serialises write transactions (Tx).
+	writeMu sync.Mutex
 	empty *sql.DB // stands in for the data file while locked: empty and read-only
 }
 
@@ -640,6 +642,11 @@ func ParseTime(s string) time.Time {
 
 // Tx runs fn in a transaction on the data file.
 func (s *Store) Tx(ctx context.Context, fn func(*sql.Tx) error) error {
+	// One write transaction at a time, queued here rather than in SQLite: its busy
+	// handler polls, and on a starved CPU (the pi4 hammer run) writers gave up after
+	// the busy timeout with "database is locked" while others held the lock.
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	tx, err := s.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return err
