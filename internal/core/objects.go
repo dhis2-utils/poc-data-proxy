@@ -249,9 +249,15 @@ func (h *Hub) RemoveVisibilityExcept(userID int64, programs []string, seen map[s
 // MarkVisible records that central showed these objects, already held, to the user
 // (the ID-list pull, spec 11.3). Unknown UIDs are skipped.
 func (h *Hub) MarkVisible(userID int64, uids []string) error {
+	// Slots only: decoding every listed object's data for this was most of a user's
+	// first pull.
+	slots, err := h.Store.SlotsOf(uids)
+	if err != nil {
+		return err
+	}
 	changes := map[uint32]bool{}
-	for _, o := range h.Index.GetMany(uids) {
-		if o.Slot != 0 && !h.Index.VisibleTo(o, userID) {
+	for _, s := range slots {
+		if o := (&tracker.Obj{Slot: uint32(s)}); s != 0 && !h.Index.VisibleTo(o, userID) {
 			changes[o.Slot] = true
 		}
 	}

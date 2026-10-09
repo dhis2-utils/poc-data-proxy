@@ -430,6 +430,37 @@ func (s *Store) AddTEScope(q Execer, te, scope string) error {
 	return err
 }
 
+// SlotsOf returns the slots of these stored objects, by uid (missing ones are left out).
+func (s *Store) SlotsOf(uids []string) (map[string]int64, error) {
+	out := make(map[string]int64, len(uids))
+	const batch = 500
+	for start := 0; start < len(uids); start += batch {
+		part := uids[start:min(start+batch, len(uids))]
+		args := make([]any, len(part))
+		for i, u := range part {
+			args[i] = u
+		}
+		rows, err := s.query(`SELECT uid, slot FROM objects WHERE uid IN (?`+strings.Repeat(",?", len(part)-1)+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var uid string
+			var slot int64
+			if err := rows.Scan(&uid, &slot); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out[uid] = slot
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 // SlotOf is the stored object's slot, or 0.
 func (s *Store) SlotOf(uid string) int64 {
 	var n int64
