@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/bits"
 	"slices"
 	"strings"
 	"sync"
@@ -312,27 +313,16 @@ func (ix *Index) EnrolledTEs(program, owner string) []string {
 	return out
 }
 
-// VisibleCentral returns the slots of central-origin objects visible to the user, by
-// uid, with their program: what a full pull compares with what central returned.
-func (ix *Index) VisibleCentral(userID int64) (map[string]uint32, map[string]string) {
-	slots, programs := map[string]uint32{}, map[string]string{}
-	if ix.store == nil || !ix.store.Unlocked() {
-		return slots, programs
-	}
-	bm := ix.bitmapOf(userID)
-	rows, err := ix.store.DB().Query(`SELECT uid, slot, program FROM objects WHERE origin = ?`, store.OriginCentral)
-	if err != nil {
-		return slots, programs
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var uid, program string
-		var slot int64
-		if rows.Scan(&uid, &slot, &program) == nil && bm.has(uint32(slot)) {
-			slots[uid], programs[uid] = uint32(slot), program
+// VisibleSlots returns the slots visible to the user, from the bitmap in memory.
+func (ix *Index) VisibleSlots(userID int64) []uint32 {
+	var out []uint32
+	for w, word := range ix.bitmapOf(userID) {
+		for word != 0 {
+			out = append(out, uint32(w)*64+uint32(bits.TrailingZeros64(word)))
+			word &= word - 1
 		}
 	}
-	return slots, programs
+	return out
 }
 
 // Viewer is the user a read or write is evaluated for.

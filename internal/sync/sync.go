@@ -463,8 +463,8 @@ func (w *Worker) Pull(ctx context.Context) error {
 				programs = append(programs, "tet:"+tet)
 			}
 		}
-		seen := map[string]bool{}
-		var settled []string // programs whose visibility this pull may decide
+		seen := map[uint32]bool{} // slots listed for the user
+		var settled []string      // programs whose visibility this pull may decide
 		for _, p := range programs {
 			lastPull, _ := h.Store.PullState(u.ID, p)
 			after := ""
@@ -539,10 +539,11 @@ func (w *Worker) Pull(ctx context.Context) error {
 // uplink once, whoever is first to see it (docs/PERFORMANCE.md). It returns the
 // newest updatedAt listed (central's clock, used as the next updatedAfter).
 func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.Auth, userID int64,
-	facility, program, after string, seen map[string]bool) (string, int, error) {
+	facility, program, after string, seen map[uint32]bool) (string, int, error) {
 	h := w.H
 	maxUpdated, total := "", 0
-	var stale, current []string
+	var stale, staleListed []string
+	var current []uint32
 	for page := 1; ; page++ {
 		items, more, err := w.getPage(ctx, api, auth, api.ListPath(facility, program, after, page, listPageSize), page, listPageSize)
 		if err != nil {
@@ -557,7 +558,7 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 				uids = append(uids, it.UID)
 			}
 		}
-		held, err := h.Store.UpdatedAts(uids)
+		held, err := h.Store.ObjectStates(uids)
 		if err != nil {
 			return "", total, err
 		}
@@ -565,22 +566,26 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 			uid := tracker.Str(te, "trackedEntity")
 			isStale := !h.Index.HasScope(uid, program)
 			var listed []string
+			var slots []uint32
 			for _, it := range flat[i] {
 				upd := tracker.Str(it.Data, "updatedAt")
 				maxUpdated = max(maxUpdated, upd)
-				if have, ok := held[it.UID]; !ok || have < upd {
+				have, ok := held[it.UID]
+				if !ok || have.UpdatedAt < upd {
 					isStale = true
 				}
 				listed = append(listed, it.UID)
-			}
-			for _, u := range listed {
-				seen[u] = true
+				slots = append(slots, uint32(have.Slot))
 			}
 			total += len(listed)
 			if isStale {
 				stale = append(stale, uid)
+				staleListed = append(staleListed, listed...)
 			} else {
-				current = append(current, listed...)
+				for _, s := range slots {
+					seen[s] = true
+				}
+				current = append(current, slots...)
 			}
 		}
 		if !more {
@@ -602,6 +607,16 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 		}
 		if err := h.RecordScopes(batch, program); err != nil {
 			return "", total, err
+		}
+	}
+	// The fetched ones are stored now, with their slots.
+	if len(staleListed) > 0 {
+		st, err := h.Store.ObjectStates(staleListed)
+		if err != nil {
+			return "", total, err
+		}
+		for _, o := range st {
+			seen[uint32(o.Slot)] = true
 		}
 	}
 	if err := h.MarkVisible(userID, current); err != nil {

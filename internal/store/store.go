@@ -48,7 +48,7 @@ type Store struct {
 	stmts stmtCache
 	// writeMu serialises write transactions (Tx).
 	writeMu sync.Mutex
-	empty *sql.DB // stands in for the data file while locked: empty and read-only
+	empty   *sql.DB // stands in for the data file while locked: empty and read-only
 }
 
 // keyMigrations are applied to the key file in order; PRAGMA user_version records
@@ -250,6 +250,7 @@ CREATE INDEX objects_program ON objects(kind, program, owner_org_unit, te_create
 CREATE INDEX objects_program_desc ON objects(kind, program, owner_org_unit, te_created DESC, te_uid);
 CREATE INDEX objects_unfilled ON objects(uid) WHERE slim IS NULL;
 CREATE INDEX objects_updated ON objects(updated_at, kind, uid, te_uid);
+CREATE INDEX objects_state ON objects(uid, updated_at, slot);
 CREATE INDEX objects_local ON objects(kind, uid, te_uid) WHERE origin = 'local';
 CREATE TABLE te_attrs(te_uid TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT NULL, value_lc TEXT NOT NULL,
   PRIMARY KEY(te_uid, attr));

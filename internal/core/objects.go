@@ -223,18 +223,30 @@ func (h *Hub) PersistImport(userID int64, out *tracker.ImportOutcome) (int64, er
 }
 
 // RemoveVisibilityExcept drops userID from central-origin objects of the given
-// programs that a full pull did not return (spec 11.3).
-func (h *Hub) RemoveVisibilityExcept(userID int64, programs []string, seen map[string]bool) int {
+// programs (and objects without one) that a full pull did not list (spec 11.3). It
+// starts from the user's bitmap in memory, so only the objects it may remove are
+// read: scanning the store for each user's full pull read the whole data file.
+func (h *Hub) RemoveVisibilityExcept(userID int64, programs []string, seen map[uint32]bool) int {
+	var cands []int64
+	for _, slot := range h.Index.VisibleSlots(userID) {
+		if !seen[slot] {
+			cands = append(cands, int64(slot))
+		}
+	}
+	if len(cands) == 0 {
+		return 0
+	}
+	objs, err := h.Store.SlotOrigins(cands)
+	if err != nil {
+		slog.Warn("removing visibility", "user", userID, "err", err)
+		return 0
+	}
 	changes := map[uint32]bool{}
-	slots, progs := h.Index.VisibleCentral(userID)
-	for uid, slot := range slots {
-		if seen[uid] {
+	for slot, o := range objs {
+		if o[0] != store.OriginCentral || (o[1] != "" && !slices.Contains(programs, o[1])) {
 			continue
 		}
-		if p := progs[uid]; p != "" && !slices.Contains(programs, p) {
-			continue
-		}
-		changes[slot] = false
+		changes[uint32(slot)] = false
 	}
 	if len(changes) == 0 {
 		return 0
@@ -246,19 +258,13 @@ func (h *Hub) RemoveVisibilityExcept(userID int64, programs []string, seen map[s
 	return len(changes)
 }
 
-// MarkVisible records that central showed these objects, already held, to the user
-// (the ID-list pull, spec 11.3). Unknown UIDs are skipped.
-func (h *Hub) MarkVisible(userID int64, uids []string) error {
-	// Slots only: decoding every listed object's data for this was most of a user's
-	// first pull.
-	slots, err := h.Store.SlotsOf(uids)
-	if err != nil {
-		return err
-	}
+// MarkVisible records that central showed objects already held to the user (the
+// ID-list pull, spec 11.3), by their slots.
+func (h *Hub) MarkVisible(userID int64, slots []uint32) error {
 	changes := map[uint32]bool{}
 	for _, s := range slots {
-		if o := (&tracker.Obj{Slot: uint32(s)}); s != 0 && !h.Index.VisibleTo(o, userID) {
-			changes[o.Slot] = true
+		if s != 0 && !h.Index.VisibleTo(&tracker.Obj{Slot: s}, userID) {
+			changes[s] = true
 		}
 	}
 	if len(changes) == 0 {

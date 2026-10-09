@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -276,28 +277,73 @@ func (s *Store) ObjectsByUID(uids []string) (map[string]*Object, error) {
 	return out, nil
 }
 
-// UpdatedAts returns the stored updatedAt of these objects, by uid (missing ones are
-// left out).
-func (s *Store) UpdatedAts(uids []string) (map[string]string, error) {
-	out := make(map[string]string, len(uids))
+// ObjectState is what a pull compares with central's list: the stored update time
+// and the visibility slot.
+type ObjectState struct {
+	UpdatedAt string
+	Slot      int64
+}
+
+// ObjectStates returns the state of these stored objects, by uid (missing ones are
+// left out). It reads the objects_state index alone, in uid order: a pull asks this
+// for everything central lists, and reading table rows in central's order was one
+// random page read per object, which an SD card answers slowly.
+func (s *Store) ObjectStates(uids []string) (map[string]ObjectState, error) {
+	sorted := slices.Clone(uids)
+	slices.Sort(sorted)
+	sorted = slices.Compact(sorted)
+	out := make(map[string]ObjectState, len(sorted))
 	const batch = 500
-	for start := 0; start < len(uids); start += batch {
-		part := uids[start:min(start+batch, len(uids))]
+	for start := 0; start < len(sorted); start += batch {
+		part := sorted[start:min(start+batch, len(sorted))]
 		args := make([]any, len(part))
 		for i, u := range part {
 			args[i] = u
 		}
-		rows, err := s.query(`SELECT uid, updated_at FROM objects WHERE uid IN (?`+strings.Repeat(",?", len(part)-1)+`)`, args...)
+		rows, err := s.query(`SELECT uid, updated_at, slot FROM objects INDEXED BY objects_state WHERE uid IN (?`+
+			strings.Repeat(",?", len(part)-1)+`)`, args...)
 		if err != nil {
 			return nil, err
 		}
 		for rows.Next() {
-			var uid, upd string
-			if err := rows.Scan(&uid, &upd); err != nil {
+			var uid string
+			var st ObjectState
+			if err := rows.Scan(&uid, &st.UpdatedAt, &st.Slot); err != nil {
 				rows.Close()
 				return nil, err
 			}
-			out[uid] = upd
+			out[uid] = st
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// SlotOrigins returns the origin and program of the objects in these slots, by slot.
+func (s *Store) SlotOrigins(slots []int64) (map[int64][2]string, error) {
+	out := make(map[int64][2]string, len(slots))
+	const batch = 500
+	for start := 0; start < len(slots); start += batch {
+		part := slots[start:min(start+batch, len(slots))]
+		args := make([]any, len(part))
+		for i, v := range part {
+			args[i] = v
+		}
+		rows, err := s.DB().Query(`SELECT slot, origin, program FROM objects WHERE slot IN (?`+strings.Repeat(",?", len(part)-1)+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var slot int64
+			var origin, program string
+			if err := rows.Scan(&slot, &origin, &program); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out[slot] = [2]string{origin, program}
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {
@@ -428,37 +474,6 @@ func (s *Store) TEScopes() (map[string][]string, error) {
 func (s *Store) AddTEScope(q Execer, te, scope string) error {
 	_, err := s.exec(q, sqlAddTEScope, te, scope)
 	return err
-}
-
-// SlotsOf returns the slots of these stored objects, by uid (missing ones are left out).
-func (s *Store) SlotsOf(uids []string) (map[string]int64, error) {
-	out := make(map[string]int64, len(uids))
-	const batch = 500
-	for start := 0; start < len(uids); start += batch {
-		part := uids[start:min(start+batch, len(uids))]
-		args := make([]any, len(part))
-		for i, u := range part {
-			args[i] = u
-		}
-		rows, err := s.query(`SELECT uid, slot FROM objects WHERE uid IN (?`+strings.Repeat(",?", len(part)-1)+`)`, args...)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var uid string
-			var slot int64
-			if err := rows.Scan(&uid, &slot); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			out[uid] = slot
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
 }
 
 // SlotOf is the stored object's slot, or 0.

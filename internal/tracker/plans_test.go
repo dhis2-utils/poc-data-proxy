@@ -46,6 +46,8 @@ func TestQueryPlansUseIndexes(t *testing.T) {
 	explain("te_created update", `UPDATE objects INDEXED BY objects_te SET te_created = ? WHERE te_uid = ? AND kind = 'enrollment' AND te_created <> ?`, "a", "b", "c")
 	explain("insert sub", `SELECT coalesce((SELECT created_at FROM objects WHERE uid = ? AND kind = 'trackedEntity'), '')`, "a")
 	explain("changed", `SELECT iif(kind = 'trackedEntity', uid, te_uid) FROM objects WHERE updated_at >= ? UNION SELECT iif(kind = 'trackedEntity', uid, te_uid) FROM objects WHERE origin = 'local'`, "x")
+	explain("object states", `SELECT uid, updated_at, slot FROM objects INDEXED BY objects_state WHERE uid IN (?,?)`, "a", "b")
+	explain("slot origins", `SELECT slot, origin, program FROM objects WHERE slot IN (?,?)`, 1, 2)
 	explain("unique", `SELECT count(*) FROM te_attrs WHERE attr = ? AND value = ? AND te_uid <> ?`, "a", "b", "c")
 	explain("enrolledTEs", `SELECT DISTINCT te_uid FROM objects WHERE kind = 'enrollment' AND program = ? AND owner_org_unit = ? AND sync_state = ?`, "p", "o", "s")
 	plan := func(name, coll string, q url.Values) {
