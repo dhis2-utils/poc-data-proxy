@@ -55,6 +55,27 @@ Every outbox write is also written to a USB stick plugged into the hub, encrypte
 - Cost: low. One cheap USB stick per hub.
 - Fit with the setting: automatic, no one has to remember anything. A dead card is fixed by moving the stick and card (or a new card) into a working hub.
 
+### C2. Disk plus USB, restorable (extends C)
+
+The hub keeps a copy on a USB stick in two parts, so the stick is not worn out by constant writes:
+
+- **Every minute, if anything is new:** the offline saves accepted since the last copy, plus changed key slots, tokens, the hub's identity and keys, and sync state. A few kilobytes per save; nothing is written when nobody saves. Copying runs on its own schedule, so a slow or failing stick never delays a client's save.
+- **Nightly or weekly:** a full snapshot of the store (the hub can already write a consistent encrypted copy of itself), so a restored hub can work offline at once instead of waiting to pull its cache again from central.
+
+Both stay encrypted as on the disk: the stick is as safe as the disk, opened only with a user's password.
+
+| Failure | What happens | Lost |
+|---|---|---|
+| Board | Move the disk and the stick to a new board; it boots as the same hub. | Nothing: saves are synced to the disk before the hub confirms them. |
+| Disk | New disk with the image; at first boot the hub finds the stick, restores the last snapshot and replays the newer saves, with the same hub ID. | At most the last minute's saves (Android devices still hold theirs). Records central changed since the snapshot return with the next pull. |
+| Stick | The hub keeps working and shows a warning on the dashboard and in the heartbeat, so central and the district see it. | Nothing while the disk lives. |
+
+- Health checks: stick missing, unwritable or full, a periodic write-and-read-back failing, or the snapshot older than its schedule.
+- The stick: an industrial USB stick or a pSLC card in a USB reader, formatted ext4 (journaled), not exFAT.
+- Interactions: keys bound to the board (option I) would not move with the disk, so a moved disk would need a login before pushing; the central registry's replaced-hub check must accept a restored hub with the same ID.
+- Tests (conditions phase): remove the stick during copying, fail the disk, restore on a fresh store, and check nothing is missing or duplicated against central.
+- Cost: medium. The per-minute copy and the warning first; snapshot and restore at first boot next.
+
 ### D. Keep data recoverable on the clients (Android)
 
 Android devices keep a "sent to hub, not yet confirmed by central" state. If the hub disappears, or reports it lost data, the device sends those records again (to a new hub or to central).
@@ -114,7 +135,7 @@ A printed card attached to the device: what the lights mean, who to call, and th
 | Layer | Option | Why |
 |---|---|---|
 | Reduce the window | A, and G | Cheap; most offline periods have some signal; staff know when something is wrong. |
-| Survive card failure | C | Automatic, no human step. |
+| Survive card failure | C2 (or C) | Automatic, no human step; a new disk restores from the stick. |
 | Survive power cuts and restarts | I | No one has to log in for data to flow. |
 | Survive staff turnover | E, outbox-only | District can unlock and sync without reading the cache. |
 | Survive total loss of unlock ability | F | No new key holders; bundles can be carried by anyone. |
@@ -135,7 +156,7 @@ A printed card attached to the device: what the lights mean, who to call, and th
 
 How the options relate to the hub as built (October 2026). Considerations, not decisions.
 
-- **A restart locks the hub until someone logs in.** The store is locked at boot (spec 9.1), and the sync worker pushes only while it is unlocked (`internal/sync/sync.go`). After a power cut the outbox stays put, even with a working connection, until a known user logs in. This is the gap option I addresses; a UPS (DEPLOYMENT.md, options under consideration) makes it rarer but does not remove it.
+- **A restart locks the hub until a known user logs in, through any client.** The store is locked at boot (spec 9.1), and the sync worker pushes only while it is unlocked (`internal/sync/sync.go`). Any login unlocks it: Capture web, the hub UI, or Android, whose background sync sends the stored credentials with every request, so a facility with Android devices set to sync periodically recovers without anyone doing anything. The user must have logged in to this hub online before (that is how they get a key slot), and a password changed on central while the hub was locked no longer opens their old slot. The gap is real mainly at web-only facilities, overnight, or before work starts. Option I closes it; a UPS (DEPLOYMENT.md, options under consideration) makes it rarer.
 - **A is largely in place.** The hub probes central every 15 seconds, starts a sync when the connection returns, and runs a full cycle every 5 minutes. Left to do: push before pulling, so that a short window gets the outbox out first; small push batches; resuming partway through the outbox.
 - **C combines well with F.** A mirror encrypted like the main store needs the key file and a user's password to open, so it shares the hub's unlock problem. A mirror written as F's copies, encrypted to the per-hub public key, is unreadable at the facility, harmless if the stick is lost, and recoverable centrally: one mechanism, kept in two places.
 - **E partly exists, but without the cryptographic limit.** Any user with a key slot can unlock the hub today, including a district setup user without tracker access; the hub then pushes as the original authors, and that user sees offline only what their DHIS2 access allows. The data file is encrypted under one data key, cache included, so an outbox-only key slot means first splitting the outbox and the tokens into a separately keyed file. That split also enables option I.
