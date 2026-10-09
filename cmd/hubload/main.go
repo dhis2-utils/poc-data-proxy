@@ -39,6 +39,7 @@ var (
 	duration = flag.Duration("duration", 10*time.Minute, "offline load duration")
 	think    = flag.String("think", "2s-10s", `pause between a web user's actions ("0" for the hammer run)`)
 	syncEach = flag.Duration("android-sync", 5*time.Minute, "interval of an Android user's incremental sync")
+	andLimit = flag.Int("android-limit", 500, "people an Android device downloads per program, as the Android Settings App limits it (0: all)")
 	doSetup  = flag.Bool("setup", false, "set up the hub as hub_admin first")
 	doFill   = flag.Bool("fill", false, "register the users online and wait for the first pull")
 	reconn   = flag.Bool("reconnect", true, "after the load, restore the uplink and time the push")
@@ -48,8 +49,8 @@ var (
 func main() {
 	flag.Parse()
 	lo, hi := thinkRange(*think)
-	report := []string{fmt.Sprintf("hubload %s: %d users (%.0f%% web), %s offline, think %s", time.Now().Format(time.RFC3339),
-		*users, *webShare*100, *duration, *think)}
+	report := []string{fmt.Sprintf("hubload %s: %d users (%.0f%% web), %s offline, think %s, Android limit %d per program",
+		time.Now().Format(time.RFC3339), *users, *webShare*100, *duration, *think, *andLimit)}
 	note := func(f string, a ...any) {
 		s := fmt.Sprintf(f, a...)
 		log.Print(s)
@@ -343,8 +344,9 @@ func (u *user) web(m *metrics, stop time.Time, lo, hi time.Duration) {
 	}
 }
 
-// android works like the Android Capture app: a first full download of every program,
-// then incremental syncs with an upload.
+// android works like the Android Capture app: a first download of every program, up to
+// the configured number of people per program (a device at a facility with a hub
+// does not need everyone), then incremental syncs with an upload.
 func (u *user) android(m *metrics, stop time.Time) {
 	ou := fc.Facility
 	since := time.Now().Add(-time.Minute).UTC().Format("2006-01-02T15:04:05.000")
@@ -352,7 +354,8 @@ func (u *user) android(m *metrics, stop time.Time) {
 		n, te, enr := 0, "", ""
 		start := time.Now()
 		for p := 0; p < *programs && time.Now().Before(stop); p++ {
-			for page := 1; time.Now().Before(stop); page++ {
+			got := 0
+			for page := 1; time.Now().Before(stop) && (*andLimit == 0 || got < *andLimit); page++ {
 				path := "/api/tracker/trackedEntities?program=" + fc.GenProgram(p) + "&orgUnit=" + ou +
 					"&orgUnitMode=DESCENDANTS&includeDeleted=true&page=" + fmt.Sprint(page) + "&pageSize=50&paging=true" +
 					"&fields=trackedEntity,orgUnit,attributes[attribute,value],enrollments[enrollment,program,status,events[event,programStage,status,dataValues[dataElement,value]]]"
@@ -373,6 +376,7 @@ func (u *user) android(m *metrics, stop time.Time) {
 					break
 				}
 				n += len(res.TEs)
+				got += len(res.TEs)
 				if te == "" && p == 0 && len(res.TEs) > 0 && len(res.TEs[0].Enrollments) > 0 {
 					te, enr = res.TEs[0].TE, res.TEs[0].Enrollments[0].Enrollment
 				}
@@ -382,12 +386,12 @@ func (u *user) android(m *metrics, stop time.Time) {
 			}
 		}
 		if after == "" {
-			m.add("android: full download", 200, time.Since(start))
+			m.add("android: first download", 200, time.Since(start))
 		}
 		return n, te, enr
 	}
 	n, te, enr := download("")
-	m.sample("android: people in a full download", []byte(fmt.Sprint(n)))
+	m.sample("android: people in a first download", []byte(fmt.Sprint(n)))
 	for time.Now().Before(stop) {
 		wait := time.Until(time.Now().Add(*syncEach))
 		if rest := time.Until(stop); rest < wait {

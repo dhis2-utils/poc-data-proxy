@@ -58,7 +58,7 @@ Importing this volume into DHIS2 for one facility would take hours. Instead, a r
 The 50 virtual users log in while the hub is online, then the uplink is cut (Netcut, as in the live suite). Request patterns come from what the real apps send (recorded by `clients/capture_web.py` and the Android exploration):
 
 - **Web user** (35): open a working list (page 1, newest first), search by name or ID, open the enrollment dashboard (TE, enrollments, events, relationships), add an event, then edit data values. Think time is 2–10 s in the *realistic* run and zero in the *hammer* run.
-- **Android user** (15): a first full download of the user's programs (the heaviest request set), then incremental syncs every 5 minutes and uploads of new events.
+- **Android user** (15): a first download of the user's programs, up to 500 people per program as the Android Settings App limits it (`-android-limit`, 0 for everyone: the worst case), then incremental syncs every 5 minutes and uploads of new events. A device at a facility with a hub does not need everyone.
 - **Reconnect**: after the offline period, the uplink comes back with the backlog of all 50 users' writes, and the push must finish without loss or duplicates.
 
 ## What is measured
@@ -66,7 +66,7 @@ The 50 virtual users log in while the hub is online, then the uplink is cut (Net
 - Latency p50, p95 and p99 per endpoint; throughput; errors and timeouts.
 - Hub RSS and CPU (`docker stats`, Go runtime metrics); store size on disk.
 - Startup time after a reboot, until the first login is served.
-- Android full download time per user.
+- Android first download time per user.
 - Push throughput on reconnect.
 - **Correctness under load**: a sample of the read oracle's queries runs during the hammer run, and each answer must match what the same query returns on an idle hub.
 

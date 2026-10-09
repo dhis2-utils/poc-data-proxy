@@ -143,7 +143,7 @@ ladder)
 			echo "peak hub memory: $(peak "$dir/stats-$name.txt"); killed for memory: $(docker inspect -f '{{.State.OOMKilled}}' hub-pi 2>/dev/null || echo unknown)"
 			for run in realistic hammer; do
 				echo "-- $run"
-				grep -E "registered|first pull|working list|search by name|dashboard|new event|full download|download page|upload|reconnect|failed" \
+				grep -E "registered|first pull|working list|search by name|dashboard|new event|first download|download page|people in|upload|reconnect|failed" \
 					"$dir/load-$name-$run.txt" 2>/dev/null || echo "(no report)"
 			done
 			echo
