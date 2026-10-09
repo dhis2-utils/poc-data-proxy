@@ -102,3 +102,19 @@ func BenchmarkAllObjects(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkCommitOne writes one object per transaction, as an offline save does: the
+// cost of making each commit durable.
+func BenchmarkCommitOne(b *testing.B) {
+	s := benchStore(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tx, _ := s.DB().Begin()
+		if err := s.PutObject(tx, obj(i)); err != nil {
+			b.Fatal(err)
+		}
+		if err := tx.Commit(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
