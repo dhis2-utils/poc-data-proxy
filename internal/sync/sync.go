@@ -542,6 +542,7 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 	facility, program, after string, seen map[uint32]bool) (string, int, error) {
 	h := w.H
 	maxUpdated, total := "", 0
+	covered := w.scopeCovers(program)
 	var stale, staleListed []string
 	var current []uint32
 	for page := 1; ; page++ {
@@ -564,7 +565,7 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 		}
 		for i, te := range items {
 			uid := tracker.Str(te, "trackedEntity")
-			isStale := !h.Index.HasScope(uid, program)
+			isStale := !covered(uid)
 			var listed []string
 			var slots []uint32
 			for _, it := range flat[i] {
@@ -624,6 +625,30 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 	}
 	slog.Debug("pull listed", "program", program, "objects", total, "fetched", len(stale))
 	return maxUpdated, total, nil
+}
+
+// scopeCovers tells whether a tracked entity was fetched in full for scope. A type
+// scope ("tet:<type>") is also covered by a fetch through any program of that type:
+// central answers a program fetch with the same person fields, the type's attributes
+// and relationships, plus that program's attributes and enrollments. Without this,
+// the type pull fetched everyone already fetched through a program a second time.
+func (w *Worker) scopeCovers(scope string) func(te string) bool {
+	tet, isType := strings.CutPrefix(scope, "tet:")
+	cat := w.H.Catalog()
+	return func(te string) bool {
+		if !isType || cat == nil {
+			return w.H.Index.HasScope(te, scope)
+		}
+		for _, s := range w.H.Index.Scopes(te) {
+			if s == scope {
+				return true
+			}
+			if p := cat.Programs[s]; p != nil && p.TET == tet {
+				return true
+			}
+		}
+		return false
+	}
 }
 
 // ownershipVerifyMax bounds the single reads of one ownership check.

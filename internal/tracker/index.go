@@ -47,6 +47,13 @@ func (ix *Index) HasScope(te, scope string) bool {
 	return slices.Contains(ix.scopes[te], scope)
 }
 
+// Scopes returns the pull scopes the tracked entity was fetched in full for.
+func (ix *Index) Scopes(te string) []string {
+	ix.mu.RLock()
+	defer ix.mu.RUnlock()
+	return slices.Clone(ix.scopes[te])
+}
+
 // AddScopes records that these tracked entities were fetched in full for scope.
 func (ix *Index) AddScopes(tes []string, scope string) {
 	ix.mu.Lock()
