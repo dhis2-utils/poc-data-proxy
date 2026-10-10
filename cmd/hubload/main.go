@@ -102,9 +102,15 @@ func main() {
 	if *reconn {
 		start := time.Now()
 		post(*central+"/fake/up", nil)
+		restored := time.Now()
 		waitStatus(func(s map[string]any) bool { return s["mode"] == "online" }, 5*time.Minute)
+		online := time.Now()
 		waitStatus(func(s map[string]any) bool { n, _ := s["pending"].(float64); return n == 0 }, time.Hour)
-		note("reconnect: outbox empty after %s; %s", time.Since(start).Round(time.Second), status())
+		// In steps: restoring the fake's uplink, the hub noticing, the push. The
+		// Docker runs took minutes in total while the push took seconds.
+		note("reconnect: uplink restored in %s, hub online %s later, outbox empty %s later; %s",
+			restored.Sub(start).Round(time.Millisecond), online.Sub(restored).Round(time.Second),
+			time.Since(online).Round(time.Second), status())
 	}
 	if *out != "" {
 		os.WriteFile(*out, []byte(strings.Join(report, "\n")+"\n"), 0o644)
