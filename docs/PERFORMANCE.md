@@ -250,6 +250,14 @@ Reductions, largest first: listing once per distinct access instead of per user 
 
 **After the first changes** (sync every 15 minutes with ±10 % jitter, access and catalog refreshed hourly and at login, full pull weekly, a random wait of up to a minute after an outage): 53 000 requests and 153 MB a day per hub, 300 requests a second for 500 hubs. What remains is mostly the per-user incremental listings (47 000 a day), which listing once per access group addresses.
 
+**With listing once per access group** (users whose access list is the same apart from who they are share one listing; programs with an attribute category combination stay per user, since their events also depend on each user's category options; relationship-type access joined the access list): 9 400 requests and 32 MB a day per hub, 54 requests a second for 500 hubs. The generated users all share one access, so this is the best case; a real facility has a handful of groups. What remains is mostly the hourly access refresh (four reads per user).
+
+| Per hub per day, 10 000 people, 60 users | Requests | Data |
+|---|---|---|
+| Before | 214 000 | 1 GB |
+| 15-minute syncs, hourly access refresh, weekly full pull | 53 000 | 153 MB |
+| Listing per access group | 9 400 | 32 MB |
+
 The fake central was corrected for this measurement: "updated after" now means strictly after (all generated objects share one update time), and the ownership listing returns identifiers only, as DHIS2 does for those fields.
 
 ### Next ladder targets

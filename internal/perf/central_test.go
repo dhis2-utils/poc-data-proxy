@@ -119,7 +119,7 @@ func TestCentralLoad(t *testing.T) {
 
 // refreshKind: the access and catalog reads of a refresh.
 func refreshKind(k string) bool {
-	return k == "GET /api/me" || k == "GET /api/programs" || k == "GET /api/trackedEntityTypes"
+	return k == "GET /api/me" || k == "GET /api/programs" || k == "GET /api/trackedEntityTypes" || k == "GET /api/relationshipTypes"
 }
 
 var singleTE = regexp.MustCompile(`^/api/tracker/trackedEntities/[A-Za-z0-9]{11}$`)

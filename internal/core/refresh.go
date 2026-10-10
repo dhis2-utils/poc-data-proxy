@@ -109,6 +109,26 @@ func (h *Hub) FetchAccess(ctx context.Context, auth central.Auth) (*access.List,
 			l.Stages[s.ID] = s.Access.Data
 		}
 	}
+	// Relationship types decide which relationships central shows: part of what makes
+	// two users' listings the same (access.List.GroupKey).
+	var rts struct {
+		RelationshipTypes []struct {
+			ID string `json:"id"`
+			dataAccess
+		} `json:"relationshipTypes"`
+	}
+	if err := h.Central.JSON(ctx, "GET", central.Q("/api/relationshipTypes", "fields", "id,access[data[read,write]]",
+		"paging", "false"), nil, auth, &rts); err != nil {
+		if central.IsNetwork(err) {
+			return nil, err
+		}
+		l.Ungroupable = true
+	} else {
+		l.RelationshipTypes = map[string]access.Perm{}
+		for _, rt := range rts.RelationshipTypes {
+			l.RelationshipTypes[rt.ID] = rt.Access.Data
+		}
+	}
 	return l, nil
 }
 

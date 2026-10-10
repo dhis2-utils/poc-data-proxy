@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dhis2/facility-hub/internal/access"
 	"io"
 	"log/slog"
+	"maps"
 	"math/rand/v2"
 	"net/http"
 	"slices"
@@ -445,15 +447,16 @@ func (w *Worker) ReportIssues(ctx context.Context) error {
 
 func (w *Worker) Pull(ctx context.Context) error {
 	h := w.H
-	api := h.API()
 	users, err := h.Store.Users()
 	if err != nil {
 		return err
 	}
-	facility := h.Facility()
-	cat := h.Catalog()
 	var failed []error
 	readers := map[string]central.Auth{} // program -> a user whose pull of it succeeded
+	// Users central answers alike share one listing (access.List.GroupKey): listing
+	// per user was most of what a hub asked of central (docs/PERFORMANCE.md).
+	groups := map[string][]*puller{}
+	var order []string
 	for _, u := range users {
 		if u.NeedsLogin || (!u.HasPAT && !u.HasPassword) {
 			continue
@@ -466,112 +469,18 @@ func (w *Worker) Pull(ctx context.Context) error {
 		if err != nil {
 			continue
 		}
-		var programs []string
-		// A user whose access changed since their last pull gets a full pull, so what
-		// they gained or lost shows at this sync rather than the next daily one.
-		accKey := "pull_access:" + strconv.FormatInt(u.ID, 10)
-		accJSON, _ := json.Marshal(acc)
-		full := h.Store.Private(accKey) != string(accJSON)
-		failedBefore := len(failed)
-		var unreadable []string // programs the user may not read: a full pull settles them empty
-		for _, p := range cat.ProgramIDs() {
-			pm := cat.Programs[p]
-			if !acc.Program(p).Read || (pm != nil && pm.TET != "" && !acc.TET(pm.TET).Read) {
-				unreadable = append(unreadable, p) // central would refuse the search (E1006 without tracked entity type access)
-				continue
-			}
-			programs = append(programs, p)
-			_, lastFull := h.Store.PullState(u.ID, p)
-			if t := store.ParseTime(lastFull); t.IsZero() || time.Since(t) > h.Cfg.FullPullInterval {
-				full = true
-			}
+		k := acc.GroupKey()
+		if _, ok := groups[k]; !ok {
+			order = append(order, k)
 		}
-		// Also each readable tracked entity type, for people enrolled in nothing the
-		// user can read (found by the differential oracle, docs/TESTING.md).
-		for _, tet := range cat.TETs() {
-			if acc.TET(tet).Read {
-				programs = append(programs, "tet:"+tet)
-			}
-		}
-		seen := map[uint32]bool{} // slots listed for the user
-		var deferred []olderPull
-		var settled []string // programs whose visibility this pull may decide
-		for _, p := range programs {
-			lastPull, _ := h.Store.PullState(u.ID, p)
-			after := ""
-			if !full {
-				after = lastPull
-			}
-			maxUpdated, n, older, err := w.pullProgram(ctx, api, auth, u.ID, facility, p, after, seen, full)
-			if err != nil {
-				st := central.Status(err)
-				switch {
-				case central.IsNetwork(err):
-					return fmt.Errorf("pull %s/%s: %w", u.Username, p, err)
-				case st == http.StatusUnauthorized:
-					h.Store.SetNeedsLogin(u.ID, true)
-				case st >= 400 && st < 500:
-					// Central refuses this user the program: they lose what they saw of
-					// it, and the other users' pulls go on.
-					slog.Warn("pull refused by central", "user", u.Username, "program", p, "err", err)
-					settled = append(settled, p)
-					continue
-				default:
-					// A server error says nothing about access: keep what the user sees.
-					slog.Warn("pull failed", "user", u.Username, "program", p, "err", err)
-					failed = append(failed, fmt.Errorf("pull %s/%s: %w", u.Username, p, err))
-					continue
-				}
-				break
-			}
-			settled = append(settled, p)
-			if _, ok := readers[p]; !ok && !strings.HasPrefix(p, "tet:") {
-				readers[p] = auth
-			}
-			if maxUpdated == "" {
-				maxUpdated = lastPull
-			}
-			done := func() {
-				if full {
-					// Full pulls record their own time so the daily check works.
-					h.Store.SetPullState(u.ID, p, maxUpdated, true)
-					h.Store.DB().Exec(`UPDATE pull_state SET last_full_at=? WHERE user_id=? AND program=?`, store.Now(), u.ID, p)
-				} else {
-					h.Store.SetPullState(u.ID, p, maxUpdated, false)
-				}
-				slog.Info("pulled", "user", u.Username, "program", p, "full", full, "objects", n)
-			}
-			if older != nil {
-				deferred = append(deferred, olderPull{program: p, set: older, done: done})
-			} else {
-				done()
-			}
-		}
-		// Then the older people of every program, once each program's recent ones are
-		// in. An interruption leaves them for the next cycle, which lists again and
-		// fetches only what is still missing.
-		for _, d := range deferred {
-			if err := w.fetchStale(ctx, api, auth, u.ID, facility, d.program, d.set, seen); err != nil {
-				if central.IsNetwork(err) {
-					return fmt.Errorf("pull %s/%s: %w", u.Username, d.program, err)
-				}
-				slog.Warn("pull failed", "user", u.Username, "program", d.program, "err", err)
-				failed = append(failed, fmt.Errorf("pull %s/%s: %w", u.Username, d.program, err))
-				continue
-			}
-			d.done()
-		}
-		if len(failed) == failedBefore { // this user's pull completed
-			h.Store.SetPrivate(accKey, string(accJSON))
-		}
-		settled = append(settled, unreadable...)
-		if full && len(settled) > 0 {
-			if n := h.RemoveVisibilityExcept(u.ID, settled, seen); n > 0 {
-				slog.Info("full pull removed visibility", "user", u.Username, "objects", n)
-			}
+		groups[k] = append(groups[k], &puller{u: u, acc: acc, auth: auth})
+	}
+	for _, k := range order {
+		if err := w.pullGroup(ctx, groups[k], readers, &failed); err != nil {
+			return err
 		}
 	}
-	if err := w.checkOwnership(ctx, api, facility, readers); err != nil {
+	if err := w.checkOwnership(ctx, h.API(), h.Facility(), readers); err != nil {
 		if central.IsNetwork(err) {
 			return err
 		}
@@ -581,6 +490,215 @@ func (w *Worker) Pull(ctx context.Context) error {
 	h.Stats.Set(func(s *core.SyncStats) { s.LastPull = now })
 	h.Store.SetPrivate("last_pull", now)
 	return errors.Join(failed...)
+}
+
+// puller is a user whose view the hub pulls.
+type puller struct {
+	u    *store.User
+	acc  *access.List
+	auth central.Auth
+}
+
+func (p *puller) accKey() string { return "pull_access:" + strconv.FormatInt(p.u.ID, 10) }
+
+func (p *puller) accJSON() string {
+	b, _ := json.Marshal(p.acc)
+	return string(b)
+}
+
+// pullGroup pulls the view of users with the same access, listing as the first of
+// them and applying the result to all. It returns only network errors; others are
+// added to failed.
+func (w *Worker) pullGroup(ctx context.Context, g []*puller, readers map[string]central.Auth, failed *[]error) error {
+	h := w.H
+	cat := h.Catalog()
+	acc := g[0].acc
+	// A user whose access changed since their last pull gets a full pull, so what
+	// they gained or lost shows at this sync rather than the next weekly one. The
+	// group pulls in full if any member needs it.
+	full := false
+	for _, m := range g {
+		full = full || h.Store.Private(m.accKey()) != m.accJSON()
+	}
+	failedBefore := len(*failed)
+	var programs []string
+	var unreadable []string // programs the users may not read: a full pull settles them empty
+	for _, p := range cat.ProgramIDs() {
+		pm := cat.Programs[p]
+		if !acc.Program(p).Read || (pm != nil && pm.TET != "" && !acc.TET(pm.TET).Read) {
+			unreadable = append(unreadable, p) // central would refuse the search (E1006 without tracked entity type access)
+			continue
+		}
+		programs = append(programs, p)
+		for _, m := range g {
+			_, lastFull := h.Store.PullState(m.u.ID, p)
+			if t := store.ParseTime(lastFull); t.IsZero() || time.Since(t) > h.Cfg.FullPullInterval {
+				full = true
+			}
+		}
+	}
+	// Also each readable tracked entity type, for people enrolled in nothing the
+	// users can read (found by the differential oracle, docs/TESTING.md).
+	for _, tet := range cat.TETs() {
+		if acc.TET(tet).Read {
+			programs = append(programs, "tet:"+tet)
+		}
+	}
+	shared := map[uint32]bool{} // slots listed for the group
+	var settled []string        // programs whose visibility this pull may decide, for all
+	own := map[int64]map[uint32]bool{}
+	ownSettled := map[int64][]string{}
+	var deferred []olderPull
+	for _, p := range programs {
+		if pm := cat.Programs[p]; len(g) > 1 && pm != nil && pm.AttributeCombo {
+			// Its events also depend on each user's access to category options, which
+			// the group key does not cover: listed per user.
+			for _, m := range g {
+				if own[m.u.ID] == nil {
+					own[m.u.ID] = map[uint32]bool{}
+				}
+				ok, _, stop, err := w.pullFor(ctx, []*puller{m}, p, full, false, own[m.u.ID], readers, failed)
+				if err != nil {
+					return err
+				}
+				if ok {
+					ownSettled[m.u.ID] = append(ownSettled[m.u.ID], p)
+				}
+				if stop {
+					break
+				}
+			}
+			continue
+		}
+		ok, older, stop, err := w.pullFor(ctx, g, p, full, full, shared, readers, failed)
+		if err != nil {
+			return err
+		}
+		if ok {
+			settled = append(settled, p)
+		}
+		if older != nil {
+			deferred = append(deferred, *older)
+		}
+		if stop {
+			break
+		}
+	}
+	// Then the older people of every program, once each program's recent ones are
+	// in. An interruption leaves them for the next cycle, which lists again and
+	// fetches only what is still missing.
+	rep := g[0]
+	for _, d := range deferred {
+		if err := w.fetchStale(ctx, h.API(), rep.auth, rep.u.ID, h.Facility(), d.program, d.set, shared); err != nil {
+			if central.IsNetwork(err) {
+				return fmt.Errorf("pull %s/%s: %w", rep.u.Username, d.program, err)
+			}
+			slog.Warn("pull failed", "user", rep.u.Username, "program", d.program, "err", err)
+			*failed = append(*failed, fmt.Errorf("pull %s/%s: %w", rep.u.Username, d.program, err))
+			continue
+		}
+		d.done()
+	}
+	// What was listed as the first member is visible to all of them.
+	if len(g) > 1 && len(shared) > 0 {
+		slots := make([]uint32, 0, len(shared))
+		for s := range shared {
+			slots = append(slots, s)
+		}
+		for _, m := range g[1:] {
+			if err := h.MarkVisible(m.u.ID, slots); err != nil {
+				*failed = append(*failed, fmt.Errorf("visibility for %s: %w", m.u.Username, err))
+			}
+		}
+	}
+	if len(*failed) == failedBefore { // the group's pull completed
+		for _, m := range g {
+			h.Store.SetPrivate(m.accKey(), m.accJSON())
+		}
+	}
+	if full {
+		for _, m := range g {
+			decided := slices.Concat(settled, unreadable, ownSettled[m.u.ID])
+			if len(decided) == 0 {
+				continue
+			}
+			seen := shared
+			if len(own[m.u.ID]) > 0 {
+				seen = maps.Clone(shared)
+				maps.Copy(seen, own[m.u.ID])
+			}
+			if n := h.RemoveVisibilityExcept(m.u.ID, decided, seen); n > 0 {
+				slog.Info("full pull removed visibility", "user", m.u.Username, "objects", n)
+			}
+		}
+	}
+	if len(g) > 1 {
+		slog.Info("pulled for an access group", "users", len(g), "listedAs", rep.u.Username, "full", full)
+	}
+	return nil
+}
+
+// pullFor pulls one program for users with the same access, listing as the first of
+// them; incremental pulls start from the oldest of their last pulls, so none misses a
+// change. ok: the pull decided the program's visibility. older: people to fetch after
+// every program's recent ones. stop: the listing user can no longer pull.
+func (w *Worker) pullFor(ctx context.Context, g []*puller, p string, full, deferOlder bool, seen map[uint32]bool,
+	readers map[string]central.Auth, failed *[]error) (ok bool, older *olderPull, stop bool, err error) {
+	h := w.H
+	rep := g[0]
+	after := ""
+	if !full {
+		for i, m := range g {
+			last, _ := h.Store.PullState(m.u.ID, p)
+			if i == 0 || last < after {
+				after = last
+			}
+		}
+	}
+	maxUpdated, n, set, perr := w.pullProgram(ctx, h.API(), rep.auth, rep.u.ID, h.Facility(), p, after, seen, deferOlder)
+	if perr != nil {
+		st := central.Status(perr)
+		switch {
+		case central.IsNetwork(perr):
+			return false, nil, true, fmt.Errorf("pull %s/%s: %w", rep.u.Username, p, perr)
+		case st == http.StatusUnauthorized:
+			h.Store.SetNeedsLogin(rep.u.ID, true)
+			return false, nil, true, nil
+		case st >= 400 && st < 500:
+			// Central refuses this access the program: they lose what they saw of it,
+			// and the other pulls go on.
+			slog.Warn("pull refused by central", "user", rep.u.Username, "program", p, "err", perr)
+			return true, nil, false, nil
+		default:
+			// A server error says nothing about access: keep what the users see.
+			slog.Warn("pull failed", "user", rep.u.Username, "program", p, "err", perr)
+			*failed = append(*failed, fmt.Errorf("pull %s/%s: %w", rep.u.Username, p, perr))
+			return false, nil, false, nil
+		}
+	}
+	if _, ok := readers[p]; !ok && !strings.HasPrefix(p, "tet:") {
+		readers[p] = rep.auth
+	}
+	if maxUpdated == "" {
+		maxUpdated = after
+	}
+	done := func() {
+		for _, m := range g {
+			if full {
+				// Full pulls record their own time so the weekly check works.
+				h.Store.SetPullState(m.u.ID, p, maxUpdated, true)
+				h.Store.DB().Exec(`UPDATE pull_state SET last_full_at=? WHERE user_id=? AND program=?`, store.Now(), m.u.ID, p)
+			} else {
+				h.Store.SetPullState(m.u.ID, p, maxUpdated, false)
+			}
+		}
+		slog.Info("pulled", "user", rep.u.Username, "users", len(g), "program", p, "full", full, "objects", n)
+	}
+	if set != nil {
+		return true, &olderPull{program: p, set: set, done: done}, false, nil
+	}
+	done()
+	return true, nil, false, nil
 }
 
 // pullProgram pulls one user's view of one program (or "tet:<type>") in two steps:

@@ -308,6 +308,8 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"trackedEntityTypeAttributes": []any{at(AttrFirstName), at(AttrLastName)}}}})
 	case p == "/api/programs":
 		c.programs(w, r, u)
+	case p == "/api/relationshipTypes":
+		writeJSON(w, 200, map[string]any{"relationshipTypes": []any{}})
 	case p == "/api/programs/"+Program:
 		writeJSON(w, 200, map[string]any{"id": Program, "name": "TB program"})
 	case p == "/api/categoryOptionCombos":

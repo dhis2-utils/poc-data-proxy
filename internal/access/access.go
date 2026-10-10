@@ -25,6 +25,34 @@ type List struct {
 	Programs       map[string]Perm `json:"programs"`
 	Stages         map[string]Perm `json:"stages"`
 	TETs           map[string]Perm `json:"trackedEntityTypes"`
+	// RelationshipTypes: which relationships central shows the user.
+	RelationshipTypes map[string]Perm `json:"relationshipTypes,omitempty"`
+	// Ungroupable: something central uses for this user could not be read, so their
+	// pulls are never shared with others (GroupKey).
+	Ungroupable bool `json:"ungroupable,omitempty"`
+}
+
+// GroupKey is the same for users central answers alike when the hub lists what they
+// see at the facility: everything in the list except who they are. Users with the same
+// key share one listing per sync (docs/PERFORMANCE.md, "Load on central"). Two things
+// central uses are not in the list: category option sharing, which decides events in
+// programs with an attribute category combination (those are listed per user), and
+// sharing granted to one user directly rather than through a group on anything other
+// than programs, stages, types and relationship types.
+func (l *List) GroupKey() string {
+	if l == nil {
+		return ""
+	}
+	if l.Ungroupable {
+		return "user:" + l.UserUID
+	}
+	k := *l
+	k.UserUID, k.Username = "", ""
+	sorted := func(s []string) []string { s = slices.Clone(s); slices.Sort(s); return s }
+	k.OrgUnits, k.SearchOrgUnits = sorted(k.OrgUnits), sorted(k.SearchOrgUnits)
+	k.Authorities, k.UserGroups = sorted(k.Authorities), sorted(k.UserGroups)
+	b, _ := json.Marshal(k) // maps marshal with sorted keys
+	return string(b)
 }
 
 func Parse(b []byte) (*List, error) {
