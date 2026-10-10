@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"slices"
 	"strconv"
@@ -32,6 +33,8 @@ type Worker struct {
 
 	mu     stdsync.Mutex // one cycle at a time
 	pushMu stdsync.Mutex // one push at a time: Cycle, the upgrade drain and reset all push
+
+	lastRefresh time.Time // last access and catalog refresh (Config.AccessRefreshInterval)
 }
 
 // Exclusive runs f while no sync cycle runs, and keeps cycles out until f returns.
@@ -55,10 +58,20 @@ const (
 func (w *Worker) Run(ctx context.Context) {
 	w.H.Monitor.OnChange(func(online bool) {
 		if online {
+			// A random wait first: after an outage of central, every hub reconnects
+			// at once.
+			if d := w.H.Cfg.ReconnectDelay; d > 0 {
+				time.Sleep(rand.N(d))
+			}
 			w.H.TriggerSync()
 		}
 	})
-	t := time.NewTicker(w.H.Cfg.SyncInterval)
+	// Each wait is the interval ±10 %, so hubs started together drift apart.
+	next := func() time.Duration {
+		i := w.H.Cfg.SyncInterval
+		return i - i/10 + rand.N(i/5+1)
+	}
+	t := time.NewTimer(next())
 	defer t.Stop()
 	for {
 		select {
@@ -67,10 +80,39 @@ func (w *Worker) Run(ctx context.Context) {
 		case <-t.C:
 		case <-w.H.SyncNow:
 		}
+		t.Reset(next())
 		if err := w.Cycle(ctx); err != nil {
 			slog.Warn("sync cycle", "err", err)
 		}
 	}
+}
+
+// refreshAccess re-reads the program catalog and every user's access from central.
+// A network error ends the cycle; others are added to errs.
+func (w *Worker) refreshAccess(ctx context.Context, errs *[]error) error {
+	h := w.H
+	if err := h.RefreshCatalog(ctx); err != nil {
+		if central.IsNetwork(err) {
+			return err
+		}
+		*errs = append(*errs, fmt.Errorf("catalog: %w", err))
+	}
+	users, err := h.Store.Users()
+	if err != nil {
+		return err
+	}
+	for _, u := range users {
+		if u.NeedsLogin || (!u.HasPAT && !u.HasPassword) {
+			continue
+		}
+		if err := h.RefreshAccess(ctx, u.ID); err != nil {
+			if central.IsNetwork(err) {
+				return err
+			}
+			slog.Warn("access refresh", "user", u.Username, "err", err)
+		}
+	}
+	return nil
 }
 
 // Cycle runs one full sync if the hub is online, unlocked and set up.
@@ -128,26 +170,11 @@ func (w *Worker) cycle(ctx context.Context) error {
 			h.UpdateRuntime(func(rt *core.Runtime) { rt.FacilityPath = ou.Path })
 		}
 	}
-	if err := h.RefreshCatalog(ctx); err != nil {
-		if central.IsNetwork(err) {
+	if every := h.Cfg.AccessRefreshInterval; every <= 0 || time.Since(w.lastRefresh) >= every {
+		if err := w.refreshAccess(ctx, &errs); err != nil {
 			return err
 		}
-		errs = append(errs, fmt.Errorf("catalog: %w", err))
-	}
-	users, err := h.Store.Users()
-	if err != nil {
-		return err
-	}
-	for _, u := range users {
-		if u.NeedsLogin || (!u.HasPAT && !u.HasPassword) {
-			continue
-		}
-		if err := h.RefreshAccess(ctx, u.ID); err != nil {
-			if central.IsNetwork(err) {
-				return err
-			}
-			slog.Warn("access refresh", "user", u.Username, "err", err)
-		}
+		w.lastRefresh = time.Now()
 	}
 	if pruned, err := h.Store.PruneKeySlots(h.Cfg.KeySlotMaxAge, 3); err != nil {
 		errs = append(errs, fmt.Errorf("key slots: %w", err))

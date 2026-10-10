@@ -248,6 +248,8 @@ What one hub asks of central, measured by `internal/perf.TestCentralLoad` (every
 
 Reductions, largest first: listing once per distinct access instead of per user (the generated users share one access, so here 60 times fewer listings; real facilities have a handful of access groups); refreshing access and the catalog hourly or on login instead of every cycle; a longer sync interval; the full pull weekly; jitter on every schedule and a back-off after outages, so hubs do not act in step.
 
+**After the first changes** (sync every 15 minutes with ±10 % jitter, access and catalog refreshed hourly and at login, full pull weekly, a random wait of up to a minute after an outage): 53 000 requests and 153 MB a day per hub, 300 requests a second for 500 hubs. What remains is mostly the per-user incremental listings (47 000 a day), which listing once per access group addresses.
+
 The fake central was corrected for this measurement: "updated after" now means strictly after (all generated objects share one update time), and the ownership listing returns identifiers only, as DHIS2 does for those fields.
 
 ### Next ladder targets

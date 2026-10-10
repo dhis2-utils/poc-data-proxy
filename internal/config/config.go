@@ -33,7 +33,15 @@ type Config struct {
 	// OwnershipCheckInterval: how often the hub checks that the facility still owns the
 	// enrollments it holds (transfers out do not show in incremental pulls).
 	OwnershipCheckInterval time.Duration
-	LogRequests            bool // log every request with method, path and query (spec 13.1)
+	// AccessRefreshInterval: how often a sync cycle re-reads every user's access and
+	// the program catalog from central (logins refresh the user's own at once).
+	// Re-reading them in every cycle was a third of what a hub asked of central
+	// (docs/PERFORMANCE.md, "Load on central").
+	AccessRefreshInterval time.Duration
+	// ReconnectDelay: after an outage, wait a random time up to this before the first
+	// sync, so hubs do not all reach central in the same second when it returns.
+	ReconnectDelay time.Duration
+	LogRequests    bool // log every request with method, path and query (spec 13.1)
 	// OfflineSearchFacility answers orgUnitMode=ACCESSIBLE/CAPTURE searches offline from
 	// the facility's data (spec 10.1 says refuse; Capture needs it, see FINDINGS.md).
 	OfflineSearchFacility bool
@@ -55,14 +63,16 @@ func Default() Config {
 	return Config{
 		Listen:                 ":8443",
 		DataDir:                "/var/lib/hub",
-		SyncInterval:           5 * time.Minute,
+		SyncInterval:           15 * time.Minute,
 		PingInterval:           15 * time.Second,
 		PingTimeout:            5 * time.Second,
 		PATExpiryDays:          90,
 		TLS:                    true,
 		ReservedPoolSize:       150,
-		FullPullInterval:       24 * time.Hour,
+		FullPullInterval:       7 * 24 * time.Hour,
 		OwnershipCheckInterval: time.Hour,
+		AccessRefreshInterval:  time.Hour,
+		ReconnectDelay:         time.Minute,
 		OfflineSearchFacility:  true,
 		SessionIdle:            time.Hour,
 		SessionMax:             12 * time.Hour,
@@ -123,6 +133,10 @@ func (c *Config) set(k, v string) error {
 		c.FullPullInterval, err = time.ParseDuration(v)
 	case "ownership_check_interval":
 		c.OwnershipCheckInterval, err = time.ParseDuration(v)
+	case "access_refresh_interval":
+		c.AccessRefreshInterval, err = time.ParseDuration(v)
+	case "reconnect_delay":
+		c.ReconnectDelay, err = time.ParseDuration(v)
 	case "pat_expiry_days":
 		c.PATExpiryDays, err = strconv.Atoi(v)
 	case "reserved_pool_size":

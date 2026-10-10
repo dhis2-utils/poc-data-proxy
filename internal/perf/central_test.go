@@ -59,35 +59,47 @@ func TestCentralLoad(t *testing.T) {
 		report = append(report, table(p.calls)...)
 	}
 
-	// A day: a sync cycle every SyncInterval (the ownership check only every
-	// OwnershipCheckInterval; the test runs it in each cycle), and one full pull.
-	cycles := float64(24*time.Hour) / float64(cfg.SyncInterval)
-	checks := 24.0
-	if cfg.OwnershipCheckInterval > 0 {
-		checks = float64(24*time.Hour) / float64(cfg.OwnershipCheckInterval)
-	}
+	// A day at the deployed intervals. The test runs the ownership check and the
+	// access refresh in every cycle, so the quiet cycle's requests are counted by what
+	// they are for: ownership checks per OwnershipCheckInterval, access and catalog
+	// reads per AccessRefreshInterval, the rest per SyncInterval; the full pull's
+	// listings per FullPullInterval.
+	perDay := func(d time.Duration) float64 { return float64(24*time.Hour) / float64(d) }
 	day := map[string][2]float64{}
-	add := func(calls []tk.Call, times float64, ownership bool) {
+	add := func(calls []tk.Call, times func(kind string) float64) {
 		for _, c := range calls {
 			k := kind(c)
-			if strings.HasPrefix(k, "ownership") != ownership {
+			n := times(k)
+			if n == 0 {
 				continue
 			}
 			v := day[k]
-			day[k] = [2]float64{v[0] + times, v[1] + times*float64(c.Bytes)}
+			day[k] = [2]float64{v[0] + n, v[1] + n*float64(c.Bytes)}
 		}
 	}
-	add(quiet, cycles, false) // the sync cycles
-	add(quiet, checks, true)  // their ownership checks
-	add(full, 1, false)       // the daily full pull, without its ownership check
+	add(quiet, func(k string) float64 {
+		switch {
+		case strings.HasPrefix(k, "ownership"):
+			return perDay(cfg.OwnershipCheckInterval)
+		case refreshKind(k):
+			return perDay(cfg.AccessRefreshInterval)
+		}
+		return perDay(cfg.SyncInterval)
+	})
+	add(full, func(k string) float64 {
+		if k == "list identifiers (full)" {
+			return perDay(cfg.FullPullInterval)
+		}
+		return 0
+	})
 	var reqs, bytes float64
 	keys := make([]string, 0, len(day))
 	for k := range day {
 		keys = append(keys, k)
 	}
 	slices.Sort(keys)
-	report = append(report, "", fmt.Sprintf("per day (a sync every %s, an ownership check every %s, a full pull daily):",
-		cfg.SyncInterval, cfg.OwnershipCheckInterval))
+	report = append(report, "", fmt.Sprintf("per day (a sync every %s, ownership checked every %s, access refreshed every %s, a full pull every %s):",
+		cfg.SyncInterval, cfg.OwnershipCheckInterval, cfg.AccessRefreshInterval, cfg.FullPullInterval))
 	for _, k := range keys {
 		v := day[k]
 		report = append(report, fmt.Sprintf("  %-34s %10.0f requests %10.1f MB", k, v[0], v[1]/1e6))
@@ -103,6 +115,11 @@ func TestCentralLoad(t *testing.T) {
 	if p := os.Getenv("HUB_PERF_OUT"); p != "" {
 		os.WriteFile(p, []byte(out+"\n"), 0o644)
 	}
+}
+
+// refreshKind: the access and catalog reads of a refresh.
+func refreshKind(k string) bool {
+	return k == "GET /api/me" || k == "GET /api/programs" || k == "GET /api/trackedEntityTypes"
 }
 
 var singleTE = regexp.MustCompile(`^/api/tracker/trackedEntities/[A-Za-z0-9]{11}$`)
