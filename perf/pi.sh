@@ -22,11 +22,19 @@
 #
 # MEM overrides the profile's memory limit (e.g. MEM=2g).
 #
+# RUN=name runs alongside other runs: its own containers (hub-pi-<name>,
+# perf-central-<name>), volume and results folder (ladder-<profile>-<name>-…). Each run
+# uses CPU, memory and disk of the same Docker VM, so parallel runs slow each other.
+#
 # IO=0 skips the disk limits (for instance if Docker refuses the device). DEVICE is the
 # block device the limits apply to: in Docker Desktop, the VM's disk, /dev/vda.
 set -eu
 
 IMAGE=facility-hub-perf
+SUF=${RUN:+-$RUN}
+HUB=hub-pi$SUF
+CEN=perf-central$SUF
+VOL=hub-pi-data$SUF
 NET=dev-net
 DEVICE=${DEVICE:-/dev/vda}
 IO=${IO:-1}
@@ -67,13 +75,20 @@ limits() {
 up_() {
 	lim=$(limits "$1")
 	docker network inspect "$NET" >/dev/null 2>&1 || docker network create "$NET"
-	docker rm -f perf-central hub-pi >/dev/null 2>&1 || true
+	docker rm -f "$CEN" "$HUB" >/dev/null 2>&1 || true
 	# The fake central is not constrained: it stands in for a national server.
-	docker run -d --name perf-central --network "$NET" --entrypoint fakecentral "$IMAGE" -listen :8090 \
+	docker run -d --name "$CEN" --network "$NET" --entrypoint fakecentral "$IMAGE" -listen :8090 \
 		-tes "$TES" -enrollments "$ENROLLMENTS" -events "$EVENTS" -users "$USERS" >/dev/null
 	# shellcheck disable=SC2086
-	docker run -d --name hub-pi --network "$NET" $lim -v hub-pi-data:/data "$IMAGE" >/dev/null
-	echo "hub: http://hub-pi:8080 on $NET (profile $1: $lim; $TES TEs, $ENROLLMENTS enrollments, $EVENTS events, $USERS users)"
+	conf=""
+	if [ -n "$SUF" ]; then # the image's config names hub-pi and perf-central
+		mkdir -p perf/results
+		sed "s/perf-central/$CEN/; s/hub-pi/$HUB/" perf/hub.yaml >"perf/results/.hub$SUF.yaml"
+		conf="-v $PWD/perf/results/.hub$SUF.yaml:/etc/hub/hub.yaml:ro"
+	fi
+	# shellcheck disable=SC2086
+	docker run -d --name "$HUB" --network "$NET" $lim $conf -v "$VOL:/data" "$IMAGE" >/dev/null
+	echo "hub: http://$HUB:8080 on $NET (profile $1: $lim; $TES TEs, $ENROLLMENTS enrollments, $EVENTS events, $USERS users)"
 }
 
 # load_ OUT [hubload flags]: OUT is a path under perf/results.
@@ -83,14 +98,14 @@ load_() {
 	mkdir -p "$(dirname "$out")"
 	# The load generator runs outside the hub's limits, like the clients it stands in for.
 	docker run --rm --network "$NET" -v "$PWD/perf/results:/results" --entrypoint hubload "$IMAGE" \
-		-hub http://hub-pi:8080 -central http://perf-central:8090 -users "$USERS" \
+		-hub "http://$HUB:8080" -central "http://$CEN:8090" -users "$USERS" \
 		-out "/results/${out#perf/results/}" "$@"
 }
 
 # sample OUT: the hub container's memory and CPU every 10 seconds, until killed.
 sample() {
 	while true; do
-		docker stats --no-stream --format '{{.MemUsage}} {{.CPUPerc}}' hub-pi 2>/dev/null | sed "s/^/$(date +%T) /"
+		docker stats --no-stream --format '{{.MemUsage}} {{.CPUPerc}}' "$HUB" 2>/dev/null | sed "s/^/$(date +%T) /"
 		sleep 10
 	done >"$1"
 }
@@ -120,7 +135,7 @@ ladder)
 	prof=${2:-pi5}
 	limits "$prof" >/dev/null
 	sizes=${SIZES:-"30k:30000:50000:120000 100k:100000:167000:400000 hc4:300000:500000:1200000 hc4-5y:300000:1200000:3100000 pessimistic:700000:1200000:3100000"}
-	dir="perf/results/ladder-$prof-$(date +%Y%m%d-%H%M)"
+	dir="perf/results/ladder-$prof$SUF-$(date +%Y%m%d-%H%M)"
 	mkdir -p "$dir"
 	for s in $sizes; do
 		name=${s%%:*}
@@ -130,18 +145,18 @@ ladder)
 		ENROLLMENTS=${rest%%:*}
 		EVENTS=${rest#*:}
 		echo "== $name: $TES tracked entities, $ENROLLMENTS enrollments, $EVENTS events"
-		docker rm -f perf-central hub-pi >/dev/null 2>&1 || true
-		docker volume rm hub-pi-data >/dev/null 2>&1 || true
+		docker rm -f "$CEN" "$HUB" >/dev/null 2>&1 || true
+		docker volume rm "$VOL" >/dev/null 2>&1 || true
 		up_ "$prof"
 		sample "$dir/stats-$name.txt" &
 		spid=$!
 		load_ "$dir/load-$name-realistic.txt" -setup -fill -duration "${DURATION:-5m}" || echo "realistic run failed"
 		load_ "$dir/load-$name-hammer.txt" -duration "${HAMMER:-2m}" -think 0 || echo "hammer run failed"
 		kill "$spid" 2>/dev/null || true
-		docker logs hub-pi >"$dir/hub-$name.log" 2>&1 || true
+		docker logs "$HUB" >"$dir/hub-$name.log" 2>&1 || true
 		{
 			echo "== $name: $TES tracked entities, $ENROLLMENTS enrollments, $EVENTS events, $USERS users, $prof"
-			echo "peak hub memory: $(peak "$dir/stats-$name.txt"); killed for memory: $(docker inspect -f '{{.State.OOMKilled}}' hub-pi 2>/dev/null || echo unknown)"
+			echo "peak hub memory: $(peak "$dir/stats-$name.txt"); killed for memory: $(docker inspect -f '{{.State.OOMKilled}}' "$HUB" 2>/dev/null || echo unknown)"
 			for run in realistic hammer; do
 				echo "-- $run"
 				grep -E "registered|first pull|working list|search by name|dashboard|new event|first download|download page|people in|upload|reconnect|failed" \
@@ -150,7 +165,7 @@ ladder)
 			echo
 		} >>"$dir/summary.txt"
 	done
-	docker rm -f perf-central hub-pi >/dev/null 2>&1 || true
+	docker rm -f "$CEN" "$HUB" >/dev/null 2>&1 || true
 	echo "summary: $dir/summary.txt"
 	;;
 bench)
@@ -166,17 +181,17 @@ bench)
 	echo "saved to $out"
 	;;
 stats)
-	docker stats --no-stream hub-pi perf-central
+	docker stats --no-stream "$HUB" "$CEN"
 	;;
 logs)
-	docker logs -f hub-pi
+	docker logs -f "$HUB"
 	;;
 down)
-	docker rm -f perf-central hub-pi
+	docker rm -f "$CEN" "$HUB"
 	;;
 reset)
-	docker rm -f perf-central hub-pi >/dev/null 2>&1 || true
-	docker volume rm hub-pi-data
+	docker rm -f "$CEN" "$HUB" >/dev/null 2>&1 || true
+	docker volume rm "$VOL"
 	;;
 *)
 	sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
