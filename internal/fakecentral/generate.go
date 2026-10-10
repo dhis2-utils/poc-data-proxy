@@ -226,7 +226,7 @@ func (g *generated) has(uid string) bool {
 // idsOf keeps only identifiers and update times, as central answers the ID listing.
 func idsOf(m tracker.M) tracker.M {
 	out := tracker.M{}
-	for _, k := range []string{"trackedEntity", "enrollment", "event", "relationship", "updatedAt"} {
+	for _, k := range []string{"trackedEntity", "enrollment", "event", "relationship", "updatedAt", "status", "enrolledAt"} {
 		if v, ok := m[k]; ok {
 			out[k] = v
 		}

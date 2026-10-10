@@ -219,7 +219,8 @@ func pullValues(facility, program string, idsOnly bool) url.Values {
 	q.Set("orgUnitMode", "SELECTED")
 	q.Set("fields", "*,enrollments[*,events[*]],relationships[*]")
 	if idsOnly {
-		q.Set("fields", "trackedEntity,updatedAt,enrollments[enrollment,updatedAt,events[event,updatedAt]],relationships[relationship,updatedAt]")
+		// Status and enrolment date order a first pull most recent first.
+		q.Set("fields", "trackedEntity,updatedAt,enrollments[enrollment,updatedAt,status,enrolledAt,events[event,updatedAt]],relationships[relationship,updatedAt]")
 	}
 	if tet, ok := strings.CutPrefix(program, "tet:"); ok {
 		// People of this type registered at the facility, including those enrolled in

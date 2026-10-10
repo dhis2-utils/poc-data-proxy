@@ -46,6 +46,9 @@ func (w *Worker) Exclusive(f func() error) error {
 const (
 	listPageSize = 1000
 	fetchBatch   = 50
+	// recentWindow: in a full pull, people with an active enrollment or one enrolled
+	// this recently are fetched first, for every program, and older ones after.
+	recentWindow = 90 * 24 * time.Hour
 )
 
 // Run loops until ctx ends.
@@ -464,14 +467,15 @@ func (w *Worker) Pull(ctx context.Context) error {
 			}
 		}
 		seen := map[uint32]bool{} // slots listed for the user
-		var settled []string      // programs whose visibility this pull may decide
+		var deferred []olderPull
+		var settled []string // programs whose visibility this pull may decide
 		for _, p := range programs {
 			lastPull, _ := h.Store.PullState(u.ID, p)
 			after := ""
 			if !full {
 				after = lastPull
 			}
-			maxUpdated, n, err := w.pullProgram(ctx, api, auth, u.ID, facility, p, after, seen)
+			maxUpdated, n, older, err := w.pullProgram(ctx, api, auth, u.ID, facility, p, after, seen, full)
 			if err != nil {
 				st := central.Status(err)
 				switch {
@@ -500,14 +504,35 @@ func (w *Worker) Pull(ctx context.Context) error {
 			if maxUpdated == "" {
 				maxUpdated = lastPull
 			}
-			if full {
-				// Full pulls record their own time so the daily check works.
-				h.Store.SetPullState(u.ID, p, maxUpdated, true)
-				h.Store.DB().Exec(`UPDATE pull_state SET last_full_at=? WHERE user_id=? AND program=?`, store.Now(), u.ID, p)
-			} else {
-				h.Store.SetPullState(u.ID, p, maxUpdated, false)
+			done := func() {
+				if full {
+					// Full pulls record their own time so the daily check works.
+					h.Store.SetPullState(u.ID, p, maxUpdated, true)
+					h.Store.DB().Exec(`UPDATE pull_state SET last_full_at=? WHERE user_id=? AND program=?`, store.Now(), u.ID, p)
+				} else {
+					h.Store.SetPullState(u.ID, p, maxUpdated, false)
+				}
+				slog.Info("pulled", "user", u.Username, "program", p, "full", full, "objects", n)
 			}
-			slog.Info("pulled", "user", u.Username, "program", p, "full", full, "objects", n)
+			if older != nil {
+				deferred = append(deferred, olderPull{program: p, set: older, done: done})
+			} else {
+				done()
+			}
+		}
+		// Then the older people of every program, once each program's recent ones are
+		// in. An interruption leaves them for the next cycle, which lists again and
+		// fetches only what is still missing.
+		for _, d := range deferred {
+			if err := w.fetchStale(ctx, api, auth, u.ID, facility, d.program, d.set, seen); err != nil {
+				if central.IsNetwork(err) {
+					return fmt.Errorf("pull %s/%s: %w", u.Username, d.program, err)
+				}
+				slog.Warn("pull failed", "user", u.Username, "program", d.program, "err", err)
+				failed = append(failed, fmt.Errorf("pull %s/%s: %w", u.Username, d.program, err))
+				continue
+			}
+			d.done()
 		}
 		if len(failed) == failedBefore { // this user's pull completed
 			h.Store.SetPrivate(accKey, string(accJSON))
@@ -539,16 +564,17 @@ func (w *Worker) Pull(ctx context.Context) error {
 // uplink once, whoever is first to see it (docs/PERFORMANCE.md). It returns the
 // newest updatedAt listed (central's clock, used as the next updatedAfter).
 func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.Auth, userID int64,
-	facility, program, after string, seen map[uint32]bool) (string, int, error) {
+	facility, program, after string, seen map[uint32]bool, deferOlder bool) (string, int, *staleSet, error) {
 	h := w.H
 	maxUpdated, total := "", 0
 	covered := w.scopeCovers(program)
-	var stale, staleListed []string
+	recent, older := &staleSet{}, &staleSet{}
+	since := time.Now().Add(-recentWindow).UTC().Format("2006-01-02")
 	var current []uint32
 	for page := 1; ; page++ {
 		items, more, err := w.getPage(ctx, api, auth, api.ListPath(facility, program, after, page, listPageSize), page, listPageSize)
 		if err != nil {
-			return "", total, err
+			return "", total, nil, err
 		}
 		// What the hub holds of the page's objects, read in one go.
 		flat := make([][]*tracker.Item, len(items))
@@ -561,14 +587,19 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 		}
 		held, err := h.Store.ObjectStates(uids)
 		if err != nil {
-			return "", total, err
+			return "", total, nil, err
 		}
 		for i, te := range items {
 			uid := tracker.Str(te, "trackedEntity")
 			isStale := !covered(uid)
 			var listed []string
 			var slots []uint32
+			active, enrolled := false, ""
 			for _, it := range flat[i] {
+				if it.Kind == store.KindEnrollment {
+					active = active || tracker.Str(it.Data, "status") == "ACTIVE"
+					enrolled = max(enrolled, tracker.Str(it.Data, "enrolledAt"))
+				}
 				upd := tracker.Str(it.Data, "updatedAt")
 				maxUpdated = max(maxUpdated, upd)
 				have, ok := held[it.UID]
@@ -580,8 +611,12 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 			}
 			total += len(listed)
 			if isStale {
-				stale = append(stale, uid)
-				staleListed = append(staleListed, listed...)
+				set := recent
+				// People without enrollments here (the type pull) count as recent.
+				if deferOlder && !active && enrolled != "" && enrolled < since {
+					set = older
+				}
+				set.add(uid, enrolled, listed)
 			} else {
 				for _, s := range slots {
 					seen[s] = true
@@ -593,38 +628,78 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 			break
 		}
 	}
-	for start := 0; start < len(stale); start += fetchBatch {
-		batch := stale[start:min(start+fetchBatch, len(stale))]
+	if err := w.fetchStale(ctx, api, auth, userID, facility, program, recent, seen); err != nil {
+		return "", total, nil, err
+	}
+	if err := h.MarkVisible(userID, current); err != nil {
+		return "", total, nil, err
+	}
+	if len(older.tes) == 0 {
+		return maxUpdated, total, nil, nil
+	}
+	slog.Info("pulled recent first", "userId", userID, "program", program, "recent", len(recent.tes), "olderLater", len(older.tes))
+	return maxUpdated, total, older, nil
+}
+
+// staleSet is tracked entities to fetch in full, with what was listed under them.
+type staleSet struct {
+	tes, keys, listed []string
+}
+
+func (s *staleSet) add(te, key string, listed []string) {
+	s.tes, s.keys = append(s.tes, te), append(s.keys, key)
+	s.listed = append(s.listed, listed...)
+}
+
+// olderPull is a program's older people, fetched after every program's recent ones.
+type olderPull struct {
+	program string
+	set     *staleSet
+	done    func() // records the program's pull once all of it is in
+}
+
+// fetchStale fetches these tracked entities in full, most recently enrolled first, 50
+// per request, and adds what is now stored of them to seen.
+func (w *Worker) fetchStale(ctx context.Context, api compat.API, auth central.Auth, userID int64, facility, program string,
+	s *staleSet, seen map[uint32]bool) error {
+	h := w.H
+	order := make([]int, len(s.tes))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(a, b int) int { return strings.Compare(s.keys[b], s.keys[a]) })
+	tes := make([]string, len(order))
+	for i, j := range order {
+		tes[i] = s.tes[j]
+	}
+	for start := 0; start < len(tes); start += fetchBatch {
+		batch := tes[start:min(start+fetchBatch, len(tes))]
 		items, _, err := w.getPage(ctx, api, auth, api.FetchPath(facility, program, batch), 1, len(batch))
 		if err != nil {
-			return "", total, err
+			return err
 		}
 		anyItems := make([]any, len(items))
 		for i, te := range items {
 			anyItems[i] = te
 		}
 		if _, err := h.UpsertCentral(userID, tracker.M{"trackedEntities": anyItems}, true); err != nil {
-			return "", total, err
+			return err
 		}
 		if err := h.RecordScopes(batch, program); err != nil {
-			return "", total, err
+			return err
 		}
 	}
 	// The fetched ones are stored now, with their slots.
-	if len(staleListed) > 0 {
-		st, err := h.Store.ObjectStates(staleListed)
+	if len(s.listed) > 0 {
+		st, err := h.Store.ObjectStates(s.listed)
 		if err != nil {
-			return "", total, err
+			return err
 		}
 		for _, o := range st {
 			seen[uint32(o.Slot)] = true
 		}
 	}
-	if err := h.MarkVisible(userID, current); err != nil {
-		return "", total, err
-	}
-	slog.Debug("pull listed", "program", program, "objects", total, "fetched", len(stale))
-	return maxUpdated, total, nil
+	return nil
 }
 
 // scopeCovers tells whether a tracked entity was fetched in full for scope. A type
