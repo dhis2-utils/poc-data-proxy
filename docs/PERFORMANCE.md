@@ -232,6 +232,24 @@ This is an expectation, so it is settled by measurement: a prototype of the two 
 - **No plaintext on disk.** Sorting stays in memory (`temp_store=memory`), and the journal and WAL go through the same encrypting layer. The scenario test that greps the disk for plaintext covers this, and gets a search on attribute values added.
 - **Plaintext in memory.** Decrypted pages sit in SQLite's page cache, as decrypted objects sit in today's index.
 
+### Load on central (2026-10-10)
+
+What one hub asks of central, measured by `internal/perf.TestCentralLoad` (every request through the test kit's uplink, by kind, with answer sizes), at 10 000 people, 15 000 enrollments, 50 000 events, 6 programs and 60 users, projected to a day at the default intervals (sync every 5 minutes, ownership check hourly, full pull daily):
+
+| Per hub per day | Requests | Data |
+|---|---|---|
+| Incremental listings ("changed since", per user and program, every cycle) | 140 500 | 31 MB |
+| Access and catalog refresh (`/api/me`, `/api/programs`, `/api/trackedEntityTypes`, per user, every cycle) | 71 000 | 200 MB |
+| Full identifier listings (per user and program, daily) | 1 800 | 806 MB |
+| Ownership checks | 170 | 12 MB |
+| **Total** | **214 000** | **1 GB** |
+
+500 such hubs: about 1 200 requests a second to central around the clock, and 520 GB a day, almost all of it while nothing changes. For comparison, 18 Android devices syncing directly every 15 minutes make in the order of tens of thousands of requests a day. Most of the hub's requests repeat per user what is the same for users with the same access.
+
+Reductions, largest first: listing once per distinct access instead of per user (the generated users share one access, so here 60 times fewer listings; real facilities have a handful of access groups); refreshing access and the catalog hourly or on login instead of every cycle; a longer sync interval; the full pull weekly; jitter on every schedule and a back-off after outages, so hubs do not act in step.
+
+The fake central was corrected for this measurement: "updated after" now means strictly after (all generated objects share one update time), and the ownership listing returns identifiers only, as DHIS2 does for those fields.
+
 ### Next ladder targets
 
 | Target | People | Enrollments | Events | Users | Devices |

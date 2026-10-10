@@ -157,14 +157,20 @@ func (g *generated) listTEs(w http.ResponseWriter, r *http.Request) bool {
 	if !byType {
 		total = len(g.byProgram[program])
 	}
-	if q.Get("orgUnits") != Facility || (q.Get("updatedAfter") != "" && q.Get("updatedAfter") > g.updatedAt) {
+	// Every generated object has the same update time, so "updated after" the newest
+	// one the hub has seen means nothing changed (DHIS2 returns the few at that exact
+	// time again; here they would be everything).
+	if q.Get("orgUnits") != Facility || (q.Get("updatedAfter") != "" && q.Get("updatedAfter") >= g.updatedAt) {
 		total = 0
 	}
-	idsOnly := strings.HasPrefix(q.Get("fields"), "trackedEntity,updatedAt")
+	idsOnly := strings.HasPrefix(q.Get("fields"), "trackedEntity,updatedAt") || q.Get("fields") == "trackedEntity"
 	render := func(te, j int) tracker.M {
 		t := g.renderTE(te)
 		if j >= 0 {
 			t["enrollments"] = []any{g.renderEnrollment(j)}
+		}
+		if q.Get("fields") == "trackedEntity" { // the ownership check: identifiers only
+			return tracker.M{"trackedEntity": t["trackedEntity"]}
 		}
 		if idsOnly {
 			t = idsOf(t)

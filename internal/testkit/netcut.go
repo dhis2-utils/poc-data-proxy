@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -18,6 +19,45 @@ type Netcut struct {
 	ln    net.Listener
 	down  atomic.Bool
 	delay atomic.Int64 // nanoseconds added to every request
+
+	mu    sync.Mutex
+	calls []Call // what the hub asked central, since the last Calls
+}
+
+// Call is one request the hub made to central, with the size of the answer.
+type Call struct {
+	Method string
+	URL    *url.URL
+	Status int
+	Bytes  int64
+}
+
+// Calls returns the requests the hub made to central so far, and forgets them.
+func (n *Netcut) Calls() []Call {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	c := n.calls
+	n.calls = nil
+	return c
+}
+
+// meter counts what passes back to the hub.
+type meter struct {
+	http.ResponseWriter
+	status int
+	bytes  int64
+}
+
+func (m *meter) WriteHeader(s int) { m.status = s; m.ResponseWriter.WriteHeader(s) }
+func (m *meter) Write(b []byte) (int, error) {
+	n, err := m.ResponseWriter.Write(b)
+	m.bytes += int64(n)
+	return n, err
+}
+func (m *meter) Flush() {
+	if f, ok := m.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func NewNetcut(target string) (*Netcut, error) {
@@ -40,7 +80,12 @@ func NewNetcut(target string) (*Netcut, error) {
 		if d := n.delay.Load(); d > 0 {
 			time.Sleep(time.Duration(d))
 		}
-		rp.ServeHTTP(w, r)
+		m := &meter{ResponseWriter: w, status: 200}
+		asked := *r.URL // the proxy rewrites r.URL
+		rp.ServeHTTP(m, r)
+		n.mu.Lock()
+		n.calls = append(n.calls, Call{Method: r.Method, URL: &asked, Status: m.status, Bytes: m.bytes})
+		n.mu.Unlock()
 	})}
 	go n.srv.Serve(ln)
 	return n, nil
