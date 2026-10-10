@@ -157,11 +157,22 @@ func buildAccess(l *Layout) *Access {
 		sizes[i] = len(d.Values)
 	}
 	var matrixGroups []any
-	for n, row := range Pairwise(sizes) {
+	rows := []map[string]string{}
+	for _, row := range Pairwise(sizes) {
 		dims := map[string]string{}
 		for i, v := range row {
 			dims[matrixDims[i].Name] = matrixDims[i].Values[v]
 		}
+		rows = append(rows, dims)
+	}
+	// Twins for the hub's shared listings (access.List.GroupKey): two users whose
+	// access lists match except for the shared category option, which the key leaves
+	// out. The hub groups them; the oracle checks each against central.
+	for _, option := range []string{"write", "none"} {
+		rows = append(rows, map[string]string{"capture": "facility", "search": "facility", "open": "write", "via": "user",
+			"protected": "write", "closed": "none", "lab": "none", "tet": "write", "option": option})
+	}
+	for n, dims := range rows {
 		s := spec{uid: l.uid("Mxu", n), username: fmt.Sprintf("%smx%02d", l.UserPrefix, n), first: "Matrix",
 			surname: fmt.Sprintf("%02d", n), capture: scope[dims["capture"]], search: scope[dims["search"]], dims: dims}
 		group := ""
@@ -187,6 +198,13 @@ func buildAccess(l *Layout) *Access {
 		specs = append(specs, s)
 		a.Matrix = append(a.Matrix, testkit.MatrixUser{User: testkit.User{Username: s.username, UID: s.uid}, Dims: dims})
 	}
+
+	// A twin of the nurse: same groups and scopes, so the hub lists for both once.
+	twin := spec{uid: l.uid("Usr", len(roleSpecs)+1), username: l.UserPrefix + "nurse_twin", first: "Nurse", surname: "Twin",
+		capture: []string{l.Facility}, search: []string{l.District}, groups: []string{grpNurse, grpLab}}
+	specs = append(specs, twin)
+	a.Matrix = append(a.Matrix, testkit.MatrixUser{User: testkit.User{Username: twin.username, UID: twin.uid},
+		Dims: map[string]string{"capture": "facility", "search": "district", "via": "group", "tet": "write", "twin": "nurse"}})
 
 	members := map[string][]string{}
 	for _, s := range specs {

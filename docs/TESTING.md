@@ -101,7 +101,7 @@ Scripted Capture web runs (Playwright) and Android Capture runs (adb and the UI 
 | `sierra-leone` | `dhis2-db-sierra-leone_v<N>` | real metadata and data; the facility with the most tracker data, its four busiest programs |
 | `laos` | `lao_hmis_demo_v<N>` | a second real configuration, with its own conventions |
 
-The **access matrix** (27–30 users per profile) covers every pair of: capture scope (facility, district, sibling, two facilities, country), search scope (none, facility, district, other district, country), access to the open, protected and closed programs, to the restricted stage, to the tracked entity type and to a category option, granted directly or through a group.
+The **access matrix** (27–30 users per profile) covers every pair of: capture scope (facility, district, sibling, two facilities, country), search scope (none, facility, district, other district, country), access to the open, protected and closed programs, to the restricted stage, to the tracked entity type and to a category option, granted directly or through a group. Three more users test the hub's shared listings (users with the same access list are pulled once for all): a twin of the nurse (same groups and scopes), and two users with identical direct grants that differ only in the shared category option, which the hub's grouping leaves out and handles per user.
 
 ## Phases
 
