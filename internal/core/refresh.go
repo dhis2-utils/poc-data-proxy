@@ -13,6 +13,7 @@ import (
 
 	"github.com/dhis2/facility-hub/internal/access"
 	"github.com/dhis2/facility-hub/internal/central"
+	"github.com/dhis2/facility-hub/internal/compat"
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
@@ -366,13 +367,16 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 			CategoryCombo struct {
 				IsDefault *bool `json:"isDefault"`
 			} `json:"categoryCombo"`
+			EnrollmentCategoryCombo struct {
+				IsDefault *bool `json:"isDefault"`
+			} `json:"enrollmentCategoryCombo"` // 2.43
 			ProgramTrackedEntityAttributes []attr `json:"programTrackedEntityAttributes"`
 		} `json:"programs"`
 	}
 	af := "trackedEntityAttribute[id,generated,unique,pattern]"
 	path := central.Q("/api/programs", "filter", "programType:eq:WITH_REGISTRATION",
 		"filter", "organisationUnits.id:eq:"+facility,
-		"fields", "id,name,trackedEntityType[id,trackedEntityTypeAttributes["+af+"]],programStages[id,sortOrder,repeatable],categoryCombo[isDefault],programTrackedEntityAttributes["+af+"]",
+		"fields", programFields(h.API(), af),
 		"paging", "false")
 	if err := h.Central.JSON(ctx, "GET", path, nil, auth, &resp); err != nil {
 		return nil, err
@@ -397,7 +401,8 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 	}
 	for _, p := range resp.Programs {
 		pm := &access.ProgramMeta{ID: p.ID, Name: p.Name, TET: p.TrackedEntityType.ID, Attributes: conv(p.ProgramTrackedEntityAttributes),
-			AttributeCombo: p.CategoryCombo.IsDefault != nil && !*p.CategoryCombo.IsDefault}
+			AttributeCombo:           p.CategoryCombo.IsDefault != nil && !*p.CategoryCombo.IsDefault,
+			EnrollmentAttributeCombo: p.EnrollmentCategoryCombo.IsDefault != nil && !*p.EnrollmentCategoryCombo.IsDefault}
 		for _, s := range p.ProgramStages {
 			pm.Stages = append(pm.Stages, s.ID)
 			if !s.Repeatable {
@@ -409,4 +414,12 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 	}
 	c.Index()
 	return c, nil
+}
+
+// programFields is the catalog's field selection for the server's version.
+func programFields(api compat.API, af string) string {
+	if api == nil {
+		api = compat.For("2.42")
+	}
+	return api.ProgramFields(af)
 }

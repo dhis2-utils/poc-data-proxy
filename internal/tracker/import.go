@@ -310,6 +310,11 @@ func (im *Importer) validateEnrollment(it *Item, old *Obj) (*Obj, bool, []ErrorR
 	if pm == nil {
 		return nil, false, im.errf(it, "E1069", "needs connection: program `%s` is not cached on this hub", program)
 	}
+	if aoc := Str(it.Data, "attributeOptionCombo"); (aoc != "" && aoc != im.DefaultAOC) || pm.EnrollmentAttributeCombo {
+		// Central (2.43) checks access to the combo's category options (E1099), which
+		// the hub cannot offline: say so now instead of on push.
+		return nil, false, im.errf(it, "E1055", "needs connection: enrollments with an attribute option combo are not supported offline")
+	}
 	parent, rej := im.resolve(te)
 	if rej {
 		return nil, false, im.errf(it, "E5000", "%s `%s` cannot be persisted because %s `%s` referenced by it cannot be persisted.",

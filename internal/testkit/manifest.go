@@ -74,6 +74,9 @@ type Program struct {
 	EventValues   map[string]map[string]string `json:"eventValues,omitempty"`
 	// Shared with the district role (the setup user may not see every program).
 	DistrictSees bool `json:"districtSees"`
+	// EnrollmentCombo: enrollments carry an attribute option combo, so who sees them
+	// depends on category option sharing (2.43's enrollmentCategoryCombo).
+	EnrollmentCombo bool `json:"enrollmentCombo,omitempty"`
 }
 
 type User struct {

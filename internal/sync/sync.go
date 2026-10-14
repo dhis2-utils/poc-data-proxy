@@ -551,7 +551,7 @@ func (w *Worker) pullGroup(ctx context.Context, g []*puller, readers map[string]
 	ownSettled := map[int64][]string{}
 	stopped := false // the listing user can no longer pull: the group's pull is not complete
 	for _, p := range programs {
-		if pm := cat.Programs[p]; len(g) > 1 && pm != nil && pm.AttributeCombo {
+		if pm := cat.Programs[p]; len(g) > 1 && pm != nil && (pm.AttributeCombo || pm.EnrollmentAttributeCombo) {
 			// Its events also depend on each user's access to category options, which
 			// the group key does not cover: listed per user.
 			for _, m := range g {

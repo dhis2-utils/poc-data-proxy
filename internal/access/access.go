@@ -38,7 +38,9 @@ type List struct {
 // central uses are not in the list: category option sharing, which decides events in
 // programs with an attribute category combination (those are listed per user), and
 // sharing granted to one user directly rather than through a group on anything other
-// than programs, stages, types and relationship types.
+// than programs, stages, types and relationship types. Category options also decide
+// enrollments in programs with an enrollment category combination (2.43): those
+// programs are listed per user too.
 func (l *List) GroupKey() string {
 	if l == nil {
 		return ""
@@ -145,6 +147,9 @@ type ProgramMeta struct {
 	// AttributeCombo: the program has a non-default category combination, so its
 	// events need an attribute option combo.
 	AttributeCombo bool `json:"attributeCombo,omitempty"`
+	// EnrollmentAttributeCombo: the same for enrollments (2.43's
+	// enrollmentCategoryCombo).
+	EnrollmentAttributeCombo bool `json:"enrollmentAttributeCombo,omitempty"`
 }
 
 // Catalog is the facility's program set plus tracked entity type attributes.

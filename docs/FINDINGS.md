@@ -316,6 +316,20 @@ Tested with Capture 3.4.2 on the emulator, server URL `http://10.0.2.2:<port>` (
 
 The emulator test also created the key `ANDROID_SETTING_APP/general_settings` (`allowScreenCapture: true`) on the test instance, so screenshots of the app are possible.
 
+## DHIS2 2.43
+
+All three profiles and eRegisters pass on 2.43.2 (docs/TESTING.md). Replaying the recorded 2.42 reads against 2.43 showed one new field in the shapes the hub serves, `attributeOptionCombo` on enrollments; the live suite found the rest. 2.43's differences are in `internal/compat/v43.go`.
+
+1. **Ownership transfers name the new owner with `orgUnit`, not `ou`.** 2.43 answers 400 "Required parameter 'orgUnit' is not present" to `ou=`. The hub reads the new owner of a transfer made through it from that parameter, so on 2.43 it recorded an empty owner (`TestOwnershipLive`). It now reads the version's name.
+2. **Enrollments can have a category combination of their own** (`enrollmentCategoryCombo` on the program, separate from `categoryCombo`, which events use). When it is not the default, central checked on 2.43.2:
+   - an enrollment needs a non-default attribute option combo (E1055 without one);
+   - writing it needs write access to its category options (E1099);
+   - reading it needs access to them: a user without it does not see the enrollment;
+   - but central still lists the person in the program's searches, without that enrollment, and shows the enrollment's events whose own category options the user may see.
+
+   The hub reads the field (2.43 only), pulls such programs per user, as it does for programs with an attribute category combination on events, and refuses enrollments in them offline with "needs connection" (it cannot check category option access offline; central would reject them on push). Known gap: since the hub pulls people with their enrollments, it holds neither the person nor those events when central hides the enrollment, so offline it shows less than central, never more. Changes in category option sharing reach the hub at the weekly full pull (Found by the test framework, known gaps).
+3. **Events for a user without tracked entity type access:** the 2.42 known gap (central shows them, the hub does not) does not appear on 2.43.
+
 ## eRegisters through the hub
 
 eRegisters (github.com/HISP-Uganda/eregisters, 1.1.7) is a DHIS2 web app that keeps its own copy of the facility's data in the browser and syncs with the server: through a hub, each browser syncs with the hub, and the hub is what lets devices at the facility share data while offline, as for Android Capture. Tested on 2.43.2 with the eRegisters configuration (`TestERegisters`, docs/TESTING.md): a client registered offline on one device reached the other through the hub, and central after reconnection, created by its author.

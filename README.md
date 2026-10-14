@@ -5,7 +5,7 @@
 > Maintainers: HISP Centre implementation team.
 
 
-A small device on a facility LAN that caches the facility's DHIS2 tracker data and relays tracker writes to the central DHIS2 server. When central is unreachable, the DHIS2 Capture web app and the Android Capture app keep working against the hub, and each user still sees only what central lets them see. Target DHIS2 version: **2.42** (verified against 2.42.6). 2.43 is mapped to the same request and response handling but has not been tested.
+A small device on a facility LAN that caches the facility's DHIS2 tracker data and relays tracker writes to the central DHIS2 server. When central is unreachable, the DHIS2 Capture web app and the Android Capture app keep working against the hub, and each user still sees only what central lets them see. Target DHIS2 versions: **2.42 and 2.43** (verified against 2.42.6 and 2.43.2; differences in `internal/compat`, one file per version).
 
 ## Documents
 

@@ -51,6 +51,9 @@ type API interface {
 	// TransferOrgUnit is the parameter of PUT /api/tracker/ownership/transfer that
 	// names the new owner.
 	TransferOrgUnit() string
+	// ProgramFields is the field selection for the facility's program catalog;
+	// attrFields selects each tracked entity attribute.
+	ProgramFields(attrFields string) string
 }
 
 // Supported lists the DHIS2 majors this hub release handles (current and next).

@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/compat"
 	"github.com/dhis2/facility-hub/internal/testkit"
 )
 
@@ -37,7 +38,38 @@ func Synthetic(c *testkit.Central, size int) (*testkit.Manifest, error) {
 	if err := c.JSON("POST", "/api/maintenance/categoryOptionComboUpdate", nil, nil); err != nil {
 		return nil, fmt.Errorf("category option combos: %w", err)
 	}
-	if err := syntheticData(c, size); err != nil {
+	// 2.43 gives enrollments a category combination of their own: households are then
+	// enrolled under a donor too, and who sees an enrollment depends on the donor.
+	var enrollmentAOC map[string]string // category option -> option combo
+	if compat.ParseMajor(info.Version) >= 43 {
+		if err := c.JSON("PATCH", "/api/programs/"+prHhs, []map[string]any{
+			{"op": "add", "path": "/enrollmentCategoryCombo", "value": map[string]any{"id": ccDonor}}}, nil); err != nil {
+			return nil, fmt.Errorf("enrollment category combo: %w", err)
+		}
+		var cc struct {
+			Combos []struct {
+				ID      string `json:"id"`
+				Options []struct {
+					ID string `json:"id"`
+				} `json:"categoryOptions"`
+			} `json:"categoryOptionCombos"`
+		}
+		if err := c.JSON("GET", "/api/categoryCombos/"+ccDonor+"?fields=categoryOptionCombos[id,categoryOptions[id]]", nil, &cc); err != nil {
+			return nil, err
+		}
+		for i := range m.Programs {
+			if m.Programs[i].ID == prHhs {
+				m.Programs[i].EnrollmentCombo = true
+			}
+		}
+		enrollmentAOC = map[string]string{}
+		for _, o := range cc.Combos {
+			if len(o.Options) == 1 {
+				enrollmentAOC[o.Options[0].ID] = o.ID
+			}
+		}
+	}
+	if err := syntheticData(c, size, transferParam(info.Version), enrollmentAOC); err != nil {
 		return nil, err
 	}
 	return m, verifyLogins(c, m)
@@ -100,7 +132,8 @@ var (
 // syntheticData writes the population: people at the facility, its sibling and the
 // other district, enrolled in the programs in different combinations, and the quirks
 // the hub must get right (docs/TESTING.md).
-func syntheticData(c *testkit.Central, size int) error {
+// enrollmentAOC, when set (2.43), maps each donor to its option combo for enrollments.
+func syntheticData(c *testkit.Central, size int, ouParam string, enrollmentAOC map[string]string) error {
 	rng := rand.New(rand.NewSource(42))
 	base := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
 	day := func(n int) string { return base.AddDate(0, 0, n).Format("2006-01-02") }
@@ -259,8 +292,7 @@ func syntheticData(c *testkit.Central, size int) error {
 		tes = append(tes, map[string]any{"trackedEntity": hh, "trackedEntityType": tetHousehold, "orgUnit": ouFac,
 			"attributes": []any{map[string]any{"attribute": atHhID, "value": fmt.Sprintf("HH-%05d", i)},
 				map[string]any{"attribute": atVillage, "value": []string{"Ban Na", "Kpetema", "Ban Phon"}[i%3]}},
-			"enrollments": []any{map[string]any{"enrollment": en, "program": prHhs, "orgUnit": ouFac,
-				"enrolledAt": day(i), "occurredAt": day(i), "status": "ACTIVE", "events": evs}}})
+			"enrollments": []any{householdEnrollment(en, day(i), evs, enrollmentAOC, []string{coDonorA, coDonorB}[i%2])}})
 	}
 	log.Printf("synthetic: %d tracked entities, %d relationships, %d ownership transfers, %d event-program events",
 		len(tes), len(rels), len(transfers), len(events))
@@ -273,7 +305,7 @@ func syntheticData(c *testkit.Central, size int) error {
 		return err
 	}
 	for _, t := range transfers {
-		if err := c.JSON("PUT", fmt.Sprintf("/api/tracker/ownership/transfer?trackedEntity=%s&program=%s&ou=%s", t[0], t[1], t[2]), nil, nil); err != nil {
+		if err := c.JSON("PUT", fmt.Sprintf("/api/tracker/ownership/transfer?trackedEntity=%s&program=%s&%s=%s", t[0], t[1], ouParam, t[2]), nil, nil); err != nil {
 			return fmt.Errorf("ownership transfer: %w", err)
 		}
 	}
@@ -309,4 +341,22 @@ func trackerImport(c *testkit.Central, payload map[string]any, strategy string) 
 		return fmt.Errorf("tracker import %s: HTTP %d %s: %.3000s", strategy, st, rep.Status, b)
 	}
 	return nil
+}
+
+// transferParam names the new owner in an ownership transfer on this DHIS2 version.
+func transferParam(version string) string {
+	if api := compat.For(version); api != nil {
+		return api.TransferOrgUnit()
+	}
+	return "ou"
+}
+
+// householdEnrollment enrolls a household; on 2.43 under a donor (enrollmentAOC).
+func householdEnrollment(en, date string, events []any, enrollmentAOC map[string]string, donor string) map[string]any {
+	e := map[string]any{"enrollment": en, "program": prHhs, "orgUnit": ouFac, "enrolledAt": date, "occurredAt": date,
+		"status": "ACTIVE", "events": events}
+	if aoc := enrollmentAOC[donor]; aoc != "" {
+		e["attributeOptionCombo"] = aoc
+	}
+	return e
 }

@@ -77,7 +77,7 @@ func TestOracle(t *testing.T) {
 			o := tk.Judge(truth, q, u.name, cs, cb, hs, hb)
 			counts[o.Verdict]++
 			report = append(report, o)
-			if why := knownGap(o, q, dims[u.name]); why != "" {
+			if why := knownGap(o, q, dims[u.name], m); why != "" {
 				known[why]++
 				continue
 			}
@@ -116,8 +116,14 @@ func TestOracle(t *testing.T) {
 
 // knownGap names a difference the hub accepts by design or has not closed yet, so
 // it is reported but does not fail the run. Everything else does.
-func knownGap(o tk.Outcome, q tk.Query, dims map[string]string) string {
+func knownGap(o tk.Outcome, q tk.Query, dims map[string]string, m *tk.Manifest) string {
+	enrollmentCombo := false
+	for _, p := range m.Programs {
+		enrollmentCombo = enrollmentCombo || (p.ID == q.Program && p.EnrollmentCombo)
+	}
 	switch {
+	case o.Verdict == tk.Missing && enrollmentCombo:
+		return "a program with an enrollment category combination (2.43): central lists a person whose enrollment the user may not see without it, and shows the enrollment's events the user may see; the hub pulls people with their enrollments and holds neither"
 	case o.Verdict == tk.Lenient && strings.Contains(o.Detail, "attributes should be mentioned in the search criteria"):
 		return "an ACCESSIBLE search with fewer attributes than the program requires: central refuses it (409), the hub answers from facility data"
 	case o.Verdict == tk.Missing && q.Kind == "events" && dims["tet"] == "none":

@@ -274,5 +274,11 @@ func (v42) JobNotifications(jobID, status string, s tracker.Stats, at string) an
 			status, s.Created, s.Updated, s.Deleted, s.Ignored)}}
 }
 
+// ProgramFields: categoryCombo decides whether events carry an attribute option combo.
+func (v42) ProgramFields(af string) string {
+	return "id,name,trackedEntityType[id,trackedEntityTypeAttributes[" + af + "]],programStages[id,sortOrder,repeatable]," +
+		"categoryCombo[isDefault],programTrackedEntityAttributes[" + af + "]"
+}
+
 // TransferOrgUnit: 2.42 names the new owner with ou=.
 func (v42) TransferOrgUnit() string { return "ou" }

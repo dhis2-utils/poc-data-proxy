@@ -4,7 +4,7 @@ The hub stands in for DHIS2 when the uplink is down. Every place where its answe
 
 ## Supported DHIS2 versions
 
-The aim is to support the DHIS2 versions DHIS2 itself supports, from 2.42 on. DHIS2 releases yearly and supports three versions; when 2.44 is released the window becomes 2.42–2.44, then 2.43–2.45, and so on. Each supported version runs the full test matrix below. A hub release that adds the next version goes out before any country upgrades central. **Today only 2.42 is tested**; 2.43 is mapped to the same handling but not yet run (phase 5).
+The aim is to support the DHIS2 versions DHIS2 itself supports, from 2.42 on. DHIS2 releases yearly and supports three versions; when 2.44 is released the window becomes 2.42–2.44, then 2.43–2.45, and so on. Each supported version runs the full test matrix below. A hub release that adds the next version goes out before any country upgrades central. **2.42 and 2.43 are tested** (2.42.6, 2.43.2); their differences are in FINDINGS.md, "DHIS2 2.43".
 
 ## What has to be covered
 
@@ -118,7 +118,7 @@ The **access matrix** (27–30 users per profile) covers every pair of: capture 
 | 2. **Seeded profiles**: Sierra Leone and Laos | done |
 | 3. **Real clients**: scripted Capture web and Android runs | done (`HUB_CLIENTS=1`); not yet re-run on the SQLite store |
 | 4. **Conditions**: network, process, disk, time, scale | network and scale in progress ([PERFORMANCE.md](PERFORMANCE.md)); power cuts planned on real hardware; process, disk and time to do |
-| 5. **2.43**: record its fixtures, diff them against 2.42, implement the differences, add it to the matrix | to do |
+| 5. **2.43**: diff its shapes against 2.42, implement the differences, add it to the matrix | done: the three profiles and eRegisters pass on 2.43.2; the recorded 2.42 reads were replayed against 2.43 instead of recording a second set of fixtures |
 | 6. **Two hubs** | to do |
 
 The scale test (phase 4) runs Pi-class hardware with 60 users, 18 of them on Android, up to a busy HC IV (300 000 people, about 0.5 million enrollments and 1.2 million events) and a pessimistic 700 000 / 1.2 million / 3.1 million.
