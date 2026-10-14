@@ -3,6 +3,7 @@ package tracker
 import (
 	"cmp"
 	"encoding/json"
+	"log/slog"
 	"net/url"
 	"regexp"
 	"slices"
@@ -423,7 +424,7 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *API
 		}
 	}
 	timed := func(tf timeFilter) bool { return q.Get(tf.after) != "" || q.Get(tf.before) != "" }
-	p.needData = timed(upd) || timed(enrolled) || !byCreated
+	p.needData = timed(enrolled) || !byCreated
 	p.keep = func(o, enr *Obj) (bool, *APIError) {
 		if changed != nil && !changed[o.UID] {
 			return false, nil
@@ -490,7 +491,7 @@ func (ix *Index) simplePlan(v *Viewer, w *where, q url.Values, alias string, tfs
 		}
 		p.order += ", " + alias + ".uid"
 	}
-	p.needData = p.order == "" || q.Get(upd.after) != "" || q.Get(upd.before) != ""
+	p.needData = p.order == ""
 	for _, tf := range tfs {
 		p.needData = p.needData || q.Get(tf.after) != "" || q.Get(tf.before) != ""
 	}
@@ -513,26 +514,41 @@ func (ix *Index) simplePlan(v *Viewer, w *where, q url.Values, alias string, tfs
 // updatedMatch applies updatedAfter/updatedBefore. Objects written on the hub always
 // match: their timestamps come from the hub's clock, while clients compare against a
 // watermark from central's clock, and re-sending them is harmless. A tracked entity
-// counts as updated when anything under it was (central bumps it too).
+// counts as updated when anything under it was (central bumps it too). It reads the
+// stored update times only (central's updatedAt, kept in its column): an incremental
+// sync may check every person of a program, and decoding their records cost memory in
+// proportion (docs/PERFORMANCE.md).
 func (ix *Index) updatedMatch(v *Viewer, o *Obj, tf timeFilter, q url.Values) (bool, *APIError) {
 	if q.Get(tf.after) == "" && q.Get(tf.before) == "" {
 		return true, nil
 	}
 	objs := []*Obj{o}
 	if o.Kind == store.KindTrackedEntity {
-		objs = append(objs, ix.visible(v, ix.enrollmentsFor(v, o.UID))...)
-		objs = append(objs, ix.visible(v, ix.eventsOfTEFor(v, o.UID))...)
+		objs = append(objs, ix.visible(v, ix.childStates(o.UID))...)
 	}
-	newest := M{}
+	newest := ""
 	for _, x := range objs {
 		if x.Origin == store.OriginLocal {
 			return true, nil
 		}
-		if u := Str(x.Data, "updatedAt"); u > Str(newest, "updatedAt") {
-			newest = M{"updatedAt": u}
-		}
+		newest = max(newest, x.UpdatedAt)
 	}
-	return tf.match(newest, q)
+	return tf.match(M{"updatedAt": newest}, q)
+}
+
+// childStates is a tracked entity's enrollments and events without their data.
+func (ix *Index) childStates(te string) []*Obj {
+	rows, err := ix.store.QueryObjects(`SELECT `+slimCol.ReplaceAllString(store.ObjectCols(""), "''")+
+		` FROM objects INDEXED BY objects_te WHERE te_uid = ? AND kind IN ('enrollment', 'event')`, te)
+	if err != nil {
+		slog.Warn("index query", "err", err)
+		return nil
+	}
+	out := make([]*Obj, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, ix.row(r, false))
+	}
+	return out
 }
 
 func matchAll(d M, q url.Values, tfs []timeFilter) (bool, *APIError) {

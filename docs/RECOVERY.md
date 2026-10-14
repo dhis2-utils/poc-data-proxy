@@ -129,6 +129,7 @@ A printed card attached to the device: what the lights mean, who to call, and th
 - Does not cover: a dead device or card (C and F do).
 - Cost: medium. It needs the outbox and tokens split from the rest of the data file (see E).
 - Trade-off: stealing the running device exposes the unsynced entries and tokens, not the cache; tokens can be revoked on central.
+- On a Windows PC (DEPLOYMENT.md, options under consideration), DPAPI or the TPM holds such a key for a service at boot, usable only on that machine.
 
 ## A possible combination
 

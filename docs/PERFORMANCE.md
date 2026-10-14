@@ -15,11 +15,24 @@ Question: can a hub on Raspberry Pi-class hardware serve **60 users working offl
 | Peak memory (mostly file cache) | 2.7 GB | 3.4 GB | 0.8 GB | 0.8 GB |
 | Errors | none | none | none | none (hammer run could not start) |
 
-The p95s in these runs come from 18 Android first downloads at once at the start of the run; outside that window answers take milliseconds. The ladder's realistic run now models a working day (devices downloaded before) and keeps the all-at-once downloads for the hammer run; those numbers are still to come, as is the effect of the cheaper pages.
+The p95s in these runs come from 18 Android first downloads at once at the start of the run; outside that window answers take milliseconds. The ladder's realistic run now models a working day (devices downloaded before) and keeps the all-at-once downloads for the hammer run.
+
+**Second ladder (2026-10-14).** `pi5` ran out of memory at 100 k and HC IV in the working-day run: with no first downloads, Android incremental syncs started at once, and their `updatedAfter` check decoded every enrollment and event of every candidate person and kept them for the request (History). Fixed, not yet re-run on the ladder. `pi4` (1 GB, SD card limits) with 20 users:
+
+| `pi4`, 20 users | 10 k | 30 k | 60 k |
+|---|---|---|---|
+| First pull | 1 min 45 s | 5 min 54 s | 17 min |
+| Working day: dashboard, person (p50 / p95 / p99) | 3 ms / 9 ms / 36 ms | 4 ms / 45 ms / 67 ms | 4 ms / 319 ms / 9.2 s |
+| Working day: working list | 6 ms / 61 ms / 77 ms | 9 ms / 291 ms / 340 ms | 11 ms / 172 ms / 3.9 s |
+| Working day: Android incremental sync (p50) | 7.7 s | 29 s | 1 min 37 s |
+| Hammer: web pages (p50 / p95) | 70–100 ms / 120–290 ms | 75–100 ms / 160–290 ms | 75–100 ms / 125–280 ms |
+| Peak memory | 227 MB | 478 MB | 866 MB |
+
+The 1 GB knee is between 30 k and 60 k people; the incremental syncs at 60 k ran with the memory problem above.
 
 **Conclusions so far**
 
-- **Hub memory is solved.** The hub holds about 20 MB of its own whatever the data size; RAM serves as file cache.
+- **Hub memory is solved.** The hub holds about 20 MB of its own whatever the data size; RAM serves as file cache. One path held records in proportion to the facility, Android's `updatedAfter` check, until 2026-10-14 (History).
 - **Speed depends on whether the data file fits in RAM, or the disk is fast.** At 100 k people the file is about 2.5 GB, at the HC IV size 6–7 GB (about 3.3 KB per object). A Pi 5 with 4 GB serves 100 k people well and the HC IV size for normal use, with little headroom under heavy load. A 1 GB device with an SD card serves small facilities (30 k people worked well; the knee between 30 k and 100 k is still to find) but not 100 k.
 - **Android first downloads are the heaviest load**: 18 at once saturate a Pi 5 for a minute or more. Pages are cheaper now (History, 2026-10-14); a deployment can spread first downloads.
 - **Load on central** fell from about 214 000 requests a day per hub to about 9 400 (best case), about 54 requests a second for 500 hubs (section "Load on central").
@@ -27,7 +40,7 @@ The p95s in these runs come from 18 Android first downloads at once at the start
 
 **Open**
 
-- Tonight's ladder: `pi5` at 100 k and HC IV with the working-day run and the page cache; `pi4` at 10 k, 30 k and 60 k people with 20 users, to find the 1 GB knee.
+- The ladder again with the `updatedAfter` fix: `pi5` at 100 k and HC IV; `pi4` at 60 k.
 - The HC IV size with 8 GB (`MEM=8g`), to confirm that RAM limits the hammer run there.
 - A smaller data file (about twice the in-memory design's) and a faster first fill on SD cards (a larger cache during pulls, fewer indexes).
 - The paced run: writes and reads at the per-hour rates below (peak 5 × average), with bytes written per day for SD card wear.
@@ -145,3 +158,4 @@ Keeping five years of everything locally is not needed. All people are kept, so 
 - **2026-10-13, ladder.** The results above; Android first downloads and a data file larger than RAM set the limits.
 - **2026-10-14, pages.** Rendering copied each object through JSON; decoded payloads are now kept by version. An Android page of 50 people: 20 ms → 7 ms when cached; a working list 3.2 → 1.6 ms (in process, 10 % of the first target).
 - **2026-10-14, later pages.** Only page 1 stopped reading at a full page; later pages read the whole program, and a one-minute cache of results hid it. Every page now stops at its end and the cache is gone. At 100 000 people, Android page 10 (the last with the 500 limit): 1.03 s the first time, 13 ms cached → 36 ms the first time, 9 ms after; a working list's page 3: 606 ms → 2 ms. A download without the limit costs more per page the deeper it goes (page 251: 141 ms).
+- **2026-10-14, incremental syncs.** The second ladder's working-day run put `pi5` out of memory at 100 k: Android's `updatedAfter` check decoded every enrollment and event of each candidate person, kept for the whole request, and with the fake central's data (every object updated at its start) every person of a program is a candidate. The check now reads the stored update times only. Locally at 100 k, 60 users: peak memory 2.7 GB → 260 MB, incremental sync 44 s → 25 s (p50), Android page 7.8 s → 4.0 s. What remains of the 25 s is each page checking every candidate, which real data, with update times spread over years, makes far fewer.
