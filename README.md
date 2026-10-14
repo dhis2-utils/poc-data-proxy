@@ -17,6 +17,7 @@ A small device on a facility LAN that caches the facility's DHIS2 tracker data a
 | [PERFORMANCE.md](docs/PERFORMANCE.md) | How the hub scales: current results on Pi-class profiles, load on central, sizing, history |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Rolling out hubs: hardware, image, setup at the facility, networks, reaching the hub securely, running the fleet; options under consideration |
 | [RECOVERY.md](docs/RECOVERY.md) | Keeping unsynced data safe: backup and recovery options (ideas, not decisions) |
+| [docs/reviews/](docs/reviews/README.md) | Dated independent reviews (security and confidentiality), and the names the code cites them by |
 | [AGENTS.md](AGENTS.md) | How to change the code: keep the structure, guards, checks before committing |
 
 ## Layout
