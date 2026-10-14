@@ -149,6 +149,25 @@ func (s *Store) GetObject(uid string) (*Object, error) {
 // out), in batches: a rendered page needs many, and a query per object was most of
 // the cost of serving it (docs/PERFORMANCE.md).
 func (s *Store) Payloads(uids []string) (map[string][]byte, error) {
+	sealed, err := s.SealedPayloads(uids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string][]byte, len(sealed))
+	for uid, ct := range sealed {
+		if out[uid], err = s.OpenPayload(uid, ct); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// OpenPayload decrypts a payload SealedPayloads returned.
+func (s *Store) OpenPayload(uid string, sealed []byte) ([]byte, error) { return s.OpenBlob(objAAD(uid), sealed) }
+
+// SealedPayloads returns these objects' payloads still sealed. Each write seals with a
+// new random nonce, which comes first, so it identifies the payload's version.
+func (s *Store) SealedPayloads(uids []string) (map[string][]byte, error) {
 	out := make(map[string][]byte, len(uids))
 	const batch = 500
 	for start := 0; start < len(uids); start += batch {
@@ -168,10 +187,7 @@ func (s *Store) Payloads(uids []string) (map[string][]byte, error) {
 				rows.Close()
 				return nil, err
 			}
-			if out[uid], err = s.OpenBlob(objAAD(uid), ct); err != nil {
-				rows.Close()
-				return nil, err
-			}
+			out[uid] = ct
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {

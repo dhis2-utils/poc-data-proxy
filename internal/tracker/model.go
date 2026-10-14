@@ -224,6 +224,18 @@ func mergeList(old, incoming any, key string) []any {
 // DHIS2Time formats t like DHIS2 does in tracker payloads.
 func DHIS2Time(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000") }
 
+// shallow copies the top level of a payload for rendering, which only replaces
+// top-level fields: the payload belongs to this request, and nothing below the top
+// level is changed. A deep copy (clone) of every rendered object was a large part of
+// an Android download page's cost (docs/PERFORMANCE.md).
+func shallow(m M) M {
+	out := make(M, len(m)+4)
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
 func clone(m M) M {
 	b, _ := json.Marshal(m)
 	var out M

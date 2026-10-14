@@ -3,6 +3,7 @@ package tracker
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/url"
 	"path/filepath"
 	"testing"
@@ -99,5 +100,33 @@ DELETE FROM te_attrs`); err != nil {
 func TestLikePatternEscapes(t *testing.T) {
 	if got := likePattern(`50%_A\b`); got != `%50\%\_a\\b%` {
 		t.Fatalf("likePattern = %q", got)
+	}
+}
+
+// A cached payload is served only for the version it was decoded from: rewriting an
+// object seals it with a new nonce, so the next read decodes the new payload.
+func TestPayloadCacheFollowsVersions(t *testing.T) {
+	s := testStore(t)
+	ix := NewStoreIndex(s)
+	o := &Obj{UID: "EvAaaaaaaa1", Kind: store.KindEvent, OwnerOrgUnit: "OuAaaaaaaa1", Origin: store.OriginLocal,
+		SyncState: store.SyncPending, Data: M{"event": "EvAaaaaaaa1", "status": "ACTIVE"}}
+	o.Slot = ix.SlotFor(o.UID)
+	put := func() {
+		if err := s.Tx(context.Background(), func(tx *sql.Tx) error { return s.PutObject(tx, o.ToStore()) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put()
+	if d := ix.loadPayloads([]string{o.UID})[o.UID]; Str(d, "status") != "ACTIVE" {
+		t.Fatalf("first read: %v", d)
+	}
+	first := ix.loadPayloads([]string{o.UID})[o.UID]
+	if again := ix.loadPayloads([]string{o.UID})[o.UID]; fmt.Sprintf("%p", again) != fmt.Sprintf("%p", first) {
+		t.Fatal("an unchanged payload was decoded again")
+	}
+	o.Data = M{"event": "EvAaaaaaaa1", "status": "COMPLETED"}
+	put()
+	if d := ix.loadPayloads([]string{o.UID})[o.UID]; Str(d, "status") != "COMPLETED" {
+		t.Fatalf("after a rewrite the cache served the old version: %v", d)
 	}
 }

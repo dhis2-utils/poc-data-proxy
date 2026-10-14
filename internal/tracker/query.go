@@ -380,7 +380,7 @@ func scopeAttributes(v *Viewer, tet, program string, attrs []any) []any {
 }
 
 func (ix *Index) RenderTE(v *Viewer, o *Obj, f *Fields, program string) M {
-	d := clone(ix.fullFor(v, o))
+	d := shallow(ix.fullFor(v, o))
 	if program != "" {
 		// Central lists the program's attributes on the tracked entity when program is
 		// given; clients often send them under the enrollment only.
@@ -425,7 +425,7 @@ func (ix *Index) RenderTE(v *Viewer, o *Obj, f *Fields, program string) M {
 }
 
 func (ix *Index) RenderEnrollment(v *Viewer, o *Obj, f *Fields) M {
-	d := clone(ix.fullFor(v, o))
+	d := shallow(ix.fullFor(v, o))
 	if f.Has("attributes") {
 		tet := ""
 		if te := ix.Get(o.TE); te != nil {
@@ -452,7 +452,7 @@ func (ix *Index) RenderEnrollment(v *Viewer, o *Obj, f *Fields) M {
 }
 
 func (ix *Index) RenderEvent(v *Viewer, o *Obj, f *Fields) M {
-	d := clone(ix.fullFor(v, o))
+	d := shallow(ix.fullFor(v, o))
 	if f.Has("relationships") {
 		d["relationships"] = ix.renderRels(v, o.UID, f.Sub("relationships"))
 	}
@@ -464,7 +464,7 @@ func (ix *Index) renderRels(v *Viewer, uid string, _ *Fields) []any {
 	sortObjs(rels, "createdAt", nil)
 	out := []any{}
 	for _, r := range rels {
-		out = append(out, clone(ix.fullFor(v, r)))
+		out = append(out, shallow(ix.fullFor(v, r)))
 	}
 	return out
 }
@@ -504,5 +504,5 @@ func (ix *Index) GetOne(v *Viewer, collection, uid string, q url.Values) (M, *AP
 	case store.KindEvent:
 		return fields.Project(ix.RenderEvent(v, o, fields)).(M), nil
 	}
-	return clone(ix.fullFor(v, o)), nil
+	return shallow(ix.fullFor(v, o)), nil
 }

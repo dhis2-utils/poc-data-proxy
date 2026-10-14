@@ -205,19 +205,12 @@ func (ix *Index) prefetch(v *Viewer, objs []*Obj, f *Fields) {
 	if len(uids) == 0 {
 		return
 	}
-	raw, err := ix.store.Payloads(uids)
-	if err != nil {
-		slog.Warn("prefetching payloads", "err", err)
-		return
-	}
+	got := ix.loadPayloads(uids)
 	if v.payloads == nil {
-		v.payloads = make(map[string]M, len(raw))
+		v.payloads = make(map[string]M, len(got))
 	}
-	for uid, b := range raw {
-		var d M
-		if json.Unmarshal(b, &d) == nil {
-			v.payloads[uid] = d
-		}
+	for uid, d := range got {
+		v.payloads[uid] = d
 	}
 }
 

@@ -298,7 +298,7 @@ func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *A
 		if !hit {
 			objs, err = ix.searchRelationships(v, q)
 		}
-		render = func(o *Obj) M { return clone(ix.fullFor(v, o)) }
+		render = func(o *Obj) M { return shallow(ix.fullFor(v, o)) }
 	default:
 		return nil, NeedsConnection(collection)
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -82,9 +83,17 @@ func TestQueries(t *testing.T) {
 		{"dashboard: their events", "/api/tracker/events?enrollments=" + enr + "&fields=*&paging=false"},
 	}
 	report = append(report, fmt.Sprintf("%-42s %22s  %s", "query: median (first) of 15", "time", "answer"))
+	// HUB_PERF_ONLY (a regular expression) picks cases, HUB_PERF_RUNS the runs of each
+	// (15): for profiling one kind of request.
+	only := regexp.MustCompile(os.Getenv("HUB_PERF_ONLY"))
+	runs := 15
+	fmt.Sscan(os.Getenv("HUB_PERF_RUNS"), &runs)
 	for _, tc := range cases {
+		if !only.MatchString(tc.name) {
+			continue
+		}
 		var size, status int
-		d := median(15, func() {
+		d := median(runs, func() {
 			var b []byte
 			status, b = c.Do("GET", tc.path, nil)
 			size = len(b)
