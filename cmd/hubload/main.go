@@ -40,6 +40,7 @@ var (
 	think    = flag.String("think", "2s-10s", `pause between a web user's actions ("0" for the hammer run)`)
 	syncEach = flag.Duration("android-sync", 5*time.Minute, "interval of an Android user's incremental sync")
 	andLimit = flag.Int("android-limit", 500, "people an Android device downloads per program, as the Android Settings App limits it (0: all)")
+	andFirst = flag.String("android-first", "all", `when Android devices make their first download: "all" at the start at once (deployment day), "spread" over the first half of the run, "none" (done before: a normal working day)`)
 	doSetup  = flag.Bool("setup", false, "set up the hub as hub_admin first")
 	doFill   = flag.Bool("fill", false, "register the users online and wait for the first pull")
 	reconn   = flag.Bool("reconnect", true, "after the load, restore the uplink and time the push")
@@ -49,8 +50,8 @@ var (
 func main() {
 	flag.Parse()
 	lo, hi := thinkRange(*think)
-	report := []string{fmt.Sprintf("hubload %s: %d users (%.0f%% web), %s offline, think %s, Android limit %d per program",
-		time.Now().Format(time.RFC3339), *users, *webShare*100, *duration, *think, *andLimit)}
+	report := []string{fmt.Sprintf("hubload %s: %d users (%.0f%% web), %s offline, think %s, Android limit %d per program, first downloads %s",
+		time.Now().Format(time.RFC3339), *users, *webShare*100, *duration, *think, *andLimit, *andFirst)}
 	note := func(f string, a ...any) {
 		s := fmt.Sprintf(f, a...)
 		log.Print(s)
@@ -396,10 +397,43 @@ func (u *user) android(m *metrics, stop time.Time) {
 		}
 		return n, te, enr
 	}
-	n, te, enr := download("")
-	m.sample("android: people in a first download", []byte(fmt.Sprint(n)))
+	var n int
+	var te, enr string
+	switch *andFirst {
+	case "none":
+		// The device downloaded before the run: it only needs a person to add events to,
+		// and its syncs ask for what changed since the run began.
+		since = time.Now().UTC().Format("2006-01-02T15:04:05.000")
+		st, b, d := u.get("/api/tracker/trackedEntities?program=" + fc.GenProgram(0) + "&orgUnit=" + ou +
+			"&pageSize=1&fields=trackedEntity,enrollments[enrollment]")
+		m.add("android: pick a person", st, d)
+		var res struct {
+			TEs []struct {
+				TE          string `json:"trackedEntity"`
+				Enrollments []struct {
+					Enrollment string `json:"enrollment"`
+				} `json:"enrollments"`
+			} `json:"trackedEntities"`
+		}
+		if json.Unmarshal(b, &res) == nil && len(res.TEs) > 0 && len(res.TEs[0].Enrollments) > 0 {
+			te, enr = res.TEs[0].TE, res.TEs[0].Enrollments[0].Enrollment
+		}
+	case "spread":
+		if half := int64(time.Until(stop) / 2); half > 0 {
+			time.Sleep(time.Duration(mrand.Int64N(half)))
+		}
+		fallthrough
+	default:
+		n, te, enr = download("")
+		m.sample("android: people in a first download", []byte(fmt.Sprint(n)))
+	}
+	// Devices sync on their own schedules: the first after a random part of the interval.
+	first := true
 	for time.Now().Before(stop) {
 		wait := time.Until(time.Now().Add(*syncEach))
+		if first {
+			wait, first = time.Duration(mrand.Int64N(int64(*syncEach))), false
+		}
 		if rest := time.Until(stop); rest < wait {
 			wait = rest
 		}

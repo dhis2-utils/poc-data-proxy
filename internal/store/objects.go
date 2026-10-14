@@ -163,7 +163,9 @@ func (s *Store) Payloads(uids []string) (map[string][]byte, error) {
 }
 
 // OpenPayload decrypts a payload SealedPayloads returned.
-func (s *Store) OpenPayload(uid string, sealed []byte) ([]byte, error) { return s.OpenBlob(objAAD(uid), sealed) }
+func (s *Store) OpenPayload(uid string, sealed []byte) ([]byte, error) {
+	return s.OpenBlob(objAAD(uid), sealed)
+}
 
 // SealedPayloads returns these objects' payloads still sealed. Each write seals with a
 // new random nonce, which comes first, so it identifies the payload's version.

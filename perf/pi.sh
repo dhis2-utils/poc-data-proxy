@@ -150,7 +150,9 @@ ladder)
 		up_ "$prof"
 		sample "$dir/stats-$name.txt" &
 		spid=$!
-		load_ "$dir/load-$name-realistic.txt" -setup -fill -duration "${DURATION:-5m}" || echo "realistic run failed"
+		# The realistic run is a normal working day: Android devices downloaded before it
+		# and only sync. The hammer run keeps every first download at once (deployment day).
+		load_ "$dir/load-$name-realistic.txt" -setup -fill -duration "${DURATION:-5m}" -android-first none || echo "realistic run failed"
 		load_ "$dir/load-$name-hammer.txt" -duration "${HAMMER:-2m}" -think 0 || echo "hammer run failed"
 		kill "$spid" 2>/dev/null || true
 		docker logs "$HUB" >"$dir/hub-$name.log" 2>&1 || true
@@ -159,7 +161,7 @@ ladder)
 			echo "peak hub memory: $(peak "$dir/stats-$name.txt"); killed for memory: $(docker inspect -f '{{.State.OOMKilled}}' "$HUB" 2>/dev/null || echo unknown)"
 			for run in realistic hammer; do
 				echo "-- $run"
-				grep -E "registered|first pull|working list|search by name|dashboard|new event|first download|download page|people in|upload|reconnect|failed" \
+				grep -E "registered|first pull|working list|search by name|dashboard|new event|first download|download page|incremental sync|people in|upload|reconnect|failed" \
 					"$dir/load-$name-$run.txt" 2>/dev/null || echo "(no report)"
 			done
 			echo

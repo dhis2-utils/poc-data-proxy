@@ -58,7 +58,7 @@ Importing this volume into DHIS2 for one facility would take hours. Instead, a r
 The 50 virtual users log in while the hub is online, then the uplink is cut (Netcut, as in the live suite). Request patterns come from what the real apps send (recorded by `clients/capture_web.py` and the Android exploration):
 
 - **Web user** (35): open a working list (page 1, newest first), search by name or ID, open the enrollment dashboard (TE, enrollments, events, relationships), add an event, then edit data values. Think time is 2–10 s in the *realistic* run and zero in the *hammer* run.
-- **Android user** (15): a first download of the user's programs, up to 500 people per program as the Android Settings App limits it (`-android-limit`, 0 for everyone: the worst case), then incremental syncs every 5 minutes and uploads of new events. A device at a facility with a hub does not need everyone.
+- **Android user** (15): a first download of the user's programs, up to 500 people per program as the Android Settings App limits it (`-android-limit`, 0 for everyone: the worst case), then incremental syncs every 5 minutes and uploads of new events. A device at a facility with a hub does not need everyone. When the first downloads happen is a flag (`-android-first`): `all` at the start at once (deployment day, the worst case), `spread` over the first half of the run, or `none` (done before: a normal working day). The ladder's realistic run uses `none`, its hammer run `all`.
 - **Reconnect**: after the offline period, the uplink comes back with the backlog of all 50 users' writes, and the push must finish without loss or duplicates.
 
 ## What is measured
