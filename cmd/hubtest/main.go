@@ -70,15 +70,16 @@ func (p *provisionFlags) provision(c *testkit.Central) (*testkit.Manifest, error
 	return nil, fmt.Errorf("unknown profile %q", p.profile)
 }
 
-// seeds maps a profile and DHIS2 major to a broker seed ("" = empty instance).
+// seed maps a profile and DHIS2 major to the name of a broker seed, without its
+// file extension, which the broker's list decides ("" = empty instance).
 func seed(profile, version string) (string, error) {
 	switch profile {
 	case "synthetic":
 		return "", nil
 	case "sierra-leone":
-		return "dhis2-db-sierra-leone_v" + version + ".sql.gz", nil
+		return "dhis2-db-sierra-leone_v" + version, nil
 	case "laos":
-		return "lao_hmis_demo_v" + version + ".sql.gz", nil
+		return "lao_hmis_demo_v" + version, nil
 	}
 	return "", fmt.Errorf("unknown profile %q", profile)
 }
@@ -138,6 +139,9 @@ func (r *runFlags) run() error {
 		}
 	} else {
 		s, err := seed(r.profile, r.version)
+		if err == nil && s != "" {
+			s, err = b.seedFile(s)
+		}
 		if err != nil {
 			return err
 		}

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -53,6 +54,27 @@ type instance struct {
 	Name      string `json:"name"`
 	Status    string `json:"status"`
 	DevnetURL string `json:"devnet_url"`
+}
+
+// seedFile finds the broker's seed file for a seed name ("lao_hmis_demo_v42" →
+// "lao_hmis_demo_v42.pgc"): the broker has changed the files' format before.
+func (b *broker) seedFile(name string) (string, error) {
+	var res struct {
+		Seeds []struct {
+			Path string `json:"path"`
+		} `json:"seeds"`
+	}
+	if _, err := b.do("GET", "/seeds", nil, &res); err != nil {
+		return "", err
+	}
+	var all []string
+	for _, s := range res.Seeds {
+		if strings.HasPrefix(s.Path, name+".") {
+			return s.Path, nil
+		}
+		all = append(all, s.Path)
+	}
+	return "", fmt.Errorf("no broker seed named %s; the broker has: %s", name, strings.Join(all, ", "))
 }
 
 func (b *broker) instance(name string) (*instance, error) {
