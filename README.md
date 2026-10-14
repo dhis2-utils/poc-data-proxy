@@ -25,7 +25,7 @@ A small device on a facility LAN that caches the facility's DHIS2 tracker data a
 |---|---|
 | `cmd/hub` | The binary: `serve`, `migrate`, `keygen`, `release`, `version` |
 | `cmd/fakecentral` | A stand-in DHIS2, with generated data at any size, for the upgrade script and the performance runs |
-| `cmd/hubtest` | Live tests against real DHIS2 instances from the broker (docs/TESTING.md) |
+| `cmd/hubtest` | Live tests against real DHIS2 instances: provisions a profile and runs the live suite (docs/TESTING.md) |
 | `cmd/hubload` | Load generator: web and Android users against a hub (docs/PERFORMANCE.md) |
 | `internal/app` | Wiring: store, handlers, sync worker, upgrader |
 | `internal/core` | The hub's shared state: runtime, central time zone, sessions, applying central's objects |

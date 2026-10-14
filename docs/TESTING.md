@@ -42,7 +42,7 @@ The same test code runs against any manifest.
 ### 2. Two kinds of central
 
 - **fake**: `internal/fakecentral`, in process, milliseconds per test, with fault injection (refusing tokens, disabled accounts, errors). Runs on every commit.
-- **live**: a real DHIS2 instance from the broker, provisioned by a profile. Between hub and central sits an in-process **network switch** (`testkit.Netcut`): a proxy that can cut the line at the connection level, delay it or let it flap, so "offline" is a real network failure on any central.
+- **live**: a real DHIS2 instance, provisioned by a profile. Any instance you can reach with a superuser account will do. Between hub and central sits an in-process **network switch** (`testkit.Netcut`): a proxy that can cut the line at the connection level, delay it or let it flap, so "offline" is a real network failure on any central.
 
 ### 3. Central is the oracle
 
@@ -73,13 +73,18 @@ Scripted Capture web runs (Playwright) and Android Capture runs (adb and the UI 
 | Command | What |
 |---|---|
 | `go test ./...` | unit tests, fake-central end-to-end tests, and the live suite against the fake |
-| `go run ./cmd/hubtest run -profile synthetic -version 42` | a clean broker instance, provisioned, with the live suite run against it; results in `testresults/synthetic-42/` |
-| `go run ./cmd/hubtest run -profile sierra-leone -version 42` | the same from the Sierra Leone seed (reset from the seed if the instance exists) |
-| `go run ./cmd/hubtest matrix -profiles synthetic,sierra-leone,laos -versions 42` | every profile × version, one instance at a time |
-| `go run ./cmd/hubtest provision -profile laos -url http://dhis2-x:8080 -out manifest.json` | provision an instance yourself |
-| `HUB_MANIFEST=manifest.json HUB_REPORT=oracle.json go test ./internal/live/` | the live suite against a provisioned instance |
+| `go run ./cmd/hubtest provision -profile laos -url https://dhis2.example.org -admin user:password -out manifest.json` | turn a DHIS2 instance into a profile's shape and write its manifest. `synthetic` needs an empty instance; `sierra-leone` and `laos` need the matching demo database |
+| `HUB_MANIFEST=manifest.json HUB_REPORT=oracle.json go test ./internal/live/` | the live suite against that instance |
 
-`hubtest` needs `DHIS2_BROKER_URL` and `DHIS2_BROKER_TOKEN` for `run` and `matrix`. Live runs mutate their instance; `run` resets it first.
+Live runs change their instance: use a disposable one, and restore it (or a fresh demo database) before running again.
+
+**With an instance manager.** Where test instances come from d2-broker, a local tool that creates and resets disposable DHIS2 instances (`DHIS2_BROKER_URL`, `DHIS2_BROKER_TOKEN`), `hubtest` does the above in one step, writing results to `testresults/<profile>-<version>/`:
+
+| Command | What |
+|---|---|
+| `go run ./cmd/hubtest run -profile synthetic -version 42` | a clean instance, provisioned, with the live suite run against it |
+| `go run ./cmd/hubtest run -profile sierra-leone -version 42` | the same from the Sierra Leone demo database (reset if the instance exists) |
+| `go run ./cmd/hubtest matrix -profiles synthetic,sierra-leone,laos -versions 42` | every profile × version, one instance at a time |
 
 ### What the live suite contains
 
@@ -98,8 +103,8 @@ Scripted Capture web runs (Playwright) and Android Capture runs (adb and the UI 
 | Profile | Source | What it adds |
 |---|---|---|
 | `synthetic` | empty instance | full control: open, protected, closed, public and event programs, a restricted stage, unique and generated attributes, two tracked entity types, an attribute category combo whose category options are shared per user, ownership moved in and out, visits elsewhere, deleted and scheduled records, cross-facility relationships |
-| `sierra-leone` | `dhis2-db-sierra-leone_v<N>` | real metadata and data; the facility with the most tracker data, its four busiest programs |
-| `laos` | `lao_hmis_demo_v<N>` | a second real configuration, with its own conventions |
+| `sierra-leone` | the Sierra Leone demo database of that version | real metadata and data; the facility with the most tracker data, its four busiest programs |
+| `laos` | the Lao HMIS demo database | a second real configuration, with its own conventions |
 
 The **access matrix** (27–30 users per profile) covers every pair of: capture scope (facility, district, sibling, two facilities, country), search scope (none, facility, district, other district, country), access to the open, protected and closed programs, to the restricted stage, to the tracked entity type and to a category option, granted directly or through a group. Three more users test the hub's shared listings (users with the same access list are pulled once for all): a twin of the nurse (same groups and scopes), and two users with identical direct grants that differ only in the shared category option, which the hub's grouping leaves out and handles per user.
 

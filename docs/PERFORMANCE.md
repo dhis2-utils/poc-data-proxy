@@ -70,7 +70,7 @@ The generated users share one access, so the last row is the best case; a real f
 
 ## Running the tests
 
-In process (the sandbox, unconstrained), with `HUB_PERF_SCALE="tes,enrollments,events"` and `HUB_PERF_USERS`:
+In process on a development machine (unconstrained), with `HUB_PERF_SCALE="tes,enrollments,events"` and `HUB_PERF_USERS`:
 
 - `TestPull`: first pull, heap, disk, reboot to first login.
 - `TestQueries`: working lists, searches, Android pages, dashboards (`HUB_PERF_ONLY` and `HUB_PERF_RUNS` to profile one kind).
@@ -91,7 +91,7 @@ sh perf/pi.sh bench pi4             # calibration: storage benchmarks and fio in
 | `pi4` | Pi 4, 1 GB, SD card | 0.8 | 1g | 10 MB/s and 500 IOPS write, 40 MB/s and 1 500 IOPS read |
 | `pi5` | Pi 5, 4 GB, USB SSD | 1.6 | 4g | unrestricted |
 
-`--cpus` caps CPU time, not per-core speed (an Apple Silicon core is about 2.5–3 times a Pi 5 core), and Docker Desktop's disk limits apply to the VM's disk and may have no effect: calibrate both against a real Pi with `bench`. The data lives on a Docker volume so the limits apply to it.
+`--cpus` caps CPU time, not per-core speed (the results so far come from an Apple Silicon Mac, whose cores are about 2.5–3 times a Pi 5's), and with Docker Desktop the disk limits apply to its VM's disk and may have no effect: calibrate both against a real Pi with `bench`. The data lives on a Docker volume so the limits apply to it.
 
 **The load** (`cmd/hubload`): the users log in online, the uplink is cut (the fake central refuses connections), they work offline, the uplink returns and the push is timed in steps (uplink restored, hub online, outbox empty).
 
