@@ -245,13 +245,17 @@ func (h *Hub) CreatePAT(ctx context.Context, with central.Auth, exp time.Time) (
 // RefreshServerVersion reads central's version (spec 6.2 step 5, refreshed on sync).
 func (h *Hub) RefreshServerVersion(ctx context.Context, auth central.Auth) (string, error) {
 	var info struct {
-		Version string `json:"version"`
+		Version  string `json:"version"`
+		TimeZone string `json:"serverTimeZoneId"`
 	}
 	if err := h.Central.JSON(ctx, "GET", "/api/system/info", nil, auth, &info); err != nil {
 		return "", err
 	}
 	if info.Version != "" {
 		h.Store.SetMeta(MetaServerVersion, info.Version)
+	}
+	if info.TimeZone != "" && info.TimeZone != h.Store.Meta(MetaServerTimeZone) {
+		h.Store.SetMeta(MetaServerTimeZone, info.TimeZone)
 	}
 	return info.Version, nil
 }

@@ -247,6 +247,7 @@ The differential oracle compares the offline hub with central for every role and
 
 12. **An event from a user who may write the stage but only read the program was refused offline.** Central accepts it (tracker program events need stage write access, not program write access); the hub asked for both. Found by the write oracle on the synthetic profile.
 13. **Events in a program with an attribute category combination were accepted offline and rejected on push** (E1055: such programs need a non-default attribute option combo, which the hub does not support offline). The hub now fetches each program's category combination and answers "needs connection" at once.
+14. **Records created offline were stamped in UTC; central writes times in its own time zone.** DHIS2 gives and expects `createdAt` and `updatedAt` without an offset, in the server's zone (`serverTimeZoneId`). On a server on East Africa Time, a person registered offline looked three hours old until synced, and reserved values' expiry dates were compared three hours off. The hub now reads the zone at each sync and stamps its own times in it. The test instances all run in UTC, so only the fake central with a zone set shows it (`TestOfflineRecordsUseCentralTimeZone`).
 
 **DHIS2 behaviour worth knowing:**
 

@@ -58,6 +58,8 @@ type User struct {
 }
 
 type Central struct {
+	// TimeZone is the server's time zone (serverTimeZoneId); empty: UTC.
+	TimeZone  string
 	mu        sync.Mutex
 	Users     map[string]*User
 	tokens    map[string]string // PAT key -> username
@@ -110,13 +112,25 @@ func New() *Central {
 // SetDown makes every request fail at the connection level (a cut uplink).
 func (c *Central) SetDown(down bool) { c.down.Store(down) }
 
-func now() string { return time.Now().UTC().Format("2006-01-02T15:04:05.000") }
+// now is the current time as DHIS2 writes it: in the server's time zone, without an
+// offset.
+func (c *Central) now() string { return time.Now().In(c.zone()).Format("2006-01-02T15:04:05.000") }
+
+// zone is TimeZone loaded, or UTC.
+func (c *Central) zone() *time.Location {
+	if c.TimeZone != "" {
+		if loc, err := time.LoadLocation(c.TimeZone); err == nil {
+			return loc
+		}
+	}
+	return time.UTC
+}
 
 // Seed adds a tracked entity owned by the facility, enrolled in the program.
 func (c *Central) Seed(te, enr, firstName, nationalID string, events map[string]string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	ts := now()
+	ts := c.now()
 	c.put("trackedEntity", te, tracker.M{"trackedEntity": te, "trackedEntityType": TET, "orgUnit": Facility, "createdAt": ts, "updatedAt": ts,
 		"attributes": []any{tracker.M{"attribute": AttrFirstName, "value": firstName}, tracker.M{"attribute": AttrNationalI, "value": nationalID}}})
 	c.put("enrollment", enr, tracker.M{"enrollment": enr, "trackedEntity": te, "program": Program, "orgUnit": Facility, "status": "ACTIVE",
@@ -267,7 +281,7 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case p == "/api/system/info":
-		writeJSON(w, 200, map[string]any{"version": c.Version, "revision": "fake"})
+		writeJSON(w, 200, map[string]any{"version": c.Version, "revision": "fake", "serverTimeZoneId": c.zone().String()})
 	case p == "/api/me":
 		ous := []any{}
 		for _, ou := range u.OrgUnits {
@@ -344,7 +358,7 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for i := 0; i < max(n, 1); i++ {
 			c.reserved++
 			out = append(out, map[string]any{"ownerObject": "TRACKEDENTITYATTRIBUTE", "ownerUid": attr, "key": "RANDOM(##########)",
-				"value": fmt.Sprintf("%010d", c.reserved), "created": now(), "expiryDate": time.Now().AddDate(0, 0, 60).UTC().Format("2006-01-02T15:04:05.000")})
+				"value": fmt.Sprintf("%010d", c.reserved), "created": c.now(), "expiryDate": time.Now().AddDate(0, 0, 60).In(c.zone()).Format("2006-01-02T15:04:05.000")})
 		}
 		c.mu.Unlock()
 		writeJSON(w, 200, out)
@@ -635,7 +649,7 @@ func (c *Central) importTracker(w http.ResponseWriter, r *http.Request, u *User)
 	for _, tt := range []string{"TRACKED_ENTITY", "ENROLLMENT", "EVENT", "RELATIONSHIP"} {
 		tm[tt] = map[string]any{"trackerType": tt, "objectReports": []any{}}
 	}
-	ts := now()
+	ts := c.now()
 	for _, it := range okItems {
 		data := deepCopy(it.Data)
 		if old := c.objects[it.UID]; old != nil {

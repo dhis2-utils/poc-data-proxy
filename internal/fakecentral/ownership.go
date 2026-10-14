@@ -30,7 +30,7 @@ func (c *Central) Transfer(te, ou string) {
 func (c *Central) setOwner(te, ou string) {
 	c.owners[te] = ou
 	if o := c.objects[te]; o != nil {
-		o["updatedAt"] = now()
+		o["updatedAt"] = c.now()
 	}
 }
 

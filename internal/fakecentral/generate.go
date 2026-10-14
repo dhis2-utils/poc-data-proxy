@@ -45,7 +45,7 @@ func (c *Central) Generate(s Scale) {
 	s.Programs, s.Years = max(s.Programs, 1), max(s.Years, 1)
 	s.TEs, s.Enrollments = max(s.TEs, 1), max(s.Enrollments, 1)
 	g := &generated{Scale: s, start: time.Duration(s.Years) * 365 * 24 * time.Hour,
-		updatedAt: now(), byProgram: make([][]int32, s.Programs)}
+		updatedAt: c.now(), byProgram: make([][]int32, s.Programs)}
 	g.span = g.start
 	for j := 0; j < s.Enrollments; j++ {
 		p := g.program(j)

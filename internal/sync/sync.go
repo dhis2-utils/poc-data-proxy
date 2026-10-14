@@ -913,7 +913,7 @@ func (w *Worker) getPage(ctx context.Context, api compat.API, auth central.Auth,
 func (w *Worker) RefillPool(ctx context.Context) error {
 	h := w.H
 	rt := h.Runtime()
-	now := tracker.DHIS2Time(time.Now())
+	now := h.CentralTime(time.Now())
 	var errs []error
 	for _, a := range h.Catalog().GeneratedAttributes() {
 		have := h.Store.CountReservedValues(a.ID, now)

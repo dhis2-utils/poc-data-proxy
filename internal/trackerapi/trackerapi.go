@@ -351,7 +351,7 @@ func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Ses
 	u, _ := a.H.Store.UserByID(sess.UserID)
 	rt := a.H.Runtime()
 	im := &tracker.Importer{Ix: a.H.Index, V: v, Username: u.Username, UserUID: u.UserUID, DefaultAOC: rt.DefaultAOC,
-		Strategy: strategy, Now: time.Now(), AtomicAll: q.Get("atomicMode") != "OBJECT"}
+		Strategy: strategy, Now: a.H.CentralNow(), AtomicAll: q.Get("atomicMode") != "OBJECT"}
 	out := im.Import(payload)
 	if _, err := a.H.PersistImport(sess.UserID, out); err != nil {
 		slog.Error("persist offline import", "err", err)
@@ -379,7 +379,7 @@ func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Ses
 		}
 	}
 	a.jobs[id] = &job{userID: sess.UserID, status: status, report: report, stats: total, state: st,
-		at: tracker.DHIS2Time(time.Now()), made: time.Now()}
+		at: a.H.CentralTime(time.Now()), made: time.Now()}
 	a.jobsMu.Unlock()
 	core.WriteJSON(w, 200, a.H.API().AsyncAccepted(id, a.selfBase(r)+"/tracker/jobs/"+id))
 }
@@ -449,7 +449,7 @@ func (a *API) ServeGenerated(w http.ResponseWriter, r *http.Request) {
 		a.H.UpgradingError(w) // values handed out now would be handed out again after the swap
 		return
 	}
-	vals, err := a.H.Store.TakeReservedValues(attr, n, tracker.DHIS2Time(time.Now()))
+	vals, err := a.H.Store.TakeReservedValues(attr, n, a.H.CentralTime(time.Now()))
 	a.H.EndLocalWrite()
 	if err != nil || len(vals) == 0 {
 		a.H.NeedsConnection(w, "no reserved values left for attribute "+attr)
