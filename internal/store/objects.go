@@ -175,32 +175,17 @@ func (s *Store) OpenPayload(uid string, sealed []byte) ([]byte, error) {
 // new random nonce, which comes first, so it identifies the payload's version.
 func (s *Store) SealedPayloads(uids []string) (map[string][]byte, error) {
 	out := make(map[string][]byte, len(uids))
-	const batch = 500
-	for start := 0; start < len(uids); start += batch {
-		part := uids[start:min(start+batch, len(uids))]
-		args := make([]any, len(part))
-		for i, u := range part {
-			args[i] = u
-		}
-		rows, err := s.query(`SELECT uid, payload_enc FROM objects WHERE uid IN (?`+strings.Repeat(",?", len(part)-1)+`)`, args...)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
+	err := inBatches(uids, func(args []any, marks string) error {
+		rows, err := s.query(`SELECT uid, payload_enc FROM objects WHERE uid IN (`+marks+`)`, args...)
+		return scanRows(rows, err, func(r *sql.Rows) error {
 			var uid string
 			var ct []byte
-			if err := rows.Scan(&uid, &ct); err != nil {
-				rows.Close()
-				return nil, err
-			}
+			err := r.Scan(&uid, &ct)
 			out[uid] = ct
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+			return err
+		})
+	})
+	return out, err
 }
 
 // objectColumns are the columns ScanObject reads, without the payload.
@@ -278,25 +263,48 @@ func (s *Store) QueryObjectPairs(query string, args ...any) ([][2]*Object, error
 	return out, rows.Err()
 }
 
+// inBatches runs fn over ids in batches of 500 (SQLite's limit on parameters is
+// higher, but the statements stay small), with each batch's arguments and "?,?,…".
+func inBatches[T any](ids []T, fn func(args []any, marks string) error) error {
+	const batch = 500
+	for start := 0; start < len(ids); start += batch {
+		part := ids[start:min(start+batch, len(ids))]
+		args := make([]any, len(part))
+		for i, v := range part {
+			args[i] = v
+		}
+		if err := fn(args, "?"+strings.Repeat(",?", len(part)-1)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// scanRows reads every row of rows with scan.
+func scanRows(rows *sql.Rows, err error, scan func(*sql.Rows) error) error {
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := scan(rows); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
 // ObjectsByUID returns these objects without payloads (missing ones are left out).
 func (s *Store) ObjectsByUID(uids []string) (map[string]*Object, error) {
 	out := make(map[string]*Object, len(uids))
-	const batch = 500
-	for start := 0; start < len(uids); start += batch {
-		part := uids[start:min(start+batch, len(uids))]
-		args := make([]any, len(part))
-		for i, u := range part {
-			args[i] = u
-		}
-		objs, err := s.QueryObjects(`SELECT `+objectCols+` FROM objects WHERE uid IN (?`+strings.Repeat(",?", len(part)-1)+`)`, args...)
-		if err != nil {
-			return nil, err
-		}
+	err := inBatches(uids, func(args []any, marks string) error {
+		objs, err := s.QueryObjects(`SELECT `+objectCols+` FROM objects WHERE uid IN (`+marks+`)`, args...)
 		for _, o := range objs {
 			out[o.UID] = o
 		}
-	}
-	return out, nil
+		return err
+	})
+	return out, err
 }
 
 // ObjectState is what a pull compares with central's list: the stored update time
@@ -315,64 +323,33 @@ func (s *Store) ObjectStates(uids []string) (map[string]ObjectState, error) {
 	slices.Sort(sorted)
 	sorted = slices.Compact(sorted)
 	out := make(map[string]ObjectState, len(sorted))
-	const batch = 500
-	for start := 0; start < len(sorted); start += batch {
-		part := sorted[start:min(start+batch, len(sorted))]
-		args := make([]any, len(part))
-		for i, u := range part {
-			args[i] = u
-		}
-		rows, err := s.query(`SELECT uid, updated_at, slot FROM objects INDEXED BY objects_state WHERE uid IN (?`+
-			strings.Repeat(",?", len(part)-1)+`)`, args...)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
+	err := inBatches(sorted, func(args []any, marks string) error {
+		rows, err := s.query(`SELECT uid, updated_at, slot FROM objects INDEXED BY objects_state WHERE uid IN (`+marks+`)`, args...)
+		return scanRows(rows, err, func(r *sql.Rows) error {
 			var uid string
 			var st ObjectState
-			if err := rows.Scan(&uid, &st.UpdatedAt, &st.Slot); err != nil {
-				rows.Close()
-				return nil, err
-			}
+			err := r.Scan(&uid, &st.UpdatedAt, &st.Slot)
 			out[uid] = st
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+			return err
+		})
+	})
+	return out, err
 }
 
 // SlotOrigins returns the origin and program of the objects in these slots, by slot.
 func (s *Store) SlotOrigins(slots []int64) (map[int64][2]string, error) {
 	out := make(map[int64][2]string, len(slots))
-	const batch = 500
-	for start := 0; start < len(slots); start += batch {
-		part := slots[start:min(start+batch, len(slots))]
-		args := make([]any, len(part))
-		for i, v := range part {
-			args[i] = v
-		}
-		rows, err := s.DB().Query(`SELECT slot, origin, program FROM objects WHERE slot IN (?`+strings.Repeat(",?", len(part)-1)+`)`, args...)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
+	err := inBatches(slots, func(args []any, marks string) error {
+		rows, err := s.query(`SELECT slot, origin, program FROM objects WHERE slot IN (`+marks+`)`, args...)
+		return scanRows(rows, err, func(r *sql.Rows) error {
 			var slot int64
 			var origin, program string
-			if err := rows.Scan(&slot, &origin, &program); err != nil {
-				rows.Close()
-				return nil, err
-			}
+			err := r.Scan(&slot, &origin, &program)
 			out[slot] = [2]string{origin, program}
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+			return err
+		})
+	})
+	return out, err
 }
 
 // UnfilledObjects returns up to limit objects, with payloads, whose query columns

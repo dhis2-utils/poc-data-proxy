@@ -188,12 +188,6 @@ func (s *Store) SetFullPullTime(userID int64, program string) error {
 	return err
 }
 
-func (s *Store) LastPull() string {
-	var t sql.NullString
-	s.DB().QueryRow(`SELECT max(last_pull_at) FROM pull_state`).Scan(&t)
-	return t.String
-}
-
 // --- reserved values (spec 10.3) ------------------------------------------------
 
 type ReservedValue struct {
