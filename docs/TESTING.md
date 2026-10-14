@@ -4,7 +4,7 @@ The hub stands in for DHIS2 when the uplink is down. Every place where its answe
 
 ## Supported DHIS2 versions
 
-The hub supports the DHIS2 versions DHIS2 itself supports, from 2.42 on: today **2.42 and 2.43**. DHIS2 releases yearly and supports three versions; when 2.44 is released the window becomes 2.42–2.44, then 2.43–2.45, and so on. Each supported version runs the full test matrix below. A hub release that adds the next version goes out before any country upgrades central.
+The aim is to support the DHIS2 versions DHIS2 itself supports, from 2.42 on. DHIS2 releases yearly and supports three versions; when 2.44 is released the window becomes 2.42–2.44, then 2.43–2.45, and so on. Each supported version runs the full test matrix below. A hub release that adds the next version goes out before any country upgrades central. **Today only 2.42 is tested**; 2.43 is mapped to the same handling but not yet run (phase 5).
 
 ## What has to be covered
 
@@ -58,7 +58,7 @@ Writes are checked the same way after the fact: what reaches central through the
 
 ### 4. Real clients
 
-Scripted Capture web runs (Playwright) and Android Capture runs (adb and the UI automator) against hub and live central: log in online, work offline, hand over between devices, reconnect. These are the tests that found most real bugs in the POC; they move from manual runs into the repository.
+Scripted Capture web runs (Playwright) and Android Capture runs (adb and the UI automator) against hub and live central: log in online, work offline, hand over between devices, reconnect. These are the tests that found most real bugs in the POC; they are now in the live suite (`TestCaptureWeb`, `TestCaptureAndroid`, below).
 
 ### 5. Conditions
 
@@ -105,9 +105,15 @@ The **access matrix** (27–30 users per profile) covers every pair of: capture 
 
 ## Phases
 
-1. **Framework on 2.42** — manifest, network switch, hub runner, synthetic profile, live scenario suite, differential read oracle, `hubtest` CLI.
-2. **Seeded profiles** — Sierra Leone and Laos.
-3. **Real clients** — scripted Capture web and Android runs.
-4. **Conditions** — network, process, disk, time, scale. The scale test (Pi-class hardware, 60 users of whom 18 on Android, a busy HC IV: 300 000 people, about 0.5 million enrollments and 1.2 million events, and a pessimistic 700 000 / 1.2 million / 3.1 million) is planned in [PERFORMANCE.md](PERFORMANCE.md).
-5. **2.43** — record its fixtures, diff them against 2.42, implement the differences, add it to the matrix.
-6. **Two hubs** — the facility and its sibling each get a hub on the same central, each with several devices of different kinds (Capture web, Android, raw API clients). Scenarios: a person transferred from one hub's facility to the other while either hub or both are offline, in open and protected programs; breaking the glass online at one hub for a person the other owns; referrals back and forth; both hubs reconnecting in either order. Checks: every device and hub shows no more than central would, nothing is lost or duplicated, and queued transfers (the Android SDK queues them, the hubs refuse them offline) end where central says. It needs the sibling facility's roles in the manifest and a second hub in the test environment.
+| Phase | Status |
+|---|---|
+| 1. **Framework on 2.42**: manifest, network switch, hub runner, synthetic profile, live scenario suite, differential read oracle, `hubtest` CLI | done |
+| 2. **Seeded profiles**: Sierra Leone and Laos | done |
+| 3. **Real clients**: scripted Capture web and Android runs | done (`HUB_CLIENTS=1`); not yet re-run on the SQLite store |
+| 4. **Conditions**: network, process, disk, time, scale | network and scale in progress ([PERFORMANCE.md](PERFORMANCE.md)); power cuts planned on real hardware; process, disk and time to do |
+| 5. **2.43**: record its fixtures, diff them against 2.42, implement the differences, add it to the matrix | to do |
+| 6. **Two hubs** | to do |
+
+The scale test (phase 4) runs Pi-class hardware with 60 users, 18 of them on Android, up to a busy HC IV (300 000 people, about 0.5 million enrollments and 1.2 million events) and a pessimistic 700 000 / 1.2 million / 3.1 million.
+
+Two hubs (phase 6): the facility and its sibling each get a hub on the same central, each with several devices of different kinds (Capture web, Android, raw API clients). Scenarios: a person transferred from one hub's facility to the other while either hub or both are offline, in open and protected programs; breaking the glass online at one hub for a person the other owns; referrals back and forth; both hubs reconnecting in either order. Checks: every device and hub shows no more than central would, nothing is lost or duplicated, and queued transfers (the Android SDK queues them, the hubs refuse them offline) end where central says. It needs the sibling facility's roles in the manifest and a second hub in the test environment.

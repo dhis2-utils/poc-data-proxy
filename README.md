@@ -5,21 +5,34 @@
 > Maintainers: HISP Centre implementation team.
 
 
-A small device on a facility LAN that caches the facility's DHIS2 tracker data and relays tracker writes to the central DHIS2 server. When central is unreachable, the DHIS2 Capture web app and the Android Capture app keep working against the hub, and each user still sees only what central lets them see. The specification is [SPEC-facility-hub-poc.md](docs/SPEC-facility-hub-poc.md). Answers to its open questions, and the places where the spec turned out wrong, are in [FINDINGS.md](docs/FINDINGS.md).
+A small device on a facility LAN that caches the facility's DHIS2 tracker data and relays tracker writes to the central DHIS2 server. When central is unreachable, the DHIS2 Capture web app and the Android Capture app keep working against the hub, and each user still sees only what central lets them see. Target DHIS2 version: **2.42** (verified against 2.42.6). 2.43 is mapped to the same request and response handling but has not been tested.
 
-Target DHIS2 version: **2.42** (verified against 2.42.6). 2.43 is mapped to the same request and response handling but has not been tested.
+## Documents
+
+| Document | What it covers |
+|---|---|
+| [SPEC-facility-hub-poc.md](docs/SPEC-facility-hub-poc.md) | The original specification, as it was asked |
+| [FINDINGS.md](docs/FINDINGS.md) | What we learned about DHIS2, the Capture apps and the spec: answers to its open questions, where it was wrong, what the tests found |
+| [TESTING.md](docs/TESTING.md) | How the hub is tested: profiles, the live suite against real DHIS2, the differential oracles, phases |
+| [PERFORMANCE.md](docs/PERFORMANCE.md) | How the hub scales: current results on Pi-class profiles, load on central, sizing, history |
+| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Rolling out hubs: hardware, image, setup at the facility, networks, reaching the hub securely, running the fleet; options under consideration |
+| [RECOVERY.md](docs/RECOVERY.md) | Keeping unsynced data safe: backup and recovery options (ideas, not decisions) |
+| [AGENTS.md](AGENTS.md) | How to change the code: keep the structure, guards, checks before committing |
 
 ## Layout
 
 | Path | What it is |
 |---|---|
 | `cmd/hub` | The binary: `serve`, `migrate`, `keygen`, `release`, `version` |
-| `cmd/fakecentral` | A stand-in DHIS2 used by the upgrade test script |
+| `cmd/fakecentral` | A stand-in DHIS2, with generated data at any size, for the upgrade script and the performance runs |
+| `cmd/hubtest` | Live tests against real DHIS2 instances from the broker (docs/TESTING.md) |
+| `cmd/hubload` | Load generator: web and Android users against a hub (docs/PERFORMANCE.md) |
 | `internal/app` | Wiring: store, handlers, sync worker, upgrader |
+| `internal/core` | The hub's shared state: runtime, central time zone, sessions, applying central's objects |
 | `internal/auth` | Online and offline login, Basic auth (Android), key slots, PATs (spec 7) |
-| `internal/store` | SQLite store in two files: a plaintext key file (hub identity, key slots) and an AES-256-XTS encrypted data file (everything else); migrations (spec 9.2) |
+| `internal/store` | SQLite store in two files: a plaintext key file (hub identity, key slots) and an AES-256-XTS encrypted data file (everything else, including the query index); migrations (spec 9.2) |
 | `internal/hubcrypto` | Data key, Argon2id key slots, AES-256-GCM (spec 9.1) |
-| `internal/tracker` | Object model, in-memory index, visibility rules, offline queries and import validation (spec 8.2, 9.3, 10) |
+| `internal/tracker` | Object model, the query index over the store, visibility bitmaps, offline searches and import validation (spec 8.2, 9.3, 10) |
 | `internal/trackerapi` | `/api/tracker/*` and generated attribute values, online and offline (spec 10) |
 | `internal/proxy` | Pass-through with a per-user GET cache (spec 5.1) |
 | `internal/sync` | Outbox push, issue reporting, pull, reserved value pool, heartbeat (spec 11) |
@@ -30,7 +43,11 @@ Target DHIS2 version: **2.42** (verified against 2.42.6). 2.43 is mapped to the 
 | `internal/access` | Per-user access lists and the facility's program catalog (spec 8.1) |
 | `internal/fakecentral` | Fake DHIS2 2.42 shaped after the recorded fixtures, for tests |
 | `internal/e2e` | End-to-end tests for the acceptance scenarios |
-| `testdata/2.42` | Request/response fixtures recorded from DHIS2 2.42.6, plus `SETUP.md` and `setup_instance.py` for the test instance |
+| `internal/testkit` | Test framework: manifests, network switch, profiles (`provision`), oracles, Android driver |
+| `internal/live` | The live suite: scenarios and oracles against a provisioned instance or the fake |
+| `internal/perf` | In-process performance tests: pulls, queries, load on central |
+| `perf` | Container runs on Pi-class profiles (`perf/pi.sh`) and their results |
+| `testdata/2.42` | Request/response fixtures and Capture endpoint lists recorded from DHIS2 2.42.6, plus the first round's manual test setup (`SETUP.md`, `setup_instance.py`) |
 | `deploy` | Example image defaults file and systemd unit |
 | `scripts/test-upgrade.sh` | Scenario 11: self-upgrade, rollback, unsigned release |
 
@@ -60,12 +77,16 @@ The hub has no facility-specific configuration. It reads one small image-default
 | `setup_user_group` | UID of the user group whose members may set up, administer and reset a hub |
 | `listen` | Listen address, e.g. `:8443` |
 | `data_dir` | Store (`hub.db` key file, `hub.db.data` encrypted data file), TLS certificate (`ca.crt` for devices, also served at `/hub/ca.crt`), request log, upgrade files |
-| `sync_interval`, `ping_interval`, `ping_timeout` | Sync cadence and connectivity probe (spec 5.2) |
+| `sync_interval`, `ping_interval`, `ping_timeout` | Sync cadence (default 15m, with ±10 % jitter) and connectivity probe (15s, 5s; spec 5.2) |
+| `reconnect_delay` | After an outage, wait up to this long at random before syncing, so hubs do not reach central together (default 1m) |
+| `access_refresh_interval` | How often each user's access list is re-read from central, besides at login (default 1h) |
 | `pat_expiry_days` | Lifetime of the personal access tokens the hub creates |
 | `release_channel`, `release_public_key` | Where to look for upgrades, and the ed25519 key releases must be signed with |
 | `tls` | `true` (default): at first boot the hub creates a CA limited to its own names and private addresses, issues its server certificate and discards the CA key. `false`: plain HTTP for development |
 | `reserved_pool_size` | Reserved values kept per generated attribute (default 150) |
-| `full_pull_interval` | How often a full, non-incremental pull runs per user (default 24h) |
+| `full_pull_interval` | How often a full, non-incremental pull runs per access group (default 168h, a week). A changed access list gives a full pull at the next sync anyway |
+| `ownership_check_interval` | How often the hub checks which of its people the facility still owns, to catch transfers out (default 1h) |
+| `offline_search_facility` | Answer offline searches with `orgUnitMode=ACCESSIBLE` from the facility's data instead of refusing them (default `true`; FINDINGS.md) |
 | `log_requests` | Log every request and append it to `data_dir/requests.log` (spec 13.1) |
 | `hub_hosts` | Extra host names clients may use for the hub (comma separated; no wildcard). The hub answers 421 to any other `Host`; its own names and addresses are always accepted |
 | `session_idle`, `session_max` | End a hub session after this long without requests (default 1h) or after login (default 12h) |
@@ -101,7 +122,7 @@ Hub endpoints:
   - reset hub.
 - `/hub/ui/endpoints`: every endpoint and parameter clients called, and every parameter refused offline (spec 13.1).
 
-**Raspberry Pi.** Use 64-bit Raspberry Pi OS and set the hostname to `hub`, so `avahi-daemon` (installed by default) announces `hub.local` over mDNS. Install the binary at `/usr/local/bin/hub`, the defaults at `/etc/hub/hub.yaml`, and [`deploy/hub.service`](deploy/hub.service) as a systemd unit.
+**Raspberry Pi.** Use 64-bit Raspberry Pi OS. Install the binary at `/usr/local/bin/hub`, the defaults at `/etc/hub/hub.yaml`, and [`deploy/hub.service`](deploy/hub.service) as a systemd unit. With the host name `hub`, `avahi-daemon` announces `hub.local`, which laptops resolve and Android does not reliably. The full image, hardware and network set-ups, and how devices reach the hub securely, are in [DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Releases and self-upgrade
 
@@ -130,14 +151,15 @@ If the health check fails, it restores the previous binary and store and re-exec
 ## Tests
 
 ```bash
-go test ./...               # unit, golden-fixture and end-to-end tests (scenarios 1-10, reset, 401 handling)
+go test ./...               # unit, golden-fixture, end-to-end and live-suite tests against the fake central
 scripts/test-upgrade.sh     # scenario 11: unsigned release ignored, signed upgrade, failed health check rolls back
+go run ./cmd/hubtest matrix -profiles synthetic,sierra-leone,laos -versions 42   # the live suite against real DHIS2
 ```
 
-- **`internal/e2e`** runs a real hub against `internal/fakecentral`. The fake is shaped after the fixtures in `testdata/2.42`, including central's quirks: with `atomicMode=OBJECT` central answers 200/OK even when objects are rejected, and children of a failed parent are dropped without an error report. The uplink is cut by having the fake central drop connections, so the hub sees real network errors.
+- **`internal/e2e`** runs a real hub against `internal/fakecentral`, shaped after the fixtures in `testdata/2.42` with central's quirks. The uplink is cut by having the fake central drop connections, so the hub sees real network errors.
 - **`internal/compat`** checks the 2.42 response shapes against the recorded fixtures.
-- **Live DHIS2 instance.** `testdata/2.42/setup_instance.py` creates the test users (`hub_admin`, `nurse_a`, `nurse_b`, `clerk_c`, `outsider_d`), groups and sharing on a Sierra Leone 2.42 demo database. `testdata/2.42/SETUP.md` lists the UIDs.
-- **Manual steps with the real Capture apps** (spec 13.3 scenarios 2 and 2a) and their results are in docs/FINDINGS.md.
+- **Live DHIS2**, the oracles and the real Capture apps: [TESTING.md](docs/TESTING.md). Results so far: [FINDINGS.md](docs/FINDINGS.md).
+- **Performance:** [PERFORMANCE.md](docs/PERFORMANCE.md).
 
 ## License
 

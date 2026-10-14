@@ -18,7 +18,7 @@ One kit per facility, assembled and flashed at a central depot.
 
 | Part | Recommendation | Why |
 |---|---|---|
-| Board | Raspberry Pi 5, 4 GB (Pi 4, 4 GB also works) | The hub needs well under 1 GB of RAM at facility scale. 4 GB leaves room for the in-memory index. |
+| Board | Raspberry Pi 5, 4 GB (a Pi 4 works for smaller facilities; Compute Module boards under "Options under consideration") | The hub itself needs a few hundred MB at most; the rest of the RAM caches the data file, which decides speed once the file outgrows it (about 2.5 GB at 100 000 people; docs/PERFORMANCE.md). |
 | Storage | 128 GB NVMe SSD on an M.2 HAT (Pi 5) or a USB 3 SSD (Pi 4). Not an SD card. | The store writes on every sync. SD cards wear out and corrupt on power loss. |
 | Power | Official power supply plus a small UPS (UPS HAT or a 12 V mini UPS) | Power cuts are common. A clean shutdown protects the store, and a UPS keeps the LAN up during short cuts. |
 | Clock | Pi 5 RTC battery (Pi 4 has no RTC) | TLS, sync watermarks and PAT expiry need the right time after a power cut with no internet. |
