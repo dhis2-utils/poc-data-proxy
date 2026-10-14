@@ -36,7 +36,7 @@ The 1 GB knee is between 30 k and 60 k people; the incremental syncs at 60 k ran
 - **Speed depends on whether the data file fits in RAM, or the disk is fast.** At 100 k people the file is about 2.5 GB, at the HC IV size 6–7 GB (about 3.3 KB per object). A Pi 5 with 4 GB serves 100 k people well and the HC IV size for normal use, with little headroom under heavy load. A 1 GB device with an SD card serves small facilities (30 k people worked well; the knee between 30 k and 100 k is still to find) but not 100 k.
 - **Android first downloads are the heaviest load**: 18 at once saturate a Pi 5 for a minute or more. Pages are cheaper now (History, 2026-10-14); a deployment can spread first downloads.
 - **Load on central** fell from about 214 000 requests a day per hub to about 9 400 (best case), about 54 requests a second for 500 hubs (section "Load on central").
-- **Correctness** held: on 2.42 the oracles pass on synthetic after every change, and on Sierra Leone and Laos after the move to SQLite; those two are still to run after the pull changes (access groups, the type pull).
+- **Correctness** held: on 2.42 the oracles pass on all three profiles with every change through 2026-10-14 (shared listings, the type pull, the `updatedAfter` fix): no LEAK or DIFFERS in reads (MATCH 937 synthetic, 627 Sierra Leone, 776 Laos), and no DENIED in writes (OVER-REJECT only where the hub refuses offline what central would accept: 5 synthetic, 8 Sierra Leone events in an enrollment the sibling facility owns, by design).
 
 **Open**
 
