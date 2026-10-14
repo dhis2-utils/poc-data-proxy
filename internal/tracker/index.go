@@ -35,7 +35,6 @@ type Index struct {
 	pending  map[string]uint32   // slots handed out to objects not yet stored
 	scopes   map[string][]string // tracked entity -> pull scopes fetched in full (store.TEScopes)
 	store    *store.Store
-	results  resultCache  // sorted results kept for later pages (results.go)
 	payloads payloadCache // decoded payloads, by version (payloads.go)
 }
 
@@ -95,7 +94,6 @@ func (ix *Index) Load(s *store.Store) error {
 	ix.mu.Unlock()
 	ix.slotMu.Unlock()
 	ix.visMu.Unlock()
-	ix.clearResults()
 	ix.payloads.clear()
 	return nil
 }
@@ -141,7 +139,6 @@ func (ix *Index) Clear() {
 	ix.mu.Unlock()
 	ix.slotMu.Unlock()
 	ix.visMu.Unlock()
-	ix.clearResults()
 	ix.payloads.clear()
 }
 

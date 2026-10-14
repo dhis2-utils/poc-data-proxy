@@ -75,6 +75,8 @@ func TestQueries(t *testing.T) {
 			":like:Phiri&pageSize=15&fields=trackedEntity"},
 		{"name search, nobody (full scan)", list + "&filter=" + fc.AttrFirstName + ":like:Zelda&pageSize=15&fields=trackedEntity"},
 		{"Android download, page 1 of 50", list + "&orgUnitMode=DESCENDANTS&page=1&pageSize=50&paging=true" + androidFields},
+		{"Android download, page 10 of 50 (the last with the 500 limit)", list + "&orgUnitMode=DESCENDANTS&page=10&pageSize=50&paging=true" + androidFields},
+		{"working list, page 3 of 15", list + "&page=3&pageSize=15&order=createdAt:desc&fields=trackedEntity"},
 		{fmt.Sprintf("Android download, page %d of 50", deep), list + "&orgUnitMode=DESCENDANTS&page=" + fmt.Sprint(deep) +
 			"&pageSize=50&paging=true" + androidFields},
 		{"Android sync, everything changed today (worst case)", list + "&orgUnitMode=DESCENDANTS&page=1&pageSize=50&paging=true&updatedAfter=" +

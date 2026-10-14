@@ -270,35 +270,22 @@ func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *A
 		return nil, err
 	}
 	fields := FieldsOrDefault(collection, q.Get("fields"))
-	key := ix.resultKey(v, collection, q)
-	cached, hit := []*Obj(nil), false
-	if paged && pg > 1 {
-		cached, hit = ix.cachedResult(key)
-	}
 	var p *plan
 	var objs []*Obj
 	var render func(*Obj) M
 	var err *APIError
 	switch collection {
 	case "trackedEntities":
-		if !hit {
-			p, err = ix.searchTEs(v, q, program)
-		}
+		p, err = ix.searchTEs(v, q, program)
 		render = func(o *Obj) M { return ix.RenderTE(v, o, fields, program) }
 	case "enrollments":
-		if !hit {
-			p, err = ix.searchEnrollments(v, q, program)
-		}
+		p, err = ix.searchEnrollments(v, q, program)
 		render = func(o *Obj) M { return ix.RenderEnrollment(v, o, fields) }
 	case "events":
-		if !hit {
-			p, err = ix.searchEvents(v, q, program)
-		}
+		p, err = ix.searchEvents(v, q, program)
 		render = func(o *Obj) M { return ix.RenderEvent(v, o, fields) }
 	case "relationships":
-		if !hit {
-			objs, err = ix.searchRelationships(v, q)
-		}
+		objs, err = ix.searchRelationships(v, q)
 		render = func(o *Obj) M { return shallow(ix.fullFor(v, o)) }
 	default:
 		return nil, NeedsConnection(collection)
@@ -307,20 +294,18 @@ func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *A
 		return nil, err
 	}
 	more := false
-	switch {
-	case hit:
-		objs = ix.visible(v, cached) // access may have changed since page 1
-	case p != nil:
+	if p != nil {
+		// Read up to the end of the asked page and stop there, unless the total is
+		// asked for (or the page is beyond any real size). Android asks for pages 1 to
+		// 10 of 50; reading the whole program for every page after the first cost
+		// about a second at 100 000 people (docs/PERFORMANCE.md).
 		want := 0
-		if paged && pg == 1 && !totals {
-			want = size
+		if paged && !totals && pg <= 1_000_000/size {
+			want = pg * size
 		}
 		if objs, more, err = ix.run(v, p, want); err != nil {
 			return nil, err
 		}
-	}
-	if paged && !hit && !more {
-		ix.cacheResult(key, objs)
 	}
 	res := &Result{Collection: collection, Total: len(objs), Page: pg, PageSize: size, Paging: paged, TotalPages: totals,
 		Items: []M{}}
