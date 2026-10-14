@@ -4,6 +4,7 @@
 package trackerapi
 
 import (
+	"cmp"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -116,7 +117,11 @@ func (a *API) learn(sess *core.Session, r *http.Request, body []byte, res *proxy
 	case r.Method == http.MethodPut && res.Status == http.StatusOK && strings.HasSuffix(r.URL.Path, "/tracker/ownership/transfer"):
 		// A transfer out through the hub takes effect offline at once.
 		q := r.URL.Query()
-		if err := a.H.ApplyTransfer(q.Get("trackedEntity"), q.Get("program"), q.Get("ou")); err != nil {
+		ou := q.Get("ou") // 2.42's name, if the client used it
+		if api := a.H.API(); api != nil {
+			ou = cmp.Or(q.Get(api.TransferOrgUnit()), ou)
+		}
+		if err := a.H.ApplyTransfer(q.Get("trackedEntity"), q.Get("program"), ou); err != nil {
 			slog.Warn("apply ownership transfer", "err", err)
 		}
 	case r.Method == http.MethodGet && res.Status == http.StatusOK && !strings.HasPrefix(r.URL.Path, "/api/tracker/jobs/"):

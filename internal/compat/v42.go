@@ -274,7 +274,5 @@ func (v42) JobNotifications(jobID, status string, s tracker.Stats, at string) an
 			status, s.Created, s.Updated, s.Deleted, s.Ignored)}}
 }
 
-// v43 is 2.43; it reuses the 2.42 shapes (unverified, see compat.go).
-type v43 struct{ v42 }
-
-func (v43) Major() int { return 43 }
+// TransferOrgUnit: 2.42 names the new owner with ou=.
+func (v42) TransferOrgUnit() string { return "ou" }

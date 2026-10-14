@@ -1,6 +1,7 @@
 package fakecentral
 
 import (
+	"cmp"
 	"net/http"
 	"slices"
 	"time"
@@ -96,7 +97,8 @@ func (c *Central) getTE(w http.ResponseWriter, r *http.Request, u *User, uid str
 	writeJSON(w, 200, te)
 }
 
-// transfer answers PUT /api/tracker/ownership/transfer?trackedEntity=&program=&ou=.
+// transfer answers PUT /api/tracker/ownership/transfer?trackedEntity=&program=&ou=
+// (orgUnit= as 2.43 names it is accepted too).
 func (c *Central) transfer(w http.ResponseWriter, r *http.Request, u *User) {
 	q := r.URL.Query()
 	te := q.Get("trackedEntity")
@@ -106,7 +108,7 @@ func (c *Central) transfer(w http.ResponseWriter, r *http.Request, u *User) {
 		webMessage(w, 403, "OWNERSHIP_ACCESS_DENIED", "")
 		return
 	}
-	c.setOwner(te, q.Get("ou"))
+	c.setOwner(te, cmp.Or(q.Get("orgUnit"), q.Get("ou")))
 	writeJSON(w, 200, map[string]any{"httpStatus": "OK", "httpStatusCode": 200, "status": "OK", "message": "Ownership transferred"})
 }
 

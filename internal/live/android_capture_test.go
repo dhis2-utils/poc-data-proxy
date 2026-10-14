@@ -130,7 +130,7 @@ func transferOffline(t *testing.T, e *tk.Env, a *tk.Android, program string) {
 	q, _ := url.ParseQuery(put.Query)
 	te, p := q.Get("trackedEntity"), q.Get("program")
 	defer func() {
-		v := url.Values{"trackedEntity": {te}, "program": {p}, "ou": {m.Facility.ID}}
+		v := url.Values{"trackedEntity": {te}, "program": {p}, transferParam(m): {m.Facility.ID}}
 		e.Central.Do("PUT", "/api/tracker/ownership/transfer?"+v.Encode(), nil)
 	}()
 

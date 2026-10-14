@@ -48,13 +48,15 @@ type API interface {
 	JobNotifications(jobID, status string, s tracker.Stats, at string) any
 	// ReservePath reserves n values of a generated attribute on central (spec 10.3).
 	ReservePath(attr string, n int, orgUnitCode string) string
+	// TransferOrgUnit is the parameter of PUT /api/tracker/ownership/transfer that
+	// names the new owner.
+	TransferOrgUnit() string
 }
 
 // Supported lists the DHIS2 majors this hub release handles (current and next).
 var registry = map[int]API{
 	42: v42{},
-	// 2.43 uses the same tracker API shapes as 2.42 for everything the hub touches.
-	// Not verified against a 2.43 instance in the POC; see FINDINGS.md.
+	// 2.43: the 2.42 shapes, with the differences the live suite found on 2.43 (v43.go).
 	43: v43{},
 }
 

@@ -6,8 +6,18 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/dhis2/facility-hub/internal/compat"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
+
+// transferParam names the new owner in an ownership transfer on the manifest's
+// central (2.42: ou, 2.43: orgUnit).
+func transferParam(m *tk.Manifest) string {
+	if api := compat.For(m.DHIS2Version); api != nil {
+		return api.TransferOrgUnit()
+	}
+	return "ou"
+}
 
 // TestOwnershipLive transfers a facility-owned person to the sibling facility on a
 // real central while the hub holds them, and checks that after the next sync the
@@ -68,7 +78,7 @@ func TestOwnershipLive(t *testing.T) {
 	}
 	transfer := func(ou string) {
 		t.Helper()
-		q := url.Values{"trackedEntity": {te}, "program": {p.ID}, "ou": {ou}}
+		q := url.Values{"trackedEntity": {te}, "program": {p.ID}, transferParam(m): {ou}}
 		if st, b, err := e.Central.Do("PUT", "/api/tracker/ownership/transfer?"+q.Encode(), nil); err != nil || st != 200 {
 			t.Fatalf("transfer to %s: %d %v %s", ou, st, err, b)
 		}
