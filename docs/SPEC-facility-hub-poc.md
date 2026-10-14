@@ -2,6 +2,8 @@
 
 Status: draft for a POC. Author: Olav Poppe (HISP Centre). Context: DHIS2 offline support initiative, "lightweight facility hub" option.
 
+> This is the original specification, kept as it was asked. Where the hub deviates from it, and why, is in [FINDINGS.md](FINDINGS.md) ("Things in the spec that turned out wrong or needed a decision"). The design has since moved on in places, notably the query index in the encrypted SQLite file instead of in memory (9.3), ID-list pulls shared per access group and 15-minute syncs (11.3), and TLS (12): see [PERFORMANCE.md](PERFORMANCE.md) and [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## 1. Purpose
 
 Staff at a primary care facility enter tracker data in the DHIS2 Capture web app or the Android Capture app, often a mix of both. Several staff see the same patient during one visit (reception, triage, consultation, lab). When the internet is down, they cannot see each other's data.

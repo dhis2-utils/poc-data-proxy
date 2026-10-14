@@ -25,6 +25,36 @@ type List struct {
 	Programs       map[string]Perm `json:"programs"`
 	Stages         map[string]Perm `json:"stages"`
 	TETs           map[string]Perm `json:"trackedEntityTypes"`
+	// RelationshipTypes: which relationships central shows the user.
+	RelationshipTypes map[string]Perm `json:"relationshipTypes,omitempty"`
+	// Ungroupable: something central uses for this user could not be read, so their
+	// pulls are never shared with others (GroupKey).
+	Ungroupable bool `json:"ungroupable,omitempty"`
+}
+
+// GroupKey is the same for users central answers alike when the hub lists what they
+// see at the facility: everything in the list except who they are. Users with the same
+// key share one listing per sync (docs/PERFORMANCE.md, "Load on central"). Two things
+// central uses are not in the list: category option sharing, which decides events in
+// programs with an attribute category combination (those are listed per user), and
+// sharing granted to one user directly rather than through a group on anything other
+// than programs, stages, types and relationship types.
+func (l *List) GroupKey() string {
+	if l == nil {
+		return ""
+	}
+	// Relationship-type access never read (lists stored before it was, or a refresh
+	// that failed) is unknown, not "none": such a user is not grouped.
+	if l.Ungroupable || l.RelationshipTypes == nil {
+		return "user:" + l.UserUID
+	}
+	k := *l
+	k.UserUID, k.Username = "", ""
+	sorted := func(s []string) []string { s = slices.Clone(s); slices.Sort(s); return s }
+	k.OrgUnits, k.SearchOrgUnits = sorted(k.OrgUnits), sorted(k.SearchOrgUnits)
+	k.Authorities, k.UserGroups = sorted(k.Authorities), sorted(k.UserGroups)
+	b, _ := json.Marshal(k) // maps marshal with sorted keys
+	return string(b)
 }
 
 func Parse(b []byte) (*List, error) {
@@ -35,10 +65,19 @@ func Parse(b []byte) (*List, error) {
 	return l, json.Unmarshal(b, l)
 }
 
-// InFacility reports whether the user has the facility in their capture org units.
-// Users without it may not use hub-local tracker calls (spec 8.1).
-func (l *List) InFacility(facility string) bool {
-	return l != nil && slices.Contains(l.OrgUnits, facility)
+// InFacility reports whether the facility, with this path ("/root/.../facility"), is
+// in the user's capture scope: one of their capture org units or below one, as on
+// central. Users without it may not use hub-local tracker calls (spec 8.1).
+func (l *List) InFacility(facilityPath string) bool {
+	if l == nil || facilityPath == "" {
+		return false
+	}
+	for _, id := range l.OrgUnits {
+		if strings.Contains(facilityPath+"/", "/"+id+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // SearchesIn reports whether the org unit with this path ("/a/b/c") is in the user's
@@ -100,13 +139,35 @@ type ProgramMeta struct {
 	TET        string     `json:"trackedEntityType"`
 	Stages     []string   `json:"programStages"`
 	Attributes []AttrMeta `json:"attributes"` // program attributes
+	// NonRepeatable are the stages that take one event per enrollment. Catalogs from
+	// before this field have none, so the hub then leaves the check to central.
+	NonRepeatable []string `json:"nonRepeatableStages,omitempty"`
+	// AttributeCombo: the program has a non-default category combination, so its
+	// events need an attribute option combo.
+	AttributeCombo bool `json:"attributeCombo,omitempty"`
 }
 
 // Catalog is the facility's program set plus tracked entity type attributes.
 type Catalog struct {
 	Programs      map[string]*ProgramMeta `json:"programs"`
 	TETAttributes map[string][]AttrMeta   `json:"tetAttributes"` // TET uid -> attributes
-	StageProgram  map[string]string       `json:"-"`
+	// TypeAttributes are the attributes of every tracked entity type on central.
+	// DHIS2 2.42 shows them on any tracked entity, whatever its type
+	// (TrackedEntityAggregate.getAllowedAttributeUids).
+	TypeAttributes map[string]bool   `json:"typeAttributes,omitempty"`
+	StageProgram   map[string]string `json:"-"`
+}
+
+// TETs lists the tracked entity types of the catalog's programs, sorted.
+func (c *Catalog) TETs() []string {
+	var out []string
+	for _, p := range c.Programs {
+		if p.TET != "" && !slices.Contains(out, p.TET) {
+			out = append(out, p.TET)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // Merge adds o's programs and tracked entity type attributes that c lacks.
@@ -123,6 +184,12 @@ func (c *Catalog) Merge(o *Catalog) {
 		if _, ok := c.TETAttributes[tet]; !ok {
 			c.TETAttributes[tet] = as
 		}
+	}
+	for id := range o.TypeAttributes {
+		if c.TypeAttributes == nil {
+			c.TypeAttributes = map[string]bool{}
+		}
+		c.TypeAttributes[id] = true
 	}
 	c.Index()
 }

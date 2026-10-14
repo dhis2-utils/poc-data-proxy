@@ -20,6 +20,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata" // central's time zone, also on images without zone files
 
 	"github.com/dhis2/facility-hub/internal/app"
 	"github.com/dhis2/facility-hub/internal/config"
@@ -84,6 +85,7 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
+	setMemoryLimit()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

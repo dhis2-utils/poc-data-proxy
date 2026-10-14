@@ -1,188 +1,342 @@
 package tracker
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
-	"maps"
+	"fmt"
+	"log/slog"
+	"math/bits"
+	"slices"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/dhis2/facility-hub/internal/access"
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
-// Index is the in-memory view of all objects, built on unlock (spec 9.3). Objects are
-// immutable once in the index: writers replace them, so readers can hold pointers.
+// Index answers questions about the hub's tracker objects (spec 9.3). The objects
+// live only in the store's data file: queries read its indexed columns and each
+// object's slim JSON (slim.go), and rendering reads full payloads. An in-memory copy of
+// every object took about 2 KB each, beyond a Pi at a busy facility's size
+// (docs/PERFORMANCE.md, "The query index in SQLite"). What stays in memory is small:
+// the visibility bitmaps and the pull scopes.
+//
+// Objects handed out are immutable: writers store a new version and call Put.
 type Index struct {
 	mu    sync.RWMutex
-	objs  map[string]*Obj
-	byKey map[string]map[string]bool // "enr:<te>", "ev:<enr>", "evte:<te>", "rel:<uid>" -> uids
+	vis   map[int64]bitmap // user -> visible central-origin slots (visibility.go)
+	visMu sync.Mutex       // one visibility change at a time, taken before any transaction
+	// slotMu guards nextSlot and pending: handing out a slot looks the object up in
+	// the store, and readers of the bitmaps (ix.mu) should not wait on that.
+	slotMu   sync.Mutex
+	nextSlot uint32              // last slot handed out
+	pending  map[string]uint32   // slots handed out to objects not yet stored
+	scopes   map[string][]string // tracked entity -> pull scopes fetched in full (store.TEScopes)
+	store    *store.Store
+	payloads payloadCache // decoded payloads, by version (payloads.go)
 }
 
-func NewIndex() *Index {
-	return &Index{objs: map[string]*Obj{}, byKey: map[string]map[string]bool{}}
+// NewStoreIndex is the index of a hub's store.
+func NewStoreIndex(s *store.Store) *Index {
+	return &Index{vis: map[int64]bitmap{}, pending: map[string]uint32{}, scopes: map[string][]string{}, store: s}
 }
 
-// Load rebuilds the index from the store. The store must be unlocked.
+// HasScope reports whether the tracked entity was fetched in full for this pull scope.
+func (ix *Index) HasScope(te, scope string) bool {
+	ix.mu.RLock()
+	defer ix.mu.RUnlock()
+	return slices.Contains(ix.scopes[te], scope)
+}
+
+// Scopes returns the pull scopes the tracked entity was fetched in full for.
+func (ix *Index) Scopes(te string) []string {
+	ix.mu.RLock()
+	defer ix.mu.RUnlock()
+	return slices.Clone(ix.scopes[te])
+}
+
+// AddScopes records that these tracked entities were fetched in full for scope.
+func (ix *Index) AddScopes(tes []string, scope string) {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	for _, te := range tes {
+		if !slices.Contains(ix.scopes[te], scope) {
+			ix.scopes[te] = append(ix.scopes[te], scope)
+		}
+	}
+}
+
+// Load reads what the index keeps in memory from the store, which must be unlocked,
+// after filling the query columns of rows stored before they existed.
 func (ix *Index) Load(s *store.Store) error {
-	vis, err := s.Visibility()
+	if err := fillQueryColumns(s); err != nil {
+		return fmt.Errorf("filling query columns: %w", err)
+	}
+	chunks, err := s.VisibilityChunks()
 	if err != nil {
 		return err
 	}
-	fresh := NewIndex()
-	err = s.AllObjects(func(o *store.Object) error {
-		obj, err := FromStore(o)
+	scopes, err := s.TEScopes()
+	if err != nil {
+		return err
+	}
+	vis := map[int64]bitmap{}
+	for user, c := range chunks {
+		vis[user] = bitmapFromChunks(c)
+	}
+	ix.visMu.Lock()
+	ix.slotMu.Lock()
+	ix.mu.Lock()
+	ix.vis, ix.pending, ix.scopes, ix.store = vis, map[string]uint32{}, scopes, s
+	ix.nextSlot = uint32(s.MaxSlot())
+	ix.mu.Unlock()
+	ix.slotMu.Unlock()
+	ix.visMu.Unlock()
+	ix.payloads.clear()
+	return nil
+}
+
+// fillQueryColumns rewrites the rows of schema 2, whose query columns are empty, from
+// their payloads (once, on the first unlock after the upgrade).
+func fillQueryColumns(s *store.Store) error {
+	start, n := time.Now(), 0
+	for {
+		objs, err := s.UnfilledObjects(1000)
+		if err != nil || len(objs) == 0 {
+			if n > 0 {
+				slog.Info("query columns filled", "objects", n, "ms", time.Since(start).Milliseconds())
+			}
+			return err
+		}
+		err = s.Tx(context.Background(), func(tx *sql.Tx) error {
+			for _, so := range objs {
+				o, err := FromStore(so)
+				if err != nil {
+					return err
+				}
+				if err := s.PutObject(tx, o.ToStore()); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
 		if err != nil {
 			return err
 		}
-		obj.Visible = vis[o.UID]
-		fresh.put(obj)
-		return nil
-	})
-	if err != nil {
-		return err
+		n += len(objs)
 	}
-	ix.mu.Lock()
-	ix.objs, ix.byKey = fresh.objs, fresh.byKey
-	ix.mu.Unlock()
-	return nil
 }
 
-// Clear empties the index (on lock or reset).
+// Clear forgets what the index holds in memory (on lock or reset).
 func (ix *Index) Clear() {
+	ix.visMu.Lock()
+	ix.slotMu.Lock()
 	ix.mu.Lock()
-	ix.objs, ix.byKey = map[string]*Obj{}, map[string]map[string]bool{}
+	ix.vis, ix.pending, ix.scopes = map[int64]bitmap{}, map[string]uint32{}, map[string][]string{}
+	ix.nextSlot = 0
 	ix.mu.Unlock()
+	ix.slotMu.Unlock()
+	ix.visMu.Unlock()
+	ix.payloads.clear()
 }
 
+// FromStore converts a stored row: with its payload, a full object; without, the slim
+// object its Slim column holds.
 func FromStore(o *store.Object) (*Obj, error) {
-	var data M
-	if err := json.Unmarshal(o.Payload, &data); err != nil {
+	n := &Obj{UID: o.UID, Kind: o.Kind, TE: o.TE, Enrollment: o.Enrollment, Program: o.Program, Stage: o.Stage,
+		TET: o.TET, OwnerOrgUnit: o.OwnerOrgUnit, UpdatedAt: o.UpdatedAt, Origin: o.Origin, SyncState: o.SyncState,
+		Slot: uint32(o.Slot)}
+	raw := o.Payload
+	if raw == nil {
+		raw, n.slim = o.Slim, true
+	}
+	if len(raw) == 0 {
+		n.Data = M{}
+		return n, nil
+	}
+	if err := json.Unmarshal(raw, &n.Data); err != nil {
 		return nil, err
 	}
-	return &Obj{UID: o.UID, Kind: o.Kind, TE: o.TE, Enrollment: o.Enrollment, Program: o.Program, Stage: o.Stage,
-		TET: o.TET, OwnerOrgUnit: o.OwnerOrgUnit, UpdatedAt: o.UpdatedAt, Origin: o.Origin, SyncState: o.SyncState,
-		Data: data}, nil
+	return n, nil
 }
 
 func (o *Obj) ToStore() *store.Object {
+	if o.slim {
+		panic("tracker: storing the slim copy of " + o.UID + " would lose its payload; use Index.Full")
+	}
 	b, _ := json.Marshal(o.Data)
-	return &store.Object{UID: o.UID, Kind: o.Kind, TE: o.TE, Enrollment: o.Enrollment, Program: o.Program,
+	slim, _ := json.Marshal(slimmed(o).Data)
+	so := &store.Object{UID: o.UID, Kind: o.Kind, TE: o.TE, Enrollment: o.Enrollment, Program: o.Program,
 		Stage: o.Stage, TET: o.TET, OwnerOrgUnit: o.OwnerOrgUnit, UpdatedAt: o.UpdatedAt, Origin: o.Origin,
-		SyncState: o.SyncState, Payload: b}
+		SyncState: o.SyncState, Payload: b, Slot: int64(o.Slot), Slim: slim,
+		CreatedAt: Str(o.Data, "createdAt"), Status: Str(o.Data, "status")}
+	switch o.Kind {
+	case store.KindTrackedEntity:
+		for _, a := range list(o.Data, "attributes") {
+			so.Attrs = append(so.Attrs, store.Attr{Attr: Str(a, "attribute"), Value: fmt.Sprint(a["value"])})
+		}
+	case store.KindRelationship:
+		so.RelFrom, so.RelTo = RelRef(asM(o.Data["from"])).UID, RelRef(asM(o.Data["to"])).UID
+	}
+	return so
 }
 
-func (ix *Index) keys(o *Obj) []string {
-	switch o.Kind {
-	case store.KindEnrollment:
-		return []string{"enr:" + o.TE}
-	case store.KindEvent:
-		return []string{"ev:" + o.Enrollment, "evte:" + o.TE}
-	case store.KindRelationship:
-		from, to := RelRef(asM(o.Data["from"])), RelRef(asM(o.Data["to"]))
-		return []string{"rel:" + from.UID, "rel:" + to.UID}
+// Put records that o was stored: the slot handed out for it is no longer pending.
+func (ix *Index) Put(o *Obj) {
+	ix.slotMu.Lock()
+	defer ix.slotMu.Unlock()
+	delete(ix.pending, o.UID)
+}
+
+// objects runs a query over the objects table whose columns are store.ObjectCols("").
+func (ix *Index) objects(query string, args ...any) []*Obj {
+	if ix.store == nil || !ix.store.Unlocked() {
+		return nil
+	}
+	rows, err := ix.store.QueryObjects(query, args...)
+	if err != nil {
+		slog.Warn("index query", "err", err)
+		return nil
+	}
+	out := make([]*Obj, 0, len(rows))
+	for _, r := range rows {
+		if o, err := FromStore(r); err == nil {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+func (ix *Index) Get(uid string) *Obj {
+	if uid == "" {
+		return nil
+	}
+	if objs := ix.objects(`SELECT `+store.ObjectCols("")+` FROM objects WHERE uid = ?`, uid); len(objs) == 1 {
+		return objs[0]
 	}
 	return nil
 }
 
-func (ix *Index) put(o *Obj) {
-	if old := ix.objs[o.UID]; old != nil {
-		for _, k := range ix.keys(old) {
-			delete(ix.byKey[k], old.UID)
-		}
+// GetMany returns these objects by uid (missing ones are left out).
+func (ix *Index) GetMany(uids []string) map[string]*Obj {
+	out := map[string]*Obj{}
+	if ix.store == nil || !ix.store.Unlocked() || len(uids) == 0 {
+		return out
 	}
-	ix.objs[o.UID] = o
-	for _, k := range ix.keys(o) {
-		if ix.byKey[k] == nil {
-			ix.byKey[k] = map[string]bool{}
-		}
-		ix.byKey[k][o.UID] = true
+	rows, err := ix.store.ObjectsByUID(uids)
+	if err != nil {
+		slog.Warn("index query", "err", err)
+		return out
 	}
-}
-
-// Put adds or replaces an object, keeping its visibility set when o.Visible is nil.
-func (ix *Index) Put(o *Obj) {
-	ix.mu.Lock()
-	defer ix.mu.Unlock()
-	if o.Visible == nil {
-		if old := ix.objs[o.UID]; old != nil {
-			o.Visible = old.Visible
-		}
-	}
-	ix.put(o)
-}
-
-func (ix *Index) Get(uid string) *Obj {
-	ix.mu.RLock()
-	defer ix.mu.RUnlock()
-	return ix.objs[uid]
-}
-
-// SetVisible adds or removes a user from an object's visibility set.
-func (ix *Index) SetVisible(uid string, userID int64, visible bool) {
-	ix.mu.Lock()
-	defer ix.mu.Unlock()
-	o := ix.objs[uid]
-	if o == nil {
-		return
-	}
-	n := *o
-	n.Visible = maps.Clone(o.Visible)
-	if n.Visible == nil {
-		n.Visible = map[int64]bool{}
-	}
-	if visible {
-		n.Visible[userID] = true
-	} else {
-		delete(n.Visible, userID)
-	}
-	ix.objs[uid] = &n
-}
-
-// SetSyncState replaces an object's sync state.
-func (ix *Index) SetSyncState(uid, state string) {
-	ix.mu.Lock()
-	defer ix.mu.Unlock()
-	if o := ix.objs[uid]; o != nil {
-		n := *o
-		n.SyncState = state
-		ix.objs[uid] = &n
-	}
-}
-
-// Related returns objects linked under key ("enr:<te>", "ev:<enr>", "evte:<te>", "rel:<uid>").
-func (ix *Index) related(key string) []*Obj {
-	ix.mu.RLock()
-	defer ix.mu.RUnlock()
-	var out []*Obj
-	for uid := range ix.byKey[key] {
-		if o := ix.objs[uid]; o != nil {
-			out = append(out, o)
+	for uid, r := range rows {
+		if o, err := FromStore(r); err == nil {
+			out[uid] = o
 		}
 	}
 	return out
 }
 
-func (ix *Index) EnrollmentsOf(te string) []*Obj    { return ix.related("enr:" + te) }
-func (ix *Index) EventsOf(enrollment string) []*Obj { return ix.related("ev:" + enrollment) }
-func (ix *Index) EventsOfTE(te string) []*Obj       { return ix.related("evte:" + te) }
-func (ix *Index) RelationshipsOf(uid string) []*Obj { return ix.related("rel:" + uid) }
+func (ix *Index) EnrollmentsOf(te string) []*Obj {
+	return ix.objects(`SELECT `+store.ObjectCols("")+` FROM objects WHERE te_uid = ? AND kind = 'enrollment'`, te)
+}
 
-// All returns every object of kind.
-func (ix *Index) All(kind string) []*Obj {
-	ix.mu.RLock()
-	defer ix.mu.RUnlock()
+func (ix *Index) EventsOf(enrollment string) []*Obj {
+	return ix.objects(`SELECT `+store.ObjectCols("")+` FROM objects WHERE enrollment_uid = ? AND kind = 'event'`, enrollment)
+}
+
+func (ix *Index) EventsOfTE(te string) []*Obj {
+	return ix.objects(`SELECT `+store.ObjectCols("")+` FROM objects WHERE te_uid = ? AND kind = 'event'`, te)
+}
+
+func (ix *Index) RelationshipsOf(uid string) []*Obj {
+	// Only relationships have ends: no kind condition, so both end indexes serve.
+	return ix.objects(`SELECT `+store.ObjectCols("")+` FROM objects WHERE rel_from = ? OR rel_to = ?`, uid, uid)
+}
+
+// The same lookups, kept for the rest of one request: rendering a page asks for the
+// same children several times (prefetch, attributes, the children themselves).
+func (ix *Index) enrollmentsFor(v *Viewer, te string) []*Obj {
+	return v.memo("enr:"+te, func() []*Obj { return ix.EnrollmentsOf(te) })
+}
+
+func (ix *Index) eventsFor(v *Viewer, enrollment string) []*Obj {
+	return v.memo("ev:"+enrollment, func() []*Obj { return ix.EventsOf(enrollment) })
+}
+
+func (ix *Index) eventsOfTEFor(v *Viewer, te string) []*Obj {
+	return v.memo("evte:"+te, func() []*Obj { return ix.EventsOfTE(te) })
+}
+
+func (ix *Index) relationshipsFor(v *Viewer, uid string) []*Obj {
+	return v.memo("rel:"+uid, func() []*Obj { return ix.RelationshipsOf(uid) })
+}
+
+// byUIDs returns the objects of kind among uids, in that order.
+func (ix *Index) byUIDs(kind string, uids []string) []*Obj {
+	got := ix.GetMany(uids)
 	var out []*Obj
-	for _, o := range ix.objs {
-		if o.Kind == kind {
+	for _, uid := range uids {
+		if o := got[uid]; o != nil && o.Kind == kind {
 			out = append(out, o)
+			delete(got, uid)
 		}
 	}
 	return out
 }
 
+// Len is how many objects the hub holds.
 func (ix *Index) Len() int {
-	ix.mu.RLock()
-	defer ix.mu.RUnlock()
-	return len(ix.objs)
+	if ix.store == nil || !ix.store.Unlocked() {
+		return 0
+	}
+	return ix.store.CountKind("")
+}
+
+// AttributeValueTaken reports whether a tracked entity other than te holds this value
+// of the attribute (unique attributes, E1064).
+func (ix *Index) AttributeValueTaken(attr, value, te string) bool {
+	if ix.store == nil || !ix.store.Unlocked() {
+		return false
+	}
+	var n int
+	ix.store.DB().QueryRow(`SELECT count(*) FROM te_attrs WHERE attr = ? AND value = ? AND te_uid <> ?`, attr, value, te).Scan(&n)
+	return n > 0
+}
+
+// EnrolledTEs returns the tracked entities with a synced enrollment in program owned by
+// owner (the ownership check).
+func (ix *Index) EnrolledTEs(program, owner string) []string {
+	if ix.store == nil || !ix.store.Unlocked() {
+		return nil
+	}
+	rows, err := ix.store.DB().Query(`SELECT DISTINCT te_uid FROM objects WHERE kind = 'enrollment' AND program = ?
+ AND owner_org_unit = ? AND sync_state = ?`, program, owner, store.SyncSynced)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var te string
+		if rows.Scan(&te) == nil {
+			out = append(out, te)
+		}
+	}
+	return out
+}
+
+// VisibleSlots returns the slots visible to the user, from the bitmap in memory.
+func (ix *Index) VisibleSlots(userID int64) []uint32 {
+	var out []uint32
+	for w, word := range ix.bitmapOf(userID) {
+		for word != 0 {
+			out = append(out, uint32(w)*64+uint32(bits.TrailingZeros64(word)))
+			word &= word - 1
+		}
+	}
+	return out
 }
 
 // Viewer is the user a read or write is evaluated for.
@@ -199,6 +353,39 @@ type Viewer struct {
 	Access      *access.List
 	Facility    string
 	Catalog     *access.Catalog
+
+	payloads map[string]M      // full payloads loaded for this request (prefetch)
+	related  map[string][]*Obj // children looked up for this request (enrollmentsFor and the like)
+}
+
+func (v *Viewer) memo(key string, load func() []*Obj) []*Obj {
+	if v == nil {
+		return load()
+	}
+	if objs, ok := v.related[key]; ok {
+		return objs
+	}
+	if v.related == nil {
+		v.related = map[string][]*Obj{}
+	}
+	objs := load()
+	v.related[key] = objs
+	return objs
+}
+
+// accessAllows checks a central-origin object against the user's current access list:
+// central decided visibility at the last pull, but access lost since (refreshed at
+// each sync and login) hides the object at once, before the next full pull removes it.
+func accessAllows(v *Viewer, o *Obj) bool {
+	switch o.Kind {
+	case store.KindTrackedEntity:
+		return o.TET == "" || v.Access.TET(o.TET).Read
+	case store.KindEnrollment:
+		return v.Access.Program(o.Program).Read
+	case store.KindEvent:
+		return v.Access.Program(o.Program).Read && v.Access.Stage(o.Stage).Read
+	}
+	return true
 }
 
 // CanRead applies spec 8.2.
@@ -207,7 +394,7 @@ func (ix *Index) CanRead(v *Viewer, o *Obj) bool {
 		return false
 	}
 	if o.Origin == store.OriginCentral {
-		return o.Visible[v.UserID]
+		return accessAllows(v, o) && ix.VisibleTo(o, v.UserID)
 	}
 	if !v.SearchScope {
 		return false
@@ -224,4 +411,10 @@ func (ix *Index) CanRead(v *Viewer, o *Obj) bool {
 		return ix.CanRead(v, ix.Get(from.UID)) && ix.CanRead(v, ix.Get(to.UID))
 	}
 	return false
+}
+
+// likePattern is a LIKE pattern for "contains s", with SQL's wildcards escaped.
+func likePattern(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return "%" + r.Replace(strings.ToLower(s)) + "%"
 }

@@ -87,6 +87,20 @@ func TestLegacyStoreMovesToDataFile(t *testing.T) {
 	if err != nil || o == nil || o.Program != "HivProgram1" || !bytes.Contains(o.Payload, []byte("LegacyTe001")) {
 		t.Fatalf("object after move: %+v %v", o, err)
 	}
+	// The per-object visibility row became a bit in the user's bitmap.
+	chunks, err := s.VisibilityChunks()
+	if err != nil || o.Slot <= 0 {
+		t.Fatalf("visibility: %v, slot %d", err, o.Slot)
+	}
+	bits := chunks[7][o.Slot/VisibilityChunkBits]
+	if bit := o.Slot % VisibilityChunkBits; len(bits) == 0 || bits[bit/8]&(1<<(bit%8)) == 0 {
+		t.Fatalf("visibility of user 7 not converted: %v", chunks)
+	}
+	var left int
+	s.DB().QueryRow(`SELECT count(*) FROM visibility`).Scan(&left)
+	if left != 0 {
+		t.Fatalf("%d old visibility rows left", left)
+	}
 	if u, _ := s.UserByName("nurse"); u.UserUID != "UserUid0001" || u.LastLoginAt != "2026-01-02" {
 		t.Fatalf("user after move: %+v", u)
 	}

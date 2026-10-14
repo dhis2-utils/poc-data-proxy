@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -180,10 +181,11 @@ func (im *Importer) newObj(it *Item, old *Obj) *Obj {
 	now := DHIS2Time(im.Now)
 	data := it.Data
 	if old != nil {
-		data = Merge(clone(old.Data), it.Data)
+		full := im.Ix.Full(old)
+		data = Merge(clone(full), it.Data)
 		// Who created an object is not the client's to change (review L3).
 		for _, k := range []string{"createdAt", "createdBy"} {
-			if v, ok := old.Data[k]; ok {
+			if v, ok := full[k]; ok {
 				data[k] = v
 			} else {
 				delete(data, k)
@@ -200,7 +202,7 @@ func (im *Importer) newObj(it *Item, old *Obj) *Obj {
 	o := &Obj{UID: it.UID, Kind: it.Kind, OwnerOrgUnit: im.V.Facility, UpdatedAt: now, Origin: store.OriginLocal,
 		SyncState: store.SyncPending, Data: data}
 	if old != nil {
-		o.Visible = old.Visible
+		o.Slot = old.Slot
 	}
 	return o
 }
@@ -288,10 +290,8 @@ func (im *Importer) checkUnique(it *Item) []ErrorReport {
 		if !unique[attr] || val == "" || val == "<nil>" {
 			continue
 		}
-		for _, o := range im.Ix.All(store.KindTrackedEntity) {
-			if o.UID != it.UID && attrValues(o.Data, "attributes", "attribute")[attr] == val {
-				return im.errf(it, "E1064", "Non-unique attribute value `%s` for attribute `%s`", val, attr)
-			}
+		if im.Ix.AttributeValueTaken(attr, val, it.UID) {
+			return im.errf(it, "E1064", "Non-unique attribute value `%s` for attribute `%s`", val, attr)
 		}
 	}
 	return nil
@@ -354,6 +354,11 @@ func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport
 	if aoc := Str(it.Data, "attributeOptionCombo"); aoc != "" && aoc != im.DefaultAOC {
 		return nil, false, im.errf(it, "E1055", "needs connection: events with a non-default attribute option combo are not supported offline")
 	}
+	if p := im.V.Catalog.Programs[program]; p != nil && p.AttributeCombo {
+		// Central requires a non-default attribute option combo here (E1055), and
+		// those are not supported offline: say so now instead of on push.
+		return nil, false, im.errf(it, "E1055", "needs connection: events in a program with an attribute category combination are not supported offline")
+	}
 	enr := it.Enrollment
 	if enr == "" && old != nil {
 		enr = old.Enrollment
@@ -372,13 +377,15 @@ func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport
 	if errs := im.orgUnitOK(it, old); errs != nil {
 		return nil, false, errs
 	}
-	// Central checks the stage first (E1095 for a program-read-only user, see
-	// testdata/2.42/tracker_post_access_denied.json).
+	// An event in a tracker program needs write access to its stage (E1095, see
+	// testdata/2.42/tracker_post_access_denied.json), not to the program: central
+	// accepts it from a user who may only read the program's data (the write oracle,
+	// synthetic profile). Reading the enrollment above needs program read access.
 	if !im.V.Access.Stage(stage).Write {
 		return nil, false, im.errf(it, "E1095", "User: `%s` has no data write access to ProgramStage: `%s`.", im.UserUID, stage)
 	}
-	if !im.V.Access.Program(program).Write {
-		return nil, false, im.errf(it, "E1091", "User: `%s`, has no data write access to Program: `%s`.", im.UserUID, program)
+	if old == nil && im.stageTaken(it.UID, enr, program, stage) {
+		return nil, false, im.errf(it, "E1039", "ProgramStage: `%s`, is not repeatable and an event already exists.", stage)
 	}
 	o := im.newObj(it, old)
 	o.TE, o.Enrollment, o.Program, o.Stage = parent.TE, enr, program, stage
@@ -387,6 +394,27 @@ func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport
 		o.Data["status"] = "ACTIVE"
 	}
 	return o, old == nil, nil
+}
+
+// stageTaken reports whether a new event would be a second one in a non-repeatable
+// stage of the enrollment, counting events the hub holds and earlier ones in this
+// payload, as central does (E1039).
+func (im *Importer) stageTaken(uid, enr, program, stage string) bool {
+	p := im.V.Catalog.Programs[program]
+	if p == nil || !slices.Contains(p.NonRepeatable, stage) {
+		return false
+	}
+	for _, ev := range im.Ix.EventsOf(enr) {
+		if ev.UID != uid && ev.Stage == stage && ev.Data["deleted"] != true {
+			return true
+		}
+	}
+	for _, ev := range im.pending {
+		if ev.UID != uid && ev.Kind == store.KindEvent && ev.Enrollment == enr && ev.Stage == stage {
+			return true
+		}
+	}
+	return false
 }
 
 func (im *Importer) validateRelationship(it *Item, old *Obj) (*Obj, bool, []ErrorReport) {

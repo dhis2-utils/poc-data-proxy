@@ -289,9 +289,10 @@ func TestCreatedByKept(t *testing.T) {
 	te["createdBy"] = map[string]any{"username": "someone_else"}
 	te["createdAt"] = "2000-01-01T00:00:00.000"
 	b.json("POST", postSync, upd, 200)
-	o := e.app.Hub.Index.Get("OwnTe000001")
-	if cb, _ := o.Data["createdBy"].(map[string]any); cb["username"] != "nurse_a" || o.Data["createdAt"] == "2000-01-01T00:00:00.000" {
-		t.Fatalf("createdBy %v createdAt %v", o.Data["createdBy"], o.Data["createdAt"])
+	ix := e.app.Hub.Index
+	d := ix.Full(ix.Get("OwnTe000001"))
+	if cb, _ := d["createdBy"].(map[string]any); cb["username"] != "nurse_a" || d["createdAt"] == "2000-01-01T00:00:00.000" {
+		t.Fatalf("createdBy %v createdAt %v", d["createdBy"], d["createdAt"])
 	}
 }
 
@@ -443,6 +444,23 @@ func TestHubPageHardening(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != 403 {
 		t.Fatalf("post without Origin or Sec-Fetch-Site: %d", resp.StatusCode)
+	}
+	// A browser on the hub's own page, under its no-referrer policy: Origin is null.
+	for site, want := range map[string]bool{"same-origin": true, "cross-site": false, "": false} {
+		req, _ := http.NewRequest("POST", e.srv.URL+"/hub/setup", strings.NewReader(url.Values{"step": {"login"}}.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "null")
+		if site != "" {
+			req.Header.Set("Sec-Fetch-Site", site)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if got := resp.StatusCode != 403; got != want {
+			t.Errorf("Origin null, Sec-Fetch-Site %q: status %d", site, resp.StatusCode)
+		}
 	}
 }
 

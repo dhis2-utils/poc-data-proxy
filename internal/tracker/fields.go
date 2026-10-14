@@ -88,6 +88,44 @@ func (f *Fields) Sub(name string) *Fields {
 	return nil
 }
 
+// Project keeps only the selected fields of a rendered object, recursively, as
+// DHIS2 does: "attributes[attribute,value]" returns attributes with those two keys
+// only. Found by the differential oracle (docs/TESTING.md).
+func (f *Fields) Project(v any) any {
+	if f == nil {
+		return v
+	}
+	switch x := v.(type) {
+	case M: // M is map[string]any
+		return f.projectMap(x)
+	case []any:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = f.Project(e)
+		}
+		return out
+	}
+	return v
+}
+
+func (f *Fields) projectMap(x map[string]any) M {
+	out := M{}
+	for k, val := range x {
+		if f.exclude[k] {
+			continue
+		}
+		sub, named := f.include[k]
+		if !named && !f.all {
+			continue
+		}
+		if named && sub != nil {
+			val = sub.Project(val)
+		}
+		out[k] = val
+	}
+	return out
+}
+
 // Default field selections per collection in DHIS2 2.42 when "fields" is absent.
 var defaultFields = map[string]string{
 	"trackedEntities": "*,!relationships,!enrollments,!events,!programOwners",

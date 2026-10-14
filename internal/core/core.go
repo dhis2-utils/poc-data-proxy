@@ -28,9 +28,12 @@ const (
 	MetaMode          = "mode" // "setup" or "active"
 	MetaCentralURL    = "central_url"
 	MetaServerVersion = "server_version"
-	MetaPublicKey     = "hub_public_key"
-	MetaUpgrade       = "last_upgrade" // JSON of the last upgrade attempt
-	MetaRetired       = "retired"      // "1" while the registry says another hub replaced this one
+	// MetaServerTimeZone: central's time zone (serverTimeZoneId): DHIS2 gives and
+	// expects times in it, without an offset.
+	MetaServerTimeZone = "server_time_zone"
+	MetaPublicKey      = "hub_public_key"
+	MetaUpgrade        = "last_upgrade" // JSON of the last upgrade attempt
+	MetaRetired        = "retired"      // "1" while the registry says another hub replaced this one
 )
 
 // Retired reports whether the registry marks this hub as replaced. A retired hub stops
@@ -63,6 +66,8 @@ type Runtime struct {
 
 // Hub is shared by every package that serves requests or syncs.
 type Hub struct {
+	zoneMu   sync.Mutex
+	zone     *time.Location // central's, loaded from MetaServerTimeZone
 	Cfg      config.Config
 	Version  string
 	Store    *store.Store
@@ -152,6 +157,9 @@ type SyncStats struct {
 	LastPull string
 	LastSync string
 	LastErr  string
+	// CycleStart is when the running or last sync cycle began; Syncing whether one runs.
+	CycleStart string
+	Syncing    bool
 }
 
 func (s *SyncStats) Set(fn func(*SyncStats)) {
@@ -164,6 +172,13 @@ func (s *SyncStats) Get() (lastPush, lastPull, lastSync, lastErr string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.LastPush, s.LastPull, s.LastSync, s.LastErr
+}
+
+// Cycle returns when the running or last sync cycle began, and whether one runs.
+func (s *SyncStats) Cycle() (start string, running bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.CycleStart, s.Syncing
 }
 
 // LastPushPull returns the last push and pull times, surviving restarts.
@@ -180,7 +195,7 @@ func (h *Hub) LastPushPull() (push, pull string) {
 
 func New(cfg config.Config, version string, st *store.Store) *Hub {
 	mon := central.NewMonitor(cfg.PingInterval, cfg.PingTimeout)
-	h := &Hub{Cfg: cfg, Version: version, Store: st, Index: tracker.NewIndex(), Monitor: mon,
+	h := &Hub{Cfg: cfg, Version: version, Store: st, Index: tracker.NewStoreIndex(st), Monitor: mon,
 		Sessions: NewSessions(), ReqLog: NewRequestLog(), Started: time.Now(), access: map[int64]*access.List{},
 		SyncNow: make(chan struct{}, 1)}
 	h.Sessions.Idle, h.Sessions.Max = cfg.SessionIdle, cfg.SessionMax
@@ -203,6 +218,33 @@ func (h *Hub) TriggerSync() {
 }
 func (h *Hub) ServerVersion() string { return h.Store.Meta(MetaServerVersion) }
 
+// CentralTime is t as central writes times: in central's time zone, without an
+// offset. Records the hub creates offline carry it, so they sort and compare with
+// central's own (UTC until central's zone is known, or if it cannot be loaded).
+func (h *Hub) CentralTime(t time.Time) string {
+	return tracker.DHIS2Time(t.In(h.centralZone()))
+}
+
+// CentralNow is the current time in central's time zone.
+func (h *Hub) CentralNow() time.Time { return time.Now().In(h.centralZone()) }
+
+func (h *Hub) centralZone() *time.Location {
+	name := h.Store.Meta(MetaServerTimeZone)
+	if name == "" {
+		return time.UTC
+	}
+	h.zoneMu.Lock()
+	defer h.zoneMu.Unlock()
+	if h.zone == nil || h.zone.String() != name {
+		loc, err := time.LoadLocation(name)
+		if err != nil {
+			return time.UTC
+		}
+		h.zone = loc
+	}
+	return h.zone
+}
+
 // API returns the version-specific handling for central's version, or nil when this
 // hub release does not support it ("hub needs upgrade", spec 12a).
 func (h *Hub) API() compat.API { return compat.For(h.ServerVersion()) }
@@ -219,6 +261,19 @@ func (h *Hub) Facility() string {
 		return rt.Facility
 	}
 	return ""
+}
+
+// FacilityPath is the facility's org unit path, or "/<facility>" until the first sync
+// has fetched it.
+func (h *Hub) FacilityPath() string {
+	rt := h.Runtime()
+	switch {
+	case rt == nil || rt.Facility == "":
+		return ""
+	case rt.FacilityPath != "":
+		return rt.FacilityPath
+	}
+	return "/" + rt.Facility
 }
 
 func (h *Hub) Catalog() *access.Catalog {

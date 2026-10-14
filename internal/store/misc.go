@@ -33,7 +33,7 @@ func (s *Store) PutCache(userID int64, method, url string, r *CachedResponse) er
 	if err != nil {
 		return err
 	}
-	_, err = s.DB().Exec(`INSERT INTO http_cache(user_id, method, url, status, headers_enc, body_enc, fetched_at)
+	_, err = s.write(`INSERT INTO http_cache(user_id, method, url, status, headers_enc, body_enc, fetched_at)
 VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id, method, url) DO UPDATE SET status=excluded.status,
  headers_enc=excluded.headers_enc, body_enc=excluded.body_enc, fetched_at=excluded.fetched_at`,
 		userID, method, url, r.Status, hct, bct, Now())
@@ -43,7 +43,7 @@ VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id, method, url) DO UPDATE SET status=exc
 // PruneCache deletes cached responses not refreshed for maxAge. Entries in use are
 // refreshed whenever a client fetches them online.
 func (s *Store) PruneCache(maxAge time.Duration) (int64, error) {
-	res, err := s.DB().Exec(`DELETE FROM http_cache WHERE fetched_at < ?`, time.Now().Add(-maxAge).UTC().Format(time.RFC3339Nano))
+	res, err := s.write(`DELETE FROM http_cache WHERE fetched_at < ?`, time.Now().Add(-maxAge).UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return 0, err
 	}
@@ -152,7 +152,7 @@ func (s *Store) Issues(onlyUnreported bool, limit int) ([]*Issue, error) {
 }
 
 func (s *Store) MarkIssueReported(id int64) error {
-	_, err := s.DB().Exec(`UPDATE issues SET reported_central_at=? WHERE id=?`, Now(), id)
+	_, err := s.write(`UPDATE issues SET reported_central_at=? WHERE id=?`, Now(), id)
 	return err
 }
 
@@ -175,17 +175,17 @@ func (s *Store) SetPullState(userID int64, program, lastPull string, full bool) 
 	if full {
 		lastFull = lastPull
 	}
-	_, err := s.DB().Exec(`INSERT INTO pull_state(user_id, program, last_pull_at, last_full_at) VALUES(?,?,?,?)
+	_, err := s.write(`INSERT INTO pull_state(user_id, program, last_pull_at, last_full_at) VALUES(?,?,?,?)
 ON CONFLICT(user_id, program) DO UPDATE SET last_pull_at=excluded.last_pull_at,
  last_full_at=CASE WHEN excluded.last_full_at<>'' THEN excluded.last_full_at ELSE pull_state.last_full_at END`,
 		userID, program, lastPull, lastFull)
 	return err
 }
 
-func (s *Store) LastPull() string {
-	var t sql.NullString
-	s.DB().QueryRow(`SELECT max(last_pull_at) FROM pull_state`).Scan(&t)
-	return t.String
+// SetFullPullTime records that the user's pull of program was a full one, now.
+func (s *Store) SetFullPullTime(userID int64, program string) error {
+	_, err := s.write(`UPDATE pull_state SET last_full_at=? WHERE user_id=? AND program=?`, Now(), userID, program)
+	return err
 }
 
 // --- reserved values (spec 10.3) ------------------------------------------------

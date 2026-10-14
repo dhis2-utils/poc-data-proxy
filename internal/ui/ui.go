@@ -3,7 +3,6 @@
 package ui
 
 import (
-	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -14,7 +13,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"time"
 
 	"github.com/dhis2/facility-hub/internal/auth"
 	"github.com/dhis2/facility-hub/internal/core"
@@ -92,6 +90,9 @@ func StatusBody(h *core.Hub) map[string]any {
 	out := map[string]any{"mode": mode, "hubId": h.HubID(), "lastPush": nullable(lastPush), "lastPull": nullable(lastPull),
 		"pending": h.Store.CountObjects(store.SyncPending), "rejected": h.Store.CountObjects(store.SyncRejected),
 		"version": h.Version, "locked": !h.Store.Unlocked(), "setup": h.Mode() == core.ModeSetup}
+	if start, running := h.Stats.Cycle(); start != "" {
+		out["syncStarted"], out["syncing"] = start, running
+	}
 	if h.Retired() {
 		out["retired"] = true
 		out["message"] = "this hub was replaced by another hub for the facility; it only sends its remaining changes"
@@ -150,7 +151,10 @@ func (u *UI) admin(next http.HandlerFunc) http.HandlerFunc {
 // Origin on form posts, and Sec-Fetch-Site on every request; a post with neither is
 // refused (REVIEW-2 F9).
 func sameOrigin(r *http.Request) bool {
-	if o := r.Header.Get("Origin"); o != "" {
+	// Hub pages send Referrer-Policy: no-referrer, under which browsers post forms with
+	// "Origin: null"; their Sec-Fetch-Site then tells (every browser login and setup was
+	// refused before this was noticed by hand).
+	if o := r.Header.Get("Origin"); o != "" && o != "null" {
 		return o == "http://"+r.Host || o == "https://"+r.Host
 	}
 	site := r.Header.Get("Sec-Fetch-Site")
@@ -213,7 +217,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			cred = "password (PAT fallback)"
 		}
 		rows = append(rows, userRow{Username: us.Username, LastLogin: us.LastLoginAt, AccessRefreshed: us.AccessRefreshedAt,
-			PATExpires: us.PATExpires, Credential: cred, NeedsLogin: us.NeedsLogin, InFacility: h.Access(us.ID).InFacility(h.Facility())})
+			PATExpires: us.PATExpires, Credential: cred, NeedsLogin: us.NeedsLogin, InFacility: h.Access(us.ID).InFacility(h.FacilityPath())})
 	}
 	type issueRow struct {
 		*store.Issue
@@ -255,13 +259,9 @@ func (u *UI) handleSyncNow(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/hub/ui", http.StatusFound)
 		return
 	}
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-		defer cancel()
-		if err := u.Worker.Cycle(ctx); err != nil {
-			slog.Warn("sync now", "err", err)
-		}
-	}()
+	// The scheduler runs it: one cycle at a time, and without a time limit, since a
+	// first pull of a large facility takes longer than any fixed one.
+	u.H.TriggerSync()
 	http.Redirect(w, r, "/hub/ui?msg=Sync+started", http.StatusFound)
 }
 

@@ -1,0 +1,320 @@
+package testkit
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/url"
+	"sort"
+	"strings"
+)
+
+// The differential oracle (docs/TESTING.md): central, asked directly as the user,
+// decides what the hub should answer offline for the same request. The hub holds only
+// the facility's data, so central's answer is first narrowed to objects whose tracked
+// entity the facility owns for the program.
+
+// Verdicts, from worst to fine.
+const (
+	Leak    = "LEAK"    // the hub shows something central does not show this user
+	Missing = "MISSING" // central shows a facility object the hub does not
+	Differs = "DIFFERS" // same object, different content
+	Lenient = "LENIENT" // central rejects the request as invalid (400/409), the hub answers it
+	Refused = "REFUSED" // the hub answers "needs connection" or refuses the user: safe, a coverage gap
+	Match   = "MATCH"
+)
+
+// Query is one request, sent to central and to the hub.
+type Query struct {
+	Kind    string // trackedEntities, enrollments, events
+	Program string
+	Path    string // path and query, without the base URL
+	Single  bool   // a single-object read
+}
+
+// Outcome is the verdict for one user and query.
+type Outcome struct {
+	User    string   `json:"user"`
+	Path    string   `json:"path"`
+	Verdict string   `json:"verdict"`
+	Central int      `json:"central"`
+	Hub     int      `json:"hub"`
+	Objects []string `json:"objects,omitempty"` // the UIDs the verdict is about
+	Detail  string   `json:"detail,omitempty"`
+}
+
+// Truth is what the facility owns, read from central as the superuser.
+type Truth struct {
+	Owned map[string]map[string]bool // program -> tracked entity UIDs owned by the facility
+}
+
+// ReadTruth asks central which tracked entities the facility owns, per program, and,
+// under the key "tet:<uid>", which of a type are registered there (no program).
+func ReadTruth(c *Central, facility string, programs, tets []string) (*Truth, error) {
+	t := &Truth{Owned: map[string]map[string]bool{}}
+	scopes := append([]string{}, programs...)
+	for _, tet := range tets {
+		scopes = append(scopes, "tet:"+tet)
+	}
+	for _, p := range scopes {
+		var res struct {
+			TEs []struct {
+				TrackedEntity string `json:"trackedEntity"`
+			} `json:"trackedEntities"`
+		}
+		q := url.Values{"program": {p}, "orgUnits": {facility}, "paging": {"false"}, "fields": {"trackedEntity"}}
+		if tet, ok := strings.CutPrefix(p, "tet:"); ok {
+			q.Del("program")
+			q.Set("trackedEntityType", tet)
+		}
+		if err := c.JSON("GET", "/api/tracker/trackedEntities?"+q.Encode(), nil, &res); err != nil {
+			return nil, err
+		}
+		t.Owned[p] = map[string]bool{}
+		for _, te := range res.TEs {
+			t.Owned[p][te.TrackedEntity] = true
+		}
+	}
+	return t, nil
+}
+
+// Queries is the generator: for each program, the searches the Capture apps make and
+// variations on them. samples gives a value of the program's search attribute and of
+// its unique attribute found in the data, and a tracked entity to read singly.
+func Queries(m *Manifest, p Program, sample map[string]string) []Query {
+	te := "trackedEntity,orgUnit,attributes[attribute,value],enrollments[enrollment,program,status,orgUnit]"
+	en := "enrollment,trackedEntity,program,status,orgUnit"
+	ev := "event,trackedEntity,enrollment,programStage,orgUnit,status,dataValues[dataElement,value]"
+	enc := func(kind string, v url.Values) string { return "/api/tracker/" + kind + "?" + v.Encode() }
+	var qs []Query
+	add := func(kind string, v url.Values) {
+		v.Set("program", p.ID)
+		if _, ok := v["paging"]; !ok {
+			v.Set("paging", "false")
+		}
+		qs = append(qs, Query{Kind: kind, Program: p.ID, Path: enc(kind, v)})
+	}
+	add("trackedEntities", url.Values{"orgUnits": {m.Facility.ID}, "fields": {te}})
+	add("trackedEntities", url.Values{"orgUnitMode": {"ACCESSIBLE"}, "fields": {te}})
+	add("trackedEntities", url.Values{"orgUnitMode": {"CAPTURE"}, "fields": {te}})
+	if v := sample["search"]; v != "" {
+		add("trackedEntities", url.Values{"orgUnitMode": {"ACCESSIBLE"}, "fields": {te},
+			"filter": {p.SearchAttr + ":like:" + strings.ToLower(v[:min(3, len(v))])}})
+		add("trackedEntities", url.Values{"orgUnits": {m.Facility.ID}, "fields": {te},
+			"filter": {p.SearchAttr + ":eq:" + v}})
+	}
+	if v := sample["unique"]; v != "" {
+		add("trackedEntities", url.Values{"orgUnitMode": {"ACCESSIBLE"}, "fields": {te}, "filter": {p.UniqueAttr + ":eq:" + v}})
+	}
+	add("enrollments", url.Values{"orgUnits": {m.Facility.ID}, "fields": {en}})
+	add("events", url.Values{"orgUnit": {m.Facility.ID}, "fields": {ev}})
+	for _, st := range p.Stages {
+		add("events", url.Values{"orgUnit": {m.Facility.ID}, "programStage": {st}, "fields": {ev}})
+	}
+	// Without a program: by tracked entity type, as Android's and Capture's lookups do.
+	scope := "tet:" + p.TET
+	for _, v := range []url.Values{
+		{"trackedEntityType": {p.TET}, "orgUnits": {m.Facility.ID}, "fields": {te}, "paging": {"false"}},
+	} {
+		qs = append(qs, Query{Kind: "trackedEntities", Program: scope, Path: enc("trackedEntities", v)})
+	}
+	if uid := sample["owned"]; uid != "" {
+		qs = append(qs, Query{Kind: "trackedEntities", Program: scope, Single: true,
+			Path: "/api/tracker/trackedEntities/" + uid + "?" + url.Values{"fields": {te}}.Encode()})
+	}
+	for _, key := range []string{"owned", "foreign"} {
+		if uid := sample[key]; uid != "" {
+			qs = append(qs, Query{Kind: "trackedEntities", Program: p.ID, Single: true,
+				Path: "/api/tracker/trackedEntities/" + uid + "?" + url.Values{"program": {p.ID}, "fields": {te}}.Encode()})
+		}
+	}
+	return qs
+}
+
+// Judge compares central's and the hub's answers for one user and query.
+func Judge(truth *Truth, q Query, user string, cStatus int, cBody []byte, hStatus int, hBody []byte) Outcome {
+	o := Outcome{User: user, Path: q.Path, Central: cStatus, Hub: hStatus}
+	hItems, herr := items(q, hBody)
+	cItems, cerr := items(q, cBody)
+	switch {
+	case hStatus == 503 || hStatus == 401 || hStatus == 403:
+		// The hub refuses: safe. Where central shows this user facility data, it is a
+		// coverage gap; the detail says why the hub refused.
+		o.Verdict = Refused
+		var msg struct {
+			Message string `json:"message"`
+		}
+		json.Unmarshal(hBody, &msg)
+		o.Detail = msg.Message
+		if cStatus == 200 && cerr == nil {
+			for uid, it := range cItems {
+				if truth.Owned[q.Program][teOf(q.Kind, uid, it)] {
+					o.Objects = append(o.Objects, uid)
+				}
+			}
+			sort.Strings(o.Objects)
+		}
+		return o
+	case hStatus != 200:
+		o.Verdict, o.Detail = Differs, fmt.Sprintf("hub answered %d", hStatus)
+		return o
+	case herr != nil:
+		o.Verdict, o.Detail = Differs, "hub body: "+herr.Error()
+		return o
+	case (cStatus == 400 || cStatus == 409) && len(hItems) > 0:
+		// Not a leak: central did not refuse the user, it refused the request.
+		o.Verdict, o.Objects = Lenient, keys(hItems)
+		o.Detail = fmt.Sprintf("central answered %d: %.200s", cStatus, cBody)
+		return o
+	case cStatus != 200 || cerr != nil:
+		if len(hItems) > 0 {
+			o.Verdict, o.Objects = Leak, keys(hItems)
+			o.Detail = fmt.Sprintf("central answered %d", cStatus)
+			return o
+		}
+		o.Verdict = Match
+		return o
+	}
+	owned := truth.Owned[q.Program]
+	expected := map[string]map[string]any{}
+	for uid, it := range cItems {
+		if owned[teOf(q.Kind, uid, it)] {
+			expected[uid] = truth.narrow(q.Kind, uid, it)
+		}
+	}
+	var leaks, extra, missing, differs []string
+	for uid, it := range hItems {
+		switch {
+		case cItems[uid] == nil:
+			leaks = append(leaks, uid)
+		case expected[uid] == nil:
+			extra = append(extra, uid) // central shows it, but the facility does not own it
+		case canon(truth.narrow(q.Kind, uid, it)) != canon(expected[uid]):
+			differs = append(differs, uid)
+		}
+	}
+	for uid := range expected {
+		if hItems[uid] == nil {
+			missing = append(missing, uid)
+		}
+	}
+	sort.Strings(leaks)
+	sort.Strings(missing)
+	sort.Strings(differs)
+	switch {
+	case len(leaks) > 0:
+		o.Verdict, o.Objects = Leak, leaks
+	case len(missing) > 0:
+		o.Verdict, o.Objects = Missing, missing
+	case len(differs) > 0:
+		o.Verdict, o.Objects = Differs, differs
+		o.Detail = "hub: " + canon(hItems[differs[0]]) + "\ncentral: " + canon(expected[differs[0]])
+	default:
+		o.Verdict = Match
+	}
+	if len(extra) > 0 {
+		o.Detail = strings.TrimSpace(o.Detail + fmt.Sprintf("\nhub also has %d object(s) the facility does not own: %v", len(extra), extra))
+	}
+	return o
+}
+
+// narrow drops from a tracked entity the enrollments of programs the facility does not
+// own it for (the hub holds only the facility's data) and of programs outside the
+// manifest. It is applied to both answers.
+func (t *Truth) narrow(kind, uid string, o map[string]any) map[string]any {
+	enrs, ok := o["enrollments"].([]any)
+	if kind != "trackedEntities" || !ok {
+		return o
+	}
+	out := map[string]any{}
+	for k, v := range o {
+		out[k] = v
+	}
+	kept := []any{}
+	for _, e := range enrs {
+		em, _ := e.(map[string]any)
+		p, _ := em["program"].(string)
+		// Only programs the oracle knows are judged: enrollments in others (for instance
+		// programs a user reads only through data sharing, without their metadata) are
+		// left out on both sides.
+		if owned, known := t.Owned[p]; known && owned[uid] {
+			kept = append(kept, e)
+		}
+	}
+	out["enrollments"] = kept
+	return out
+}
+
+// items decodes a list answer (or a single object) into UID -> object.
+func items(q Query, body []byte) (map[string]map[string]any, error) {
+	key := map[string]string{"trackedEntities": "trackedEntity", "enrollments": "enrollment", "events": "event"}[q.Kind]
+	out := map[string]map[string]any{}
+	if q.Single {
+		var o map[string]any
+		if err := json.Unmarshal(body, &o); err != nil {
+			return nil, err
+		}
+		if uid, _ := o[key].(string); uid != "" {
+			out[uid] = o
+		}
+		return out, nil
+	}
+	var res map[string]any
+	if err := json.Unmarshal(body, &res); err != nil {
+		return nil, err
+	}
+	list, _ := res[q.Kind].([]any)
+	if list == nil {
+		list, _ = res["instances"].([]any)
+	}
+	for _, x := range list {
+		if o, ok := x.(map[string]any); ok {
+			if uid, _ := o[key].(string); uid != "" {
+				out[uid] = o
+			}
+		}
+	}
+	return out, nil
+}
+
+func teOf(kind, uid string, o map[string]any) string {
+	if kind == "trackedEntities" {
+		return uid
+	}
+	s, _ := o["trackedEntity"].(string)
+	return s
+}
+
+// canon renders an object with its lists sorted, so field and list order do not count.
+func canon(o map[string]any) string {
+	var norm func(v any) any
+	norm = func(v any) any {
+		switch x := v.(type) {
+		case map[string]any:
+			out := map[string]any{}
+			for k, vv := range x {
+				out[k] = norm(vv)
+			}
+			return out
+		case []any:
+			var parts []string
+			for _, vv := range x {
+				b, _ := json.Marshal(norm(vv))
+				parts = append(parts, string(b))
+			}
+			sort.Strings(parts)
+			return parts
+		}
+		return v
+	}
+	b, _ := json.Marshal(norm(o))
+	return string(b)
+}
+
+func keys(m map[string]map[string]any) []string {
+	var out []string
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}

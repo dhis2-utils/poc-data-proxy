@@ -58,6 +58,8 @@ type User struct {
 }
 
 type Central struct {
+	// TimeZone is the server's time zone (serverTimeZoneId); empty: UTC.
+	TimeZone  string
 	mu        sync.Mutex
 	Users     map[string]*User
 	tokens    map[string]string // PAT key -> username
@@ -73,8 +75,19 @@ type Central struct {
 	Version   string
 	// Requests counts calls per "METHOD path" for assertions.
 	Requests map[string]int
-	jobs     map[string][]byte
-	jobN     int
+	gen      *generated // Generate: performance-test data
+
+	// Program ownership (ownership.go): owner per tracked entity and program, and
+	// temporary ownership ("break the glass") per user, tracked entity and program.
+	owners map[string]string
+	temp   map[string]time.Time
+	// Protected makes the program PROTECTED: only users whose capture scope holds the
+	// owner, or who broke the glass, may read a person's enrollment.
+	Protected bool
+	// TempAccess is how long temporary ownership lasts.
+	TempAccess time.Duration
+	jobs       map[string][]byte
+	jobN       int
 }
 
 func New() *Central {
@@ -91,6 +104,7 @@ func New() *Central {
 		tokens: map[string]string{}, tokenIDs: map[string]string{}, sessions: map[string]string{},
 		objects: map[string]tracker.M{}, kinds: map[string]string{}, DataStore: map[string]map[string]json.RawMessage{},
 		Version: Version, Requests: map[string]int{}, jobs: map[string][]byte{},
+		owners: map[string]string{}, temp: map[string]time.Time{}, TempAccess: time.Hour,
 	}
 	return c
 }
@@ -98,13 +112,25 @@ func New() *Central {
 // SetDown makes every request fail at the connection level (a cut uplink).
 func (c *Central) SetDown(down bool) { c.down.Store(down) }
 
-func now() string { return time.Now().UTC().Format("2006-01-02T15:04:05.000") }
+// now is the current time as DHIS2 writes it: in the server's time zone, without an
+// offset.
+func (c *Central) now() string { return time.Now().In(c.zone()).Format("2006-01-02T15:04:05.000") }
+
+// zone is TimeZone loaded, or UTC.
+func (c *Central) zone() *time.Location {
+	if c.TimeZone != "" {
+		if loc, err := time.LoadLocation(c.TimeZone); err == nil {
+			return loc
+		}
+	}
+	return time.UTC
+}
 
 // Seed adds a tracked entity owned by the facility, enrolled in the program.
 func (c *Central) Seed(te, enr, firstName, nationalID string, events map[string]string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	ts := now()
+	ts := c.now()
 	c.put("trackedEntity", te, tracker.M{"trackedEntity": te, "trackedEntityType": TET, "orgUnit": Facility, "createdAt": ts, "updatedAt": ts,
 		"attributes": []any{tracker.M{"attribute": AttrFirstName, "value": firstName}, tracker.M{"attribute": AttrNationalI, "value": nationalID}}})
 	c.put("enrollment", enr, tracker.M{"enrollment": enr, "trackedEntity": te, "program": Program, "orgUnit": Facility, "status": "ACTIVE",
@@ -255,7 +281,7 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case p == "/api/system/info":
-		writeJSON(w, 200, map[string]any{"version": c.Version, "revision": "fake"})
+		writeJSON(w, 200, map[string]any{"version": c.Version, "revision": "fake", "serverTimeZoneId": c.zone().String()})
 	case p == "/api/me":
 		ous := []any{}
 		for _, ou := range u.OrgUnits {
@@ -288,8 +314,16 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(p, "/api/apiToken/") && r.Method == "DELETE":
 		c.RevokeToken(strings.TrimPrefix(p, "/api/apiToken/"))
 		writeJSON(w, 200, map[string]any{"status": "OK"})
+	case p == "/api/trackedEntityTypes":
+		at := func(id string) map[string]any {
+			return map[string]any{"trackedEntityAttribute": map[string]any{"id": id}}
+		}
+		writeJSON(w, 200, map[string]any{"trackedEntityTypes": []any{map[string]any{"id": TET,
+			"trackedEntityTypeAttributes": []any{at(AttrFirstName), at(AttrLastName)}}}})
 	case p == "/api/programs":
 		c.programs(w, r, u)
+	case p == "/api/relationshipTypes":
+		writeJSON(w, 200, map[string]any{"relationshipTypes": []any{}})
 	case p == "/api/programs/"+Program:
 		writeJSON(w, 200, map[string]any{"id": Program, "name": "TB program"})
 	case p == "/api/categoryOptionCombos":
@@ -298,6 +332,12 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"id": Facility, "name": "Ngelehun CHC", "code": "OU_559"})
 	case p == "/api/tracker/trackedEntities":
 		c.listTEs(w, r, u)
+	case strings.HasPrefix(p, "/api/tracker/trackedEntities/"):
+		c.getTE(w, r, u, strings.TrimPrefix(p, "/api/tracker/trackedEntities/"))
+	case p == "/api/tracker/ownership/transfer" && r.Method == "PUT":
+		c.transfer(w, r, u)
+	case p == "/api/tracker/ownership/override" && r.Method == "POST":
+		c.override(w, r, u)
 	case strings.HasPrefix(p, "/api/tracker/jobs/") && strings.HasSuffix(p, "/report"):
 		c.mu.Lock()
 		b, ok := c.jobs[strings.Split(strings.TrimPrefix(p, "/api/tracker/jobs/"), "/")[0]]
@@ -318,7 +358,7 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for i := 0; i < max(n, 1); i++ {
 			c.reserved++
 			out = append(out, map[string]any{"ownerObject": "TRACKEDENTITYATTRIBUTE", "ownerUid": attr, "key": "RANDOM(##########)",
-				"value": fmt.Sprintf("%010d", c.reserved), "created": now(), "expiryDate": time.Now().AddDate(0, 0, 60).UTC().Format("2006-01-02T15:04:05.000")})
+				"value": fmt.Sprintf("%010d", c.reserved), "created": c.now(), "expiryDate": time.Now().AddDate(0, 0, 60).In(c.zone()).Format("2006-01-02T15:04:05.000")})
 		}
 		c.mu.Unlock()
 		writeJSON(w, 200, out)
@@ -388,22 +428,30 @@ func (c *Central) programs(w http.ResponseWriter, r *http.Request, u *User) {
 	}
 	var stages []any
 	for i, s := range []string{Stage1, Stage2, Stage3} {
-		stages = append(stages, map[string]any{"id": s, "sortOrder": i + 1, "access": dataPerm(u.StageRead[s], u.StageWrite[s])})
+		stages = append(stages, map[string]any{"id": s, "sortOrder": i + 1, "repeatable": true, "access": dataPerm(u.StageRead[s], u.StageWrite[s])})
 	}
 	prog := map[string]any{"id": Program, "name": "TB program", "access": dataPerm(u.ProgramRead, u.ProgramWrite),
 		"trackedEntityType": map[string]any{"id": TET, "access": dataPerm(true, true),
 			"trackedEntityTypeAttributes": []any{attr(AttrFirstName, false, false), attr(AttrLastName, false, false)}},
 		"programStages":                  stages,
 		"programTrackedEntityAttributes": []any{attr(AttrNationalI, false, true), attr(AttrTBID, true, true)}}
-	writeJSON(w, 200, map[string]any{"programs": []any{prog}})
+	progs := []any{prog}
+	if c.gen != nil {
+		progs = append(progs, c.gen.programMeta()...)
+	}
+	writeJSON(w, 200, map[string]any{"programs": progs})
 }
 
 // canSeeEvent applies stage read access (central drops unreadable events silently).
 func canSeeEvent(u *User, ev tracker.M) bool { return u.StageRead[tracker.Str(ev, "programStage")] }
 
 func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
+	if c.gen != nil && c.gen.listTEs(w, r) {
+		return
+	}
 	q := r.URL.Query()
-	if q.Get("program") != Program || !u.ProgramRead {
+	byType := q.Get("program") == "" && q.Get("trackedEntityType") == TET // registered here, no enrollments
+	if !byType && (q.Get("program") != Program || !u.ProgramRead) {
 		webMessage(w, 400, "Program is specified but does not exist", "E1003")
 		return
 	}
@@ -411,12 +459,25 @@ func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 	size, _ := strconv.Atoi(q.Get("pageSize"))
 	page, size = max(page, 1), max(size, 1)
 	after := q.Get("updatedAfter")
+	var only map[string]bool
+	if v := q.Get("trackedEntities"); v != "" {
+		only = map[string]bool{}
+		for _, u := range strings.Split(v, ",") {
+			only[u] = true
+		}
+	}
 	c.mu.Lock()
 	var tes []tracker.M
 	for _, uid := range c.order {
 		o := c.objects[uid]
-		if c.kinds[uid] != "trackedEntity" || o["orgUnit"] != q.Get("orgUnits") {
+		if c.kinds[uid] != "trackedEntity" || (only != nil && !only[uid]) {
 			continue
+		}
+		if byType && o["orgUnit"] != q.Get("orgUnits") {
+			continue // registered elsewhere
+		}
+		if !byType && (c.owner(uid) != q.Get("orgUnits") || !c.canRead(u, uid)) {
+			continue // owned elsewhere for the program, or protected from this user
 		}
 		te := deepCopy(o)
 		var enrs []any
@@ -439,11 +500,19 @@ func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 			en["events"] = orEmpty(evs)
 			enrs = append(enrs, en)
 		}
+		if byType {
+			if after == "" || latest >= after {
+				te["relationships"] = []any{}
+				tes = append(tes, te)
+			}
+			continue
+		}
 		if len(enrs) == 0 || (after != "" && latest < after) {
 			continue
 		}
 		te["enrollments"] = enrs
 		te["relationships"] = []any{}
+		te["programOwners"] = []any{tracker.M{"orgUnit": c.owner(uid), "trackedEntity": uid, "program": Program}}
 		tes = append(tes, te)
 	}
 	c.mu.Unlock()
@@ -558,6 +627,9 @@ func (c *Central) importTracker(w http.ResponseWriter, r *http.Request, u *User)
 				failed[it.UID] = true // ignored without an error report of its own (as observed)
 				continue
 			}
+			if c.gen.has(it.Enrollment) {
+				break // a generated enrollment: every generated user may write in it
+			}
 			if !u.StageWrite[tracker.Str(it.Data, "programStage")] {
 				fail("E1095", "User has no data write access to ProgramStage")
 			} else if c.objects[it.Enrollment] == nil && !slices.ContainsFunc(okItems, func(x *tracker.Item) bool { return x.UID == it.Enrollment }) {
@@ -577,7 +649,7 @@ func (c *Central) importTracker(w http.ResponseWriter, r *http.Request, u *User)
 	for _, tt := range []string{"TRACKED_ENTITY", "ENROLLMENT", "EVENT", "RELATIONSHIP"} {
 		tm[tt] = map[string]any{"trackerType": tt, "objectReports": []any{}}
 	}
-	ts := now()
+	ts := c.now()
 	for _, it := range okItems {
 		data := deepCopy(it.Data)
 		if old := c.objects[it.UID]; old != nil {

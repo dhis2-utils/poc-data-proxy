@@ -160,7 +160,7 @@ func (s *Store) FinishOutbox(seq int64, state, lastError string) error {
 			return err
 		}
 	}
-	_, err := s.DB().Exec(`UPDATE outbox SET state=?, attempts=attempts+1, last_error_enc=? WHERE seq=?`, state, ct, seq)
+	_, err := s.write(`UPDATE outbox SET state=?, attempts=attempts+1, last_error_enc=? WHERE seq=?`, state, ct, seq)
 	return err
 }
 
@@ -170,7 +170,7 @@ func (s *Store) NoteAttempt(seq int64, lastError string) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.DB().Exec(`UPDATE outbox SET attempts=attempts+1, last_error_enc=? WHERE seq=?`, ct, seq)
+	_, err = s.write(`UPDATE outbox SET attempts=attempts+1, last_error_enc=? WHERE seq=?`, ct, seq)
 	return err
 }
 

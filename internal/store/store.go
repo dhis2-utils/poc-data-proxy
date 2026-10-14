@@ -45,7 +45,10 @@ type Store struct {
 	mu    sync.RWMutex
 	dk    hubcrypto.Key
 	data  *sql.DB // the encrypted data file, while unlocked
-	empty *sql.DB // stands in for the data file while locked: empty and read-only
+	stmts stmtCache
+	// writeMu serialises write transactions (Tx).
+	writeMu sync.Mutex
+	empty   *sql.DB // stands in for the data file while locked: empty and read-only
 }
 
 // keyMigrations are applied to the key file in order; PRAGMA user_version records
@@ -211,6 +214,48 @@ CREATE TABLE reserved_values(id INTEGER PRIMARY KEY AUTOINCREMENT, attribute TEX
   expires_at TEXT NOT NULL DEFAULT '');
 CREATE INDEX reserved_values_attr ON reserved_values(attribute);
 `,
+	// Visibility as per-user bitmaps over object slots instead of a row per object and
+	// user (docs/PERFORMANCE.md). Rows of the old table are converted on first load.
+	`
+ALTER TABLE objects ADD COLUMN slot INTEGER;
+UPDATE objects SET slot = rowid;
+CREATE UNIQUE INDEX objects_slot ON objects(slot);
+CREATE TABLE visibility_bits(user_id INTEGER NOT NULL, chunk INTEGER NOT NULL, bits BLOB NOT NULL,
+  PRIMARY KEY(user_id, chunk));
+CREATE TABLE te_scopes(te_uid TEXT NOT NULL, scope TEXT NOT NULL, PRIMARY KEY(te_uid, scope));
+`,
+	// Queries read the data file instead of an in-memory copy of every object
+	// (docs/PERFORMANCE.md, "The query index in SQLite"): the columns lists filter and
+	// sort on, each object's slim JSON (what the remaining filters read), and a tracked
+	// entity's attribute values. Rows of schema 2 have slim NULL until the first unlock
+	// fills them (tracker.Index.Load). The indexes are not partial: a query with a
+	// bound value cannot use an index restricted to non-empty values. A person's and an
+	// enrollment's children are indexed with their kind, so that index wins over the
+	// list indexes, which also start with kind (without statistics the planner chose
+	// those, and storing a person walked every enrollment).
+	`
+ALTER TABLE objects ADD COLUMN created_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE objects ADD COLUMN status TEXT NOT NULL DEFAULT '';
+ALTER TABLE objects ADD COLUMN te_created TEXT NOT NULL DEFAULT '';
+ALTER TABLE objects ADD COLUMN rel_from TEXT NOT NULL DEFAULT '';
+ALTER TABLE objects ADD COLUMN rel_to TEXT NOT NULL DEFAULT '';
+ALTER TABLE objects ADD COLUMN slim TEXT;
+DROP INDEX objects_te;
+CREATE INDEX objects_te ON objects(te_uid, kind);
+CREATE INDEX objects_enrollment ON objects(enrollment_uid, kind);
+CREATE INDEX objects_rel_from ON objects(rel_from);
+CREATE INDEX objects_rel_to ON objects(rel_to);
+CREATE INDEX objects_type ON objects(kind, tet, owner_org_unit, created_at, uid);
+CREATE INDEX objects_program ON objects(kind, program, owner_org_unit, te_created, te_uid);
+CREATE INDEX objects_program_desc ON objects(kind, program, owner_org_unit, te_created DESC, te_uid);
+CREATE INDEX objects_unfilled ON objects(uid) WHERE slim IS NULL;
+CREATE INDEX objects_updated ON objects(updated_at, kind, uid, te_uid);
+CREATE INDEX objects_state ON objects(uid, updated_at, slot);
+CREATE INDEX objects_local ON objects(kind, uid, te_uid) WHERE origin = 'local';
+CREATE TABLE te_attrs(te_uid TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT NULL, value_lc TEXT NOT NULL,
+  PRIMARY KEY(te_uid, attr));
+CREATE INDEX te_attrs_value ON te_attrs(attr, value);
+`,
 }
 
 // SchemaVersion is the number of key file migrations this binary knows.
@@ -222,7 +267,7 @@ func DataPath(path string) string { return path + ".data" }
 // Open opens (and migrates) the key file at path. The store starts locked.
 func Open(path string) (*Store, error) {
 	keys, err := sql.Open("sqlite3", "file:"+(&url.URL{Path: path}).EscapedPath()+
-		"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_pragma=synchronous(NORMAL)&_pragma=secure_delete(1)")
+		"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_pragma=synchronous(FULL)&_pragma=secure_delete(1)&_txlock=immediate")
 	if err != nil {
 		return nil, err
 	}
@@ -322,9 +367,12 @@ func openData(path string, dk hubcrypto.Key) (*sql.DB, error) {
 		return nil, err
 	}
 	// The key must be set before anything reads the file, so no _pragma in the DSN.
-	db, err := driver.Open(dataDSN(path), func(c *sqlite3.Conn) error {
+	// Write transactions take the write lock when they begin (_txlock=immediate): a
+	// deferred one that reads first fails at once with "database is locked" when another
+	// connection writes meanwhile, whatever the busy timeout (found by cmd/hubload).
+	db, err := driver.Open(dataDSN(path)+"&_txlock=immediate", func(c *sqlite3.Conn) error {
 		return c.Exec(`PRAGMA hexkey='` + key + `'; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=10000;
-PRAGMA synchronous=NORMAL; PRAGMA temp_store=memory`)
+PRAGMA synchronous=FULL; PRAGMA temp_store=memory; PRAGMA cache_size=-16384`)
 	})
 	if err != nil {
 		return nil, err
@@ -391,6 +439,10 @@ func (s *Store) SetDK(k hubcrypto.Key) error {
 		db.Close()
 		return fmt.Errorf("moving data out of the key file: %w", err)
 	}
+	if err := s.prepareWrites(db); err != nil {
+		db.Close()
+		return fmt.Errorf("preparing statements: %w", err)
+	}
 	s.mu.Lock()
 	s.dk, s.data = k, db
 	s.mu.Unlock()
@@ -447,6 +499,13 @@ func (s *Store) moveLegacy(data *sql.DB) error {
  pw_enc, access_json_enc, access_refreshed_at, last_login_at FROM legacy.users`,
 		`INSERT OR REPLACE INTO main.kv(key, value) SELECT key, value FROM legacy.meta WHERE key IN ('last_push', 'last_pull')`}
 	for _, t := range legacyTables {
+		if t == "objects" { // the data file's objects table has the slot column too
+			stmts = append(stmts, `INSERT OR REPLACE INTO main.objects(uid, kind, te_uid, enrollment_uid, program, stage, tet,
+ owner_org_unit, updated_at, origin, sync_state, payload_enc) SELECT uid, kind, te_uid, enrollment_uid, program, stage, tet,
+ owner_org_unit, updated_at, origin, sync_state, payload_enc FROM legacy.objects`,
+				`UPDATE main.objects SET slot = rowid WHERE slot IS NULL`)
+			continue
+		}
 		stmts = append(stmts, fmt.Sprintf(`INSERT OR REPLACE INTO main.%s SELECT * FROM legacy.%s`, t, t))
 	}
 	tx, err := conn.BeginTx(ctx, nil)
@@ -533,7 +592,7 @@ func (s *Store) Private(key string) string {
 }
 
 func (s *Store) SetPrivate(key, value string) error {
-	_, err := s.DB().Exec(`INSERT INTO kv(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
+	_, err := s.write(`INSERT INTO kv(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
 	return err
 }
 
@@ -556,7 +615,7 @@ func (s *Store) SetState(key string, value []byte) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.DB().Exec(`INSERT INTO state(key,value_enc) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value_enc=excluded.value_enc`, key, ct)
+	_, err = s.write(`INSERT INTO state(key,value_enc) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value_enc=excluded.value_enc`, key, ct)
 	return err
 }
 
@@ -584,6 +643,11 @@ func ParseTime(s string) time.Time {
 
 // Tx runs fn in a transaction on the data file.
 func (s *Store) Tx(ctx context.Context, fn func(*sql.Tx) error) error {
+	// One write transaction at a time, queued here rather than in SQLite: its busy
+	// handler polls, and on a starved CPU (the pi4 hammer run) writers gave up after
+	// the busy timeout with "database is locked" while others held the lock.
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	tx, err := s.DB().BeginTx(ctx, nil)
 	if err != nil {
 		return err

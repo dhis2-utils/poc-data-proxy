@@ -44,11 +44,12 @@ type Me struct {
 	UserGroups                 []idRef  `json:"userGroups"`
 }
 
-// Belongs reports whether the user may register on the hub: the facility is one of
-// their capture org units, or they are in the setup user group.
-func (m *Me) Belongs(facility, setupGroup string) bool {
+// Belongs reports whether the user may register on the hub: the facility (with this
+// path) is in their capture scope, or they are in the setup user group.
+func (m *Me) Belongs(facilityPath, setupGroup string) bool {
+	// The facility, or an org unit above it: capture scope includes what is below.
 	for _, o := range m.OrganisationUnits {
-		if o.ID == facility {
+		if strings.Contains(facilityPath+"/", "/"+o.ID+"/") {
 			return true
 		}
 	}
@@ -106,6 +107,26 @@ func (h *Hub) FetchAccess(ctx context.Context, auth central.Auth) (*access.List,
 		l.TETs[p.TrackedEntityType.ID] = p.TrackedEntityType.Access.Data
 		for _, s := range p.ProgramStages {
 			l.Stages[s.ID] = s.Access.Data
+		}
+	}
+	// Relationship types decide which relationships central shows: part of what makes
+	// two users' listings the same (access.List.GroupKey).
+	var rts struct {
+		RelationshipTypes []struct {
+			ID string `json:"id"`
+			dataAccess
+		} `json:"relationshipTypes"`
+	}
+	if err := h.Central.JSON(ctx, "GET", central.Q("/api/relationshipTypes", "fields", "id,access[data[read,write]]",
+		"paging", "false"), nil, auth, &rts); err != nil {
+		if central.IsNetwork(err) {
+			return nil, err
+		}
+		l.Ungroupable = true
+	} else {
+		l.RelationshipTypes = map[string]access.Perm{}
+		for _, rt := range rts.RelationshipTypes {
+			l.RelationshipTypes[rt.ID] = rt.Access.Data
 		}
 	}
 	return l, nil
@@ -224,13 +245,17 @@ func (h *Hub) CreatePAT(ctx context.Context, with central.Auth, exp time.Time) (
 // RefreshServerVersion reads central's version (spec 6.2 step 5, refreshed on sync).
 func (h *Hub) RefreshServerVersion(ctx context.Context, auth central.Auth) (string, error) {
 	var info struct {
-		Version string `json:"version"`
+		Version  string `json:"version"`
+		TimeZone string `json:"serverTimeZoneId"`
 	}
 	if err := h.Central.JSON(ctx, "GET", "/api/system/info", nil, auth, &info); err != nil {
 		return "", err
 	}
 	if info.Version != "" {
 		h.Store.SetMeta(MetaServerVersion, info.Version)
+	}
+	if info.TimeZone != "" && info.TimeZone != h.Store.Meta(MetaServerTimeZone) {
+		h.Store.SetMeta(MetaServerTimeZone, info.TimeZone)
 	}
 	return info.Version, nil
 }
@@ -334,25 +359,50 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 				TrackedEntityTypeAttributes []attr `json:"trackedEntityTypeAttributes"`
 			} `json:"trackedEntityType"`
 			ProgramStages []struct {
-				ID        string `json:"id"`
-				SortOrder int    `json:"sortOrder"`
+				ID         string `json:"id"`
+				SortOrder  int    `json:"sortOrder"`
+				Repeatable bool   `json:"repeatable"`
 			} `json:"programStages"`
+			CategoryCombo struct {
+				IsDefault *bool `json:"isDefault"`
+			} `json:"categoryCombo"`
 			ProgramTrackedEntityAttributes []attr `json:"programTrackedEntityAttributes"`
 		} `json:"programs"`
 	}
 	af := "trackedEntityAttribute[id,generated,unique,pattern]"
 	path := central.Q("/api/programs", "filter", "programType:eq:WITH_REGISTRATION",
 		"filter", "organisationUnits.id:eq:"+facility,
-		"fields", "id,name,trackedEntityType[id,trackedEntityTypeAttributes["+af+"]],programStages[id,sortOrder],programTrackedEntityAttributes["+af+"]",
+		"fields", "id,name,trackedEntityType[id,trackedEntityTypeAttributes["+af+"]],programStages[id,sortOrder,repeatable],categoryCombo[isDefault],programTrackedEntityAttributes["+af+"]",
 		"paging", "false")
 	if err := h.Central.JSON(ctx, "GET", path, nil, auth, &resp); err != nil {
 		return nil, err
 	}
-	c := &access.Catalog{Programs: map[string]*access.ProgramMeta{}, TETAttributes: map[string][]access.AttrMeta{}}
+	c := &access.Catalog{Programs: map[string]*access.ProgramMeta{}, TETAttributes: map[string][]access.AttrMeta{},
+		TypeAttributes: map[string]bool{}}
+	var types struct {
+		TrackedEntityTypes []struct {
+			Attributes []struct {
+				TrackedEntityAttribute idRef `json:"trackedEntityAttribute"`
+			} `json:"trackedEntityTypeAttributes"`
+		} `json:"trackedEntityTypes"`
+	}
+	if err := h.Central.JSON(ctx, "GET", central.Q("/api/trackedEntityTypes", "paging", "false",
+		"fields", "trackedEntityTypeAttributes[trackedEntityAttribute[id]]"), nil, auth, &types); err != nil {
+		return nil, err
+	}
+	for _, t := range types.TrackedEntityTypes {
+		for _, a := range t.Attributes {
+			c.TypeAttributes[a.TrackedEntityAttribute.ID] = true
+		}
+	}
 	for _, p := range resp.Programs {
-		pm := &access.ProgramMeta{ID: p.ID, Name: p.Name, TET: p.TrackedEntityType.ID, Attributes: conv(p.ProgramTrackedEntityAttributes)}
+		pm := &access.ProgramMeta{ID: p.ID, Name: p.Name, TET: p.TrackedEntityType.ID, Attributes: conv(p.ProgramTrackedEntityAttributes),
+			AttributeCombo: p.CategoryCombo.IsDefault != nil && !*p.CategoryCombo.IsDefault}
 		for _, s := range p.ProgramStages {
 			pm.Stages = append(pm.Stages, s.ID)
+			if !s.Repeatable {
+				pm.NonRepeatable = append(pm.NonRepeatable, s.ID)
+			}
 		}
 		c.Programs[p.ID] = pm
 		c.TETAttributes[p.TrackedEntityType.ID] = conv(p.TrackedEntityType.TrackedEntityTypeAttributes)

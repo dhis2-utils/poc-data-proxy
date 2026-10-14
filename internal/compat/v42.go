@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/dhis2/facility-hub/internal/tracker"
 )
@@ -180,17 +181,59 @@ func (v42) PATResponse(body []byte) (string, string, error) {
 }
 
 func (v42) PullPath(facility, program, updatedAfter string, page, pageSize int) string {
-	q := url.Values{}
-	q.Set("orgUnits", facility)
-	q.Set("orgUnitMode", "SELECTED")
-	q.Set("program", program)
-	if updatedAfter != "" {
-		q.Set("updatedAfter", updatedAfter)
-	}
-	q.Set("fields", "*,enrollments[*,events[*]],relationships[*]")
+	return pullQuery(facility, program, updatedAfter, page, pageSize, false)
+}
+
+func (v42) ListPath(facility, program, updatedAfter string, page, pageSize int) string {
+	return pullQuery(facility, program, updatedAfter, page, pageSize, true)
+}
+
+func (v42) FetchPath(facility, program string, trackedEntities []string) string {
+	q := pullValues(facility, program, false)
+	q.Set("trackedEntities", strings.Join(trackedEntities, ","))
+	q.Set("pageSize", strconv.Itoa(len(trackedEntities)))
+	return "/api/tracker/trackedEntities?" + q.Encode()
+}
+
+func (v42) OwnedPath(facility, program string, page, pageSize int) string {
+	q := pullValues(facility, program, true)
+	q.Set("fields", "trackedEntity")
 	q.Set("page", strconv.Itoa(page))
 	q.Set("pageSize", strconv.Itoa(pageSize))
 	return "/api/tracker/trackedEntities?" + q.Encode()
+}
+
+func pullQuery(facility, program, updatedAfter string, page, pageSize int, idsOnly bool) string {
+	q := pullValues(facility, program, idsOnly)
+	if updatedAfter != "" {
+		q.Set("updatedAfter", updatedAfter)
+	}
+	q.Set("page", strconv.Itoa(page))
+	q.Set("pageSize", strconv.Itoa(pageSize))
+	return "/api/tracker/trackedEntities?" + q.Encode()
+}
+
+func pullValues(facility, program string, idsOnly bool) url.Values {
+	q := url.Values{}
+	q.Set("orgUnits", facility)
+	q.Set("orgUnitMode", "SELECTED")
+	q.Set("fields", "*,enrollments[*,events[*]],relationships[*]")
+	if idsOnly {
+		q.Set("fields", "trackedEntity,updatedAt,enrollments[enrollment,updatedAt,events[event,updatedAt]],relationships[relationship,updatedAt]")
+	}
+	if tet, ok := strings.CutPrefix(program, "tet:"); ok {
+		// People of this type registered at the facility, including those enrolled in
+		// nothing the user can read. Without enrollments: through a type search central
+		// also shows enrollments other facilities own.
+		q.Set("trackedEntityType", tet)
+		q.Set("fields", "*,!enrollments,!programOwners,relationships[*]")
+		if idsOnly {
+			q.Set("fields", "trackedEntity,updatedAt,relationships[relationship,updatedAt]")
+		}
+	} else {
+		q.Set("program", program)
+	}
+	return q
 }
 
 func (v42) PullItems(body []byte, page, pageSize int) ([]tracker.M, bool, error) {

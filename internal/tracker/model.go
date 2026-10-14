@@ -1,5 +1,5 @@
 // Package tracker holds the hub's tracker data model: flattening nested payloads into
-// stored objects, the in-memory index (spec 9.3), visibility rules (spec 8.2), local
+// stored objects, the index over the store (spec 9.3), visibility rules (spec 8.2), local
 // queries (spec 10.1) and offline import validation (spec 10.2).
 package tracker
 
@@ -22,8 +22,13 @@ type Obj struct {
 	UID, Kind, TE, Enrollment, Program, Stage, TET, OwnerOrgUnit string
 	UpdatedAt                                                    string
 	Origin, SyncState                                            string
-	Data                                                         M // payload without nested children
-	Visible                                                      map[int64]bool
+	Data                                                         M      // payload without nested children
+	Slot                                                         uint32 // in the visibility bitmaps (visibility.go)
+	// slim: Data holds only what queries filter and sort on (slim.go); the full
+	// payload is in the store (Index.Full).
+	slim bool
+	// raw: a search's row whose slim data is not decoded yet (Data is nil; withData).
+	raw []byte
 }
 
 // Children keys that are stored as separate objects, never inside a payload.
@@ -217,7 +222,21 @@ func mergeList(old, incoming any, key string) []any {
 }
 
 // DHIS2Time formats t like DHIS2 does in tracker payloads.
-func DHIS2Time(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000") }
+// DHIS2Time formats t as DHIS2 writes times: without an offset, in t's own location
+// (pass it in central's time zone: core.Hub.CentralTime).
+func DHIS2Time(t time.Time) string { return t.Format("2006-01-02T15:04:05.000") }
+
+// shallow copies the top level of a payload for rendering, which only replaces
+// top-level fields: the payload belongs to this request, and nothing below the top
+// level is changed. A deep copy (clone) of every rendered object was a large part of
+// an Android download page's cost (docs/PERFORMANCE.md).
+func shallow(m M) M {
+	out := make(M, len(m)+4)
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
 
 func clone(m M) M {
 	b, _ := json.Marshal(m)

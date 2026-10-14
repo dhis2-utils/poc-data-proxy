@@ -5,3 +5,5 @@
 *.db-wal
 *.db-shm
 .pnpm-store/
+testresults/
+perf/results/

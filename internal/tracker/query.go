@@ -153,7 +153,8 @@ func paging(q url.Values) (page, size int, paged, totals bool, err *APIError) {
 
 // parseTime accepts the date forms DHIS2 accepts in query parameters.
 func parseTime(s string) (time.Time, bool) {
-	for _, l := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.000", "2006-01-02T15:04:05", "2006-01-02T15:04", "2006-01-02"} {
+	// DHIS2's own form first: stored values use it.
+	for _, l := range []string{"2006-01-02T15:04:05.000", time.RFC3339Nano, "2006-01-02T15:04:05", "2006-01-02T15:04", "2006-01-02"} {
 		if t, err := time.Parse(l, s); err == nil {
 			return t, true
 		}
@@ -167,6 +168,9 @@ type timeFilter struct {
 }
 
 func (f timeFilter) match(data M, q url.Values) (bool, *APIError) {
+	if q.Get(f.after) == "" && q.Get(f.before) == "" {
+		return true, nil // no bound: nothing to parse (this ran for every object of every search)
+	}
 	val, _ := parseTime(Str(data, f.field))
 	if s := q.Get(f.after); s != "" {
 		t, ok := parseTime(s)
@@ -271,18 +275,30 @@ func sortObjs(objs []*Obj, order string, attrKey func(*Obj, string) string) {
 		keys = []key{{"createdAt", false}}
 	}
 	keys = append(keys, key{"uid", false}) // stable tie-breaker
-	slices.SortStableFunc(objs, func(a, b *Obj) int {
-		for _, k := range keys {
-			var va, vb string
+	// Each object's sort values once, not on every comparison (map lookups in the
+	// comparator were a seventh of a search's cost; docs/PERFORMANCE.md).
+	type row struct {
+		o    *Obj
+		vals []string
+	}
+	rows := make([]row, len(objs))
+	for i, o := range objs {
+		vals := make([]string, len(keys))
+		for j, k := range keys {
 			switch {
 			case k.field == "uid":
-				va, vb = a.UID, b.UID
+				vals[j] = o.UID
 			case ValidUID(k.field) && attrKey != nil:
-				va, vb = attrKey(a, k.field), attrKey(b, k.field)
+				vals[j] = attrKey(o, k.field)
 			default:
-				va, vb = Str(a.Data, k.field), Str(b.Data, k.field)
+				vals[j] = Str(o.Data, k.field)
 			}
-			if c := strings.Compare(va, vb); c != 0 {
+		}
+		rows[i] = row{o, vals}
+	}
+	slices.SortStableFunc(rows, func(a, b row) int {
+		for j, k := range keys {
+			if c := strings.Compare(a.vals[j], b.vals[j]); c != 0 {
 				if k.desc {
 					return -c
 				}
@@ -291,18 +307,35 @@ func sortObjs(objs []*Obj, order string, attrKey func(*Obj, string) string) {
 		}
 		return 0
 	})
+	for i, r := range rows {
+		objs[i] = r.o
+	}
 }
 
 // --- rendering ---------------------------------------------------------------
 
 func (ix *Index) visible(v *Viewer, objs []*Obj) []*Obj {
+	bm := ix.bitmapOf(v.UserID) // once, not a lock per object
 	var out []*Obj
 	for _, o := range objs {
-		if ix.CanRead(v, o) {
+		if ix.visibleWith(v, bm, o) {
 			out = append(out, o)
 		}
 	}
 	return out
+}
+
+// visibleWith is CanRead with the user's bitmap already in hand.
+func (ix *Index) visibleWith(v *Viewer, bm bitmap, o *Obj) bool {
+	if o.Origin == store.OriginCentral {
+		return v.Access != nil && o.OwnerOrgUnit == v.Facility && bm.has(o.Slot) && accessAllows(v, o)
+	}
+	return ix.CanRead(v, o)
+}
+
+func anyList(v any) []any {
+	l, _ := v.([]any)
+	return l
 }
 
 func filterAttributes(v *Viewer, tet string, attrs any) []any {
@@ -317,21 +350,55 @@ func filterAttributes(v *Viewer, tet string, attrs any) []any {
 	return out
 }
 
+// scopeAttributes keeps the attributes central shows on a tracked entity: those of
+// every tracked entity type, plus, with a program, that program's own
+// (TrackedEntityAggregate.getAllowedAttributeUids in 2.42). Attributes of the user's
+// other programs stay out.
+func scopeAttributes(v *Viewer, tet, program string, attrs []any) []any {
+	if v.Catalog == nil {
+		return []any{}
+	}
+	keep := map[string]bool{}
+	for id := range v.Catalog.TypeAttributes {
+		keep[id] = true
+	}
+	for _, a := range v.Catalog.TETAttributes[tet] {
+		keep[a.ID] = true
+	}
+	if p := v.Catalog.Programs[program]; p != nil && v.Access.Program(program).Read {
+		for _, a := range p.Attributes {
+			keep[a.ID] = true
+		}
+	}
+	out := []any{}
+	for _, a := range attrs {
+		if m, _ := a.(M); keep[Str(m, "attribute")] {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 func (ix *Index) RenderTE(v *Viewer, o *Obj, f *Fields, program string) M {
-	d := clone(o.Data)
+	d := shallow(ix.fullFor(v, o))
 	if program != "" {
 		// Central lists the program's attributes on the tracked entity when program is
 		// given; clients often send them under the enrollment only.
-		for _, e := range ix.EnrollmentsOf(o.UID) {
+		for _, e := range ix.enrollmentsFor(v, o.UID) {
 			if e.Program == program && ix.CanRead(v, e) {
-				d["attributes"] = mergeList(d["attributes"], e.Data["attributes"], "attribute")
+				d["attributes"] = mergeList(d["attributes"], ix.fullFor(v, e)["attributes"], "attribute")
 			}
 		}
 	}
 	if _, ok := d["attributes"]; ok {
-		d["attributes"] = filterAttributes(v, o.TET, d["attributes"])
+		d["attributes"] = scopeAttributes(v, o.TET, program, anyList(d["attributes"]))
 	}
-	enrs := ix.visible(v, ix.EnrollmentsOf(o.UID))
+	enrs := ix.visible(v, ix.enrollmentsFor(v, o.UID))
+	if program != "" {
+		// Like central: a program-scoped answer carries that program's enrollments only
+		// (the differential oracle found the hub listing all readable ones).
+		enrs = slices.DeleteFunc(enrs, func(e *Obj) bool { return e.Program != program })
+	}
 	sortObjs(enrs, "enrolledAt", nil)
 	if _, ok := d["programOwners"]; !ok || o.Origin == store.OriginLocal {
 		owners := []any{}
@@ -358,7 +425,7 @@ func (ix *Index) RenderTE(v *Viewer, o *Obj, f *Fields, program string) M {
 }
 
 func (ix *Index) RenderEnrollment(v *Viewer, o *Obj, f *Fields) M {
-	d := clone(o.Data)
+	d := shallow(ix.fullFor(v, o))
 	if f.Has("attributes") {
 		tet := ""
 		if te := ix.Get(o.TE); te != nil {
@@ -369,7 +436,7 @@ func (ix *Index) RenderEnrollment(v *Viewer, o *Obj, f *Fields) M {
 		delete(d, "attributes")
 	}
 	if f.Has("events") {
-		evs := ix.visible(v, ix.EventsOf(o.UID))
+		evs := ix.visible(v, ix.eventsFor(v, o.UID))
 		sortObjs(evs, "occurredAt,scheduledAt", nil)
 		sub := f.Sub("events")
 		out := []any{}
@@ -385,7 +452,7 @@ func (ix *Index) RenderEnrollment(v *Viewer, o *Obj, f *Fields) M {
 }
 
 func (ix *Index) RenderEvent(v *Viewer, o *Obj, f *Fields) M {
-	d := clone(o.Data)
+	d := shallow(ix.fullFor(v, o))
 	if f.Has("relationships") {
 		d["relationships"] = ix.renderRels(v, o.UID, f.Sub("relationships"))
 	}
@@ -393,301 +460,13 @@ func (ix *Index) RenderEvent(v *Viewer, o *Obj, f *Fields) M {
 }
 
 func (ix *Index) renderRels(v *Viewer, uid string, _ *Fields) []any {
-	rels := ix.visible(v, ix.RelationshipsOf(uid))
+	rels := ix.visible(v, ix.relationshipsFor(v, uid))
 	sortObjs(rels, "createdAt", nil)
 	out := []any{}
 	for _, r := range rels {
-		out = append(out, clone(r.Data))
+		out = append(out, shallow(ix.fullFor(v, r)))
 	}
 	return out
-}
-
-// --- queries -------------------------------------------------------------------
-
-func page(objs []*Obj, pg, size int, paged bool) []*Obj {
-	if !paged {
-		return objs
-	}
-	if pg-1 >= (len(objs)+size-1)/size { // compared before multiplying: page and size are unbounded
-		return nil
-	}
-	start := (pg - 1) * size
-	return objs[start:min(start+size, len(objs))]
-}
-
-func (ix *Index) programCheck(v *Viewer, program string) *APIError {
-	if program == "" {
-		return nil
-	}
-	if v.Catalog == nil || v.Catalog.Programs[program] == nil {
-		return NeedsConnection("program " + program + " is not cached on this hub")
-	}
-	if !v.Access.Program(program).Read {
-		return &APIError{Status: 403, Message: "User has no access to program: " + program}
-	}
-	return nil
-}
-
-// Search runs a collection query (spec 10.1).
-func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *APIError) {
-	if err := checkParams(collection, q); err != nil {
-		return nil, err
-	}
-	pg, size, paged, totals, perr := paging(q)
-	if perr != nil {
-		return nil, perr
-	}
-	program := q.Get("program")
-	if err := ix.programCheck(v, program); err != nil {
-		return nil, err
-	}
-	fields := FieldsOrDefault(collection, q.Get("fields"))
-	var objs []*Obj
-	var render func(*Obj) M
-	var err *APIError
-	switch collection {
-	case "trackedEntities":
-		objs, err = ix.searchTEs(v, q, program)
-		render = func(o *Obj) M { return ix.RenderTE(v, o, fields, program) }
-	case "enrollments":
-		objs, err = ix.searchEnrollments(v, q, program)
-		render = func(o *Obj) M { return ix.RenderEnrollment(v, o, fields) }
-	case "events":
-		objs, err = ix.searchEvents(v, q, program)
-		render = func(o *Obj) M { return ix.RenderEvent(v, o, fields) }
-	case "relationships":
-		objs, err = ix.searchRelationships(v, q)
-		render = func(o *Obj) M { return clone(o.Data) }
-	default:
-		return nil, NeedsConnection(collection)
-	}
-	if err != nil {
-		return nil, err
-	}
-	res := &Result{Collection: collection, Total: len(objs), Page: pg, PageSize: size, Paging: paged, TotalPages: totals,
-		Items: []M{}}
-	for _, o := range page(objs, pg, size, paged) {
-		res.Items = append(res.Items, render(o))
-	}
-	return res, nil
-}
-
-func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) ([]*Obj, *APIError) {
-	if err := checkOrgUnits(v, q, len(listParam(q, "trackedEntities", "trackedEntity")) == 0); err != nil {
-		return nil, err
-	}
-	tet := q.Get("trackedEntityType")
-	if program == "" && tet == "" && len(listParam(q, "trackedEntities", "trackedEntity")) == 0 {
-		return nil, badRequest("Either `program`, `trackedEntityType` or `trackedEntities` should be specified")
-	}
-	filters, err := parseFilters(q)
-	if err != nil {
-		return nil, err
-	}
-	uids := listParam(q, "trackedEntities", "trackedEntity")
-	status := cmp.Or(q.Get("enrollmentStatus"), q.Get("programStatus"))
-	if status != "" && program == "" {
-		return nil, badRequest("`program` must be defined when `enrollmentStatus` is specified")
-	}
-	upd := timeFilter{"updatedAt", "updatedAfter", "updatedBefore"}
-	enrolled := timeFilter{"enrolledAt", "enrollmentEnrolledAfter", "enrollmentEnrolledBefore"}
-	var out []*Obj
-	for _, o := range ix.visible(v, ix.All(store.KindTrackedEntity)) {
-		if tet != "" && o.TET != tet {
-			continue
-		}
-		if len(uids) > 0 && !slices.Contains(uids, o.UID) {
-			continue
-		}
-		if ok, err := ix.updatedMatch(v, o, upd, q); err != nil {
-			return nil, err
-		} else if !ok {
-			continue
-		}
-		if program != "" {
-			found := false
-			for _, e := range ix.visible(v, ix.EnrollmentsOf(o.UID)) {
-				if e.Program != program || (status != "" && Str(e.Data, "status") != status) {
-					continue
-				}
-				ok, err := enrolled.match(e.Data, q)
-				if err != nil {
-					return nil, err
-				}
-				if ok {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
-		}
-		if len(filters) > 0 {
-			vals := attrValues(M{"attributes": filterAttributes(v, o.TET, o.Data["attributes"])}, "attributes", "attribute")
-			match := true
-			for _, f := range filters {
-				if !f.match(vals) {
-					match = false
-					break
-				}
-			}
-			if !match {
-				continue
-			}
-		}
-		out = append(out, o)
-	}
-	sortObjs(out, q.Get("order"), func(o *Obj, attr string) string {
-		return attrValues(o.Data, "attributes", "attribute")[attr]
-	})
-	return out, nil
-}
-
-func (ix *Index) searchEnrollments(v *Viewer, q url.Values, program string) ([]*Obj, *APIError) {
-	te := q.Get("trackedEntity")
-	uids := listParam(q, "enrollments")
-	if err := checkOrgUnits(v, q, te == "" && len(uids) == 0); err != nil {
-		return nil, err
-	}
-	status := cmp.Or(q.Get("status"), q.Get("enrollmentStatus"), q.Get("programStatus"))
-	tfs := []timeFilter{{"updatedAt", "updatedAfter", "updatedBefore"}, {"enrolledAt", "enrolledAfter", "enrolledBefore"}}
-	var out []*Obj
-	for _, o := range ix.visible(v, ix.All(store.KindEnrollment)) {
-		if (program != "" && o.Program != program) || (te != "" && o.TE != te) ||
-			(len(uids) > 0 && !slices.Contains(uids, o.UID)) || (status != "" && Str(o.Data, "status") != status) {
-			continue
-		}
-		ok, err := matchAll(o.Data, q, tfs[1:])
-		if ok && err == nil {
-			ok, err = ix.updatedMatch(v, o, tfs[0], q)
-		}
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			out = append(out, o)
-		}
-	}
-	sortObjs(out, q.Get("order"), nil)
-	return out, nil
-}
-
-// updatedMatch applies updatedAfter/updatedBefore. Objects written on the hub always
-// match: their timestamps come from the hub's clock, while clients compare against a
-// watermark from central's clock, and re-sending them is harmless. A tracked entity
-// counts as updated when anything under it was (central bumps it too).
-func (ix *Index) updatedMatch(v *Viewer, o *Obj, tf timeFilter, q url.Values) (bool, *APIError) {
-	if q.Get(tf.after) == "" && q.Get(tf.before) == "" {
-		return true, nil
-	}
-	objs := []*Obj{o}
-	if o.Kind == store.KindTrackedEntity {
-		objs = append(objs, ix.visible(v, ix.EnrollmentsOf(o.UID))...)
-		objs = append(objs, ix.visible(v, ix.EventsOfTE(o.UID))...)
-	}
-	newest := M{}
-	for _, x := range objs {
-		if x.Origin == store.OriginLocal {
-			return true, nil
-		}
-		if u := Str(x.Data, "updatedAt"); u > Str(newest, "updatedAt") {
-			newest = M{"updatedAt": u}
-		}
-	}
-	return tf.match(newest, q)
-}
-
-func matchAll(d M, q url.Values, tfs []timeFilter) (bool, *APIError) {
-	for _, tf := range tfs {
-		ok, err := tf.match(d, q)
-		if err != nil || !ok {
-			return false, err
-		}
-	}
-	return true, nil
-}
-
-func (ix *Index) searchEvents(v *Viewer, q url.Values, program string) ([]*Obj, *APIError) {
-	te := q.Get("trackedEntity")
-	enrs := listParam(q, "enrollment", "enrollments")
-	uids := listParam(q, "events", "event")
-	if err := checkOrgUnits(v, q, te == "" && len(enrs) == 0 && len(uids) == 0); err != nil {
-		return nil, err
-	}
-	stage := q.Get("programStage")
-	if stage != "" && !v.Access.Stage(stage).Read {
-		return nil, &APIError{Status: 403, Code: "E1006", Message: "User has no access to program stage: " + stage}
-	}
-	status := q.Get("status")
-	enrStatus := cmp.Or(q.Get("enrollmentStatus"), q.Get("programStatus"))
-	filters, err := parseFilters(q)
-	if err != nil {
-		return nil, err
-	}
-	tfs := []timeFilter{{"updatedAt", "updatedAfter", "updatedBefore"}, {"occurredAt", "occurredAfter", "occurredBefore"},
-		{"scheduledAt", "scheduledAfter", "scheduledBefore"}}
-	var out []*Obj
-	for _, o := range ix.visible(v, ix.All(store.KindEvent)) {
-		if (program != "" && o.Program != program) || (stage != "" && o.Stage != stage) || (te != "" && o.TE != te) ||
-			(len(enrs) > 0 && !slices.Contains(enrs, o.Enrollment)) || (len(uids) > 0 && !slices.Contains(uids, o.UID)) ||
-			(status != "" && Str(o.Data, "status") != status) {
-			continue
-		}
-		if enrStatus != "" {
-			if e := ix.Get(o.Enrollment); e == nil || Str(e.Data, "status") != enrStatus {
-				continue
-			}
-		}
-		ok, err := matchAll(o.Data, q, tfs[1:])
-		if ok && err == nil {
-			ok, err = ix.updatedMatch(v, o, tfs[0], q)
-		}
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			continue
-		}
-		if len(filters) > 0 {
-			vals := attrValues(o.Data, "dataValues", "dataElement")
-			match := true
-			for _, f := range filters {
-				if !f.match(vals) {
-					match = false
-					break
-				}
-			}
-			if !match {
-				continue
-			}
-		}
-		out = append(out, o)
-	}
-	sortObjs(out, q.Get("order"), func(o *Obj, de string) string {
-		return attrValues(o.Data, "dataValues", "dataElement")[de]
-	})
-	return out, nil
-}
-
-func (ix *Index) searchRelationships(v *Viewer, q url.Values) ([]*Obj, *APIError) {
-	var uid string
-	n := 0
-	for _, k := range []string{"trackedEntity", "enrollment", "event"} {
-		if s := q.Get(k); s != "" {
-			uid = s
-			n++
-		}
-	}
-	if n != 1 {
-		return nil, badRequest("Only one parameter of 'trackedEntity', 'enrollment' or 'event' must be specified. Got: %d", n)
-	}
-	if o := ix.Get(uid); !ix.CanRead(v, o) {
-		return nil, NeedsConnection(uid + " is not available offline")
-	}
-	out := ix.visible(v, ix.RelationshipsOf(uid))
-	sortObjs(out, q.Get("order"), nil)
-	return out, nil
 }
 
 // GetOne renders a single object for /api/tracker/<collection>/<uid>.
@@ -706,18 +485,24 @@ func (ix *Index) GetOne(v *Viewer, collection, uid string, q url.Values) (M, *AP
 	if q.Get("fields") == "" {
 		fields = FieldsOrDefault(collection, "")
 	}
+	ix.prefetch(v, []*Obj{o}, fields)
 	switch kind {
 	case store.KindTrackedEntity:
 		if p := q.Get("program"); p != "" {
 			if err := ix.programCheck(v, p); err != nil {
 				return nil, err
 			}
+			// Owned by another facility in this program: central decides whether this
+			// user may open it (ownership, temporary ownership), so offline it may not.
+			if owner := ProgramOwner(o, p); (owner != "" && owner != v.Facility) || ix.ownedElsewhere(o.UID, p, v.Facility) {
+				return nil, NeedsConnection("tracked entity " + uid + " is owned by another org unit in program " + p)
+			}
 		}
-		return ix.RenderTE(v, o, fields, q.Get("program")), nil
+		return fields.Project(ix.RenderTE(v, o, fields, q.Get("program"))).(M), nil
 	case store.KindEnrollment:
-		return ix.RenderEnrollment(v, o, fields), nil
+		return fields.Project(ix.RenderEnrollment(v, o, fields)).(M), nil
 	case store.KindEvent:
-		return ix.RenderEvent(v, o, fields), nil
+		return fields.Project(ix.RenderEvent(v, o, fields)).(M), nil
 	}
-	return clone(o.Data), nil
+	return shallow(ix.fullFor(v, o)), nil
 }

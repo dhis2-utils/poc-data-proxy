@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"slices"
 
 	"github.com/dhis2/facility-hub/internal/store"
@@ -21,22 +22,58 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 		return nil, nil
 	}
 	items := tracker.Flatten(payload)
+	// Everything the batch refers to, read in one go, with the payloads merges need.
+	var refs []string
+	for _, it := range items {
+		refs = append(refs, it.UID, it.TE, it.Enrollment, it.From.UID, it.To.UID)
+	}
+	known := h.Index.GetMany(slices.DeleteFunc(refs, func(u string) bool { return u == "" }))
+	get := func(uid string) *tracker.Obj { return known[uid] }
+	var olds []*tracker.Obj
+	for _, it := range items {
+		if o := known[it.UID]; o != nil {
+			olds = append(olds, o)
+		}
+	}
+	fulls := h.Index.FullMany(olds)
 	batch := map[string]*tracker.Obj{}
 	owned := func(uid string) bool {
 		if o := batch[uid]; o != nil {
 			return true
 		}
-		o := h.Index.Get(uid)
+		o := get(uid)
 		return o != nil && o.OwnerOrgUnit == facility
 	}
+	// Program owners as central reports them in this answer (programOwners), else as
+	// last known. An enrollment owned elsewhere is not the facility's, even when the
+	// person was registered or enrolled here: a user may have read it online through
+	// temporary ownership ("break the glass"), which must not outlive the connection.
+	owners := map[string]string{} // te|program -> org unit
+	for _, it := range items {
+		if it.Kind == store.KindTrackedEntity {
+			for _, po := range listOf(it.Data["programOwners"]) {
+				owners[it.UID+"|"+tracker.Str(po, "program")] = tracker.Str(po, "orgUnit")
+			}
+		}
+	}
+	ownerOf := func(te, program string) string {
+		if ou, ok := owners[te+"|"+program]; ok {
+			return ou
+		}
+		return tracker.ProgramOwner(get(te), program)
+	}
+	skipped := map[string]bool{}
 	var objs []*tracker.Obj
 	for _, it := range items {
 		if !tracker.ValidUID(it.UID) {
 			continue
 		}
-		old := h.Index.Get(it.UID)
+		old := get(it.UID)
 		o := &tracker.Obj{UID: it.UID, Kind: it.Kind, Origin: store.OriginCentral, SyncState: store.SyncSynced,
 			OwnerOrgUnit: facility}
+		if old != nil {
+			o.Slot = old.Slot
+		}
 		ou := tracker.Str(it.Data, "orgUnit")
 		switch it.Kind {
 		case store.KindTrackedEntity:
@@ -52,7 +89,12 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 			}
 		case store.KindEnrollment:
 			o.TE, o.Program = it.TE, tracker.Str(it.Data, "program")
-			if !(forceFacility || ou == facility || owned(it.TE)) {
+			if forceFacility {
+				break
+			}
+			if owner := ownerOf(it.TE, o.Program); (owner != "" && owner != facility) ||
+				(owner == "" && !(ou == facility || owned(it.TE))) {
+				skipped[it.UID] = true
 				continue
 			}
 		case store.KindEvent:
@@ -61,11 +103,15 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 			if o.TE == "" {
 				if e := batch[o.Enrollment]; e != nil {
 					o.TE = e.TE
-				} else if e := h.Index.Get(o.Enrollment); e != nil {
+				} else if e := get(o.Enrollment); e != nil {
 					o.TE = e.TE
 				}
 			}
-			if !(forceFacility || ou == facility || owned(it.Enrollment)) {
+			if forceFacility {
+				break
+			}
+			if e := get(it.Enrollment); skipped[it.Enrollment] || (e != nil && e.OwnerOrgUnit != facility) ||
+				!(ou == facility || owned(it.Enrollment)) {
 				continue
 			}
 		case store.KindRelationship:
@@ -76,11 +122,15 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 		if old != nil {
 			if old.SyncState == store.SyncPending || old.SyncState == store.SyncRejected {
 				// Local version wins until pushed; only record that central showed it.
-				objs = append(objs, &tracker.Obj{UID: old.UID, Kind: "visibility-only"})
+				objs = append(objs, &tracker.Obj{UID: old.UID, Kind: "visibility-only", Slot: old.Slot})
 				batch[it.UID] = old
 				continue
 			}
-			o.Data = tracker.Merge(old.Data, it.Data)
+			full := fulls[old.UID]
+			if full == nil {
+				full = h.Index.Full(old)
+			}
+			o.Data = tracker.Merge(full, it.Data)
 			if o.TET == "" {
 				o.TET = old.TET
 			}
@@ -91,7 +141,14 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 		batch[it.UID] = o
 		objs = append(objs, o)
 	}
-	var uids []string
+	changes := map[uint32]bool{}
+	for _, o := range objs {
+		if o.Slot == 0 {
+			o.Slot = h.Index.SlotFor(o.UID)
+		}
+		changes[o.Slot] = true
+	}
+	vc := h.Index.PrepareVisibility(userID, changes)
 	err := h.Store.Tx(context.Background(), func(tx *sql.Tx) error {
 		for _, o := range objs {
 			if o.Kind != "visibility-only" {
@@ -99,20 +156,18 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 					return err
 				}
 			}
-			if err := h.Store.AddVisibility(tx, o.UID, userID); err != nil {
-				return err
-			}
 		}
-		return nil
+		return vc.Write(h.Store, tx)
 	})
+	vc.Done(err == nil)
 	if err != nil {
 		return nil, err
 	}
+	var uids []string
 	for _, o := range objs {
 		if o.Kind != "visibility-only" {
 			h.Index.Put(o)
 		}
-		h.Index.SetVisible(o.UID, userID, true)
 		uids = append(uids, o.UID)
 	}
 	return uids, nil
@@ -148,6 +203,9 @@ func (h *Hub) PersistImport(userID int64, out *tracker.ImportOutcome) (int64, er
 		}
 		dep := h.Store.LatestPendingSeqFor(tx, refs)
 		for _, o := range out.Accepted {
+			if o.Slot == 0 {
+				o.Slot = h.Index.SlotFor(o.UID)
+			}
 			if err := h.Store.PutObject(tx, o.ToStore()); err != nil {
 				return err
 			}
@@ -165,23 +223,78 @@ func (h *Hub) PersistImport(userID int64, out *tracker.ImportOutcome) (int64, er
 }
 
 // RemoveVisibilityExcept drops userID from central-origin objects of the given
-// programs that a full pull did not return (spec 11.3).
-func (h *Hub) RemoveVisibilityExcept(userID int64, programs []string, seen map[string]bool) int {
-	n := 0
-	for _, kind := range []string{store.KindTrackedEntity, store.KindEnrollment, store.KindEvent, store.KindRelationship} {
-		for _, o := range h.Index.All(kind) {
-			if o.Origin != store.OriginCentral || !o.Visible[userID] || seen[o.UID] {
-				continue
-			}
-			if o.Program != "" && !slices.Contains(programs, o.Program) {
-				continue
-			}
-			h.Store.RemoveVisibility(h.Store.DB(), o.UID, userID)
-			h.Index.SetVisible(o.UID, userID, false)
-			n++
+// programs (and objects without one) that a full pull did not list (spec 11.3). It
+// starts from the user's bitmap in memory, so only the objects it may remove are
+// read: scanning the store for each user's full pull read the whole data file.
+func (h *Hub) RemoveVisibilityExcept(userID int64, programs []string, seen map[uint32]bool) int {
+	var cands []int64
+	for _, slot := range h.Index.VisibleSlots(userID) {
+		if !seen[slot] {
+			cands = append(cands, int64(slot))
 		}
 	}
-	return n
+	if len(cands) == 0 {
+		return 0
+	}
+	objs, err := h.Store.SlotOrigins(cands)
+	if err != nil {
+		slog.Warn("removing visibility", "user", userID, "err", err)
+		return 0
+	}
+	changes := map[uint32]bool{}
+	for slot, o := range objs {
+		if o[0] != store.OriginCentral || (o[1] != "" && !slices.Contains(programs, o[1])) {
+			continue
+		}
+		changes[uint32(slot)] = false
+	}
+	if len(changes) == 0 {
+		return 0
+	}
+	if err := h.setVisibility(userID, changes); err != nil {
+		slog.Warn("removing visibility", "user", userID, "err", err)
+		return 0
+	}
+	return len(changes)
+}
+
+// MarkVisible records that central showed objects already held to the user (the
+// ID-list pull, spec 11.3), by their slots.
+func (h *Hub) MarkVisible(userID int64, slots []uint32) error {
+	changes := map[uint32]bool{}
+	for _, s := range slots {
+		if s != 0 && !h.Index.VisibleTo(&tracker.Obj{Slot: s}, userID) {
+			changes[s] = true
+		}
+	}
+	if len(changes) == 0 {
+		return nil
+	}
+	return h.setVisibility(userID, changes)
+}
+
+// RecordScopes notes that these tracked entities were fetched in full for scope.
+func (h *Hub) RecordScopes(tes []string, scope string) error {
+	err := h.Store.Tx(context.Background(), func(tx *sql.Tx) error {
+		for _, te := range tes {
+			if err := h.Store.AddTEScope(tx, te, scope); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err == nil {
+		h.Index.AddScopes(tes, scope)
+	}
+	return err
+}
+
+// setVisibility stores and applies one user's visibility changes.
+func (h *Hub) setVisibility(userID int64, changes map[uint32]bool) error {
+	vc := h.Index.PrepareVisibility(userID, changes)
+	err := h.Store.Tx(context.Background(), func(tx *sql.Tx) error { return vc.Write(h.Store, tx) })
+	vc.Done(err == nil)
+	return err
 }
 
 // ShareByRules adds every user who may read an object under the local-object rules
@@ -192,22 +305,79 @@ func (h *Hub) ShareByRules(uids []string) {
 	if err != nil {
 		return
 	}
-	for _, uid := range uids {
-		o := h.Index.Get(uid)
-		if o == nil {
+	for _, u := range users {
+		v := h.Viewer(u.ID)
+		if !v.Access.InFacility(h.FacilityPath()) {
 			continue
 		}
-		probe := *o
-		probe.Origin = store.OriginLocal
-		for _, u := range users {
-			if o.Visible[u.ID] {
+		changes := map[uint32]bool{}
+		for _, uid := range uids {
+			o := h.Index.Get(uid)
+			if o == nil || o.Slot == 0 || h.Index.VisibleTo(o, u.ID) {
 				continue
 			}
-			v := h.Viewer(u.ID)
-			if v.Access.InFacility(v.Facility) && h.Index.CanRead(v, &probe) {
-				h.Store.AddVisibility(h.Store.DB(), uid, u.ID)
-				h.Index.SetVisible(uid, u.ID, true)
+			probe := *o
+			probe.Origin = store.OriginLocal
+			if h.Index.CanRead(v, &probe) {
+				changes[o.Slot] = true
+			}
+		}
+		if len(changes) > 0 {
+			if err := h.setVisibility(u.ID, changes); err != nil {
+				slog.Warn("sharing by rules", "user", u.Username, "err", err)
 			}
 		}
 	}
+}
+
+// ApplyTransfer records that the facility no longer owns the tracked entity in the
+// program (a transfer out, through the hub or found by the ownership check): the
+// enrollments and their events are marked as owned by owner ("" when unknown), which
+// hides them from everyone offline, and every user's visibility of them is cleared.
+func (h *Hub) ApplyTransfer(teUID, program, owner string) error {
+	if owner == h.Facility() {
+		return nil // a transfer in: the next pull brings it
+	}
+	var objs []*tracker.Obj
+	if te := h.Index.Get(teUID); te != nil && owner != "" {
+		objs = append(objs, te.WithData(tracker.SetProgramOwner(h.Index.Full(te), teUID, program, owner)))
+	}
+	slots := map[uint32]bool{}
+	for _, e := range h.Index.EnrollmentsOf(teUID) {
+		if e.Program != program {
+			continue
+		}
+		related := append([]*tracker.Obj{e}, h.Index.EventsOf(e.UID)...)
+		for _, x := range related {
+			n := x.WithData(h.Index.Full(x))
+			n.OwnerOrgUnit = owner
+			objs = append(objs, n)
+			slots[x.Slot] = false
+		}
+	}
+	err := h.Store.Tx(context.Background(), func(tx *sql.Tx) error {
+		for _, o := range objs {
+			if err := h.Store.PutObject(tx, o.ToStore()); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, o := range objs {
+		h.Index.Put(o)
+	}
+	users, err := h.Store.Users()
+	if err != nil {
+		return err
+	}
+	for _, u := range users {
+		if err := h.setVisibility(u.ID, slots); err != nil {
+			return err
+		}
+	}
+	slog.Info("ownership moved away", "trackedEntity", teUID, "program", program, "owner", owner, "objects", len(objs))
+	return nil
 }

@@ -204,6 +204,7 @@ type Monitor struct {
 	failures  int
 	listeners []func(online bool)
 	Interval  time.Duration
+	lastWhy   time.Time // last "still unreachable" log
 	Timeout   time.Duration
 	// Forced, when set, pins the state (tests and the "cut the uplink" demo switch).
 	forced *bool
@@ -307,14 +308,29 @@ func isCentral(baseURL string, resp *http.Response) bool {
 
 func (m *Monitor) Probe(ctx context.Context, baseURL string) bool {
 	ok := false
+	var why string
 	if baseURL != "" {
 		ctx, cancel := context.WithTimeout(ctx, m.Timeout)
 		defer cancel()
+		start := time.Now()
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/system/ping", nil)
 		if resp, err := probeClient.Do(req); err == nil {
 			ok = isCentral(baseURL, resp)
 			resp.Body.Close()
+			why = fmt.Sprintf("status %d after %s", resp.StatusCode, time.Since(start).Round(time.Millisecond))
+		} else {
+			why = fmt.Sprintf("%v after %s", err, time.Since(start).Round(time.Millisecond))
 		}
+	}
+	// While offline, say once a minute why probes fail: a reconnect that took minutes
+	// in the load test left nothing in the log to explain it.
+	m.mu.Lock()
+	if !ok && !m.online && time.Since(m.lastWhy) > time.Minute {
+		m.lastWhy = time.Now()
+		m.mu.Unlock()
+		slog.Info("central still unreachable", "probe", why)
+	} else {
+		m.mu.Unlock()
 	}
 	m.mu.Lock()
 	if ok {

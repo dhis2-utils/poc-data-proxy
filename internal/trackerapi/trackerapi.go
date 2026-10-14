@@ -109,10 +109,16 @@ func (a *API) learn(sess *core.Session, r *http.Request, body []byte, res *proxy
 		return
 	}
 	acc := a.H.Access(sess.UserID)
-	if !acc.InFacility(a.H.Facility()) {
+	if !acc.InFacility(a.H.FacilityPath()) {
 		return
 	}
 	switch {
+	case r.Method == http.MethodPut && res.Status == http.StatusOK && strings.HasSuffix(r.URL.Path, "/tracker/ownership/transfer"):
+		// A transfer out through the hub takes effect offline at once.
+		q := r.URL.Query()
+		if err := a.H.ApplyTransfer(q.Get("trackedEntity"), q.Get("program"), q.Get("ou")); err != nil {
+			slog.Warn("apply ownership transfer", "err", err)
+		}
 	case r.Method == http.MethodGet && res.Status == http.StatusOK && !strings.HasPrefix(r.URL.Path, "/api/tracker/jobs/"):
 		var payload tracker.M
 		if json.Unmarshal(res.Body, &payload) != nil {
@@ -249,7 +255,7 @@ func (a *API) usable(w http.ResponseWriter, sess *core.Session) bool {
 		a.H.WebError(w, http.StatusForbidden, "needs connection: user is not assigned to the hub facility", "E1000")
 	case a.H.Facility() == "":
 		a.H.NeedsConnection(w, "hub is not set up")
-	case !a.H.Access(sess.UserID).InFacility(a.H.Facility()):
+	case !a.H.Access(sess.UserID).InFacility(a.H.FacilityPath()):
 		a.H.WebError(w, http.StatusForbidden, "needs connection: user is not assigned to the hub facility", "E1000")
 	default:
 		return true
@@ -345,7 +351,7 @@ func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Ses
 	u, _ := a.H.Store.UserByID(sess.UserID)
 	rt := a.H.Runtime()
 	im := &tracker.Importer{Ix: a.H.Index, V: v, Username: u.Username, UserUID: u.UserUID, DefaultAOC: rt.DefaultAOC,
-		Strategy: strategy, Now: time.Now(), AtomicAll: q.Get("atomicMode") != "OBJECT"}
+		Strategy: strategy, Now: a.H.CentralNow(), AtomicAll: q.Get("atomicMode") != "OBJECT"}
 	out := im.Import(payload)
 	if _, err := a.H.PersistImport(sess.UserID, out); err != nil {
 		slog.Error("persist offline import", "err", err)
@@ -373,7 +379,7 @@ func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Ses
 		}
 	}
 	a.jobs[id] = &job{userID: sess.UserID, status: status, report: report, stats: total, state: st,
-		at: tracker.DHIS2Time(time.Now()), made: time.Now()}
+		at: a.H.CentralTime(time.Now()), made: time.Now()}
 	a.jobsMu.Unlock()
 	core.WriteJSON(w, 200, a.H.API().AsyncAccepted(id, a.selfBase(r)+"/tracker/jobs/"+id))
 }
@@ -443,7 +449,7 @@ func (a *API) ServeGenerated(w http.ResponseWriter, r *http.Request) {
 		a.H.UpgradingError(w) // values handed out now would be handed out again after the swap
 		return
 	}
-	vals, err := a.H.Store.TakeReservedValues(attr, n, tracker.DHIS2Time(time.Now()))
+	vals, err := a.H.Store.TakeReservedValues(attr, n, a.H.CentralTime(time.Now()))
 	a.H.EndLocalWrite()
 	if err != nil || len(vals) == 0 {
 		a.H.NeedsConnection(w, "no reserved values left for attribute "+attr)

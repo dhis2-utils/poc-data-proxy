@@ -1,6 +1,6 @@
 # Findings
 
-Facility hub POC. Results recorded against DHIS2 **2.42.6** (Sierra Leone demo database) on 2026-10-07. The test setup (users, groups, sharing, UIDs) is in [`testdata/2.42/SETUP.md`](testdata/2.42/SETUP.md). The recorded request/response pairs are in [`testdata/2.42/`](testdata/2.42/).
+What building the facility hub POC taught us about DHIS2, the Capture apps and the [spec](SPEC-facility-hub-poc.md): answers to its open questions, where it was wrong, and what the test framework found. The first rounds were recorded against DHIS2 **2.42.6** (Sierra Leone demo database) on 2026-10-07; later items come from the test framework (docs/TESTING.md) on 2.42. The first round's test setup (users, groups, sharing, UIDs) is in [`testdata/2.42/SETUP.md`](testdata/2.42/SETUP.md). The recorded request/response pairs are in [`testdata/2.42/`](testdata/2.42/).
 
 ## Acceptance scenarios (spec 13.3)
 
@@ -87,8 +87,8 @@ Tested with Capture **3.4.2** (Android SDK 1.14.2).
 - **User-installed CAs are not trusted.** The trust anchors are `@raw/isrgrootx1`, `@raw/isrgrootx2` and `system`, with no `user` entry. On Android 7.0 and below, `OkHttpClientFactory.kt` installs a trust manager that trusts only the two ISRG roots.
 - **Consequences:**
   - A self-signed or private-CA hub certificate works only if the CA is in the **system** store (rooted or MDM-provisioned devices) or the app is rebuilt with `<certificates src="user"/>`.
-  - A **Let's Encrypt certificate** for a public name per hub (ACME DNS-01) works on stock devices. This favours option 1 under "Long-term TLS".
-  - For the POC, plain HTTP on the facility LAN is what works with the stock app.
+  - A **Let's Encrypt certificate** for a public name per hub (ACME DNS-01) works on stock devices.
+  - The POC's tests used plain HTTP on the facility LAN, which the stock app accepts. Deployments must not (DEPLOYMENT.md, "Reaching the hub securely", which also has the options, including the app pinning the hub's key).
 
 ### Does Android behave well when its server is a hub that is sometimes cut off from central?
 
@@ -111,15 +111,7 @@ Not solved; options observed while building:
 
 ### Key escrow for the data key
 
-Not solved. If every key-slot holder's password changes while the hub is offline or locked, the data key (DK) is lost together with any unsynced data. A related gap appeared:
-
-- After a reboot, the store stays locked until a user with a key slot logs in. A user who has never logged in on this hub, or whose password changed on central since their last login, cannot be registered until someone else unlocks the store. Their online login still works as a plain pass-through.
-
-Options:
-
-1. **Hub key pair escrow.** Wrap DK to a country-level escrow public key and store the wrapped DK in the `facility-hub-registry` entry. The hub already creates an ed25519 key pair at setup; escrow would need an X25519/age-style recipient key.
-2. **Recovery code.** Print a one-time recovery code at setup and use it as an extra key slot.
-3. **Hub token slot.** Wrap DK under the hub-level token. This only helps while central is reachable, since the token itself must be verified.
+Not solved. If every key-slot holder's password changes while the hub is offline or locked, the data key is lost together with any unsynced data; and after a reboot the store stays locked until a user with a key slot logs in. The options (a per-hub recovery key held on central, an unlock-and-sync role, a key available at boot) are in [RECOVERY.md](RECOVERY.md); a one-time recovery code printed at setup, used as an extra key slot, is another.
 
 ### Changing the central server URL
 
@@ -150,10 +142,7 @@ Offline, a user whose own cache misses a metadata URL is served another user's c
 
 ### Long-term TLS
 
-POC: at first boot the hub creates a CA limited by name constraints to its own names and private address ranges, issues a server certificate for `hub.local`, the host name, `localhost` and the LAN IPs, and discards the CA key. Test devices install `ca.crt` (served at `/hub/ca.crt`). An earlier version made the server certificate itself a CA, so anyone reading its key could have minted certificates for any site. Options for production:
-
-1. **Public name per hub.** For example `<hubid>.hubs.example.org`, with an ACME DNS-01 certificate. The hub needs DNS API credentials or a central issuing service, and local DNS must resolve the name to the LAN IP; split-horizon DNS or a public record pointing to the private IP both work.
-2. **Private CA.** A country CA trusted by managed devices through MDM. This needs Android network-security-config support for user CAs (see the Android finding).
+What the POC does: at first boot the hub creates a CA limited by name constraints to its own names and private address ranges, issues a server certificate for `hub.local`, the host name, `localhost` and the LAN IPs, and discards the CA key; devices install `ca.crt` (served at `/hub/ca.crt`). An earlier version made the server certificate itself a CA, so anyone reading its key could have minted certificates for any site. The options for production, with the requirements they must meet, are in DEPLOYMENT.md, "Reaching the hub securely".
 
 ### Client-side fallback in app-runtime
 
@@ -209,11 +198,11 @@ Either way, **protect the namespaces**. By default any user can read and write a
 17. **Generated values come in pairs on 2.42.6.** Central's `generateAndReserve` for the `RANDOM(##########)` pattern returns values in related pairs: `1916135085, 0916135085, 9066229890, 0066229890, …` (checked directly against central). Both are reserved on central, so this is not a duplicate. It does mean half the "random" IDs are predictable from the other half, which is worth reporting to DHIS2 core.
 18. **Dates must be normalised.** Clients post `"occurredAt":"2026-10-07"`, and central stores and returns `"2026-10-07T00:00:00.000"`. The hub first returned dates as posted. The Android SDK failed with `ParseException: Unparseable date: "2026-10-07"`, silently skipped the object, and still reported the sync as successful. The hub now normalises the date fields of offline writes to central's form.
 19. **Online writes and visibility.** The hub records objects that users write while online. Spec 8.2 gives central-origin objects visibility only through each user's own pull, so a patient registered on a tablet seconds before the uplink went down stayed invisible to the web user until their next pull. Objects learned from online writes, including Android's async job reports, are now shared by the same rules as local objects. The next pull then replaces this with central's view.
-20. **Event programs.** Android also downloads event programs (`WITHOUT_REGISTRATION`) assigned to the facility. The hub caches only tracker programs (spec 6.2 step 6) and answers 503 for these offline. The app tolerated it.
+20. **Event programs.** Android also downloads event programs (`WITHOUT_REGISTRATION`) assigned to the facility. The hub caches only tracker programs (spec 6.2 step 6) and answers 503 for these offline. The app tolerated it, but a facility that captures event programs loses them offline (Sierra Leone's "XX MAL RDT - Case Registration", for instance). Whether the hub should hold them is a scope decision, on hold.
 21. **`/api/me` offline.** Spec 7.1 says `GET /api/me` is cached from the last online login. Capture asks for many field variants (`me.json?fields=authorities`, `userCredentials[userRoles]`, `settings[keyUiLocale]`). The hub stores the user's full `/api/me` at online login and applies the top-level field selection itself, matching central's answers: unknown fields are dropped, so `userCredentials[userRoles]` gives `{}` on 2.42.
 22. **SQLite library.** The spec names `modernc.org/sqlite`. This build environment could reach GitHub but not `proxy.golang.org` or GitLab, where modernc's dependencies live, so the hub uses `github.com/ncruces/go-sqlite3`: also pure Go and no cgo, with SQLite compiled to Go. Only `internal/store` touches the driver (`database/sql` with driver name `sqlite3`). Switching back to modernc means changing the import and the driver name.
 
-23. **Spec 9.2's plaintext index was a confidentiality flaw.** "Index columns hold UIDs and timestamps only, no patient data" is not true in effect. Program, stage and owner org unit per tracked entity, with dates, say who is enrolled in which program (HIV, TB, ANC) at which facility and when they visited. UIDs are the same as central's and appear on printed records, URLs and exports, so they identify patients. Visibility and outbox rows say which staff see or entered whom, and SQLite keeps deleted rows in free pages. The store is now a plaintext key file (hub ID, mode, central URL, usernames and key slots) and a data file encrypted page by page with AES-256-XTS (WAL and temp files too), under a key derived from the data key; rows keep their AES-GCM sealing. Since the index is rebuilt in memory on unlock (spec 9.3), this costs nothing in queries. A store from before is migrated on its first unlock. What still leaks from a stolen disk: usernames, the number and size of pages, and the fact that it is a hub.
+23. **Spec 9.2's plaintext index was a confidentiality flaw.** "Index columns hold UIDs and timestamps only, no patient data" is not true in effect. Program, stage and owner org unit per tracked entity, with dates, say who is enrolled in which program (HIV, TB, ANC) at which facility and when they visited. UIDs are the same as central's and appear on printed records, URLs and exports, so they identify patients. Visibility and outbox rows say which staff see or entered whom, and SQLite keeps deleted rows in free pages. The store is now a plaintext key file (hub ID, mode, central URL, usernames and key slots) and a data file encrypted page by page with AES-256-XTS (WAL and temp files too), under a key derived from the data key; rows keep their AES-GCM sealing. The query index lives in the same encrypted file (docs/PERFORMANCE.md), so its columns are encrypted at rest too. A store from before is migrated on its first unlock. What still leaks from a stolen disk: usernames, the number and size of pages, and the fact that it is a hub.
 24. **Spec 7.1/9.2 store a password hash next to the key slot.** Both are offline password verifiers for the user's central password. The hub keeps only the key slot, which verifies the password by opening, and removes slots unused for `key_slot_max_age`.
 25. **Spec 8.2's rule for local objects ignores search scope.** Program, stage and TET read plus facility ownership let a user with capture but not search scope at the facility see records central would hide. The hub also requires the facility in the user's effective search scope.
 26. **Spec 8.3 and revocation.** Fine-grained access cannot be re-checked offline, but a disabled account or a changed password can be detected cheaply while online. The hub re-checks cached Basic credentials with central every 5 minutes, ends all sessions of a user central refuses, and refuses that user offline until an online login succeeds. Sessions also expire (`session_idle`, `session_max`).
@@ -224,6 +213,46 @@ Either way, **protect the namespaces**. By default any user can read and write a
 30. **Spec 12a: "push the outbox until empty" can block upgrades for good.** An entry whose author central no longer accepts may never push. Since the store copy carries the outbox over, the upgrade proceeds when only such entries remain; they are reported as `stuckOutbox`.
 31. **Spec 7.1's password fallback.** Storing a user's central password whenever PAT creation fails was never needed on 2.42 and is now off by default (`password_fallback`). Without a PAT, the user can work online and read offline, but offline changes are refused: they could never be sent.
 32. **Who registers on the hub.** Spec 7.1 registers any user who logs in online. The hub now registers only users with the facility in their capture org units or in the setup user group; others are passed through to central.
+
+## Found by the test framework (docs/TESTING.md)
+
+The differential oracle compares the offline hub with central for every role and access-matrix user, on real 2.42.6 instances.
+
+**Hub bugs, fixed:**
+
+1. One user's refused pull (403 on a program whose tracked entity type they cannot read) aborted the pull for every user after them. A single odd sharing setup stopped the facility's sync.
+2. Nested field selections (`attributes[attribute,value]`) were ignored; the hub returned whole objects.
+3. A program-scoped answer carried enrollments of every program the user can read, and attributes of the user's other programs.
+4. People registered at the facility but enrolled in nothing the user can read were never pulled.
+5. DHIS2 2.42 shows the attributes of **every** tracked entity type on the server, plus the queried program's (`TrackedEntityAggregate.getAllowedAttributeUids`). The hub had assumed the entity's own type only; Sierra Leone's metadata showed the difference.
+6. At login, a user's access was fetched only with a stored token; a user without one got no access list.
+7. A user whose capture org unit is **above** the facility (a district, say) was treated as an outsider: the hub required the facility itself in the user's capture org units. On central the capture scope includes everything below, so the hub refused offline writes central accepts (the write oracle's OVER-REJECT on Laos, `hla_mx07`). The hub now matches the facility's path against the user's capture org units, like central, both when it registers a user at online login and in its offline access checks (`TestCaptureAboveFacility`).
+8. A second event in a **non-repeatable stage** was accepted offline and rejected on push with E1039 (LATE on Laos, 67 writes). The hub now fetches each stage's `repeatable` flag and refuses the second event offline, counting the events it holds and earlier ones in the same payload. It can still miss an event created on central that it has not pulled yet; central then rejects it on push, as before.
+
+9. **A user who lost read access to a program kept seeing its data offline.** The pull skipped programs the user can no longer read, so nothing removed what they had been shown before, and offline reads trusted that. Programs a user may not read are now settled empty on a full pull, a changed access list triggers a full pull at the next sync, and offline reads of central records also check the current access list (`TestAccessChangeOfOneUser`). Access changes that the access list does not show, such as category option sharing, take effect at the weekly full pull (known gaps, below).
+
+10. **A person transferred out of the facility stayed visible offline.** Incremental pulls list what the facility owns, so a transfer out never showed; only the full pull (then daily) removed it. On Laos (protected programs) central answered the nurse 404 while the hub showed the enrollment offline. The hub now checks ownership every `ownership_check_interval` (1 hour): it lists the facility-owned tracked entities per program (identifiers only) and reads each held one that is missing to learn its owner. A transfer made through the hub applies at once. Enrollments and events owned elsewhere are hidden from everyone, and opening the person in that program offline answers "needs connection" (`TestTransferOnCentral`, `TestTransferThroughHub`, `TestOwnershipLive`).
+11. **Breaking the glass online left the person visible offline.** The hub learned the online read as facility data, because the person was registered and enrolled at the facility, although another facility owned them in the protected program. Temporary ownership then outlived the connection and its own expiry. The hub now keeps what it learns from online reads only when the program owner (`programOwners`) is the facility, and refuses offline to open a person in a program that another org unit owns (`TestBreakTheGlass`, `TestOwnershipLive`).
+
+12. **An event from a user who may write the stage but only read the program was refused offline.** Central accepts it (tracker program events need stage write access, not program write access); the hub asked for both. Found by the write oracle on the synthetic profile.
+13. **Events in a program with an attribute category combination were accepted offline and rejected on push** (E1055: such programs need a non-default attribute option combo, which the hub does not support offline). The hub now fetches each program's category combination and answers "needs connection" at once.
+14. **Records created offline were stamped in UTC; central writes times in its own time zone.** DHIS2 gives and expects `createdAt` and `updatedAt` without an offset, in the server's zone (`serverTimeZoneId`). On a server on East Africa Time, a person registered offline looked three hours old until synced, and reserved values' expiry dates were compared three hours off. The hub now reads the zone at each sync and stamps its own times in it. The test instances all run in UTC, so only the fake central with a zone set shows it (`TestOfflineRecordsUseCentralTimeZone`).
+
+**DHIS2 behaviour worth knowing:**
+
+- `/api/tracker/events` shows events to a user who has program and stage access but **no access to the tracked entity type**; a tracked entity search refuses that user (E1006). Event access does not depend on tracked entity type sharing.
+- An unfiltered `orgUnitMode=ACCESSIBLE` search answers 409 "At least 1 attributes should be mentioned in the search criteria".
+- An ownership transfer bumps the tracked entity's `updatedAt`, so a transfer **in** shows in an incremental pull; a transfer out does not, since the facility no longer owns the person.
+- Central caches ownership per user: a user who read a person shortly before the person was transferred away can still open them for a while afterwards (Laos, protected program: 200 with the enrollment right after the transfer, while a user who had not read them got 404).
+- Small 500s on `null` lists: `"enrollments": null` in a tracker import, and `"userAccesses": null` in `POST /api/sharing`. Both work with `[]`.
+
+**Known gaps, reported by the oracle without failing:**
+
+- Events for users without tracked entity type access (above): central shows them, the hub pulls by tracked entity.
+- Unfiltered `ACCESSIBLE` searches: central rejects them, the hub answers from facility data the user can read anyway.
+- Event programs (without registration) are not held offline (item 20 above).
+- **Category option sharing changes reach the hub at the weekly full pull** (`full_pull_interval`). The hub's per-user access list holds org units, user groups and access to programs, stages, tracked entity types and relationship types, re-read hourly and at login; any change there gives that user a full pull at the next sync, so removing a user from a group that granted access takes effect within about an hour. Category option sharing is not in the list, and tracker programs rarely use it: a known limitation.
+- Users without the facility in their capture scope (a district officer with capture elsewhere and only search scope here, for instance) are passed through only, by design (REVIEW-2 F5): offline they see nothing.
 
 ## Capture web app through the hub
 

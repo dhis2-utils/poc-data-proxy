@@ -6,7 +6,7 @@ central_url: https://hmis.example.org      # the server hubs set up against
 setup_user_group: AbCdEfGhIjK              # user group UID allowed to set up a hub
 listen: ":8443"
 data_dir: /var/lib/hub
-sync_interval: 5m
+sync_interval: 15m
 ping_interval: 15s
 pat_expiry_days: 90
 release_channel: https://releases.example.org/hub/stable
@@ -16,7 +16,10 @@ release_public_key: ""                     # base64 ed25519 key from `hub keygen
 # tls: true                 # self-signed certificate generated at first boot (POC)
 # ping_timeout: 5s
 # reserved_pool_size: 150   # reserved values kept per generated attribute (spec 10.3)
-# full_pull_interval: 24h   # full (non-incremental) pull per user at most this often
+# full_pull_interval: 168h  # full (non-incremental) pull per user at most this often
+# ownership_check_interval: 1h  # check that the facility still owns what the hub holds (transfers out)
+# access_refresh_interval: 1h   # re-read users' access and the program catalog (logins refresh at once)
+# reconnect_delay: 1m       # after an outage, wait a random time up to this before syncing
 # log_requests: false       # log every request and write data_dir/requests.log (spec 13.1)
 # session_idle: 1h          # end a hub session after this long without requests
 # session_max: 12h          # end a hub session this long after login
