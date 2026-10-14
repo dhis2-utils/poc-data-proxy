@@ -119,7 +119,7 @@ ON CONFLICT(username) DO UPDATE SET kek_salt=excluded.kek_salt, wrapped_dk=exclu
 	if err := s.Keys.QueryRow(`SELECT id FROM key_slots WHERE username=?`, username).Scan(&id); err != nil {
 		return 0, err
 	}
-	_, err = s.DB().Exec(`INSERT INTO users(id, username, user_uid) VALUES(?,?,?)
+	_, err = s.write(`INSERT INTO users(id, username, user_uid) VALUES(?,?,?)
 ON CONFLICT(id) DO UPDATE SET username=excluded.username, user_uid=excluded.user_uid`, id, username, userUID)
 	return id, err
 }
@@ -127,7 +127,7 @@ ON CONFLICT(id) DO UPDATE SET username=excluded.username, user_uid=excluded.user
 // TouchLogin records a login. It leaves needs_login alone: only an online login, which
 // central accepted, clears it.
 func (s *Store) TouchLogin(id int64) error {
-	_, err := s.DB().Exec(`UPDATE users SET last_login_at=? WHERE id=?`, Now(), id)
+	_, err := s.write(`UPDATE users SET last_login_at=? WHERE id=?`, Now(), id)
 	return err
 }
 
@@ -179,7 +179,7 @@ func (s *Store) SetPAT(id int64, key, uid, expires string) error {
 			return err
 		}
 	}
-	_, err := s.DB().Exec(`UPDATE users SET pat_enc=?, pat_uid=?, pat_expires=? WHERE id=?`, ct, uid, expires, id)
+	_, err := s.write(`UPDATE users SET pat_enc=?, pat_uid=?, pat_expires=? WHERE id=?`, ct, uid, expires, id)
 	return err
 }
 
@@ -201,7 +201,7 @@ func (s *Store) SetPassword(id int64, pw string) error {
 			return err
 		}
 	}
-	_, err := s.DB().Exec(`UPDATE users SET pw_enc=? WHERE id=?`, ct, id)
+	_, err := s.write(`UPDATE users SET pw_enc=? WHERE id=?`, ct, id)
 	return err
 }
 
@@ -218,7 +218,7 @@ func (s *Store) SetAccess(id int64, accessJSON []byte) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.DB().Exec(`UPDATE users SET access_json_enc=?, access_refreshed_at=? WHERE id=?`, ct, Now(), id)
+	_, err = s.write(`UPDATE users SET access_json_enc=?, access_refreshed_at=? WHERE id=?`, ct, Now(), id)
 	return err
 }
 

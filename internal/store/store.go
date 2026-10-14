@@ -592,7 +592,7 @@ func (s *Store) Private(key string) string {
 }
 
 func (s *Store) SetPrivate(key, value string) error {
-	_, err := s.DB().Exec(`INSERT INTO kv(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
+	_, err := s.write(`INSERT INTO kv(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
 	return err
 }
 
@@ -615,7 +615,7 @@ func (s *Store) SetState(key string, value []byte) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.DB().Exec(`INSERT INTO state(key,value_enc) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value_enc=excluded.value_enc`, key, ct)
+	_, err = s.write(`INSERT INTO state(key,value_enc) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value_enc=excluded.value_enc`, key, ct)
 	return err
 }
 

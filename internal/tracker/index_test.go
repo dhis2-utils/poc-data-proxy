@@ -130,3 +130,56 @@ func TestPayloadCacheFollowsVersions(t *testing.T) {
 		t.Fatalf("after a rewrite the cache served the old version: %v", d)
 	}
 }
+
+// A first page that needs a second read continues where the first read stopped: the
+// people the user cannot see are skipped, none of those they can see are.
+func TestFirstPageReadsOnWithoutGaps(t *testing.T) {
+	s := testStore(t)
+	ix := NewStoreIndex(s)
+	const ou, prog, tet = "OuAaaaaaaa1", "PrAaaaaaaa1", "TetAaaaaaa1"
+	var visible []uint32
+	err := s.Tx(context.Background(), func(tx *sql.Tx) error {
+		for i := 1; i <= 10; i++ {
+			te := &Obj{UID: fmt.Sprintf("TeAaaaaa%03d", i), Kind: store.KindTrackedEntity, TET: tet, OwnerOrgUnit: ou,
+				Origin: store.OriginCentral, SyncState: store.SyncSynced,
+				Data: M{"createdAt": fmt.Sprintf("2024-01-%02dT00:00:00.000", i)}}
+			enr := &Obj{UID: fmt.Sprintf("EnAaaaaa%03d", i), Kind: store.KindEnrollment, TE: te.UID, Program: prog,
+				OwnerOrgUnit: ou, Origin: store.OriginCentral, SyncState: store.SyncSynced, Data: M{"status": "ACTIVE"}}
+			for _, o := range []*Obj{te, enr} {
+				o.Slot = ix.SlotFor(o.UID)
+				if err := s.PutObject(tx, o.ToStore()); err != nil {
+					return err
+				}
+				if i > 2 { // the first two are not the user's
+					visible = append(visible, o.Slot)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes := map[uint32]bool{}
+	for _, sl := range visible {
+		changes[sl] = true
+	}
+	ix.PrepareVisibility(1, changes).Done(true)
+	v := &Viewer{UserID: 1, Facility: ou, Access: &access.List{Programs: map[string]access.Perm{prog: {Read: true}},
+		TETs: map[string]access.Perm{tet: {Read: true}}}}
+	p, apiErr := ix.searchTEs(v, url.Values{"program": {prog}, "orgUnits": {ou}}, prog)
+	if apiErr != nil {
+		t.Fatal(apiErr)
+	}
+	got, more, apiErr := ix.run(v, p, 2)
+	if apiErr != nil {
+		t.Fatal(apiErr)
+	}
+	var uids []string
+	for _, o := range got {
+		uids = append(uids, o.UID)
+	}
+	if fmt.Sprint(uids) != "[TeAaaaaa003 TeAaaaaa004]" || !more {
+		t.Fatalf("page 1 = %v (more %v), want [TeAaaaaa003 TeAaaaaa004] and more", uids, more)
+	}
+}

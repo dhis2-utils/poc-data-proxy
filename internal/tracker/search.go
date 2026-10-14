@@ -142,7 +142,7 @@ func (ix *Index) run(v *Viewer, p *plan, want int) ([]*Obj, bool, *APIError) {
 	if early {
 		chunk = want + 1 // a page and one more, to know whether more follow
 	}
-	for off := 0; ; off += chunk {
+	for off := 0; ; {
 		q, args := query, p.args
 		if chunk > 0 {
 			q += " LIMIT ? OFFSET ?"
@@ -190,6 +190,7 @@ func (ix *Index) run(v *Viewer, p *plan, want int) ([]*Obj, bool, *APIError) {
 		if chunk == 0 || len(rows) < chunk {
 			break
 		}
+		off += chunk // where this read stopped, before the next read grows
 		chunk *= 4
 	}
 	if p.order == "" && p.finish != nil {

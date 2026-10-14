@@ -43,7 +43,9 @@ func (l *List) GroupKey() string {
 	if l == nil {
 		return ""
 	}
-	if l.Ungroupable {
+	// Relationship-type access never read (lists stored before it was, or a refresh
+	// that failed) is unknown, not "none": such a user is not grouped.
+	if l.Ungroupable || l.RelationshipTypes == nil {
 		return "user:" + l.UserUID
 	}
 	k := *l

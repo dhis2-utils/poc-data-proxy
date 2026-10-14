@@ -124,6 +124,10 @@ func (s *Store) PutObject(q Execer, o *Object) error {
 }
 
 func (s *Store) SetSyncState(q Execer, uid, state string) error {
+	if q == s.DB() {
+		_, err := s.write(sqlSetSyncState, state, uid)
+		return err
+	}
 	_, err := s.exec(q, sqlSetSyncState, state, uid)
 	return err
 }
@@ -561,9 +565,13 @@ type stmtCache struct {
 	m  map[string]*sql.Stmt
 }
 
-// stmt returns the statement for query, prepared once on the data file; nil when
-// there are too many to keep (queries with lists of values vary in length).
+// stmt returns the statement for query, prepared once on the data file. Queries with
+// lists of values ("IN (?,?,…)") differ in length and would fill the cache with
+// statements used once: they are not kept (nil), nor are more than 1000 others.
 func (s *Store) stmt(db *sql.DB, query string) (*sql.Stmt, error) {
+	if strings.Contains(query, "IN (?") {
+		return nil, nil
+	}
 	s.stmts.mu.Lock()
 	defer s.stmts.mu.Unlock()
 	if s.stmts.db != db {
@@ -604,6 +612,15 @@ func (s *Store) exec(q Execer, query string, args ...any) (sql.Result, error) {
 		}
 	}
 	return q.Exec(query, args...)
+}
+
+// write runs a single-statement write on the data file, in turn with the write
+// transactions (Store.Tx): left to SQLite, writers poll for the lock and give up on a
+// starved CPU. Never call it inside a Tx: the lock is not reentrant.
+func (s *Store) write(query string, args ...any) (sql.Result, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	return s.exec(s.DB(), query, args...)
 }
 
 // query runs a read on the data file through a statement prepared once.

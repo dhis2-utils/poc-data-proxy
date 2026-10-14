@@ -38,7 +38,7 @@ var (
 	programs = flag.Int("programs", 6, "generated programs")
 	duration = flag.Duration("duration", 10*time.Minute, "offline load duration")
 	think    = flag.String("think", "2s-10s", `pause between a web user's actions ("0" for the hammer run)`)
-	syncEach = flag.Duration("android-sync", 5*time.Minute, "interval of an Android user's incremental sync")
+	syncEach = flag.Duration("android-sync", 5*time.Minute, "interval of an Android user's incremental sync (0: none)")
 	andLimit = flag.Int("android-limit", 500, "people an Android device downloads per program, as the Android Settings App limits it (0: all)")
 	andFirst = flag.String("android-first", "all", `when Android devices make their first download: "all" at the start at once (deployment day), "spread" over the first half of the run, "none" (done before: a normal working day)`)
 	doSetup  = flag.Bool("setup", false, "set up the hub as hub_admin first")
@@ -426,6 +426,9 @@ func (u *user) android(m *metrics, stop time.Time) {
 	default:
 		n, te, enr = download("")
 		m.sample("android: people in a first download", []byte(fmt.Sprint(n)))
+	}
+	if *syncEach <= 0 { // incremental syncs off
+		return
 	}
 	// Devices sync on their own schedules: the first after a random part of the interval.
 	first := true

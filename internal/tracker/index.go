@@ -25,9 +25,12 @@ import (
 //
 // Objects handed out are immutable: writers store a new version and call Put.
 type Index struct {
-	mu       sync.RWMutex
-	vis      map[int64]bitmap    // user -> visible central-origin slots (visibility.go)
-	visMu    sync.Mutex          // one visibility change at a time, taken before any transaction
+	mu    sync.RWMutex
+	vis   map[int64]bitmap // user -> visible central-origin slots (visibility.go)
+	visMu sync.Mutex       // one visibility change at a time, taken before any transaction
+	// slotMu guards nextSlot and pending: handing out a slot looks the object up in
+	// the store, and readers of the bitmaps (ix.mu) should not wait on that.
+	slotMu   sync.Mutex
 	nextSlot uint32              // last slot handed out
 	pending  map[string]uint32   // slots handed out to objects not yet stored
 	scopes   map[string][]string // tracked entity -> pull scopes fetched in full (store.TEScopes)
@@ -85,10 +88,12 @@ func (ix *Index) Load(s *store.Store) error {
 		vis[user] = bitmapFromChunks(c)
 	}
 	ix.visMu.Lock()
+	ix.slotMu.Lock()
 	ix.mu.Lock()
 	ix.vis, ix.pending, ix.scopes, ix.store = vis, map[string]uint32{}, scopes, s
 	ix.nextSlot = uint32(s.MaxSlot())
 	ix.mu.Unlock()
+	ix.slotMu.Unlock()
 	ix.visMu.Unlock()
 	ix.clearResults()
 	ix.payloads.clear()
@@ -129,10 +134,12 @@ func fillQueryColumns(s *store.Store) error {
 // Clear forgets what the index holds in memory (on lock or reset).
 func (ix *Index) Clear() {
 	ix.visMu.Lock()
+	ix.slotMu.Lock()
 	ix.mu.Lock()
 	ix.vis, ix.pending, ix.scopes = map[int64]bitmap{}, map[string]uint32{}, map[string][]string{}
 	ix.nextSlot = 0
 	ix.mu.Unlock()
+	ix.slotMu.Unlock()
 	ix.visMu.Unlock()
 	ix.clearResults()
 	ix.payloads.clear()
@@ -181,8 +188,8 @@ func (o *Obj) ToStore() *store.Object {
 
 // Put records that o was stored: the slot handed out for it is no longer pending.
 func (ix *Index) Put(o *Obj) {
-	ix.mu.Lock()
-	defer ix.mu.Unlock()
+	ix.slotMu.Lock()
+	defer ix.slotMu.Unlock()
 	delete(ix.pending, o.UID)
 }
 

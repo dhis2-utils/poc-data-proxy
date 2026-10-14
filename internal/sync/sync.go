@@ -549,6 +549,7 @@ func (w *Worker) pullGroup(ctx context.Context, g []*puller, readers map[string]
 	own := map[int64]map[uint32]bool{}
 	ownSettled := map[int64][]string{}
 	var deferred []olderPull
+	stopped := false // the listing user can no longer pull: the group's pull is not complete
 	for _, p := range programs {
 		if pm := cat.Programs[p]; len(g) > 1 && pm != nil && pm.AttributeCombo {
 			// Its events also depend on each user's access to category options, which
@@ -565,6 +566,7 @@ func (w *Worker) pullGroup(ctx context.Context, g []*puller, readers map[string]
 					ownSettled[m.u.ID] = append(ownSettled[m.u.ID], p)
 				}
 				if stop {
+					stopped = true
 					break
 				}
 			}
@@ -581,15 +583,25 @@ func (w *Worker) pullGroup(ctx context.Context, g []*puller, readers map[string]
 			deferred = append(deferred, *older)
 		}
 		if stop {
+			stopped = true
 			break
 		}
 	}
+	// A program decides visibility only once all of it is in: removing what a full
+	// pull did not list, with its older people missing, would hide them.
+	undecided := func(p string) { settled = slices.DeleteFunc(settled, func(s string) bool { return s == p }) }
 	// Then the older people of every program, once each program's recent ones are
 	// in. An interruption leaves them for the next cycle, which lists again and
 	// fetches only what is still missing.
 	rep := g[0]
 	for _, d := range deferred {
+		if stopped {
+			// Central refused the listing user; the next cycle lists as another member.
+			undecided(d.program)
+			continue
+		}
 		if err := w.fetchStale(ctx, h.API(), rep.auth, rep.u.ID, h.Facility(), d.program, d.set, shared); err != nil {
+			undecided(d.program)
 			if central.IsNetwork(err) {
 				return fmt.Errorf("pull %s/%s: %w", rep.u.Username, d.program, err)
 			}
@@ -611,7 +623,7 @@ func (w *Worker) pullGroup(ctx context.Context, g []*puller, readers map[string]
 			}
 		}
 	}
-	if len(*failed) == failedBefore { // the group's pull completed
+	if len(*failed) == failedBefore && !stopped { // the group's pull completed
 		for _, m := range g {
 			h.Store.SetPrivate(m.accKey(), m.accJSON())
 		}
@@ -687,7 +699,7 @@ func (w *Worker) pullFor(ctx context.Context, g []*puller, p string, full, defer
 			if full {
 				// Full pulls record their own time so the weekly check works.
 				h.Store.SetPullState(m.u.ID, p, maxUpdated, true)
-				h.Store.DB().Exec(`UPDATE pull_state SET last_full_at=? WHERE user_id=? AND program=?`, store.Now(), m.u.ID, p)
+				h.Store.SetFullPullTime(m.u.ID, p)
 			} else {
 				h.Store.SetPullState(m.u.ID, p, maxUpdated, false)
 			}

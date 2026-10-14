@@ -70,15 +70,13 @@ func bitmapFromChunks(chunks map[int64][]byte) bitmap {
 // SlotFor returns the object's slot, allocating one for an object not yet stored. Set
 // it on an object before storing it; an object read from the index already has its own.
 func (ix *Index) SlotFor(uid string) uint32 {
-	ix.mu.Lock()
-	defer ix.mu.Unlock()
-	return ix.slotFor(uid)
-}
-
-func (ix *Index) slotFor(uid string) uint32 {
+	ix.slotMu.Lock()
+	defer ix.slotMu.Unlock()
 	if s, ok := ix.pending[uid]; ok {
 		return s
 	}
+	// Looked up while slots are held, so a slot cannot be handed out twice for one
+	// object: a pending slot is dropped only after its object is stored (Put).
 	if ix.store != nil && ix.store.Unlocked() {
 		if s := ix.store.SlotOf(uid); s > 0 {
 			return uint32(s)
