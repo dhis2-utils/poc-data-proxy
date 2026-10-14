@@ -56,6 +56,19 @@ The 1 GB knee is between 30 k and 60 k people; the incremental syncs at 60 k ran
 - **Rendering** reads payloads in batches, copies only their top level, and keeps decoded payloads (4 096, keyed by uid and nonce, so a rewritten object always misses).
 - **Writes** are serialised in the hub (one write lock), prepared once, and synced at each commit.
 
+## A device's full download
+
+eRegisters downloads every person of every program, 50 per page, with no limit (docs/FINDINGS.md); Android Capture stops at 500 per program by default. `internal/perf.TestFullDownload` does the same against an offline hub, 6 programs, in process on a development machine (unconstrained; a Pi is several times slower):
+
+| People | Pages | Page 1 | Middle page | Last page | One device's download |
+|---|---|---|---|---|---|
+| 10 k | 336 | 17 ms | 24 ms | 19 ms | 7 s |
+| 30 k | 1 002 | 17 ms | 36 ms | 93 ms | 36 s |
+| 100 k | 3 342 | 22 ms | 160 ms | 310 ms | 8 min 40 s |
+| 300 k (`hc4`) | 10 002 | 25 ms | 450 ms | 0.9 s | 1 h 14 min |
+
+Each page reads every row before it (page *n* reads *n* × 50 matches, since visibility is decided in Go row by row), so a download grows with the square of the facility. Fine up to about 30 k people, slow at 100 k, too slow at HC IV size, and every browser does it once.
+
 ## Load on central
 
 `internal/perf.TestCentralLoad` counts what one hub asks of central (every request through the test kit's uplink, by kind, with answer sizes) during setup and first fill, a sync cycle in which nothing changed and a full pull, and projects a day at the deployed intervals and N hubs (`HUB_PERF_HUBS`, default 500). At 10 000 people, 6 programs and 60 users:
