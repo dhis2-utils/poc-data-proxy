@@ -335,7 +335,11 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 		h.Store.NoteAttempt(e.Seq, err.Error())
 		return pushResult{userBlocked: true}, nil
 	}
-	resp, err := h.Central.Do(ctx, "POST", "/api/tracker?async=false&atomicMode=OBJECT&importStrategy=CREATE_AND_UPDATE", body, auth, nil)
+	path := "/api/tracker?async=false&atomicMode=OBJECT&importStrategy=CREATE_AND_UPDATE"
+	if e.Params != "" {
+		path += "&" + e.Params
+	}
+	resp, err := h.Central.Do(ctx, "POST", path, body, auth, nil)
 	if err != nil {
 		h.Store.NoteAttempt(e.Seq, err.Error())
 		return pushResult{stop: true}, err // network: retry next cycle

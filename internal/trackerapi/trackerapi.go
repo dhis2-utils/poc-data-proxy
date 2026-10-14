@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -337,7 +338,7 @@ func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Ses
 	for k := range q {
 		switch k {
 		case "async", "importStrategy", "atomicMode", "reportMode", "validationMode", "skipRuleEngine",
-			"skipSideEffects", "flushMode", "importMode", "idScheme":
+			"skipSideEffects", "skipPatternValidation", "flushMode", "importMode", "idScheme":
 		default:
 			a.H.WebError(w, 400, "not supported offline: "+k, "")
 			a.H.ReqLog.Unsupported(r.URL.Path, k)
@@ -358,7 +359,16 @@ func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Ses
 	im := &tracker.Importer{Ix: a.H.Index, V: v, Username: u.Username, UserUID: u.UserUID, DefaultAOC: rt.DefaultAOC,
 		Strategy: strategy, Now: a.H.CentralNow(), AtomicAll: q.Get("atomicMode") != "OBJECT"}
 	out := im.Import(payload)
-	if _, err := a.H.PersistImport(sess.UserID, out); err != nil {
+	// Flags that only switch off checks or side effects on central: the hub runs
+	// neither offline, and central must skip them on push as the client asked
+	// (eRegisters sends skipPatternValidation and skipSideEffects).
+	keep := url.Values{}
+	for _, k := range []string{"skipPatternValidation", "skipSideEffects", "skipRuleEngine"} {
+		if q.Get(k) == "true" {
+			keep.Set(k, "true")
+		}
+	}
+	if _, err := a.H.PersistImport(sess.UserID, out, keep.Encode()); err != nil {
 		slog.Error("persist offline import", "err", err)
 		a.H.WebError(w, 500, "could not store import: "+err.Error(), "")
 		return

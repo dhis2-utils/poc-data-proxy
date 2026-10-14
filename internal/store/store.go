@@ -256,6 +256,8 @@ CREATE TABLE te_attrs(te_uid TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT N
   PRIMARY KEY(te_uid, attr));
 CREATE INDEX te_attrs_value ON te_attrs(attr, value);
 `,
+	// The import flags a client sent with an offline write, sent along on push.
+	`ALTER TABLE outbox ADD COLUMN params TEXT NOT NULL DEFAULT '';`,
 }
 
 // SchemaVersion is the number of key file migrations this binary knows.
@@ -504,6 +506,12 @@ func (s *Store) moveLegacy(data *sql.DB) error {
  owner_org_unit, updated_at, origin, sync_state, payload_enc) SELECT uid, kind, te_uid, enrollment_uid, program, stage, tet,
  owner_org_unit, updated_at, origin, sync_state, payload_enc FROM legacy.objects`,
 				`UPDATE main.objects SET slot = rowid WHERE slot IS NULL`)
+			continue
+		}
+		if t == "outbox" { // the data file's outbox has the params column too
+			stmts = append(stmts, `INSERT OR REPLACE INTO main.outbox(seq, user_id, payload_enc, created_at, state, attempts,
+ last_error_enc, depends_on_seq) SELECT seq, user_id, payload_enc, created_at, state, attempts, last_error_enc,
+ depends_on_seq FROM legacy.outbox`)
 			continue
 		}
 		stmts = append(stmts, fmt.Sprintf(`INSERT OR REPLACE INTO main.%s SELECT * FROM legacy.%s`, t, t))

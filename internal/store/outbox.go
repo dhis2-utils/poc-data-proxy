@@ -24,20 +24,23 @@ type OutboxEntry struct {
 	LastError    string
 	DependsOnSeq int64
 	UIDs         []string
+	// Params are the client's import flags to send along on push, as a query
+	// string ("skipSideEffects=true"); empty for none.
+	Params string
 }
 
 // OutboxRef is an object UID + kind in an outbox entry.
 type OutboxRef struct{ UID, Kind string }
 
 // AppendOutbox adds an entry and returns its seq. dependsOn is 0 for none.
-func (s *Store) AppendOutbox(tx *sql.Tx, userID int64, payload []byte, refs []OutboxRef, dependsOn int64) (int64, error) {
+func (s *Store) AppendOutbox(tx *sql.Tx, userID int64, payload []byte, params string, refs []OutboxRef, dependsOn int64) (int64, error) {
 	var dep any
 	if dependsOn > 0 {
 		dep = dependsOn
 	}
 	// Seal after insert so the AAD can include the seq.
-	res, err := tx.Exec(`INSERT INTO outbox(user_id, payload_enc, created_at, state, depends_on_seq) VALUES(?,?,?,?,?)`,
-		userID, []byte{}, Now(), OutboxPending, dep)
+	res, err := tx.Exec(`INSERT INTO outbox(user_id, payload_enc, created_at, state, depends_on_seq, params) VALUES(?,?,?,?,?,?)`,
+		userID, []byte{}, Now(), OutboxPending, dep, params)
 	if err != nil {
 		return 0, err
 	}
@@ -90,7 +93,7 @@ func (s *Store) scanOutbox(rows *sql.Rows, withPayload bool) ([]*OutboxEntry, er
 		e := &OutboxEntry{}
 		var ct, errCT []byte
 		var dep sql.NullInt64
-		if err := rows.Scan(&e.Seq, &e.UserID, &ct, &e.CreatedAt, &e.State, &e.Attempts, &errCT, &dep); err != nil {
+		if err := rows.Scan(&e.Seq, &e.UserID, &ct, &e.CreatedAt, &e.State, &e.Attempts, &errCT, &dep, &e.Params); err != nil {
 			return nil, err
 		}
 		e.DependsOnSeq = dep.Int64
@@ -110,7 +113,7 @@ func (s *Store) scanOutbox(rows *sql.Rows, withPayload bool) ([]*OutboxEntry, er
 	return out, rows.Err()
 }
 
-const outboxCols = `seq, user_id, payload_enc, created_at, state, attempts, last_error_enc, depends_on_seq`
+const outboxCols = `seq, user_id, payload_enc, created_at, state, attempts, last_error_enc, depends_on_seq, params`
 
 // PendingOutbox returns pending entries in seq order, with payloads.
 func (s *Store) PendingOutbox() ([]*OutboxEntry, error) {

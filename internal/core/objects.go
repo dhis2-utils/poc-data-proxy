@@ -187,7 +187,8 @@ func listOf(v any) []tracker.M {
 // PersistImport writes accepted offline objects and one outbox entry (spec 10.2
 // steps 3-4). The entry depends on the latest pending entry that holds any object it
 // references or updates.
-func (h *Hub) PersistImport(userID int64, out *tracker.ImportOutcome) (int64, error) {
+// params are the client's import flags to send along on push (store.OutboxEntry.Params).
+func (h *Hub) PersistImport(userID int64, out *tracker.ImportOutcome, params string) (int64, error) {
 	if len(out.Accepted) == 0 {
 		return 0, nil
 	}
@@ -210,7 +211,7 @@ func (h *Hub) PersistImport(userID int64, out *tracker.ImportOutcome) (int64, er
 				return err
 			}
 		}
-		seq, err = h.Store.AppendOutbox(tx, userID, payload, out.Refs, dep)
+		seq, err = h.Store.AppendOutbox(tx, userID, payload, params, out.Refs, dep)
 		return err
 	})
 	if err != nil {
