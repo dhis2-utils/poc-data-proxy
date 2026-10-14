@@ -8,7 +8,7 @@ Question: can a hub on Raspberry Pi-class hardware serve **60 users working offl
 
 | | `pi5` (4 GB, 1.6 CPU), 100 k people | `pi5`, HC IV (300 k) | `pi4` (1 GB, 0.8 CPU, SD card), 30 k | `pi4`, 100 k |
 |---|---|---|---|---|
-| First pull, 60 users | 4 min | 15 min (recent patients after 80 s) | 12 min | 48 min |
+| First pull, 60 users | 4 min | 15 min | 12 min | 48 min |
 | Working list | 12 ms / 1.4 s | 13 ms / 7.8 s | 12 ms / 1.4 s | 0.5 s / 20 s |
 | Dashboard, person | 5 ms / 2.4 s | 6 ms / 11 s | 5 ms / 2.2 s | 0.6 s / 19 s |
 | New event | 8 ms / 1.0 s | 9 ms / 9 s | 9 ms / 1.4 s | 0.6 s / 26 s |
@@ -23,7 +23,7 @@ The p95s in these runs come from 18 Android first downloads at once at the start
 - **Speed depends on whether the data file fits in RAM, or the disk is fast.** At 100 k people the file is about 2.5 GB, at the HC IV size 6–7 GB (about 3.3 KB per object). A Pi 5 with 4 GB serves 100 k people well and the HC IV size for normal use, with little headroom under heavy load. A 1 GB device with an SD card serves small facilities (30 k people worked well; the knee between 30 k and 100 k is still to find) but not 100 k.
 - **Android first downloads are the heaviest load**: 18 at once saturate a Pi 5 for a minute or more. Pages are cheaper now (History, 2026-10-14); a deployment can spread first downloads.
 - **Load on central** fell from about 214 000 requests a day per hub to about 9 400 (best case), about 54 requests a second for 500 hubs (section "Load on central").
-- **Correctness** held: on 2.42 the oracles pass on synthetic after every change, and on Sierra Leone and Laos after the move to SQLite; those two are still to run after the pull changes (access groups, recent first, the type pull).
+- **Correctness** held: on 2.42 the oracles pass on synthetic after every change, and on Sierra Leone and Laos after the move to SQLite; those two are still to run after the pull changes (access groups, the type pull).
 
 **Open**
 
@@ -38,7 +38,7 @@ The p95s in these runs come from 18 Android first downloads at once at the start
 
 - **One store.** Objects live only in the encrypted SQLite data file: each row has the columns lists filter and sort on, its slim JSON, and its sealed payload; attribute values are in `te_attrs`. Searches put every condition columns decide into SQL, read in growing chunks in the requested order where SQL can give it (creation date) and stop at a full page; other orders sort in Go. `TestQueryPlansUseIndexes` fails if a query scans a table.
 - **Visibility as bitmaps** over stable object slots, per user, in memory and in 512-byte chunks on disk: under 5 MB for 60 users and 750 000 objects.
-- **ID-list pulls.** A pull lists identifiers and update times; only people the hub lacks, holds older, or has not fetched for that program are fetched in full, 50 per request, each record once. Users whose access lists are the same apart from who they are share one listing (`access.List.GroupKey`; programs with an attribute category combination stay per user). A first pull fetches people with an active or recent (90 days) enrollment for every program first, then the older ones.
+- **ID-list pulls.** A pull lists identifiers and update times; only people the hub lacks, holds older, or has not fetched for that program are fetched in full, 50 per request, each record once. Users whose access lists are the same apart from who they are share one listing (`access.List.GroupKey`; programs with an attribute category combination stay per user). Ordering a first pull most recent first, across programs, was tried and removed: with shared listings the first pull is short enough (15 minutes at HC IV size on `pi5`) not to need it.
 - **Rendering** reads payloads in batches, copies only their top level, and keeps decoded payloads (4 096, keyed by uid and nonce, so a rewritten object always misses).
 - **Writes** are serialised in the hub (one write lock), prepared once, and synced at each commit.
 
