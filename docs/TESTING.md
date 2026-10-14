@@ -97,6 +97,7 @@ Live runs change their instance: use a disposable one, and restore it (or a fres
 | `TestTransferOnCentral`, `TestTransferThroughHub`, `TestBreakTheGlass`, `TestAccessChangeOfOneUser`, `TestCaptureAboveFacility` | the same situations, and access changes, against the fake central (no DHIS2 needed) |
 | `TestCaptureWeb` | (`HUB_CLIENTS=1`) the real Capture web app with Playwright: working lists and the enrollment dashboard online, then offline; fails if the offline working list does not render, and reports every request the hub refused |
 | `TestCaptureAndroid` | (`HUB_CLIENTS=1`, an emulator on adb) the real Android Capture app: first login and download online, then with the app's data wiped and the uplink cut, a first login and full download offline from the hub; compares the record counts and reports refused requests |
+| `TestERegisters` | (`HUB_CLIENTS=1`, the `eregisters` profile) the eRegisters app (HISP Uganda), one device at a time with its own browser profile: the second nurse pulls online; the first pulls online, then with the uplink cut registers a client and pushes to the hub; the second opens the app offline, pulls from the hub and finds the client; after reconnection central has the client, created by the first nurse. Reports every request the hub could not answer offline |
 
 ### Profiles
 
@@ -105,6 +106,7 @@ Live runs change their instance: use a disposable one, and restore it (or a fres
 | `synthetic` | empty instance | full control: open, protected, closed, public and event programs, a restricted stage, unique and generated attributes, two tracked entity types, an attribute category combo whose category options are shared per user, ownership moved in and out, visits elsewhere, deleted and scheduled records, cross-facility relationships |
 | `sierra-leone` | the Sierra Leone demo database of that version | real metadata and data; the facility with the most tracker data, its four busiest programs |
 | `laos` | the Lao HMIS demo database | a second real configuration, with its own conventions |
+| `eregisters` | an empty 2.43 instance, set up by `clients/eregisters_setup.py` from the eRegisters configuration export and an app build (neither in this repository) | the eRegisters app as a client: its one tracker program on two facilities and one in another district, an admin, two nurses and an outsider. Only `TestERegisters` and the scenarios use it; it has no access matrix |
 
 The **access matrix** (27–30 users per profile) covers every pair of: capture scope (facility, district, sibling, two facilities, country), search scope (none, facility, district, other district, country), access to the open, protected and closed programs, to the restricted stage, to the tracked entity type and to a category option, granted directly or through a group. Three more users test the hub's shared listings (users with the same access list are pulled once for all): a twin of the nurse (same groups and scopes), and two users with identical direct grants that differ only in the shared category option, which the hub's grouping leaves out and handles per user.
 

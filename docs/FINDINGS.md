@@ -315,3 +315,15 @@ Tested with Capture 3.4.2 on the emulator, server URL `http://10.0.2.2:<port>` (
 - **Offline validation is structural only** (spec 10.2). In run 4 an offline event carried the value `false` for a TRUE_ONLY data element. The hub accepted it; central rejected it on push (E1302), and it appeared as an issue. Value-type validation offline would need data element metadata on the hub. Spec 10.2 deliberately leaves that out, and the Capture apps validate value types themselves; the bad value came from a hand-written API call.
 
 The emulator test also created the key `ANDROID_SETTING_APP/general_settings` (`allowScreenCapture: true`) on the test instance, so screenshots of the app are possible.
+
+## eRegisters through the hub
+
+eRegisters (github.com/HISP-Uganda/eregisters, 1.1.7) is a DHIS2 web app that keeps its own copy of the facility's data in the browser and syncs with the server: through a hub, each browser syncs with the hub, and the hub is what lets devices at the facility share data while offline, as for Android Capture. Tested on 2.43.2 with the eRegisters configuration (`TestERegisters`, docs/TESTING.md): a client registered offline on one device reached the other through the hub, and central after reconnection, created by its author.
+
+- **It pushes with `skipPatternValidation=true&skipSideEffects=true`.** The hub refused the first offline ("not supported offline"), so every offline push failed. Both flags only switch off checks or side effects on central, which the hub does not run offline; the hub now accepts them and sends them, with `skipRuleEngine`, along when it pushes the queue. `skipSideEffects` and `skipRuleEngine` had been accepted offline but dropped at push.
+- **Its connectivity check is `GET /api/me?fields=id`,** which the hub answers offline: the app shows "Online" and syncs with the hub. That is what makes it work, but the user cannot tell that central is unreachable; the app can read `/hub/status` (see "Offline search covers this facility only").
+- **Its pull** is `tracker/trackedEntities?program&orgUnits&orgUnitMode=SELECTED&fields=…&page&pageSize&updatedAfter`, with `updatedAfter` from `system/info`'s `serverDate`, which offline comes from the hub's cache: an older date, so the app fetches a little more than needed. It pulls every person of the facility per program, without the limit Android's settings app sets: to be measured at large facilities (docs/PERFORMANCE.md).
+- **Not offline:** aggregate reports (`dataValueSets`, `dataEntry/dataValues`, `dataEntry/dataSetCompletion`, out of scope for now: the app keeps them as drafts), its reports service (`routes/…/run`), dataStore writes, and deletes (`importStrategy=DELETE`, refused offline as for every client).
+- **2.43 opens apps inside its global shell** (an iframe at `/apps/<app>`); a reopened PWA is served from its own service worker without the shell. Both work through the hub.
+- **Browser storage belongs to the address.** Moving a browser from central's address to the hub's starts the app with an empty local store: sync everything to central first (DEPLOYMENT.md, section 5).
+

@@ -18,6 +18,7 @@ const (
 	RoleOutsider   = "outsider"   // captures at another facility
 	RoleDistrict   = "district"   // district officer: district scope, not every program
 	RoleSearchless = "searchless" // captures at the facility without search scope there
+	RoleNurse2     = "nurse2"     // a second nurse, for hand-over between devices
 )
 
 type Manifest struct {

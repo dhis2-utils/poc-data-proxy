@@ -7,3 +7,4 @@
 .pnpm-store/
 testresults/
 perf/results/
+__pycache__/

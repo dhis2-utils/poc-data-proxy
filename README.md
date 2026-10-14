@@ -48,6 +48,7 @@ A small device on a facility LAN that caches the facility's DHIS2 tracker data a
 | `internal/live` | The live suite: scenarios and oracles against a provisioned instance or the fake |
 | `internal/perf` | In-process performance tests: pulls, queries, load on central |
 | `perf` | Container runs on Pi-class profiles (`perf/pi.sh`) and their results |
+| `clients` | Playwright drivers for the real web apps (Capture web, eRegisters) used by the live suite, and the eRegisters instance setup |
 | `testdata/2.42` | Request/response fixtures and Capture endpoint lists recorded from DHIS2 2.42.6, plus the first round's manual test setup (`SETUP.md`, `setup_instance.py`) |
 | `deploy` | Example image defaults file and systemd unit |
 | `scripts/test-upgrade.sh` | Scenario 11: self-upgrade, rollback, unsigned release |
