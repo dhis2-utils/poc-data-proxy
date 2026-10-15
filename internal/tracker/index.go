@@ -35,7 +35,8 @@ type Index struct {
 	pending  map[string]uint32   // slots handed out to objects not yet stored
 	scopes   map[string][]string // tracked entity -> pull scopes fetched in full (store.TEScopes)
 	store    *store.Store
-	payloads payloadCache // decoded payloads, by version (payloads.go)
+	payloads payloadCache  // decoded payloads, by version (payloads.go)
+	pages    pagePositions // where each user's last page of a query ended (pagepos.go)
 }
 
 // NewStoreIndex is the index of a hub's store.
@@ -95,6 +96,7 @@ func (ix *Index) Load(s *store.Store) error {
 	ix.slotMu.Unlock()
 	ix.visMu.Unlock()
 	ix.payloads.clear()
+	ix.pages.clear()
 	return nil
 }
 
@@ -140,6 +142,7 @@ func (ix *Index) Clear() {
 	ix.slotMu.Unlock()
 	ix.visMu.Unlock()
 	ix.payloads.clear()
+	ix.pages.clear()
 }
 
 // FromStore converts a stored row: with its payload, a full object; without, the slim

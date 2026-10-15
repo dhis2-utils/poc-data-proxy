@@ -3,10 +3,12 @@ package tracker
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/dhis2/facility-hub/internal/access"
 	"github.com/dhis2/facility-hub/internal/hubcrypto"
@@ -134,15 +136,77 @@ func TestPayloadCacheFollowsVersions(t *testing.T) {
 // A first page that needs a second read continues where the first read stopped: the
 // people the user cannot see are skipped, none of those they can see are.
 func TestFirstPageReadsOnWithoutGaps(t *testing.T) {
+	ix, v, p := pagingFixture(t, 10)
+	got, more, _, apiErr := ix.run(v, p, 2)
+	if apiErr != nil {
+		t.Fatal(apiErr)
+	}
+	var uids []string
+	for _, o := range got {
+		uids = append(uids, o.UID)
+	}
+	if fmt.Sprint(uids) != "[TeAaaaaa003 TeAaaaaa004]" || !more {
+		t.Fatalf("page 1 = %v (more %v), want [TeAaaaaa003 TeAaaaaa004] and more", uids, more)
+	}
+}
+
+// Pages read on from where the page before ended (pagePositions) are the pages read
+// from the start: the same people, in the same order, with the same count.
+func TestPagesReadOnFromLastPosition(t *testing.T) {
+	ix, v, _ := pagingFixture(t, 40)
+	const ou, prog = "OuAaaaaaaa1", "PrAaaaaaaa1"
+	v.Catalog = &access.Catalog{Programs: map[string]*access.ProgramMeta{prog: {ID: prog}}}
+	order := ""
+	query := func(pg int) url.Values {
+		q := url.Values{"program": {prog}, "orgUnits": {ou}, "pageSize": {"5"}, "fields": {"trackedEntity"}}
+		if order != "" {
+			q.Set("order", order)
+		}
+		if pg > 0 {
+			q.Set("page", fmt.Sprint(pg))
+		}
+		return q
+	}
+	pageOf := func(pg int) string {
+		res, err := ix.Search(v, "trackedEntities", query(pg))
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := json.Marshal(res.Items)
+		return fmt.Sprint(string(b), " total ", res.Total)
+	}
+	for _, order = range []string{"", "createdAt:desc"} { // the web app's default and Android's
+		var fresh []string
+		for pg := 1; pg <= 9; pg++ {
+			ix.pages.clear()
+			fresh = append(fresh, pageOf(pg))
+		}
+		ix.pages.clear()
+		for pg := 1; pg <= 9; pg++ {
+			if got := pageOf(pg); got != fresh[pg-1] {
+				t.Fatalf("order %q, page %d read on = %s, from the start = %s", order, pg, got, fresh[pg-1])
+			}
+		}
+		key := fmt.Sprintf("%d|trackedEntities|%s", v.UserID, withoutPage(query(0)))
+		if _, ok := ix.pages.get(key, 8); !ok {
+			t.Errorf("order %q: no position remembered after page 7, the last full one", order)
+		}
+	}
+}
+
+// pagingFixture stores n people enrolled in one program, created a day apart; the
+// user (1) may see all but the first two. It returns the program's search plan.
+func pagingFixture(t *testing.T, n int) (*Index, *Viewer, *plan) {
+	t.Helper()
 	s := testStore(t)
 	ix := NewStoreIndex(s)
 	const ou, prog, tet = "OuAaaaaaaa1", "PrAaaaaaaa1", "TetAaaaaaa1"
 	var visible []uint32
 	err := s.Tx(context.Background(), func(tx *sql.Tx) error {
-		for i := 1; i <= 10; i++ {
+		for i := 1; i <= n; i++ {
 			te := &Obj{UID: fmt.Sprintf("TeAaaaaa%03d", i), Kind: store.KindTrackedEntity, TET: tet, OwnerOrgUnit: ou,
 				Origin: store.OriginCentral, SyncState: store.SyncSynced,
-				Data: M{"createdAt": fmt.Sprintf("2024-01-%02dT00:00:00.000", i)}}
+				Data: M{"createdAt": time.Date(2024, 1, (i+2)/3, 0, 0, 0, 0, time.UTC).Format("2006-01-02T15:04:05.000")}} // three a day
 			enr := &Obj{UID: fmt.Sprintf("EnAaaaaa%03d", i), Kind: store.KindEnrollment, TE: te.UID, Program: prog,
 				OwnerOrgUnit: ou, Origin: store.OriginCentral, SyncState: store.SyncSynced, Data: M{"status": "ACTIVE"}}
 			for _, o := range []*Obj{te, enr} {
@@ -171,15 +235,5 @@ func TestFirstPageReadsOnWithoutGaps(t *testing.T) {
 	if apiErr != nil {
 		t.Fatal(apiErr)
 	}
-	got, more, apiErr := ix.run(v, p, 2)
-	if apiErr != nil {
-		t.Fatal(apiErr)
-	}
-	var uids []string
-	for _, o := range got {
-		uids = append(uids, o.UID)
-	}
-	if fmt.Sprint(uids) != "[TeAaaaaa003 TeAaaaaa004]" || !more {
-		t.Fatalf("page 1 = %v (more %v), want [TeAaaaaa003 TeAaaaaa004] and more", uids, more)
-	}
+	return ix, v, p
 }

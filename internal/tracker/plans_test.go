@@ -3,6 +3,7 @@ package tracker
 import (
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,7 +20,7 @@ func TestQueryPlansUseIndexes(t *testing.T) {
 	ix := NewStoreIndex(s)
 	v := &Viewer{UserID: 1, Access: &access.List{}, Facility: "OuAaaaaaaa1", SearchScope: true}
 	scan := regexp.MustCompile(`SCAN (objects|te_attrs|[a-z]+)( \||$)`)
-	explain := func(name, q string, args ...any) {
+	explain := func(name, q string, args ...any) string {
 		rows, err := s.DB().Query("EXPLAIN QUERY PLAN "+q, args...)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
@@ -36,6 +37,7 @@ func TestQueryPlansUseIndexes(t *testing.T) {
 		if scan.MatchString(plan) {
 			t.Errorf("%s scans a table: %s", name, plan)
 		}
+		return plan
 	}
 	c := store.ObjectCols("")
 	explain("get", `SELECT `+c+` FROM objects WHERE uid = ?`, "x")
@@ -68,7 +70,20 @@ func TestQueryPlansUseIndexes(t *testing.T) {
 		if p.order != "" {
 			sql += " ORDER BY " + p.order
 		}
-		explain(name, sql, p.args...)
+		base := explain(name, sql, p.args...)
+		if p.key[0] != "" && !strings.Contains(base, "TEMP B-TREE FOR ORDER BY") {
+			// Reading on after a page (pagePositions) must keep the index's order when
+			// the first page does: sorting what is left would cost the whole rest of
+			// the program per page.
+			cmp := ">="
+			if p.keyDesc {
+				cmp = "<="
+			}
+			on := p.sel + " AND " + p.key[0] + " " + cmp + " ? AND NOT (" + p.key[0] + " = ? AND " + p.key[1] + " <= ?) ORDER BY " + p.order
+			if got := explain(name+", read on", on, append(slices.Clone(p.args), "d", "d", "u")...); strings.Contains(got, "TEMP B-TREE FOR ORDER BY") {
+				t.Errorf("%s, read on: sorts instead of reading the index in order: %s", name, got)
+			}
+		}
 	}
 	ou := "OuAaaaaaaa1"
 	plan("te list desc", "te", url.Values{"program": {"PrAaaaaaaa1"}, "orgUnits": {ou}, "order": {"createdAt:desc"}})

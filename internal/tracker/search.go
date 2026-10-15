@@ -3,6 +3,7 @@ package tracker
 import (
 	"cmp"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/url"
 	"regexp"
@@ -26,7 +27,13 @@ type plan struct {
 	sel   string // SELECT … FROM … WHERE …, without ORDER BY
 	args  []any
 	order string // ORDER BY …, when the requested order is pushed down to SQL
-	pairs bool   // rows are a tracked entity and one of its enrollments in the program
+	// key: the creation date and identifier columns order sorts by; keyDesc when the
+	// date is descending (the identifier always ascends); keyRow: which row of a pair
+	// carries them. A page reads on from a row's key (pagePositions).
+	key     [2]string
+	keyDesc bool
+	keyRow  int
+	pairs   bool // rows are a tracked entity and one of its enrollments in the program
 	// needData: keep or sort read the objects' slim data, so each row is decoded.
 	needData bool
 	keep     func(o, enr *Obj) (bool, *APIError)
@@ -119,10 +126,11 @@ func (ix *Index) changedTEs(floor string) map[string]bool {
 }
 
 // run returns what the plan keeps, in order. With want > 0 and the order pushed down,
-// it stops after want and reports whether there are more.
-func (ix *Index) run(v *Viewer, p *plan, want int) ([]*Obj, bool, *APIError) {
+// it stops after want and reports whether there are more, and last: the row that
+// carries the creation key of the last object returned ("" when it did not stop).
+func (ix *Index) run(v *Viewer, p *plan, want int) ([]*Obj, bool, string, *APIError) {
 	if ix.store == nil || !ix.store.Unlocked() {
-		return nil, false, nil
+		return nil, false, "", nil
 	}
 	bm := ix.bitmapOf(v.UserID)
 	seen := map[string]bool{}
@@ -143,6 +151,7 @@ func (ix *Index) run(v *Viewer, p *plan, want int) ([]*Obj, bool, *APIError) {
 	if early {
 		chunk = want + 1 // a page and one more, to know whether more follow
 	}
+	last := ""
 	for off := 0; ; {
 		q, args := query, p.args
 		if chunk > 0 {
@@ -161,7 +170,7 @@ func (ix *Index) run(v *Viewer, p *plan, want int) ([]*Obj, bool, *APIError) {
 			}
 		}
 		if err != nil {
-			return nil, false, &APIError{Status: 500, Message: "search: " + err.Error()}
+			return nil, false, "", &APIError{Status: 500, Message: "search: " + err.Error()}
 		}
 		for _, r := range rows {
 			if seen[r[0].UID] {
@@ -178,14 +187,17 @@ func (ix *Index) run(v *Viewer, p *plan, want int) ([]*Obj, bool, *APIError) {
 				}
 			}
 			if ok, err := p.keep(o, enr); err != nil {
-				return nil, false, err
+				return nil, false, "", err
 			} else if !ok {
 				continue
 			}
 			seen[o.UID] = true
 			out = append(out, o)
+			if early && len(out) == want && r[p.keyRow] != nil {
+				last = r[p.keyRow].UID
+			}
 			if early && len(out) > want {
-				return out[:want], true, nil
+				return out[:want], true, last, nil
 			}
 		}
 		if chunk == 0 || len(rows) < chunk {
@@ -197,10 +209,31 @@ func (ix *Index) run(v *Viewer, p *plan, want int) ([]*Obj, bool, *APIError) {
 	if p.order == "" && p.finish != nil {
 		var err *APIError
 		if out, err = p.finish(out); err != nil {
-			return nil, false, err
+			return nil, false, "", err
 		}
 	}
-	return out, false, nil
+	return out, false, last, nil
+}
+
+// after is p reading on after the row last (pagePositions): rows whose creation key
+// comes after last's in p's order. ok is false when last is not in the store.
+func (ix *Index) after(p *plan, last string) (*plan, bool) {
+	col := func(c string) string { return c[strings.IndexByte(c, '.')+1:] }
+	var created, uid string
+	if ix.store.DB().QueryRow(`SELECT `+col(p.key[0])+`, `+col(p.key[1])+` FROM objects WHERE uid = ?`, last).
+		Scan(&created, &uid) != nil {
+		return nil, false
+	}
+	// A range on the date keeps the index's order; the rows on the same date up to
+	// last's identifier are left out by the second condition.
+	cmp := ">="
+	if p.keyDesc {
+		cmp = "<="
+	}
+	q := *p
+	q.sel = p.sel + " AND " + p.key[0] + " " + cmp + " ? AND NOT (" + p.key[0] + " = ? AND " + p.key[1] + " <= ?)"
+	q.args = append(slices.Clone(p.args), created, created, uid)
+	return &q, true
 }
 
 // slimCol matches the slim column in store.ObjectCols.
@@ -294,18 +327,42 @@ func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *A
 	if err != nil {
 		return nil, err
 	}
-	more := false
+	more, readOn := false, false
+	var shown []*Obj
 	if p != nil {
 		// Read up to the end of the asked page and stop there, unless the total is
 		// asked for (or the page is beyond any real size). Android asks for pages 1 to
 		// 10 of 50; reading the whole program for every page after the first cost
 		// about a second at 100 000 people (docs/PERFORMANCE.md).
 		want := 0
-		if paged && !totals && pg <= 1_000_000/size {
+		early := paged && !totals && pg <= 1_000_000/size && p.order != ""
+		if early {
 			want = pg * size
 		}
-		if objs, more, err = ix.run(v, p, want); err != nil {
-			return nil, err
+		key := fmt.Sprintf("%d|%s|%s", v.UserID, collection, withoutPage(q))
+		last, ok := ix.pages.get(key, pg)
+		var on *plan
+		if early && ok && p.key[0] != "" {
+			on, ok = ix.after(p, last)
+		}
+		if early && ok && on != nil {
+			// The page before was just served: read on after its last row.
+			if shown, more, last, err = ix.run(v, on, size); err != nil {
+				return nil, err
+			}
+			if last != "" {
+				ix.pages.set(key, pg, last)
+			}
+			readOn = true
+			objs = make([]*Obj, (pg-1)*size, (pg-1)*size+len(shown)) // stands in for the pages before, for the count
+			objs = append(objs, shown...)
+		} else {
+			if objs, more, last, err = ix.run(v, p, want); err != nil {
+				return nil, err
+			}
+			if early && last != "" && p.key[0] != "" {
+				ix.pages.set(key, pg, last)
+			}
 		}
 	}
 	res := &Result{Collection: collection, Total: len(objs), Page: pg, PageSize: size, Paging: paged, TotalPages: totals,
@@ -313,7 +370,10 @@ func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *A
 	if more {
 		res.Total++ // the page is full and more follow; the exact total was not asked for
 	}
-	shown := slices.Clone(page(objs, pg, size, paged))
+	if !readOn {
+		shown = page(objs, pg, size, paged)
+	}
+	shown = slices.Clone(shown)
 	var bare []string
 	for _, o := range shown {
 		if o.Data == nil && len(o.raw) == 0 {
@@ -419,9 +479,12 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *API
 		}
 		if program != "" {
 			p.order = "e.te_created" + dir + ", e.te_uid"
+			p.key, p.keyRow = [2]string{"e.te_created", "e.te_uid"}, 1
 		} else {
 			p.order = "t.created_at" + dir + ", t.uid"
+			p.key = [2]string{"t.created_at", "t.uid"}
 		}
+		p.keyDesc = desc
 	}
 	timed := func(tf timeFilter) bool { return q.Get(tf.after) != "" || q.Get(tf.before) != "" }
 	p.needData = timed(enrolled) || !byCreated
@@ -490,6 +553,7 @@ func (ix *Index) simplePlan(v *Viewer, w *where, q url.Values, alias string, tfs
 			p.order += " DESC"
 		}
 		p.order += ", " + alias + ".uid"
+		p.key, p.keyDesc = [2]string{alias + ".created_at", alias + ".uid"}, desc
 	}
 	p.needData = p.order == ""
 	for _, tf := range tfs {
@@ -654,4 +718,15 @@ func (ix *Index) searchRelationships(v *Viewer, q url.Values) ([]*Obj, *APIError
 	out := ix.visible(v, ix.relationshipsFor(v, uid))
 	sortObjs(out, q.Get("order"), nil)
 	return out, nil
+}
+
+// withoutPage is the query as a key for pagePositions: every parameter but the page.
+func withoutPage(q url.Values) string {
+	c := url.Values{}
+	for k, v := range q {
+		if k != "page" {
+			c[k] = v
+		}
+	}
+	return c.Encode()
 }

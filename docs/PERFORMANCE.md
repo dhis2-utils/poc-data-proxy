@@ -52,7 +52,7 @@ The 1 GB knee is between 30 k and 60 k people; the incremental syncs at 60 k ran
 - **One store.** Objects live only in the encrypted SQLite data file: each row has the columns lists filter and sort on, its slim JSON, and its sealed payload; attribute values are in `te_attrs`. Searches put every condition columns decide into SQL, read in growing chunks in the requested order where SQL can give it (creation date) and stop at a full page; other orders sort in Go. `TestQueryPlansUseIndexes` fails if a query scans a table.
 - **Visibility as bitmaps** over stable object slots, per user, in memory and in 512-byte chunks on disk: under 5 MB for 60 users and 750 000 objects.
 - **ID-list pulls.** A pull lists identifiers and update times; only people the hub lacks, holds older, or has not fetched for that program are fetched in full, 50 per request, each record once. Users whose access lists are the same apart from who they are share one listing (`access.List.GroupKey`; programs with an attribute category combination stay per user). Ordering a first pull most recent first, across programs, was tried and removed: with shared listings the first pull is short enough (15 minutes at HC IV size on `pi5`) not to need it.
-- **Paging.** Every page stops reading at its end (page 10 of 50 reads 500 matches), so a page costs in proportion to how deep it is, not to the facility's size.
+- **Paging.** Every page stops reading at its end, and a page that follows the one just served reads on from that page's last row (its creation key), so a page costs the same at any depth. A page that does not follow one reads from the start up to its end.
 - **Rendering** reads payloads in batches, copies only their top level, and keeps decoded payloads (4 096, keyed by uid and nonce, so a rewritten object always misses).
 - **Writes** are serialised in the hub (one write lock), prepared once, and synced at each commit.
 
@@ -67,7 +67,12 @@ eRegisters downloads every person of every program, 50 per page, with no limit (
 | 100 k | 3 342 | 22 ms | 160 ms | 310 ms | 8 min 40 s |
 | 300 k (`hc4`) | 10 002 | 25 ms | 450 ms | 0.9 s | 1 h 14 min |
 
-Each page reads every row before it (page *n* reads *n* × 50 matches, since visibility is decided in Go row by row), so a download grows with the square of the facility. Fine up to about 30 k people, slow at 100 k, too slow at HC IV size, and every browser does it once.
+Each page read every row before it (page *n* reads *n* × 50 matches, since visibility is decided in Go row by row), so a download grew with the square of the facility. The hub now remembers, per user and query, the last row of the page it served, and reads the next page on from that row's creation key (`pagePositions`, History 2026-10-15):
+
+| People | Before: one device's download | After | Every page |
+|---|---|---|---|
+| 100 k | 8 min 40 s | 1 min 2 s | 11–23 ms |
+| 300 k (`hc4`) | 1 h 14 min | 4 min 10 s | 17–36 ms |
 
 ## Load on central
 
@@ -172,3 +177,4 @@ Keeping five years of everything locally is not needed. All people are kept, so 
 - **2026-10-14, pages.** Rendering copied each object through JSON; decoded payloads are now kept by version. An Android page of 50 people: 20 ms → 7 ms when cached; a working list 3.2 → 1.6 ms (in process, 10 % of the first target).
 - **2026-10-14, later pages.** Only page 1 stopped reading at a full page; later pages read the whole program, and a one-minute cache of results hid it. Every page now stops at its end and the cache is gone. At 100 000 people, Android page 10 (the last with the 500 limit): 1.03 s the first time, 13 ms cached → 36 ms the first time, 9 ms after; a working list's page 3: 606 ms → 2 ms. A download without the limit costs more per page the deeper it goes (page 251: 141 ms).
 - **2026-10-14, incremental syncs.** The second ladder's working-day run put `pi5` out of memory at 100 k: Android's `updatedAfter` check decoded every enrollment and event of each candidate person, kept for the whole request, and with the fake central's data (every object updated at its start) every person of a program is a candidate. The check now reads the stored update times only. Locally at 100 k, 60 users: peak memory 2.7 GB → 260 MB, incremental sync 44 s → 25 s (p50), Android page 7.8 s → 4.0 s. What remains of the 25 s is each page checking every candidate, which real data, with update times spread over years, makes far fewer.
+- **2026-10-15, full downloads.** eRegisters downloads every person per program (Android stops at 500): one device's download grew with the square of the facility, 1 h 14 min at HC IV size in process. The hub now keeps, per user and query, the last row of the page it served for ten minutes, and the next page reads on from that row's creation key (`pagePositions`): 4 min 10 s at HC IV size, every page 17–36 ms. A first try kept the SQL row offset instead; SQLite still stepped through the skipped rows (3 min 35 s at 100 k instead of 1 min 2 s). `TestQueryPlansUseIndexes` checks that reading on keeps the index's order.
