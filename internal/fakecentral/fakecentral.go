@@ -362,6 +362,10 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"categoryOptionCombos": []any{map[string]any{"id": DefaultAOC}}})
 	case p == "/api/organisationUnits/"+Facility:
 		writeJSON(w, 200, map[string]any{"id": Facility, "name": "Ngelehun CHC", "code": "OU_559"})
+	case p == "/api/tracker/events" && isEventProgram(r.URL.Query().Get("program")):
+		c.listProgramEvents(w, r, u)
+	case p == "/api/categoryCombos":
+		c.categoryCombos(w, r, u)
 	case p == "/api/tracker/trackedEntities":
 		c.listTEs(w, r, u)
 	case strings.HasPrefix(p, "/api/tracker/trackedEntities/"):
@@ -462,16 +466,35 @@ func (c *Central) programs(w http.ResponseWriter, r *http.Request, u *User) {
 	for i, s := range []string{Stage1, Stage2, Stage3} {
 		stages = append(stages, map[string]any{"id": s, "sortOrder": i + 1, "repeatable": true, "access": dataPerm(u.StageRead[s], u.StageWrite[s])})
 	}
-	prog := map[string]any{"id": Program, "name": "TB program", "access": dataPerm(u.ProgramRead, u.ProgramWrite),
+	prog := map[string]any{"id": Program, "name": "TB program", "programType": "WITH_REGISTRATION", "access": dataPerm(u.ProgramRead, u.ProgramWrite),
 		"trackedEntityType": map[string]any{"id": TET, "access": dataPerm(true, true),
 			"trackedEntityTypeAttributes": []any{attr(AttrFirstName, false, false), attr(AttrLastName, false, false)}},
 		"programStages":                  stages,
 		"programTrackedEntityAttributes": []any{attr(AttrNationalI, false, true), attr(AttrTBID, true, true)}}
-	progs := []any{prog}
+	all := []any{prog}
 	if c.gen != nil {
-		progs = append(progs, c.gen.programMeta()...)
+		all = append(all, c.gen.programMeta()...)
 	}
-	writeJSON(w, 200, map[string]any{"programs": progs})
+	all = append(all, eventProgramMeta(u)...)
+	// The filters the hub uses: programType:eq:X and id:in:[a,b].
+	var progs []any
+	for _, x := range all {
+		pm := x.(map[string]any)
+		keep := true
+		for _, f := range r.URL.Query()["filter"] {
+			if t, ok := strings.CutPrefix(f, "programType:eq:"); ok {
+				pt, _ := pm["programType"].(string)
+				keep = keep && (pt == t || (pt == "" && t == "WITH_REGISTRATION"))
+			}
+			if l, ok := strings.CutPrefix(f, "id:in:["); ok {
+				keep = keep && slices.Contains(strings.Split(strings.TrimSuffix(l, "]"), ","), pm["id"].(string))
+			}
+		}
+		if keep {
+			progs = append(progs, pm)
+		}
+	}
+	writeJSON(w, 200, map[string]any{"programs": orEmpty(progs)})
 }
 
 // canSeeEvent applies stage read access (central drops unreadable events silently).
@@ -655,6 +678,14 @@ func (c *Central) importTracker(w http.ResponseWriter, r *http.Request, u *User)
 				fail("E1091", "no data write access to Program")
 			}
 		case "event":
+			if prog := tracker.Str(it.Data, "program"); isEventProgram(prog) {
+				if _, writes := aggUsers[u.Username]; !writes {
+					fail("E1091", "User has no data write access to Program")
+				} else if !mayUseEvent(u, it.Data) {
+					fail("E1099", "User: `"+u.UID+"`, has no write access to CategoryOption: `"+donorOption(tracker.Str(it.Data, "attributeOptionCombo"))+"`.")
+				}
+				break
+			}
 			if failed[it.Enrollment] {
 				failed[it.UID] = true // ignored without an error report of its own (as observed)
 				continue
