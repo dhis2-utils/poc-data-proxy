@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"time"
 
 	"github.com/dhis2/facility-hub/internal/auth"
 	"github.com/dhis2/facility-hub/internal/core"
@@ -223,6 +224,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		*store.Issue
 		User    string
 		Message string
+		Object  string
 	}
 	var irows []issueRow
 	for _, is := range issues {
@@ -238,7 +240,20 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		if len(e.Reports) > 0 {
 			msg = e.Reports[0].ErrorCode + ": " + e.Reports[0].Message
 		}
-		irows = append(irows, issueRow{Issue: is, User: names[is.UserID], Message: tracker.Redact(msg)})
+		row := issueRow{Issue: is, User: names[is.UserID], Message: tracker.Redact(msg), Object: is.ObjectUID}
+		if is.Kind == store.OutboxAggregate {
+			var x struct {
+				Edit struct {
+					Value *string `json:"value"`
+				} `json:"edit"`
+			}
+			json.Unmarshal(is.Error, &x)
+			row.Object = h.AggLabel(is.ObjectUID)
+			if x.Edit.Value != nil {
+				row.Object += ": " + *x.Edit.Value
+			}
+		}
+		irows = append(irows, row)
 	}
 	rt := h.Runtime()
 	var programs []string
@@ -251,6 +266,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"Outbox": outbox, "Issues": irows, "Users": rows, "Names": names, "Objects": h.Index.Len(),
 		"Forced": h.Monitor.ForcedOffline(), "Upgrade": upgrade, "Central": h.Central.BaseURL(),
 		"ServerVersion": h.ServerVersion(), "Msg": r.URL.Query().Get("msg"),
+		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour),
 	})
 }
 

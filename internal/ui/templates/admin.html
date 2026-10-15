@@ -31,9 +31,14 @@
 {{range .Outbox}}<tr><td>{{.Seq}}</td><td>{{index $.Names .UserID}}</td><td>{{short .CreatedAt}}</td><td><span class="pill {{.State}}">{{.State}}</span></td><td>{{.Attempts}}</td><td>{{if .DependsOnSeq}}{{.DependsOnSeq}}{{end}}</td><td class="mono">{{range .UIDs}}{{.}} {{end}}</td><td>{{.LastError}}</td></tr>{{else}}<tr><td colspan="8" class="muted">empty</td></tr>{{end}}
 </table></div></div>
 
+{{if .AggWarnings}}<div class="card"><h2>Locks soon: aggregate data not yet sent</h2><table>
+<tr><th>Form</th><th>Edits waiting</th><th>Locks at</th></tr>
+{{range .AggWarnings}}<tr><td>{{.Label}}</td><td>{{.Pending}}</td><td>{{.LocksAt.Format "2006-01-02 15:04"}}</td></tr>{{end}}
+</table><p class="muted">Connect the hub before then, or ask for a lock exception on central.</p></div>{{end}}
+
 <div class="card"><h2>Issues (rejected by central)</h2><div class="scroll"><table>
 <tr><th>#</th><th>Object</th><th>Kind</th><th>User</th><th>Error</th><th>Created</th><th>Reported to central</th></tr>
-{{range .Issues}}<tr><td>{{.ID}}</td><td class="mono">{{.ObjectUID}}</td><td>{{.Kind}}</td><td>{{.User}}</td><td>{{.Message}}</td><td>{{short .CreatedAt}}</td><td>{{short .ReportedCentralAt}}</td></tr>{{else}}<tr><td colspan="7" class="muted">none</td></tr>{{end}}
+{{range .Issues}}<tr><td>{{.ID}}</td><td class="mono">{{.Object}}</td><td>{{.Kind}}</td><td>{{.User}}</td><td>{{.Message}}</td><td>{{short .CreatedAt}}</td><td>{{short .ReportedCentralAt}}</td></tr>{{else}}<tr><td colspan="7" class="muted">none</td></tr>{{end}}
 </table></div></div>
 
 <div class="card"><h2>Upgrades</h2><p class="mono">{{or .Upgrade "no upgrade attempted"}}</p></div>

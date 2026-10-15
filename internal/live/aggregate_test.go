@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dhis2/facility-hub/internal/aggregate"
 	"github.com/dhis2/facility-hub/internal/store"
@@ -144,6 +145,12 @@ func TestAggregateLockedOnPushKeepsValue(t *testing.T) {
 	if len(issues) != 1 || issues[0].Kind != "aggregate" || !strings.Contains(string(issues[0].Error), "E2017") ||
 		!strings.Contains(string(issues[0].Error), `"value":"5"`) {
 		t.Fatalf("issue: %+v", issues)
+	}
+	admin := e.Web(tk.RoleAdmin)
+	admin.Login()
+	if _, page := admin.Do("GET", "/hub/ui", nil); !strings.Contains(string(page), "Fake monthly, "+pe) ||
+		!strings.Contains(string(page), ": 5") {
+		t.Fatalf("the dashboard names the refused value: %.3000s", page)
 	}
 }
 
@@ -324,5 +331,33 @@ func TestAggregateCompletionOffline(t *testing.T) {
 	e.Central.JSON("GET", "/api/completeDataSetRegistrations?"+q.Encode(), nil, &regs)
 	if len(regs.Registrations) != 1 || !regs.Registrations[0].Completed {
 		t.Fatalf("on central: %+v", regs)
+	}
+}
+
+// Pending edits whose period locks soon are listed on the dashboard.
+func TestAggregateExpiryWarning(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	e.NeedFake()
+	// Last month locks within a day: its last day plus whole days just past now.
+	now := e.App.Hub.CentralNow()
+	last := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, -1)
+	naiveNow := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 0, 0, time.UTC)
+	e.Fake.AggExpiryDays = float64(int(naiveNow.Sub(last).Hours()/24) + 1)
+	pe := last.Format("200601")
+	nurse.Login() // the access refresh at login reads the new expiry
+	e.Sync()
+	e.Offline()
+	if st, b := nurse.PostDataValue("/api/"+e.App.Hub.APIMinor()+"/dataValues",
+		cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "1")); st != 201 {
+		t.Fatalf("value for last month: %d %s", st, b)
+	}
+	ws := e.App.Hub.AggWarnings(3 * 24 * time.Hour)
+	if len(ws) != 1 || ws[0].Pending != 1 || !strings.Contains(ws[0].Label, pe) {
+		t.Fatalf("warnings: %+v", ws)
+	}
+	admin := e.Web(tk.RoleAdmin)
+	admin.Login()
+	if st, page := admin.Do("GET", "/hub/ui", nil); st != 200 || !strings.Contains(string(page), "Locks soon") {
+		t.Fatalf("admin page: %d, no expiry warning", st)
 	}
 }
