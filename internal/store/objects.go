@@ -623,3 +623,35 @@ func (s *Store) CountObjects(state string) int {
 	s.DB().QueryRow(`SELECT count(*) FROM objects WHERE sync_state=?`, state).Scan(&n)
 	return n
 }
+
+// OldProgramEvents lists synced events of an event program (no person) that central
+// gave the hub and whose occurredAt (or, without one, createdAt) is before cutoff.
+func (s *Store) OldProgramEvents(program, cutoff string) ([]string, error) {
+	rows, err := s.DB().Query(`SELECT uid FROM objects WHERE kind = ? AND program = ? AND te_uid = '' AND origin = ?
+ AND sync_state = ? AND coalesce(json_extract(slim, '$.occurredAt'), created_at) < ?`,
+		KindEvent, program, OriginCentral, SyncSynced, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var u string
+		if rows.Scan(&u) == nil {
+			out = append(out, u)
+		}
+	}
+	return out, rows.Err()
+}
+
+// DeleteObjects removes objects (pruning). Their slots are not reused.
+func (s *Store) DeleteObjects(uids []string) error {
+	return s.Tx(context.Background(), func(tx *sql.Tx) error {
+		for _, u := range uids {
+			if _, err := tx.Exec(`DELETE FROM objects WHERE uid = ?`, u); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}

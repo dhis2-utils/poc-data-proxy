@@ -205,6 +205,11 @@ func (w *Worker) cycle(ctx context.Context) error {
 		}
 		errs = append(errs, fmt.Errorf("aggregate pull: %w", err))
 	}
+	if n, err := h.PruneEvents(); err != nil {
+		errs = append(errs, fmt.Errorf("retention: %w", err))
+	} else if n > 0 {
+		slog.Info("retention pruned events", "events", n)
+	}
 	if err := w.RefillPool(ctx); err != nil {
 		errs = append(errs, err)
 	}

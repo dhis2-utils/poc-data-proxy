@@ -421,3 +421,9 @@ func likePattern(s string) string {
 	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 	return "%" + r.Replace(strings.ToLower(s)) + "%"
 }
+
+// Forget drops the caches after objects were removed from the store (pruning).
+func (ix *Index) Forget() {
+	ix.payloads.clear()
+	ix.pages.clear()
+}

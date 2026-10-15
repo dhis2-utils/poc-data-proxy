@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/url"
 	"testing"
+	"time"
 
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
@@ -151,5 +152,49 @@ func TestEventProgramPerUserListing(t *testing.T) {
 	}
 	if got := eventUIDs(clerk.JSON("GET", eventPath(e, fc.EventDonorProgram, nil), nil, 200)); len(got) != 1 || got[0] != "FakeEvD0002" {
 		t.Errorf("clerk (option B only): %v", got)
+	}
+}
+
+// Events older than their program's retention are not pulled, and are pruned once they
+// fall out of it.
+func TestEventRetention(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	old := e.App.Hub.CentralNow().AddDate(-2, 0, 0).Format(time.DateOnly)
+	recent := e.App.Hub.CentralNow().AddDate(0, -1, 0).Format(time.DateOnly)
+	e.Fake.SeedProgramEvent("FakeEvOld01", fc.EventProgram, fc.EventStage, old, fc.DefaultAOC)
+	e.Fake.SeedProgramEvent("FakeEvNew01", fc.EventProgram, fc.EventStage, recent, fc.DefaultAOC)
+	e.Setup() // keeps everything: no retention yet
+	if e.App.Hub.Index.Get("FakeEvOld01") == nil {
+		t.Fatal("without retention the old event is held")
+	}
+	e.Fake.DataStore["facility-hub-config"] = map[string]json.RawMessage{
+		"retention": json.RawMessage(`{"programs": {"` + fc.EventProgram + `": 12}}`)}
+	e.App.Hub.RefreshCatalog(context.Background())
+	e.Sync()
+	if e.App.Hub.Index.Get("FakeEvOld01") != nil || e.App.Hub.Index.Get("FakeEvNew01") == nil {
+		t.Fatal("pruning: the old event must go, the recent one stay")
+	}
+}
+
+// Review focus 2: an event with pending edits is kept past its retention.
+func TestEventRetentionKeepsPending(t *testing.T) {
+	t.Skip("needs offline writes in event programs (Task 7)")
+	e := tk.Start(t)
+	e.NeedFake()
+	old := e.App.Hub.CentralNow().AddDate(-2, 0, 0).Format(time.DateOnly)
+	e.Fake.SeedProgramEvent("FakeEvOld02", fc.EventProgram, fc.EventStage, old, fc.DefaultAOC)
+	e.Setup()
+	nurse := e.Web(tk.RoleNurse)
+	nurse.Login()
+	e.Sync()
+	e.Offline()
+	nurse.JSON("POST", tk.SyncImport, map[string]any{"events": []any{map[string]any{"event": "FakeEvOld02",
+		"program": fc.EventProgram, "programStage": fc.EventStage, "orgUnit": e.M.Facility.ID, "occurredAt": old,
+		"status": "COMPLETED"}}}, 200)
+	e.App.Hub.Store.SetState("retention", []byte(`{"defaultMonths": 12}`)) // as a refresh would store it
+	n, err := e.App.Hub.PruneEvents()
+	if err != nil || n != 0 || e.App.Hub.Index.Get("FakeEvOld02") == nil {
+		t.Fatalf("pruned %d (%v) with an edit pending", n, err)
 	}
 }
