@@ -6,6 +6,12 @@ import (
 	"strings"
 )
 
+// Outbox entry kinds.
+const (
+	OutboxTracker   = "tracker"
+	OutboxAggregate = "aggregate"
+)
+
 // Outbox entry states.
 const (
 	OutboxPending  = "pending"
@@ -27,6 +33,7 @@ type OutboxEntry struct {
 	// Params are the client's import flags to send along on push, as a query
 	// string ("skipSideEffects=true"); empty for none.
 	Params string
+	Kind   string // OutboxTracker or OutboxAggregate
 }
 
 // OutboxRef is an object UID + kind in an outbox entry.
@@ -110,7 +117,7 @@ func (s *Store) scanOutbox(rows *sql.Rows, withPayload bool) ([]*OutboxEntry, er
 		e := &OutboxEntry{}
 		var ct, errCT []byte
 		var dep sql.NullInt64
-		if err := rows.Scan(&e.Seq, &e.UserID, &ct, &e.CreatedAt, &e.State, &e.Attempts, &errCT, &dep, &e.Params); err != nil {
+		if err := rows.Scan(&e.Seq, &e.UserID, &ct, &e.CreatedAt, &e.State, &e.Attempts, &errCT, &dep, &e.Params, &e.Kind); err != nil {
 			return nil, err
 		}
 		e.DependsOnSeq = dep.Int64
@@ -130,7 +137,7 @@ func (s *Store) scanOutbox(rows *sql.Rows, withPayload bool) ([]*OutboxEntry, er
 	return out, rows.Err()
 }
 
-const outboxCols = `seq, user_id, payload_enc, created_at, state, attempts, last_error_enc, depends_on_seq, params`
+const outboxCols = `seq, user_id, payload_enc, created_at, state, attempts, last_error_enc, depends_on_seq, params, kind`
 
 // PendingOutbox returns pending entries in seq order, with payloads.
 func (s *Store) PendingOutbox() ([]*OutboxEntry, error) {

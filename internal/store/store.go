@@ -258,6 +258,23 @@ CREATE INDEX te_attrs_value ON te_attrs(attr, value);
 `,
 	// The import flags a client sent with an offline write, sent along on push.
 	`ALTER TABLE outbox ADD COLUMN params TEXT NOT NULL DEFAULT '';`,
+	// Aggregate data entry (docs/superpowers/specs/2026-10-15-aggregate-data-entry-design.md):
+	// central's answer per form, and the kind of each outbox entry.
+	`
+CREATE TABLE agg_forms(
+  key TEXT PRIMARY KEY,
+  data_set TEXT NOT NULL,
+  period TEXT NOT NULL,
+  org_unit TEXT NOT NULL,
+  aoc TEXT NOT NULL,
+  body_enc BLOB NOT NULL,
+  reg TEXT NOT NULL DEFAULT '',
+  fetched_at TEXT NOT NULL,
+  stale INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX agg_forms_ds ON agg_forms(data_set, fetched_at);
+ALTER TABLE outbox ADD COLUMN kind TEXT NOT NULL DEFAULT 'tracker';
+`,
 }
 
 // SchemaVersion is the number of key file migrations this binary knows.
