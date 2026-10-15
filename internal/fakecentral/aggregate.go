@@ -2,6 +2,7 @@ package fakecentral
 
 import (
 	"encoding/json"
+	"fmt"
 	"mime"
 	"net/http"
 	"net/url"
@@ -397,4 +398,25 @@ func (c *Central) Complete(ds, pe, aoc string) bool {
 	defer c.mu.Unlock()
 	reg := c.aggRegs[ds+"|"+pe+"|"+aoc]
 	return reg != nil && reg.Completed
+}
+
+// GenerateAggregate stores values for the performance tests: for each of the last
+// periods months, cells values of the three data elements (cycled) under generated
+// category option combinations, entered by nurse_a. Every fake data set holds the
+// same three elements, so each form shows all of a period's values: a form far
+// larger than real ones, the worst case for building a form offline.
+func (c *Central) GenerateAggregate(periods, cells int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := time.Now()
+	ts := c.now()
+	des := []string{AggDeNum, AggDeInt, AggDeReq}
+	for p := 0; p < periods; p++ {
+		pe := now.AddDate(0, -p, 0).Format("200601")
+		for i := 0; i < cells; i++ {
+			coc := fmt.Sprintf("FakeCoc%04d", i/len(des))
+			c.aggValues[aggKey(pe, des[i%len(des)], coc, AggCOC)] = &aggValue{Value: strconv.Itoa(i % 97),
+				StoredBy: "nurse_a", Created: ts, LastUpdated: ts}
+		}
+	}
 }
