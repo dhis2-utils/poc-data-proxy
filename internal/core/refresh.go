@@ -132,6 +132,36 @@ func (h *Hub) FetchAccess(ctx context.Context, auth central.Auth) (*access.List,
 			l.RelationshipTypes[rt.ID] = rt.Access.Data
 		}
 	}
+	if combos := h.Catalog().AttributeCombos(); len(combos) > 0 {
+		var cc struct {
+			Combos []struct {
+				Categories []struct {
+					Options []struct {
+						ID string `json:"id"`
+						dataAccess
+					} `json:"categoryOptions"`
+				} `json:"categories"`
+			} `json:"categoryCombos"`
+		}
+		if err := h.Central.JSON(ctx, "GET", central.Q("/api/categoryCombos", "filter", "id:in:["+strings.Join(combos, ",")+"]",
+			"fields", "id,categories[categoryOptions[id,access[data[read,write]]]]", "paging", "false"), nil, auth, &cc); err != nil {
+			if central.IsNetwork(err) {
+				return nil, err
+			}
+			l.Ungroupable = true // unknown: no offline writes with an option combination, pulled alone
+		} else {
+			l.CategoryOptions = map[string]bool{}
+			for _, c := range cc.Combos {
+				for _, cat := range c.Categories {
+					for _, o := range cat.Options {
+						if o.Access.Data.Write {
+							l.CategoryOptions[o.ID] = true
+						}
+					}
+				}
+			}
+		}
+	}
 	return l, nil
 }
 

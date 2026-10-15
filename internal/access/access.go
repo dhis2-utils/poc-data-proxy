@@ -30,6 +30,10 @@ type List struct {
 	// Ungroupable: something central uses for this user could not be read, so their
 	// pulls are never shared with others (GroupKey).
 	Ungroupable bool `json:"ungroupable,omitempty"`
+	// CategoryOptions: the options of the catalog's attribute category combinations
+	// (events, and 2.43 enrollments) the user may write data for. Offline writes with
+	// an attribute option combination need each of its options (E1099).
+	CategoryOptions map[string]bool `json:"categoryOptions,omitempty"`
 }
 
 // GroupKey is the same for users central answers alike when the hub lists what they
@@ -38,7 +42,9 @@ type List struct {
 // central uses are not in the list: category option sharing, which decides events in
 // programs with an attribute category combination (those are listed per user), and
 // sharing granted to one user directly rather than through a group on anything other
-// than programs, stages, types and relationship types. Category options also decide
+// than programs, stages, types and relationship types. (Category option write access
+// is in the list, for offline writes; read sharing, which decides what central
+// lists, is not.) Category options also decide
 // enrollments in programs with an enrollment category combination (2.43): those
 // programs are listed per user too.
 func (l *List) GroupKey() string {
@@ -57,6 +63,17 @@ func (l *List) GroupKey() string {
 	k.Authorities, k.UserGroups = sorted(k.Authorities), sorted(k.UserGroups)
 	b, _ := json.Marshal(k) // maps marshal with sorted keys
 	return string(b)
+}
+
+// MayWriteOptions reports whether the user may write every option; missing is the
+// first one they may not.
+func (l *List) MayWriteOptions(opts []string) (ok bool, missing string) {
+	for _, o := range opts {
+		if l == nil || !l.CategoryOptions[o] {
+			return false, o
+		}
+	}
+	return true, ""
 }
 
 func Parse(b []byte) (*List, error) {

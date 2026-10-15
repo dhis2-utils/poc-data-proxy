@@ -46,3 +46,33 @@ func TestEventProgramsInCatalog(t *testing.T) {
 		t.Fatalf("tracker program: %+v", tb)
 	}
 }
+
+// The access refresh reads which category options of attribute category combinations
+// each user may write.
+func TestCategoryOptionWriteAccess(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	e.Setup()
+	for _, c := range []struct {
+		user string
+		a, b bool
+	}{{"nurse_a", true, true}, {"clerk_c", false, true}} {
+		cl := e.Web(roleOf(e, c.user))
+		cl.Login()
+		u, _ := e.App.Hub.Store.UserByName(c.user)
+		acc := e.App.Hub.Access(u.ID)
+		if acc.CategoryOptions[fc.AggDonorOptA] != c.a || acc.CategoryOptions[fc.AggDonorOptB] != c.b {
+			t.Errorf("%s: %+v", c.user, acc.CategoryOptions)
+		}
+	}
+}
+
+func roleOf(e *tk.Env, username string) string {
+	for role, u := range e.M.Users {
+		if u.Username == username {
+			return role
+		}
+	}
+	e.T.Fatalf("no role for %s", username)
+	return ""
+}
