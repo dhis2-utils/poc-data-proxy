@@ -199,6 +199,12 @@ func (w *Worker) cycle(ctx context.Context) error {
 		}
 		errs = append(errs, err)
 	}
+	if err := w.pullAggregate(ctx); err != nil {
+		if central.IsNetwork(err) {
+			return err
+		}
+		errs = append(errs, fmt.Errorf("aggregate pull: %w", err))
+	}
 	if err := w.RefillPool(ctx); err != nil {
 		errs = append(errs, err)
 	}
@@ -256,7 +262,12 @@ func (w *Worker) Push(ctx context.Context) error {
 		if skipUser[e.UserID] {
 			continue
 		}
-		res, err := w.pushEntry(ctx, e)
+		var res pushResult
+		if e.Kind == store.OutboxAggregate {
+			res, err = w.pushAggregate(ctx, e)
+		} else {
+			res, err = w.pushEntry(ctx, e)
+		}
 		if err != nil {
 			return err
 		}
