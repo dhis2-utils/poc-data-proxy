@@ -137,8 +137,12 @@ func (w *Worker) pullAggGroup(ctx context.Context, g *aggGroup, now time.Time, r
 	if !full && cursor != "" {
 		q.Set("lastUpdated", cursor)
 	}
+	// 2.43 moves the fields every value shares (period, attribute option combination,
+	// org unit) to the top of the answer instead of repeating them on each value.
 	var vs struct {
-		DataValues []struct {
+		Period               string `json:"period"`
+		AttributeOptionCombo string `json:"attributeOptionCombo"`
+		DataValues           []struct {
 			DataElement          string `json:"dataElement"`
 			Period               string `json:"period"`
 			AttributeOptionCombo string `json:"attributeOptionCombo"`
@@ -150,6 +154,12 @@ func (w *Worker) pullAggGroup(ctx context.Context, g *aggGroup, now time.Time, r
 	}
 	newest := cursor
 	for _, v := range vs.DataValues {
+		if v.Period == "" {
+			v.Period = vs.Period
+		}
+		if v.AttributeOptionCombo == "" {
+			v.AttributeOptionCombo = vs.AttributeOptionCombo
+		}
 		if lu := centralTime(v.LastUpdated); lu > newest {
 			newest = lu
 		}

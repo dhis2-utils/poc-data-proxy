@@ -366,7 +366,22 @@ func (c *Central) aggValueSets(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, m)
 	}
-	writeJSON(w, 200, map[string]any{"dataValues": out})
+	res := map[string]any{"dataValues": out}
+	if c.CompactValueSets && len(out) > 0 {
+		for _, f := range []string{"orgUnit", "attributeOptionCombo", "period"} {
+			same := true
+			for _, v := range out {
+				same = same && v.(map[string]any)[f] == out[0].(map[string]any)[f]
+			}
+			if same {
+				res[f] = out[0].(map[string]any)[f]
+				for _, v := range out {
+					delete(v.(map[string]any), f)
+				}
+			}
+		}
+	}
+	writeJSON(w, 200, res)
 }
 
 func (c *Central) aggRegistrations(w http.ResponseWriter, r *http.Request) {

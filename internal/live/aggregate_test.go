@@ -700,3 +700,19 @@ func TestAggregatePullFollowsCentralClock(t *testing.T) {
 		t.Fatalf("offline after two pulls: %q, want 9", got)
 	}
 }
+
+// 2.43 answers dataValueSets with the fields every value shares (here the attribute
+// option combination and org unit) once at the top: the pull still finds the forms.
+func TestAggregatePullCompactValueSets(t *testing.T) {
+	e, ag, _, clerk := aggregateEnv(t)
+	e.NeedFake()
+	e.Fake.CompactValueSets = true
+	pe := aggPeriod(e, ag)
+	e.SetCentralDataValue(ag.DataSet, pe, ag.Integer, ag.COC, "6")
+	e.Sync()
+	e.Offline()
+	form := clerk.JSON("GET", formPath(e, ag.DataSet, pe), nil, 200)
+	if got, _ := formValue(form, ag.Integer, ag.COC); got != "6" {
+		t.Fatalf("offline: %q, want 6", got)
+	}
+}

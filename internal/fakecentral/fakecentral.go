@@ -96,6 +96,9 @@ type Central struct {
 	AggExpiryDays float64 // expiry days of AggDataSet
 	// OnAggWrite runs as an aggregate write arrives, before it is handled (tests).
 	OnAggWrite func()
+	// CompactValueSets answers dataValueSets as 2.43 does: fields every value shares
+	// (orgUnit, attributeOptionCombo, period) once at the top, not on each value.
+	CompactValueSets bool
 	// ClockSkew shifts central's clock against the hub's (tests).
 	ClockSkew time.Duration
 	// AggFail makes an aggregate path answer this status (tests).
