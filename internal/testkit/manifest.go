@@ -39,6 +39,29 @@ type Manifest struct {
 	// Matrix users cover combinations of capture and search scope and of program,
 	// stage and tracked entity type sharing; the differential oracle checks each.
 	Matrix []MatrixUser `json:"matrix,omitempty"`
+	// Aggregate: data sets at the facility for the aggregate tests; nil when this
+	// setup has none (the tests skip).
+	Aggregate *Aggregate `json:"aggregate,omitempty"`
+}
+
+// Aggregate names what the aggregate tests use. Number and Integer are data elements
+// of DataSet (value types NUMBER and INTEGER), Required its compulsory one, COC their
+// category option combination and DefaultAOC the default attribute option combination.
+// ValidDataSet has validCompleteOnly. DonorDataSet has an attribute combination
+// (DonorCC) with an option only the nurse may use (DonorOptionNurse, its AOC
+// DonorAOCNurse); the clerk may not.
+type Aggregate struct {
+	DataSet          string `json:"dataSet"`
+	ValidDataSet     string `json:"validDataSet"`
+	DonorDataSet     string `json:"donorDataSet,omitempty"`
+	Number           string `json:"number"`
+	Integer          string `json:"integer"`
+	Required         string `json:"required"`
+	COC              string `json:"coc"`
+	DefaultAOC       string `json:"defaultAoc"`
+	DonorCC          string `json:"donorCc,omitempty"`
+	DonorOptionNurse string `json:"donorOptionNurse,omitempty"`
+	DonorAOCNurse    string `json:"donorAocNurse,omitempty"`
 }
 
 type MatrixUser struct {

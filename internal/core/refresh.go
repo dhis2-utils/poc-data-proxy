@@ -152,6 +152,12 @@ func (h *Hub) RefreshAccessWith(ctx context.Context, userID int64, auth central.
 		}
 		return err
 	}
+	if err := h.RefreshAggAccess(ctx, userID, auth, l.Authorities); err != nil {
+		if central.IsNetwork(err) {
+			return err
+		}
+		slog.Warn("aggregate access refresh", "user", l.Username, "err", err)
+	}
 	return h.SetAccess(userID, l)
 }
 
@@ -304,6 +310,9 @@ func (h *Hub) RefreshCatalog(ctx context.Context) error {
 	}
 	if uerr := h.UpdateRuntime(func(rt *Runtime) { rt.Catalog = cat }); uerr != nil {
 		return uerr
+	}
+	if aerr := h.refreshAggRetention(ctx); aerr != nil && central.IsNetwork(aerr) {
+		return aerr
 	}
 	if err != nil {
 		return fmt.Errorf("catalog with hub token: %w", err)

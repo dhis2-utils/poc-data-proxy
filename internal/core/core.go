@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/access"
+	"github.com/dhis2/facility-hub/internal/aggregate"
 	"github.com/dhis2/facility-hub/internal/central"
 	"github.com/dhis2/facility-hub/internal/compat"
 	"github.com/dhis2/facility-hub/internal/config"
@@ -81,6 +82,8 @@ type Hub struct {
 	mu     sync.RWMutex
 	rt     *Runtime
 	access map[int64]*access.List
+	// aggAccess: each user's aggregate access (AggAccess), as access is theirs.
+	aggAccess map[int64]*aggregate.Access
 
 	SyncNow   chan struct{}
 	Upgrading atomic.Bool
@@ -218,7 +221,8 @@ func New(cfg config.Config, version string, st *store.Store) *Hub {
 	mon := central.NewMonitor(cfg.PingInterval, cfg.PingTimeout)
 	h := &Hub{Cfg: cfg, Version: version, Store: st, Index: tracker.NewStoreIndex(st), Monitor: mon,
 		Sessions: NewSessions(), ReqLog: NewRequestLog(), Started: time.Now(), access: map[int64]*access.List{},
-		SyncNow: make(chan struct{}, 1)}
+		aggAccess: map[int64]*aggregate.Access{},
+		SyncNow:   make(chan struct{}, 1)}
 	h.Sessions.Idle, h.Sessions.Max = cfg.SessionIdle, cfg.SessionMax
 	base := st.Meta(MetaCentralURL)
 	if base == "" {
@@ -371,6 +375,7 @@ func (h *Hub) Lock() {
 	h.mu.Lock()
 	h.rt = nil
 	h.access = map[int64]*access.List{}
+	h.aggAccess = map[int64]*aggregate.Access{}
 	h.mu.Unlock()
 	h.Sessions.Clear()
 }

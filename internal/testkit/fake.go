@@ -31,6 +31,9 @@ func Fake(t testing.TB) (*Manifest, *fc.Central) {
 			RoleClerk:      {Username: "clerk_c", UID: "HubUsrClrkC"},
 			RoleOutsider:   {Username: "outsider_d", UID: "HubUsrOutsD"},
 		},
+		Aggregate: &Aggregate{DataSet: fc.AggDataSet, ValidDataSet: fc.AggValidDS, DonorDataSet: fc.AggDonorDS,
+			Number: fc.AggDeNum, Integer: fc.AggDeInt, Required: fc.AggDeReq, COC: fc.AggCOC, DefaultAOC: fc.AggCOC,
+			DonorCC: fc.AggDonorCC, DonorOptionNurse: fc.AggDonorOptA, DonorAOCNurse: fc.AggDonorAOCA},
 	}
 	return m, c
 }
