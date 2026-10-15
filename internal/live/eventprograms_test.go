@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -179,7 +181,6 @@ func TestEventRetention(t *testing.T) {
 
 // Review focus 2: an event with pending edits is kept past its retention.
 func TestEventRetentionKeepsPending(t *testing.T) {
-	t.Skip("needs offline writes in event programs (Task 7)")
 	e := tk.Start(t)
 	e.NeedFake()
 	old := e.App.Hub.CentralNow().AddDate(-2, 0, 0).Format(time.DateOnly)
@@ -196,5 +197,59 @@ func TestEventRetentionKeepsPending(t *testing.T) {
 	n, err := e.App.Hub.PruneEvents()
 	if err != nil || n != 0 || e.App.Hub.Index.Get("FakeEvOld02") == nil {
 		t.Fatalf("pruned %d (%v) with an edit pending", n, err)
+	}
+}
+
+// Events of event programs are captured offline and pushed as their author's.
+func TestEventProgramWriteOffline(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	e.Setup()
+	nurse := e.Web(tk.RoleNurse)
+	nurse.Login()
+	e.Sync()
+	e.Offline()
+	ev := tk.UID()
+	nurse.JSON("POST", tk.SyncImport, map[string]any{"events": []any{map[string]any{"event": ev,
+		"program": fc.EventProgram, "programStage": fc.EventStage, "orgUnit": e.M.Facility.ID,
+		"occurredAt": e.App.Hub.CentralNow().Format(time.DateOnly), "status": "ACTIVE"}}}, 200)
+	if got := eventUIDs(nurse.JSON("GET", eventPath(e, fc.EventProgram, nil), nil, 200)); !slices.Contains(got, ev) {
+		t.Fatalf("offline list after capture: %v", got)
+	}
+	e.Online()
+	e.Sync()
+	if e.CentralObject("events", ev) == nil {
+		t.Fatal("not on central after the push")
+	}
+}
+
+// Review focus 3: an attribute option combination is written offline only by users who
+// may write each of its options.
+func TestAttributeOptionWriteOffline(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	e.Setup()
+	nurse, clerk := e.Web(tk.RoleNurse), e.Web(tk.RoleClerk)
+	nurse.Login()
+	clerk.Login()
+	e.Sync()
+	e.Offline()
+	event := func(aoc string) map[string]any {
+		return map[string]any{"events": []any{map[string]any{"event": tk.UID(), "program": fc.EventDonorProgram,
+			"programStage": fc.EventDonorStage, "orgUnit": e.M.Facility.ID, "attributeOptionCombo": aoc,
+			"occurredAt": e.App.Hub.CentralNow().Format(time.DateOnly), "status": "ACTIVE"}}}
+	}
+	nurse.JSON("POST", tk.SyncImport, event(fc.AggDonorAOCA), 200)
+	if st, b := clerk.Do("POST", tk.SyncImport, event(fc.AggDonorAOCA)); st != 409 || !strings.Contains(string(b), "E1099") {
+		t.Fatalf("clerk with option A offline: %d %s", st, b)
+	}
+	clerk.JSON("POST", tk.SyncImport, event(fc.AggDonorAOCB), 200)
+	if st, b := clerk.Do("POST", tk.SyncImport, event("NoSuchAoc01")); st != 409 || !strings.Contains(string(b), "E1055") {
+		t.Fatalf("an option combination of another combination: %d %s", st, b)
+	}
+	e.Online()
+	e.Sync()
+	if n := e.App.Hub.Store.CountIssues(); n != 0 {
+		t.Fatalf("%d issues: central refused what the hub accepted", n)
 	}
 }

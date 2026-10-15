@@ -310,10 +310,8 @@ func (im *Importer) validateEnrollment(it *Item, old *Obj) (*Obj, bool, []ErrorR
 	if pm == nil {
 		return nil, false, im.errf(it, "E1069", "needs connection: program `%s` is not cached on this hub", program)
 	}
-	if aoc := Str(it.Data, "attributeOptionCombo"); (aoc != "" && aoc != im.DefaultAOC) || pm.EnrollmentAttributeCombo {
-		// Central (2.43) checks access to the combo's category options (E1099), which
-		// the hub cannot offline: say so now instead of on push.
-		return nil, false, im.errf(it, "E1055", "needs connection: enrollments with an attribute option combo are not supported offline")
+	if errs := im.checkAOC(it, Str(it.Data, "attributeOptionCombo"), pm.EnrollmentCategoryCombo); errs != nil {
+		return nil, false, errs
 	}
 	parent, rej := im.resolve(te)
 	if rej {
@@ -356,13 +354,12 @@ func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport
 	if p := Str(it.Data, "program"); p != "" && p != program {
 		return nil, false, im.errf(it, "E1079", "Event: `%s`, program: `%s` is different from program defined in program stage: `%s`.", it.UID, p, stage)
 	}
-	if aoc := Str(it.Data, "attributeOptionCombo"); aoc != "" && aoc != im.DefaultAOC {
-		return nil, false, im.errf(it, "E1055", "needs connection: events with a non-default attribute option combo are not supported offline")
+	pm := im.V.Catalog.Programs[program]
+	if errs := im.checkAOC(it, Str(it.Data, "attributeOptionCombo"), pm.CategoryCombo); errs != nil {
+		return nil, false, errs
 	}
-	if p := im.V.Catalog.Programs[program]; p != nil && p.AttributeCombo {
-		// Central requires a non-default attribute option combo here (E1055), and
-		// those are not supported offline: say so now instead of on push.
-		return nil, false, im.errf(it, "E1055", "needs connection: events in a program with an attribute category combination are not supported offline")
+	if pm.Event {
+		return im.eventProgramEvent(it, old, program, stage)
 	}
 	enr := it.Enrollment
 	if enr == "" && old != nil {
@@ -395,6 +392,49 @@ func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport
 	o := im.newObj(it, old)
 	o.TE, o.Enrollment, o.Program, o.Stage = parent.TE, enr, program, stage
 	o.Data["program"], o.Data["programStage"], o.Data["enrollment"], o.Data["trackedEntity"] = program, stage, enr, parent.TE
+	if Str(o.Data, "status") == "" {
+		o.Data["status"] = "ACTIVE"
+	}
+	return o, old == nil, nil
+}
+
+// checkAOC applies central's rule for a non-default attribute option combination
+// offline: it must be one of combo's (E1055), and the user must be allowed to write
+// each of its category options (E1099). combo is "" for a default combination, which
+// takes no attribute option combination but the default.
+func (im *Importer) checkAOC(it *Item, aoc, combo string) []ErrorReport {
+	if aoc == "" || aoc == im.DefaultAOC {
+		if combo != "" {
+			return im.errf(it, "E1055", "Default AttributeOptionCombo is not allowed since program has non-default CategoryCombo.")
+		}
+		return nil
+	}
+	if combo == "" || !slices.Contains(im.V.Catalog.ComboAOCs[combo], aoc) {
+		return im.errf(it, "E1055", "AttributeOptionCombo `%s` is not part of the program's CategoryCombo.", aoc)
+	}
+	if ok, missing := im.V.Access.MayWriteOptions(im.V.Catalog.AOCs[aoc]); !ok {
+		return im.errf(it, "E1099", "User: `%s`, has no write access to CategoryOption: `%s`.", im.UserUID, missing)
+	}
+	return nil
+}
+
+// eventProgramEvent validates an event of an event program: no person or enrollment;
+// the facility as org unit; data write access to the program and its stage.
+func (im *Importer) eventProgramEvent(it *Item, old *Obj, program, stage string) (*Obj, bool, []ErrorReport) {
+	if errs := im.orgUnitOK(it, old); errs != nil {
+		return nil, false, errs
+	}
+	if !im.V.Access.Program(program).Write {
+		return nil, false, im.errf(it, "E1091", "User: `%s`, has no data write access to Program: `%s`.", im.UserUID, program)
+	}
+	if !im.V.Access.Stage(stage).Write {
+		return nil, false, im.errf(it, "E1095", "User: `%s` has no data write access to ProgramStage: `%s`.", im.UserUID, stage)
+	}
+	o := im.newObj(it, old)
+	o.TE, o.Enrollment, o.Program, o.Stage = "", "", program, stage
+	o.Data["program"], o.Data["programStage"] = program, stage
+	delete(o.Data, "enrollment")
+	delete(o.Data, "trackedEntity")
 	if Str(o.Data, "status") == "" {
 		o.Data["status"] = "ACTIVE"
 	}
