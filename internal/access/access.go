@@ -34,6 +34,10 @@ type List struct {
 	// (events, and 2.43 enrollments) the user may write data for. Offline writes with
 	// an attribute option combination need each of its options (E1099).
 	CategoryOptions map[string]bool `json:"categoryOptions,omitempty"`
+	// ReadableOptions: the options of those combinations the user may read data for.
+	// An object the hub holds under an option combination (written through the hub)
+	// is shown only to users who may read each of its options, as central does.
+	ReadableOptions map[string]bool `json:"readableOptions,omitempty"`
 }
 
 // GroupKey is the same for users central answers alike when the hub lists what they
@@ -63,6 +67,16 @@ func (l *List) GroupKey() string {
 	k.Authorities, k.UserGroups = sorted(k.Authorities), sorted(k.UserGroups)
 	b, _ := json.Marshal(k) // maps marshal with sorted keys
 	return string(b)
+}
+
+// MayReadOptions reports whether the user may read data under every option.
+func (l *List) MayReadOptions(opts []string) bool {
+	for _, o := range opts {
+		if l == nil || !l.ReadableOptions[o] {
+			return false
+		}
+	}
+	return true
 }
 
 // MayWriteOptions reports whether the user may write every option; missing is the

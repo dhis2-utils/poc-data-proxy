@@ -492,7 +492,8 @@ func (s *Store) SlotOf(uid string) int64 {
 // MaxSlot is the highest slot in use.
 func (s *Store) MaxSlot() int64 {
 	var n sql.NullInt64
-	s.DB().QueryRow(`SELECT max(slot) FROM objects`).Scan(&n)
+	s.DB().QueryRow(`SELECT max(coalesce((SELECT max(slot) FROM objects), 0),
+ coalesce((SELECT CAST(value AS INTEGER) FROM kv WHERE key = 'slot_floor'), 0))`).Scan(&n)
 	return n.Int64
 }
 
@@ -626,12 +627,14 @@ func (s *Store) CountObjects(state string) int {
 	return n
 }
 
-// OldProgramEvents lists synced events of an event program (no person) that central
-// gave the hub and whose occurredAt (or, without one, createdAt) is before cutoff.
-func (s *Store) OldProgramEvents(program, cutoff string) ([]string, error) {
-	rows, err := s.DB().Query(`SELECT uid FROM objects WHERE kind = ? AND program = ? AND te_uid = '' AND origin = ?
- AND sync_state = ? AND coalesce(json_extract(slim, '$.occurredAt'), created_at) < ?`,
-		KindEvent, program, OriginCentral, SyncSynced, cutoff)
+// OldProgramEvents lists the facility's synced events of an event program (no person)
+// whose event date (or, without one, creation date) is before cutoff and that no
+// pending outbox entry refers to. It reads the event-date index.
+func (s *Store) OldProgramEvents(program, owner, cutoff string) ([]string, error) {
+	rows, err := s.DB().Query(`SELECT uid FROM objects WHERE kind = ? AND program = ? AND owner_org_unit = ? AND te_uid = ''
+ AND sync_state = ? AND ((occurred_at <> '' AND occurred_at < ?) OR (occurred_at = '' AND created_at < ?))
+ AND NOT EXISTS (SELECT 1 FROM outbox o JOIN outbox_objects oo ON oo.seq = o.seq WHERE o.state = ? AND oo.uid = objects.uid)`,
+		KindEvent, program, owner, SyncSynced, cutoff, cutoff, OutboxPending)
 	if err != nil {
 		return nil, err
 	}
@@ -646,14 +649,36 @@ func (s *Store) OldProgramEvents(program, cutoff string) ([]string, error) {
 	return out, rows.Err()
 }
 
-// DeleteObjects removes objects (pruning). Their slots are not reused.
-func (s *Store) DeleteObjects(uids []string) error {
-	return s.Tx(context.Background(), func(tx *sql.Tx) error {
-		for _, u := range uids {
-			if _, err := tx.Exec(`DELETE FROM objects WHERE uid = ?`, u); err != nil {
-				return err
+// DeleteObjects removes synced objects (pruning), a thousand per transaction so that
+// offline writes are not held up; a row that turned pending meanwhile stays. The
+// highest slot removed is kept as a floor for MaxSlot: users' visibility bitmaps keep
+// the removed slots' bits, so a restart must never give those slots to new objects.
+func (s *Store) DeleteObjects(uids []string) (int, error) {
+	n := 0
+	for start := 0; start < len(uids); start += 1000 {
+		chunk := uids[start:min(start+1000, len(uids))]
+		err := s.Tx(context.Background(), func(tx *sql.Tx) error {
+			for _, u := range chunk {
+				var slot sql.NullInt64
+				err := tx.QueryRow(`DELETE FROM objects WHERE uid = ? AND sync_state = ? RETURNING slot`, u, SyncSynced).Scan(&slot)
+				if errors.Is(err, sql.ErrNoRows) {
+					continue
+				}
+				if err != nil {
+					return err
+				}
+				n++
+				if _, err := tx.Exec(`INSERT INTO kv(key, value) VALUES('slot_floor', ?)
+ ON CONFLICT(key) DO UPDATE SET value = CAST(max(CAST(value AS INTEGER), CAST(excluded.value AS INTEGER)) AS TEXT)`,
+					fmt.Sprint(slot.Int64)); err != nil {
+					return err
+				}
 			}
+			return nil
+		})
+		if err != nil {
+			return n, err
 		}
-		return nil
-	})
+	}
+	return n, nil
 }

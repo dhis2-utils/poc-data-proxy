@@ -150,12 +150,15 @@ func (h *Hub) FetchAccess(ctx context.Context, auth central.Auth) (*access.List,
 			}
 			l.Ungroupable = true // unknown: no offline writes with an option combination, pulled alone
 		} else {
-			l.CategoryOptions = map[string]bool{}
+			l.CategoryOptions, l.ReadableOptions = map[string]bool{}, map[string]bool{}
 			for _, c := range cc.Combos {
 				for _, cat := range c.Categories {
 					for _, o := range cat.Options {
 						if o.Access.Data.Write {
 							l.CategoryOptions[o.ID] = true
+						}
+						if o.Access.Data.Read {
+							l.ReadableOptions[o.ID] = true
 						}
 					}
 				}

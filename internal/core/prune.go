@@ -10,23 +10,18 @@ func (h *Hub) PruneEvents() (int, error) {
 		if pm := cat.Programs[id]; !pm.Event || !ok {
 			continue
 		}
-		uids, err := h.Store.OldProgramEvents(id, cutoff)
+		uids, err := h.Store.OldProgramEvents(id, h.Facility(), cutoff)
 		if err != nil {
 			return n, err
 		}
-		var drop []string
-		for _, u := range uids {
-			if !h.Store.HasPendingOutboxFor(u, 0) {
-				drop = append(drop, u)
-			}
-		}
-		if len(drop) == 0 {
+		if len(uids) == 0 {
 			continue
 		}
-		if err := h.Store.DeleteObjects(drop); err != nil {
+		d, err := h.Store.DeleteObjects(uids)
+		n += d
+		if err != nil {
 			return n, err
 		}
-		n += len(drop)
 	}
 	if n > 0 {
 		h.Index.Forget()

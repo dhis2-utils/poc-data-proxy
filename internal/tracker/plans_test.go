@@ -51,6 +51,10 @@ func TestQueryPlansUseIndexes(t *testing.T) {
 	explain("object states", `SELECT uid, updated_at, slot FROM objects INDEXED BY objects_state WHERE uid IN (?,?)`, "a", "b")
 	explain("slot origins", `SELECT slot, origin, program FROM objects WHERE slot IN (?,?)`, 1, 2)
 	explain("unique", `SELECT count(*) FROM te_attrs WHERE attr = ? AND value = ? AND te_uid <> ?`, "a", "b", "c")
+	explain("old program events (pruning)", `SELECT uid FROM objects WHERE kind = ? AND program = ? AND owner_org_unit = ? AND te_uid = ''
+ AND sync_state = ? AND ((occurred_at <> '' AND occurred_at < ?) OR (occurred_at = '' AND created_at < ?))
+ AND NOT EXISTS (SELECT 1 FROM outbox o JOIN outbox_objects oo ON oo.seq = o.seq WHERE o.state = ? AND oo.uid = objects.uid)`,
+		"event", "p", "o", "synced", "2025-01-01", "2025-01-01", "pending")
 	explain("enrolledTEs", `SELECT DISTINCT te_uid FROM objects WHERE kind = 'enrollment' AND program = ? AND owner_org_unit = ? AND sync_state = ?`, "p", "o", "s")
 	plan := func(name, coll string, q url.Values) {
 		var p *plan

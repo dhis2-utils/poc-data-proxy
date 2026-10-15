@@ -253,3 +253,90 @@ func TestAttributeOptionWriteOffline(t *testing.T) {
 		t.Fatalf("%d issues: central refused what the hub accepted", n)
 	}
 }
+
+// Review fix: an event written under an attribute option combination, offline or online
+// through the hub, is not shown to a user who may not read its option (clerk_c reads
+// donor option B only).
+func TestAttributeOptionReadOffline(t *testing.T) {
+	for _, online := range []bool{false, true} {
+		e := tk.Start(t)
+		e.NeedFake()
+		e.Setup()
+		nurse, clerk := e.Web(tk.RoleNurse), e.Web(tk.RoleClerk)
+		nurse.Login()
+		clerk.Login()
+		e.Sync()
+		if !online {
+			e.Offline()
+		}
+		ev := tk.UID()
+		nurse.JSON("POST", tk.SyncImport, map[string]any{"events": []any{map[string]any{"event": ev,
+			"program": fc.EventDonorProgram, "programStage": fc.EventDonorStage, "orgUnit": e.M.Facility.ID,
+			"attributeOptionCombo": fc.AggDonorAOCA, "occurredAt": e.App.Hub.CentralNow().Format(time.DateOnly),
+			"status": "ACTIVE"}}}, 200)
+		if online {
+			e.Sync()
+			e.Offline()
+		}
+		if got := eventUIDs(clerk.JSON("GET", eventPath(e, fc.EventDonorProgram, nil), nil, 200)); slices.Contains(got, ev) {
+			t.Fatalf("online=%v: the clerk sees an event under an option she may not read", online)
+		}
+		if got := eventUIDs(nurse.JSON("GET", eventPath(e, fc.EventDonorProgram, nil), nil, 200)); !slices.Contains(got, ev) {
+			t.Fatalf("online=%v: the nurse does not see her own event", online)
+		}
+	}
+}
+
+// Review fix: with retention set, a full pull does not hide an old event with a pending
+// edit from its author.
+func TestEventRetentionPendingVisibleToAuthor(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	old := e.App.Hub.CentralNow().AddDate(-2, 0, 0).Format(time.DateOnly)
+	e.Fake.SeedProgramEvent("FakeEvOld03", fc.EventProgram, fc.EventStage, old, fc.DefaultAOC)
+	e.Setup()
+	nurse := e.Web(tk.RoleNurse)
+	nurse.Login()
+	e.Sync()
+	e.Offline()
+	nurse.JSON("POST", tk.SyncImport, map[string]any{"events": []any{map[string]any{"event": "FakeEvOld03",
+		"program": fc.EventProgram, "programStage": fc.EventStage, "orgUnit": e.M.Facility.ID, "occurredAt": old,
+		"status": "COMPLETED"}}}, 200)
+	e.Online()
+	e.Fake.AggFail = map[string]int{"/api/tracker": 503} // the push fails; pulls go on
+	e.App.Hub.Store.SetState("retention", []byte(`{"defaultMonths": 12}`))
+	e.App.Hub.Cfg.FullPullInterval = time.Nanosecond // a full pull now
+	e.App.Worker.Cycle(context.Background())
+	e.Fake.AggFail = nil
+	e.App.Hub.Cfg.FullPullInterval = 7 * 24 * time.Hour
+	e.App.Hub.Store.SetState("retention", []byte(`{}`))
+	e.Offline()
+	if got := eventUIDs(nurse.JSON("GET", eventPath(e, fc.EventProgram, nil), nil, 200)); !slices.Contains(got, "FakeEvOld03") {
+		t.Fatalf("the author no longer sees her pending edit: %v", got)
+	}
+}
+
+// Review fix: an old event edited offline is pruned once its edit is pushed (it is a
+// local object then, not central's).
+func TestEventRetentionPrunesPushedEdits(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	old := e.App.Hub.CentralNow().AddDate(-2, 0, 0).Format(time.DateOnly)
+	e.Fake.SeedProgramEvent("FakeEvOld04", fc.EventProgram, fc.EventStage, old, fc.DefaultAOC)
+	e.Setup()
+	nurse := e.Web(tk.RoleNurse)
+	nurse.Login()
+	e.Sync()
+	e.Offline()
+	nurse.JSON("POST", tk.SyncImport, map[string]any{"events": []any{map[string]any{"event": "FakeEvOld04",
+		"program": fc.EventProgram, "programStage": fc.EventStage, "orgUnit": e.M.Facility.ID, "occurredAt": old,
+		"status": "COMPLETED"}}}, 200)
+	e.Fake.DataStore["facility-hub-config"] = map[string]json.RawMessage{
+		"retention": json.RawMessage(`{"defaultMonths": 12}`)} // the pull no longer lists it
+	e.Online()
+	e.App.Hub.RefreshCatalog(context.Background())
+	e.Sync() // pushed (and pruned at the cycle's end)
+	if _, err := e.App.Hub.PruneEvents(); err != nil || e.App.Hub.Index.Get("FakeEvOld04") != nil {
+		t.Fatalf("an old event edited offline is still held after its push (%v)", err)
+	}
+}

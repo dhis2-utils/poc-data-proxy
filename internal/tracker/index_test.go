@@ -299,3 +299,37 @@ func TestEventPagesByDateReadOn(t *testing.T) {
 		t.Fatalf("newest first: %s", fresh[0])
 	}
 }
+
+// Review fix: a slot freed by pruning is not given to a new object after a restart:
+// the users who could see the pruned object must not see the new one.
+func TestPrunedSlotNotReused(t *testing.T) {
+	s := testStore(t)
+	ix := NewStoreIndex(s)
+	put := func(uid string) *Obj {
+		o := &Obj{UID: uid, Kind: store.KindEvent, Program: "P", Stage: "S", OwnerOrgUnit: "OU", Origin: store.OriginCentral,
+			SyncState: store.SyncSynced, Data: M{"event": uid, "occurredAt": "2020-01-01"}}
+		o.Slot = ix.SlotFor(uid)
+		if err := s.Tx(context.Background(), func(tx *sql.Tx) error { return s.PutObject(tx, o.ToStore()) }); err != nil {
+			t.Fatal(err)
+		}
+		ix.Put(o)
+		return o
+	}
+	put("EvAaaaaaa01")
+	old := put("EvAaaaaaa02")
+	vc := ix.PrepareVisibility(1, map[uint32]bool{old.Slot: true})
+	s.Tx(context.Background(), func(tx *sql.Tx) error { return vc.Write(s, tx) })
+	vc.Done(true)
+	if _, err := s.DeleteObjects([]string{old.UID}); err != nil {
+		t.Fatal(err)
+	}
+	ix2 := NewStoreIndex(s) // a restart
+	if err := ix2.Load(s); err != nil {
+		t.Fatal(err)
+	}
+	n := &Obj{UID: "EvBbbbbbb01", Kind: store.KindEvent, OwnerOrgUnit: "OU", Origin: store.OriginCentral}
+	n.Slot = ix2.SlotFor(n.UID)
+	if n.Slot == old.Slot || ix2.VisibleTo(n, 1) {
+		t.Fatalf("pruned slot %d given to a new object (slot %d, visible %v)", old.Slot, n.Slot, ix2.VisibleTo(n, 1))
+	}
+}

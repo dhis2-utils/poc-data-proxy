@@ -399,7 +399,7 @@ func (ix *Index) CanRead(v *Viewer, o *Obj) bool {
 	if o.Origin == store.OriginCentral {
 		return accessAllows(v, o) && ix.VisibleTo(o, v.UserID)
 	}
-	if !v.SearchScope {
+	if !v.SearchScope || !ix.optionsReadable(v, o) {
 		return false
 	}
 	switch o.Kind {
@@ -414,6 +414,35 @@ func (ix *Index) CanRead(v *Viewer, o *Obj) bool {
 		return ix.CanRead(v, ix.Get(from.UID)) && ix.CanRead(v, ix.Get(to.UID))
 	}
 	return false
+}
+
+// optionsReadable: an event or enrollment the hub holds under a non-default attribute
+// option combination (written through the hub) is readable only with read access to
+// each of its category options, as central decides. Central's own objects come with
+// their visibility from the pull (listed per user for such programs).
+func (ix *Index) optionsReadable(v *Viewer, o *Obj) bool {
+	if (o.Kind != store.KindEvent && o.Kind != store.KindEnrollment) || v.Catalog == nil {
+		return true
+	}
+	pm := v.Catalog.Programs[o.Program]
+	if pm == nil || (o.Kind == store.KindEvent && !pm.AttributeCombo) ||
+		(o.Kind == store.KindEnrollment && !pm.EnrollmentAttributeCombo) {
+		return true
+	}
+	// Search rows carry their data encoded, or none when the query does not need it:
+	// then read the object (only local objects of such programs come here).
+	aoc := Str(withData(o).Data, "attributeOptionCombo")
+	if aoc == "" && o.Data == nil && len(o.raw) == 0 {
+		aoc = Str(ix.Full(o), "attributeOptionCombo")
+	}
+	if aoc == "" {
+		return true
+	}
+	opts, ok := v.Catalog.AOCs[aoc]
+	if !ok {
+		return true // the default combination, or one of a program without a combination
+	}
+	return v.Access.MayReadOptions(opts)
 }
 
 // likePattern is a LIKE pattern for "contains s", with SQL's wildcards escaped.

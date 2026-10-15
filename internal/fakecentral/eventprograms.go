@@ -117,8 +117,8 @@ func (c *Central) categoryCombos(w http.ResponseWriter, r *http.Request, u *User
 		return
 	}
 	opt := func(id string) map[string]any {
-		return map[string]any{"id": id, "access": map[string]any{"data": map[string]any{
-			"read": true, "write": slices.Contains(aggUsers[u.Username], id)}}}
+		mine := slices.Contains(aggUsers[u.Username], id) // what the user may read and write (mayUseEvent)
+		return map[string]any{"id": id, "access": map[string]any{"data": map[string]any{"read": mine, "write": mine}}}
 	}
 	writeJSON(w, 200, map[string]any{"categoryCombos": []any{map[string]any{"id": AggDonorCC,
 		"categories": []any{map[string]any{"categoryOptions": []any{opt(AggDonorOptA), opt(AggDonorOptB)}}}}}})
