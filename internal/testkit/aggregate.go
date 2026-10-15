@@ -72,9 +72,6 @@ func (e *Env) SetCentralDataValue(ds, pe, de, coc, value string) {
 	}
 }
 
-// CurrentMonth is this month's period ID in central's time zone.
-func CurrentMonth(e *Env) string { return e.App.Hub.CentralNow().Format("200601") }
-
 // DeleteCentralDataValue deletes a value on central as the superuser (default
 // attribute); a missing value is fine.
 func (e *Env) DeleteCentralDataValue(ds, pe, de, coc string) {

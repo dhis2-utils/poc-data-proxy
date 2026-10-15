@@ -11,10 +11,12 @@ const (
 	Approved = "APPROVED"
 )
 
-// Window is the periods of the data set the hub holds at now (central's time): the
-// current one, retention-1 before it and the open future periods, oldest first,
-// without the periods expiry days or data input periods close (central refuses
-// writes there, so the hub holds nothing for them).
+// Window is the periods of the data set the hub holds at now (central's time): from
+// the latest open period (the current one shifted by openFuturePeriods-1, as central
+// counts: with none, last month is the latest) back, retention periods in all
+// counting from the current one or the latest open, whichever is earlier; without
+// the periods expiry days or data input periods close (central refuses writes
+// there, so the hub holds nothing for them). Oldest first.
 func Window(ds *DataSet, now time.Time, retention int) []Period {
 	cur, ok := Current(ds.PeriodType, now)
 	if !ok {
@@ -23,8 +25,10 @@ func Window(ds *DataSet, now time.Time, retention int) []Period {
 	if retention < 1 {
 		retention = 1
 	}
+	latest := ds.OpenFuturePeriods - 1
+	from := min(0, latest) - (retention - 1)
 	var out []Period
-	for n := -(retention - 1); n <= ds.OpenFuturePeriods; n++ {
+	for n := from; n <= latest; n++ {
 		p := Shift(ds.PeriodType, cur, n)
 		if Expired(ds, p, now) || !InputOpen(ds, p, now) {
 			continue

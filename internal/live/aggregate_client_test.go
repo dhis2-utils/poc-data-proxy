@@ -11,8 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
 
 // TestAggregateDataEntryApp drives the Aggregate Data Entry app through the hub with
@@ -52,7 +50,7 @@ func TestAggregateDataEntryApp(t *testing.T) {
 		base = filepath.Join(filepath.Dir(p), "aggregate-data-entry")
 		os.RemoveAll(base)
 	}
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	run := func(ds, name string) (aggClientResult, string, string, string) {
 		t.Helper()
 		out := filepath.Join(base, name)

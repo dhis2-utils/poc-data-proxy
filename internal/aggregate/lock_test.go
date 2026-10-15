@@ -12,15 +12,30 @@ func TestWindow(t *testing.T) {
 	for _, p := range Window(ds, now, 3) {
 		ids = append(ids, p.ID)
 	}
-	if got := ids; len(got) != 4 || got[0] != "202608" || got[3] != "202611" {
-		t.Fatalf("window, 3 periods kept and one future: %v", got)
+	// One open future period: the current one is the latest open (central:
+	// "is after latest open future period"); none: last month is.
+	if got := ids; len(got) != 3 || got[0] != "202608" || got[2] != "202610" {
+		t.Fatalf("window, 3 periods kept, one open future period: %v", got)
 	}
+	ds.OpenFuturePeriods = 0
+	ids = nil
+	for _, p := range Window(ds, now, 3) {
+		ids = append(ids, p.ID)
+	}
+	if len(ids) != 3 || ids[0] != "202607" || ids[2] != "202609" {
+		t.Fatalf("no open future periods: the current month is not open: %v", ids)
+	}
+	ds.OpenFuturePeriods = 10
+	if w := Window(ds, now, 3); w[len(w)-1].ID != "202707" {
+		t.Fatalf("ten open future periods end at 202707 (central's answer for 2026-10): %s", w[len(w)-1].ID)
+	}
+	ds.OpenFuturePeriods = 1
 	ds.ExpiryDays = 10 // September locks on 2026-10-10
 	ids = nil
 	for _, p := range Window(ds, now, 3) {
 		ids = append(ids, p.ID)
 	}
-	if len(ids) != 2 || ids[0] != "202610" {
+	if len(ids) != 1 || ids[0] != "202610" {
 		t.Fatalf("expired periods leave the window: %v", ids)
 	}
 	if _, ok := InWindow(ds, now, 3, "202609"); ok {

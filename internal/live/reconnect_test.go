@@ -23,7 +23,9 @@ func TestReconnectBeforePush(t *testing.T) {
 	e.Sync()
 
 	e.Offline()
-	pr := m.NewPerson(p, "Zqrecon"+strings.ToLower(tk.UID()[:5]), p.Stages[0])
+	// Registered without events: the event below may be in a stage that is not
+	// repeatable (Laos).
+	pr := m.NewPerson(p, "Zqrecon"+strings.ToLower(tk.UID()[:5]))
 	nurse.Complete(p, pr)
 	nurse.JSON("POST", tk.SyncImport, pr.Payload, 200)
 

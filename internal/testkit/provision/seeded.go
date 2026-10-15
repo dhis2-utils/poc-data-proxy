@@ -397,6 +397,7 @@ type seedCombo struct {
 type seedDataSet struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
+	PeriodType    string `json:"periodType"`
 	FormType      string `json:"formType"`
 	CategoryCombo struct {
 		ID        string `json:"id"`
@@ -422,9 +423,9 @@ func seededAggregate(c *testkit.Central, m *testkit.Manifest) error {
 	var res struct {
 		DataSets []seedDataSet `json:"dataSets"`
 	}
-	fields := "id,name,formType,categoryCombo[id,isDefault],dataSetElements[categoryCombo[id,categoryOptionCombos[id]]," +
+	fields := "id,name,periodType,formType,categoryCombo[id,isDefault],dataSetElements[categoryCombo[id,categoryOptionCombos[id]]," +
 		"dataElement[id,displayFormName,valueType,categoryCombo[id,categoryOptionCombos[id]]]]"
-	if err := c.JSON("GET", "/api/dataSets?paging=false&filter=periodType:eq:Monthly&filter=organisationUnits.id:eq:"+
+	if err := c.JSON("GET", "/api/dataSets?paging=false&filter=organisationUnits.id:eq:"+
 		m.Facility.ID+"&fields="+url.QueryEscape(fields), nil, &res); err != nil {
 		return err
 	}
@@ -439,7 +440,7 @@ func seededAggregate(c *testkit.Central, m *testkit.Manifest) error {
 	})
 	numeric := func(vt string) bool { return vt == "NUMBER" || strings.HasPrefix(vt, "INTEGER") }
 	for _, ds := range res.DataSets {
-		if !ds.CategoryCombo.IsDefault || ds.FormType == "CUSTOM" {
+		if ds.PeriodType != "Monthly" || !ds.CategoryCombo.IsDefault || ds.FormType == "CUSTOM" {
 			continue
 		}
 		type el struct{ id, label, vt string }

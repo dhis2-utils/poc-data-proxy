@@ -17,6 +17,39 @@ import (
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
 
+// latestOpen is the period of the data set the tests enter: the current one, or the
+// latest open one before it (with no open future periods central opens last month
+// at most).
+func latestOpen(e *tk.Env, ds *aggregate.DataSet) (aggregate.Period, bool) {
+	h := e.App.Hub
+	cur, ok := aggregate.Current(ds.PeriodType, h.CentralNow())
+	if !ok {
+		return aggregate.Period{}, false
+	}
+	win := aggregate.Window(ds, h.CentralNow(), h.AggRetention().For(ds.ID))
+	for i := len(win) - 1; i >= 0; i-- {
+		if !win[i].Start.After(cur.Start) {
+			return win[i], true
+		}
+	}
+	return aggregate.Period{}, false
+}
+
+// aggPeriod is latestOpen for the manifest's data set, as the nurse sees it.
+func aggPeriod(e *tk.Env, ag *tk.Aggregate) string {
+	e.T.Helper()
+	u, _ := e.App.Hub.Store.UserByName(e.M.Users[tk.RoleNurse].Username)
+	acc := e.App.Hub.AggAccess(u.ID)
+	if acc == nil || acc.DataSets[ag.DataSet] == nil {
+		e.T.Fatalf("the nurse cannot enter %s", ag.DataSet)
+	}
+	p, ok := latestOpen(e, acc.DataSets[ag.DataSet])
+	if !ok {
+		e.T.Fatalf("no open period of %s", ag.DataSet)
+	}
+	return p.ID
+}
+
 // aggregateEnv starts a hub set up with the nurse and clerk logged in, or skips when
 // this setup has no aggregate data sets.
 func aggregateEnv(t *testing.T) (*tk.Env, *tk.Aggregate, *tk.Client, *tk.Client) {
@@ -78,7 +111,7 @@ func formValue(form map[string]any, de, coc string) (string, bool) {
 // the app afterwards (the shared-browser case from the spike).
 func TestAggregateOfflineAttribution(t *testing.T) {
 	e, ag, nurse, clerk := aggregateEnv(t)
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	e.SetCentralDataValue(ag.DataSet, pe, ag.Integer, ag.COC, "11")
 	e.Sync()
 	e.Offline()
@@ -110,7 +143,7 @@ func TestAggregateOfflineAttribution(t *testing.T) {
 // Review focus 2: two users' offline edits of one cell are both pushed, in order.
 func TestAggregateSameCellTwoUsers(t *testing.T) {
 	e, ag, nurse, clerk := aggregateEnv(t)
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	e.Offline()
 	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
 	nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "1"))
@@ -127,7 +160,7 @@ func TestAggregateSameCellTwoUsers(t *testing.T) {
 func TestAggregateLockedOnPushKeepsValue(t *testing.T) {
 	e, ag, nurse, _ := aggregateEnv(t)
 	e.NeedFake()
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	e.Offline()
 	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
 	nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "5"))
@@ -161,7 +194,7 @@ func TestAggregateLockedOnPushKeepsValue(t *testing.T) {
 func TestAggregateCompletionWaitsForValues(t *testing.T) {
 	e, ag, nurse, clerk := aggregateEnv(t)
 	e.NeedFake()
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	e.Offline()
 	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
 	nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Required, ag.COC, "value", "3"))
@@ -185,7 +218,7 @@ func TestAggregateCompletionWaitsForValues(t *testing.T) {
 // central as its author.
 func TestAggregatePullAndPush(t *testing.T) {
 	e, ag, nurse, _ := aggregateEnv(t)
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	e.SetCentralDataValue(ag.DataSet, pe, ag.Integer, ag.COC, "4")
 	e.Sync()
 	h := e.App.Hub
@@ -215,7 +248,7 @@ func TestAggregatePullAndPush(t *testing.T) {
 // Review focus 1: value, comment and delete of one cell, offline: each is kept.
 func TestAggregateCollapseKeepsFields(t *testing.T) {
 	e, ag, nurse, _ := aggregateEnv(t)
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
 	e.Offline()
 	for _, val := range []string{"1", "2", "3"} {
@@ -247,7 +280,7 @@ func TestAggregateCollapseKeepsFields(t *testing.T) {
 // outside the window is locked.
 func TestAggregateOfflineRefusals(t *testing.T) {
 	e, ag, nurse, _ := aggregateEnv(t)
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
 	e.Offline()
 	// Not a number, so wrong for every numeric type (aggregate.TestValidValue checks
@@ -277,7 +310,7 @@ func TestAggregateAttributeAccess(t *testing.T) {
 	if ag.DonorDataSet == "" {
 		t.Skip("no data set with an attribute combination in this setup")
 	}
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	e.Offline()
 	q := url.Values{"ds": {ag.DonorDataSet}, "pe": {pe}, "ou": {e.M.Facility.ID}, "cc": {ag.DonorCC}, "cp": {ag.DonorOptionNurse}}
 	path := "/api/" + e.App.Hub.APIMinor() + "/dataEntry/dataValues?" + q.Encode()
@@ -295,7 +328,7 @@ func TestAggregateAttributeAccess(t *testing.T) {
 // Online with an empty outbox, the app talks to central.
 func TestAggregatePassesThroughOnline(t *testing.T) {
 	e, ag, nurse, _ := aggregateEnv(t)
-	st, hdr, _ := nurse.DoHeader("GET", formPath(e, ag.DataSet, tk.CurrentMonth(e)))
+	st, hdr, _ := nurse.DoHeader("GET", formPath(e, ag.DataSet, aggPeriod(e, ag)))
 	if st != 200 || hdr.Get("X-Hub-Mode") != "" {
 		t.Fatalf("online form: %d %q", st, hdr.Get("X-Hub-Mode"))
 	}
@@ -306,7 +339,7 @@ func TestAggregatePassesThroughOnline(t *testing.T) {
 // a compulsory field is empty.
 func TestAggregateCompletionOffline(t *testing.T) {
 	e, ag, nurse, _ := aggregateEnv(t)
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	path := "/api/" + e.App.Hub.APIMinor() + "/dataEntry/dataSetCompletion"
 	req := func(ds string) map[string]any {
 		return map[string]any{"dataSet": ds, "period": pe, "orgUnit": e.M.Facility.ID, "completed": true}
@@ -386,7 +419,7 @@ func TestAggregateOracle(t *testing.T) {
 		acc := h.AggAccess(u.ID)
 		var out []form
 		for _, ds := range acc.DataSets {
-			cur, ok := aggregate.Current(ds.PeriodType, h.CentralNow())
+			cur, ok := latestOpen(e, ds)
 			combo := acc.Combos[ds.CategoryCombo]
 			if !ok || !ds.Assigned(e.M.Facility.ID) || combo == nil {
 				continue
@@ -498,7 +531,7 @@ func TestAggregateOracle(t *testing.T) {
 // colleagues: the hub learns from the writes it passes to central, as for tracker.
 func TestAggregateOnlineWriteSeenOffline(t *testing.T) {
 	e, ag, nurse, clerk := aggregateEnv(t)
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
 	val := fmt.Sprint(100 + time.Now().Nanosecond()%800)
 	if st, b := nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", val)); st != 201 {
@@ -516,7 +549,7 @@ func TestAggregateOnlineWriteSeenOffline(t *testing.T) {
 func TestAggregateEditDuringPush(t *testing.T) {
 	e, ag, nurse, _ := aggregateEnv(t)
 	e.NeedFake()
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
 	e.Offline()
 	nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "1"))
@@ -543,7 +576,7 @@ func TestAggregateEditDuringPush(t *testing.T) {
 func TestAggregateBlockedAuthorKeepsOrder(t *testing.T) {
 	e, ag, nurse, clerk := aggregateEnv(t)
 	e.NeedFake()
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
 	e.Offline()
 	nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "1"))
@@ -580,7 +613,7 @@ func TestAggregateUnpulledFormLocked(t *testing.T) {
 	h := e.App.Hub
 	h.Store.SetPrivate("agg_pulled:"+ag.DataSet, "") // as on a hub that never pulled it
 	e.Offline()
-	form := nurse.JSON("GET", formPath(e, ag.DataSet, tk.CurrentMonth(e)), nil, 200)
+	form := nurse.JSON("GET", formPath(e, ag.DataSet, aggPeriod(e, ag)), nil, 200)
 	if form["lockStatus"] != "LOCKED" {
 		t.Fatalf("a data set never pulled: %v", form["lockStatus"])
 	}
@@ -592,7 +625,7 @@ func TestAggregateErrorsKeepForms(t *testing.T) {
 	e, ag, nurse, _ := aggregateEnv(t)
 	e.NeedFake()
 	h := e.App.Hub
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	e.SetCentralDataValue(ag.DataSet, pe, ag.Integer, ag.COC, "4")
 	e.Sync()
 	key := aggregate.FormKey{DataSet: ag.DataSet, Period: pe, OrgUnit: e.M.Facility.ID, AOC: ag.DefaultAOC}.String()
@@ -620,7 +653,7 @@ func TestAggregateWriteDuringUpgrade(t *testing.T) {
 	e.Offline()
 	h.FreezeLocalWrites()
 	defer h.ThawLocalWrites()
-	st, b := nurse.PostDataValue("/api/"+h.APIMinor()+"/dataValues", cell(e, ag.DataSet, tk.CurrentMonth(e), ag.Number, ag.COC, "value", "1"))
+	st, b := nurse.PostDataValue("/api/"+h.APIMinor()+"/dataValues", cell(e, ag.DataSet, aggPeriod(e, ag), ag.Number, ag.COC, "value", "1"))
 	if st != 409 {
 		t.Fatalf("write during an upgrade: %d %s, want 409", st, b)
 	}
@@ -630,7 +663,7 @@ func TestAggregateWriteDuringUpgrade(t *testing.T) {
 // has nothing to delete.
 func TestAggregateDeleteOfflineOnlyValue(t *testing.T) {
 	e, ag, nurse, _ := aggregateEnv(t)
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	e.DeleteCentralDataValue(ag.DataSet, pe, ag.Integer, ag.COC)
 	e.Sync()
 	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
@@ -654,7 +687,7 @@ func TestAggregatePullFollowsCentralClock(t *testing.T) {
 	e, ag, _, clerk := aggregateEnv(t)
 	e.NeedFake()
 	e.Fake.ClockSkew = -time.Hour
-	pe := tk.CurrentMonth(e)
+	pe := aggPeriod(e, ag)
 	e.SetCentralDataValue(ag.DataSet, pe, ag.Integer, ag.COC, "8")
 	e.Sync()
 	e.SetCentralDataValue(ag.DataSet, pe, ag.Integer, ag.COC, "9")
