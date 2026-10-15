@@ -28,7 +28,7 @@ These are fixed. Do not reopen them in the POC.
 - Anything the hub cannot decide is refused ("fail closed"), with a clear "needs connection" error.
 - The hub pushes and pulls as each individual user, using a personal access token (PAT) per user. It never uses a shared service account for data writes.
 - Data at rest is encrypted with a per-hub key. The key is wrapped once per user with a key derived from that user's password (key slots).
-- No analytics, no server-side program rules. Aggregate data entry was added later: docs/superpowers/specs/2026-10-15-aggregate-data-entry-design.md.
+- No analytics, no server-side program rules. Aggregate data entry and event programs were added later: docs/superpowers/specs/2026-10-15-aggregate-data-entry-design.md, docs/superpowers/specs/2026-10-15-event-programs-design.md.
 
 ## 3. Non-goals for the POC
 

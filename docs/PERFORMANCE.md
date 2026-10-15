@@ -157,7 +157,7 @@ An effective catchment of about 250 000 people, 250 working days a year, a 5-yea
 
 Keeping five years of everything locally is not needed. All people are kept, so search and deduplication work offline; each program keeps its enrollments and events for a window of its own.
 
-- **The table.** Program → months (for example OPD 3, laboratory 6, maternal 24, HIV care and NCD "while active"), with a default, in central's dataStore next to the hub registry; the hub reads it at each sync.
+- **The table.** Program → months (for example OPD 3, laboratory 6, maternal 24, HIV care and NCD "while active"), with a default, in central's dataStore next to the hub registry; the hub reads it at each sync. Built for event programs (`facility-hub-config/retention`, "Event programs" above); tracker programs are to read the same table.
 - **Pulls** ask for enrollments that are active (any age) or enrolled within the window. An active ART patient keeps their full history.
 - **Pruning.** A periodic job deletes synced enrollments, with their events, that fell out of their window: completed or cancelled, enrolled before the cut-off, nothing pending.
 - **Offline.** A returning patient is found; their old enrollment answers "needs connection"; a new episode can be enrolled. In a program that allows one enrollment ever, Capture cannot see the old one offline and central rejects a second on push, unless the hub keeps who was ever enrolled in such programs. To decide.
@@ -174,6 +174,19 @@ Keeping five years of everything locally is not needed. All people are kept, so 
 
 `internal/perf.TestAggregate`, in process: 12 months of 4 000 values each (48 000 values; every fake form holds its month's 4 000, far larger forms than real ones). Set-up with the first pull 1.4 s, the next cycle 0.2 s; each offline form answered in 25–55 ms; an offline edit 30 ms; heap 12 MB, data file 31 MB. Aggregate data is small next to tracker: it does not change the sizing.
 
+## Event programs
+
+`internal/perf.TestEventPrograms` (`HUB_PERF_EVENTS=150000`), in process: two event programs of 150 000 events each, dates over 36 months.
+
+| | Before the indexes | With them |
+|---|---|---|
+| Set-up with the first pull; a user's first pull; the next cycle | 25 s; 34 s; 2 s | 28 s; 35 s; 2 s |
+| Working list offline (event date, newest first, 20 a page): page 1, page 50 | 1.6 s, 1.5 s | 3 ms, 8 ms |
+| One device's download of a program (Android's paging, 3 001 pages of 50) | 28 min | 55 s |
+| Retention of 12 months: 198 000 events pruned | 13 s | 19 s |
+
+Each page read and sorted the program's events; `objects_events` (creation order, Android's download) and `objects_events_occurred` (event date, newest first, read on by key) let a page read only itself. Per cycle and access group, an event program costs one listing of the events changed since the last pull.
+
 ## History
 
 - **2026-10-08, in-memory design.** At 10 % of the first target (10 000 people, 50 users) the hub used about 1 GB and the first pull took 12 minutes, both growing with users × objects. The redesign: visibility as per-user bitmaps, ID-list pulls, a slim in-memory index; then a fixed set-up hub that kept every payload in memory, batched payload reads, paged results kept for a minute, cheaper sorts, and a garbage-collector limit at 70 % of RAM. The first container ladder still ran out of memory at 50 % of the first target.
@@ -186,3 +199,4 @@ Keeping five years of everything locally is not needed. All people are kept, so 
 - **2026-10-14, incremental syncs.** The second ladder's working-day run put `pi5` out of memory at 100 k: Android's `updatedAfter` check decoded every enrollment and event of each candidate person, kept for the whole request, and with the fake central's data (every object updated at its start) every person of a program is a candidate. The check now reads the stored update times only. Locally at 100 k, 60 users: peak memory 2.7 GB → 260 MB, incremental sync 44 s → 25 s (p50), Android page 7.8 s → 4.0 s. What remains of the 25 s is each page checking every candidate, which real data, with update times spread over years, makes far fewer.
 - **2026-10-15, full downloads.** eRegisters downloads every person per program (Android stops at 500): one device's download grew with the square of the facility, 1 h 14 min at HC IV size in process. The hub now keeps, per user and query, the last row of the page it served for ten minutes, and the next page reads on from that row's creation key (`pagePositions`): 4 min 10 s at HC IV size, every page 17–36 ms. A first try kept the SQL row offset instead; SQLite still stepped through the skipped rows (3 min 35 s at 100 k instead of 1 min 2 s). `TestQueryPlansUseIndexes` checks that reading on keeps the index's order.
 - **2026-10-15, aggregate data.** The Aggregate Data Entry app offline: a store of forms per data set window, pulled per access group (the numbers above).
+- **2026-10-15, event programs.** Held offline with retention by program; two indexes for event lists (the numbers above).

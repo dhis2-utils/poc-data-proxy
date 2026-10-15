@@ -198,7 +198,7 @@ Either way, **protect the namespaces**. By default any user can read and write a
 17. **Generated values come in pairs on 2.42.6.** Central's `generateAndReserve` for the `RANDOM(##########)` pattern returns values in related pairs: `1916135085, 0916135085, 9066229890, 0066229890, …` (checked directly against central). Both are reserved on central, so this is not a duplicate. It does mean half the "random" IDs are predictable from the other half, which is worth reporting to DHIS2 core.
 18. **Dates must be normalised.** Clients post `"occurredAt":"2026-10-07"`, and central stores and returns `"2026-10-07T00:00:00.000"`. The hub first returned dates as posted. The Android SDK failed with `ParseException: Unparseable date: "2026-10-07"`, silently skipped the object, and still reported the sync as successful. The hub now normalises the date fields of offline writes to central's form.
 19. **Online writes and visibility.** The hub records objects that users write while online. Spec 8.2 gives central-origin objects visibility only through each user's own pull, so a patient registered on a tablet seconds before the uplink went down stayed invisible to the web user until their next pull. Objects learned from online writes, including Android's async job reports, are now shared by the same rules as local objects. The next pull then replaces this with central's view.
-20. **Event programs.** Android also downloads event programs (`WITHOUT_REGISTRATION`) assigned to the facility. The hub caches only tracker programs (spec 6.2 step 6) and answers 503 for these offline. The app tolerated it, but a facility that captures event programs loses them offline (Sierra Leone's "XX MAL RDT - Case Registration", for instance). Whether the hub should hold them is a scope decision, on hold.
+20. **Event programs.** Android also downloads event programs (`WITHOUT_REGISTRATION`) assigned to the facility. The hub held only tracker programs and answered 503 for these offline. It now holds them ("Event programs through the hub", below).
 21. **`/api/me` offline.** Spec 7.1 says `GET /api/me` is cached from the last online login. Capture asks for many field variants (`me.json?fields=authorities`, `userCredentials[userRoles]`, `settings[keyUiLocale]`). The hub stores the user's full `/api/me` at online login and applies the top-level field selection itself, matching central's answers: unknown fields are dropped, so `userCredentials[userRoles]` gives `{}` on 2.42.
 22. **SQLite library.** The spec names `modernc.org/sqlite`. This build environment could reach GitHub but not `proxy.golang.org` or GitLab, where modernc's dependencies live, so the hub uses `github.com/ncruces/go-sqlite3`: also pure Go and no cgo, with SQLite compiled to Go. Only `internal/store` touches the driver (`database/sql` with driver name `sqlite3`). Switching back to modernc means changing the import and the driver name.
 
@@ -250,7 +250,6 @@ The differential oracle compares the offline hub with central for every role and
 
 - Events for users without tracked entity type access (above): central shows them, the hub pulls by tracked entity.
 - Unfiltered `ACCESSIBLE` searches: central rejects them, the hub answers from facility data the user can read anyway.
-- Event programs (without registration) are not held offline (item 20 above).
 - **Category option sharing changes reach the hub at the weekly full pull** (`full_pull_interval`). The hub's per-user access list holds org units, user groups and access to programs, stages, tracked entity types and relationship types, re-read hourly and at login; any change there gives that user a full pull at the next sync, so removing a user from a group that granted access takes effect within about an hour. Category option sharing is not in the list, and tracker programs rarely use it: a known limitation.
 - Users without the facility in their capture scope (a district officer with capture elsewhere and only search scope here, for instance) are passed through only, by design (REVIEW-2 F5): offline they see nothing.
 
@@ -374,4 +373,30 @@ The Aggregate Data Entry app (release 102.1; the same code on 2.42 and 2.43) thr
 Also found on the profiles: with no open future periods central refuses the current month (E2022 "is after latest open future period"): the latest open period is the current one shifted by `openFuturePeriods` − 1, and the hub's window follows that (Laos). Central accepts a category option combination outside the element's combination, so the hub does not check it either.
 
 **Known gaps:** each user opens the app once online through the hub (its settings are cached per user, as for Capture); lock exceptions for expired periods work online only (expired periods are not held); period types other than Daily, Weekly, Monthly, BiMonthly, Quarterly, SixMonthly, SixMonthlyApril, Yearly and the April, July and October financial years, and non-ISO calendars, are not held (their forms are locked offline); the header still says "Online" offline, because the hub answers the app's ping; a change made on central reaches the hub at its next sync. Offline, the hub's clock decides the current period and expiry: without a working RTC, a board that restarts after a power cut at its last saved time would answer a new month's form as locked (DEPLOYMENT.md, "Clock"). Pulls follow central's clock (the newest `lastUpdated` central listed), not the hub's. Edits whose author must log in online again wait in the outbox; later offline edits of the same cell, and the form's completion, wait behind them. But online, with only such entries waiting, the hub passes requests through: an edit made online then reaches central first, and the waiting older edit overwrites it once its author logs in (last write wins, as on central). The hub's page lists entries waiting for a login.
+
+## Event programs through the hub
+
+Event programs (without registration) work offline through the hub since 2026-10-15 (design in docs/superpowers/specs/2026-10-15-event-programs-design.md), checked on all three profiles on 2.42 and 2.43 by the read and write oracles.
+
+**What central does:**
+
+- Events of event programs carry no `enrollment` and no `trackedEntity`; their org unit is `orgUnit`. Which a user sees depends on program and stage sharing and, where the program has an attribute category combination, on category option sharing (Sierra Leone's Ngelehun has 7 event programs, one with "Implementing Partner").
+- A write with an attribute option combination needs data write access to each of its category options (central refuses it otherwise); `/api/categoryCombos?fields=categories[categoryOptions[id,access[data[write]]]]` answers that per user.
+- Without an `order`, central lists events newest first.
+- On 2.42 the single-event endpoint left out a data value that the same user's event lists show (Laos); 2.43 shows it in both. The hub answers as the lists.
+
+**What the hub does:**
+
+- The catalog holds the facility's event programs; the access refresh reads which category options of attribute category combinations each user may write.
+- The pull lists each event program's events per access group (per user where an attribute combination decides), whole, with deleted ones: an event deleted on central disappears offline at the next pull. Event programs are not part of the ownership check (they have no program owner).
+- Retention by program: central's dataStore `facility-hub-config/retention` (`{"defaultMonths": 0, "programs": {"<program>": 12}}`; 0 or no entry keeps everything). The pull asks only for events within it (`occurredAfter`), and each cycle prunes synced events that fell out of it; events with edits waiting are kept. Tracker programs will read the same table.
+- Offline, working lists, single events and Android's download answer for event programs; new and edited events are queued as their author's; deletes stay refused.
+- Offline writes with a non-default attribute option combination (events of any program, and 2.43 enrollments) are accepted when the user may write every option in it, refused with E1099 otherwise; before, all were refused offline.
+- Event lists are read in index order (creation for Android's download, event date newest first for working lists): at 150 000 events in a program, 3–8 ms a page instead of 0.5–1.6 s (docs/PERFORMANCE.md).
+
+**Known gaps:**
+
+- On 2.43, an event under an attribute option combination in an enrollment that central hides from the user (its own enrollment category combination) is refused offline, while central accepts it (the write oracle's OVER-REJECT on the synthetic profile): the hub does not hold such enrollments (DHIS2 2.43, item 2).
+- Users not assigned to the facility (district officers) get "needs connection" offline for event programs too, as for tracker programs.
+- Android's real download of event programs through the hub was not run (no emulator attached); the oracle covers its query parameters.
 

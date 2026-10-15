@@ -84,6 +84,7 @@ The hub has no facility-specific configuration. It reads one small image-default
 | `data_dir` | Store (`hub.db` key file, `hub.db.data` encrypted data file), TLS certificate (`ca.crt` for devices, also served at `/hub/ca.crt`), request log, upgrade files |
 | `sync_interval`, `ping_interval`, `ping_timeout` | Sync cadence (default 15m, with ±10 % jitter) and connectivity probe (15s, 5s; spec 5.2) |
 | `reconnect_delay` | After an outage, wait up to this long at random before syncing, so hubs do not reach central together (default 5m). Until the outbox is pushed, the hub keeps answering tracker and aggregate requests itself |
+| Retention by program | Central's dataStore key `facility-hub-config/retention`, read by every hub: `{"defaultMonths": 0, "programs": {"<program>": 12}}`; months of data kept per program, 0 or no entry keeps everything. Applies to event programs (by event date); tracker programs will use it |
 | `aggregate_retention_periods` | Periods of each aggregate data set the hub keeps for offline use, the current one included (default 12). Central's dataStore key `facility-hub-config/aggregate` overrides it for all hubs: `{"retentionPeriods": 12, "dataSets": {"<data set>": 6}}` |
 | `access_refresh_interval` | How often each user's access list is re-read from central, besides at login (default 1h) |
 | `pat_expiry_days` | Lifetime of the personal access tokens the hub creates |

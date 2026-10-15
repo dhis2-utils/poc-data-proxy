@@ -1,6 +1,6 @@
 # Event programs through the hub, and retention by program
 
-Status: design, approved in discussion 2026-10-15.
+Status: implemented 2026-10-15 (plan: docs/superpowers/plans/2026-10-15-event-programs.md; results in docs/FINDINGS.md, "Event programs through the hub").
 
 ## Goal
 
@@ -74,4 +74,4 @@ The fake central generates event programs at size (e.g. two programs with 150 00
 
 ## Open questions
 
-- Default retention when a country sets none: keep everything (as decided); revisit once first-pull times are measured.
+- Default retention when a country sets none: keep everything (as decided). Measured: 2 × 150 000 events pull in under 30 s and page in milliseconds with the indexes (docs/PERFORMANCE.md), so keeping everything is affordable in time; storage (about 560 MB for 300 000 events) is what argues for retention on microSD.
