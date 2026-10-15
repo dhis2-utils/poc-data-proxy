@@ -88,6 +88,12 @@ type Central struct {
 	TempAccess time.Duration
 	jobs       map[string][]byte
 	jobN       int
+
+	// Aggregate data (aggregate.go).
+	aggValues     map[string]*aggValue
+	aggRegs       map[string]*aggReg
+	approved      map[string]bool
+	AggExpiryDays float64 // expiry days of AggDataSet
 }
 
 func New() *Central {
@@ -105,6 +111,7 @@ func New() *Central {
 		objects: map[string]tracker.M{}, kinds: map[string]string{}, DataStore: map[string]map[string]json.RawMessage{},
 		Version: Version, Requests: map[string]int{}, jobs: map[string][]byte{},
 		owners: map[string]string{}, temp: map[string]time.Time{}, TempAccess: time.Hour,
+		aggValues: map[string]*aggValue{}, aggRegs: map[string]*aggReg{}, approved: map[string]bool{},
 	}
 	return c
 }
@@ -281,6 +288,9 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	u := c.user(r)
 	if u == nil {
 		webMessage(w, 401, "Unauthorized", "")
+		return
+	}
+	if c.aggregate(w, r, u) {
 		return
 	}
 	switch {
