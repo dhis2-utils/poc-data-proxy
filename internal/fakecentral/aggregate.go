@@ -328,6 +328,9 @@ func (c *Central) aggValueSets(w http.ResponseWriter, r *http.Request) {
 		if since != "" && v.LastUpdated < since {
 			continue
 		}
+		if pe := q.Get("period"); pe != "" && parts[0] != pe {
+			continue
+		}
 		if v.Deleted && q.Get("includeDeleted") != "true" {
 			continue
 		}

@@ -37,7 +37,7 @@ func (e *Env) CentralDataValue(ds, pe, de, coc, aoc string) (value, storedBy str
 	e.T.Helper()
 	var res struct {
 		DataValues []struct {
-			DataElement, CategoryOptionCombo, AttributeOptionCombo, Value, StoredBy string
+			DataElement, Period, CategoryOptionCombo, AttributeOptionCombo, Value, StoredBy string
 			Deleted                                                                 bool
 		} `json:"dataValues"`
 	}
@@ -46,7 +46,7 @@ func (e *Env) CentralDataValue(ds, pe, de, coc, aoc string) (value, storedBy str
 		e.T.Fatal(err)
 	}
 	for _, v := range res.DataValues {
-		if v.DataElement == de && v.CategoryOptionCombo == coc && v.AttributeOptionCombo == aoc && !v.Deleted {
+		if v.DataElement == de && v.Period == pe && v.CategoryOptionCombo == coc && v.AttributeOptionCombo == aoc && !v.Deleted {
 			return v.Value, v.StoredBy, true
 		}
 	}

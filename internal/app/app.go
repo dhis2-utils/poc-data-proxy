@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/aggregateapi"
 	"github.com/dhis2/facility-hub/internal/auth"
 	"github.com/dhis2/facility-hub/internal/config"
 	"github.com/dhis2/facility-hub/internal/core"
@@ -62,6 +63,7 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 	a := &auth.Auth{H: h}
 	px := &proxy.Proxy{H: h, Auth: a}
 	tr := &trackerapi.API{H: h, Auth: a, Proxy: px}
+	ag := &aggregateapi.API{H: h, Auth: a, Proxy: px}
 	worker := &hubsync.Worker{H: h}
 	up := &upgrade.Upgrader{H: h, StorePath: storePath, HealthFail: healthFail,
 		Shutdown: func() {
@@ -97,7 +99,8 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 		if m := apiVersion.FindString(p); m != "" {
 			canon := "/api/" + p[len(m):]
 			if canon == "/api/auth/login" || canon == "/api/tracker" || strings.HasPrefix(canon, "/api/tracker/") ||
-				(strings.HasPrefix(canon, "/api/trackedEntityAttributes/") && isGeneratePath(canon)) || canon == "/api/ping" {
+				(strings.HasPrefix(canon, "/api/trackedEntityAttributes/") && isGeneratePath(canon)) || canon == "/api/ping" ||
+				aggregateapi.IsAggregatePath(canon) {
 				r.URL.Path, r.URL.RawPath, p = canon, "", canon
 			}
 		}
@@ -117,6 +120,8 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 			tr.ServeHTTP(w, r)
 		case strings.HasPrefix(p, "/api/trackedEntityAttributes/") && isGeneratePath(p):
 			tr.ServeGenerated(w, r)
+		case aggregateapi.IsAggregatePath(p):
+			ag.ServeHTTP(w, r)
 		case h.Mode() == core.ModeSetup && (p == "/" || p == "/index.html"):
 			http.Redirect(w, r, "/hub/setup", http.StatusFound)
 		default:

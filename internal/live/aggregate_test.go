@@ -73,7 +73,6 @@ func formValue(form map[string]any, de, coc string) (string, bool) {
 // pulled it. Offline edits are attributed to their authors on central, whoever opens
 // the app afterwards (the shared-browser case from the spike).
 func TestAggregateOfflineAttribution(t *testing.T) {
-	t.Skip("needs the aggregate handler (Task 10)")
 	e, ag, nurse, clerk := aggregateEnv(t)
 	pe := tk.CurrentMonth(e)
 	e.SetCentralDataValue(ag.DataSet, pe, ag.Integer, ag.COC, "11")
@@ -106,7 +105,6 @@ func TestAggregateOfflineAttribution(t *testing.T) {
 
 // Review focus 2: two users' offline edits of one cell are both pushed, in order.
 func TestAggregateSameCellTwoUsers(t *testing.T) {
-	t.Skip("needs the aggregate handler (Task 10)")
 	e, ag, nurse, clerk := aggregateEnv(t)
 	pe := tk.CurrentMonth(e)
 	e.Offline()
@@ -123,21 +121,23 @@ func TestAggregateSameCellTwoUsers(t *testing.T) {
 // Review focus 4: a period locked while edits wait: refused on push, kept as an issue;
 // the other form's edit is pushed.
 func TestAggregateLockedOnPushKeepsValue(t *testing.T) {
-	t.Skip("needs the aggregate handler (Task 10)")
 	e, ag, nurse, _ := aggregateEnv(t)
 	e.NeedFake()
 	pe := tk.CurrentMonth(e)
 	e.Offline()
 	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
 	nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "5"))
-	nurse.PostDataValue(v, cell(e, ag.ValidDataSet, pe, ag.Number, ag.COC, "value", "6"))
+	// Values are keyed by element, period and option combinations, not data set: the
+	// other form is last month's.
+	prev := e.App.Hub.CentralNow().AddDate(0, -1, 0).Format("200601")
+	nurse.PostDataValue(v, cell(e, ag.DataSet, prev, ag.Number, ag.COC, "value", "6"))
 	e.Fake.Approve(ag.DataSet, pe)
 	e.Online()
 	e.Sync()
 	if _, _, ok := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); ok {
 		t.Fatal("approved period: central must not have the value")
 	}
-	if val, _, _ := e.CentralDataValue(ag.ValidDataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "6" {
+	if val, _, _ := e.CentralDataValue(ag.DataSet, prev, ag.Number, ag.COC, ag.DefaultAOC); val != "6" {
 		t.Fatalf("the other form's value: %q", val)
 	}
 	issues, _ := e.App.Hub.Store.Issues(false, 10)
@@ -149,7 +149,7 @@ func TestAggregateLockedOnPushKeepsValue(t *testing.T) {
 
 // Review focus 5: a completion waits for the form's earlier entries.
 func TestAggregateCompletionWaitsForValues(t *testing.T) {
-	t.Skip("needs the aggregate handler (Task 10)")
+	t.Skip("completion: Task 11")
 	e, ag, nurse, clerk := aggregateEnv(t)
 	e.NeedFake()
 	pe := tk.CurrentMonth(e)
@@ -200,5 +200,92 @@ func TestAggregatePullAndPush(t *testing.T) {
 	}
 	if n := h.Store.CountOutbox(store.OutboxPending); n != 0 {
 		t.Fatalf("pending after push: %d", n)
+	}
+}
+
+// Review focus 1: value, comment and delete of one cell, offline: each is kept.
+func TestAggregateCollapseKeepsFields(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	pe := tk.CurrentMonth(e)
+	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
+	e.Offline()
+	for _, val := range []string{"1", "2", "3"} {
+		nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", val))
+	}
+	nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "comment", "checked twice"))
+	if n := e.App.Hub.Store.CountOutbox(store.OutboxPending); n != 2 {
+		t.Fatalf("three value edits and a comment: %d outbox entries, want 2", n)
+	}
+	q := url.Values{"de": {ag.Number}, "co": {ag.COC}, "ds": {ag.DataSet}, "ou": {e.M.Facility.ID}, "pe": {pe}}
+	if st, b := nurse.Do("DELETE", v+"?"+q.Encode(), nil); st != 204 {
+		t.Fatalf("offline delete: %d %s", st, b)
+	}
+	if n := e.App.Hub.Store.CountOutbox(store.OutboxPending); n != 3 {
+		t.Fatalf("the delete comes after the comment: %d entries, want 3", n)
+	}
+	form := nurse.JSON("GET", formPath(e, ag.DataSet, pe), nil, 200)
+	if _, ok := formValue(form, ag.Number, ag.COC); ok {
+		t.Fatal("deleted value still shown")
+	}
+	e.Online()
+	e.Sync()
+	if _, _, ok := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); ok {
+		t.Fatal("value on central after the delete")
+	}
+}
+
+// Writes central would refuse are refused offline with central's codes; a period
+// outside the window is locked.
+func TestAggregateOfflineRefusals(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	pe := tk.CurrentMonth(e)
+	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
+	e.Offline()
+	if st, b := nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Integer, ag.COC, "value", "1.5")); st != 409 ||
+		!strings.Contains(string(b), "E2030") {
+		t.Fatalf("1.5 for an integer: %d %s", st, b)
+	}
+	old := e.App.Hub.CentralNow().AddDate(-3, 0, 0).Format("200601")
+	form := nurse.JSON("GET", formPath(e, ag.DataSet, old), nil, 200)
+	if form["lockStatus"] != "LOCKED" || len(form["dataValues"].([]any)) != 0 {
+		t.Fatalf("a period outside the window: %v", form)
+	}
+	if st, b := nurse.PostDataValue(v, cell(e, ag.DataSet, old, ag.Number, ag.COC, "value", "1")); st != 409 ||
+		!strings.Contains(string(b), "E2017") {
+		t.Fatalf("value outside the window: %d %s", st, b)
+	}
+	if st, _ := nurse.Do("POST", "/api/"+e.App.Hub.APIMinor()+"/dataValues/file", nil); st != 409 {
+		t.Fatalf("file value offline: %d, want 409 (never 503: the app would queue it in the browser)", st)
+	}
+}
+
+// Review focus 3: an attribute option combination the user may not use is neither
+// served nor written.
+func TestAggregateAttributeAccess(t *testing.T) {
+	e, ag, nurse, clerk := aggregateEnv(t)
+	if ag.DonorDataSet == "" {
+		t.Skip("no data set with an attribute combination in this setup")
+	}
+	pe := tk.CurrentMonth(e)
+	e.Offline()
+	q := url.Values{"ds": {ag.DonorDataSet}, "pe": {pe}, "ou": {e.M.Facility.ID}, "cc": {ag.DonorCC}, "cp": {ag.DonorOptionNurse}}
+	path := "/api/" + e.App.Hub.APIMinor() + "/dataEntry/dataValues?" + q.Encode()
+	nurse.JSON("GET", path, nil, 200)
+	if st, _ := clerk.Do("GET", path, nil); st != 409 {
+		t.Fatalf("the clerk may not use the nurse's donor option: %d", st)
+	}
+	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
+	if st, _ := clerk.PostDataValue(v, cell(e, ag.DonorDataSet, pe, ag.Number, ag.COC, "cc", ag.DonorCC, "cp",
+		ag.DonorOptionNurse, "value", "1")); st != 409 {
+		t.Fatalf("clerk writes with the nurse's option: %d", st)
+	}
+}
+
+// Online with an empty outbox, the app talks to central.
+func TestAggregatePassesThroughOnline(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	st, hdr, _ := nurse.DoHeader("GET", formPath(e, ag.DataSet, tk.CurrentMonth(e)))
+	if st != 200 || hdr.Get("X-Hub-Mode") != "" {
+		t.Fatalf("online form: %d %q", st, hdr.Get("X-Hub-Mode"))
 	}
 }
