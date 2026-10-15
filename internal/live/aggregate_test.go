@@ -408,7 +408,8 @@ func TestAggregateExpiryWarning(t *testing.T) {
 // the current period the user may enter: every data set at the facility and every
 // attribute option combination the user may use. Each form gets a value on central
 // first, in its first element under the element's category combination in that data
-// set (category combination overrides included). Compared: values (with comment,
+// set, one for each combination the data set uses (category combination overrides
+// included). Compared: values (with comment,
 // follow-up, stored by), lock and completion.
 func TestAggregateOracle(t *testing.T) {
 	e, _, nurse, clerk := aggregateEnv(t)
@@ -446,17 +447,18 @@ func TestAggregateOracle(t *testing.T) {
 		}
 		return "/api/" + h.APIMinor() + "/dataEntry/dataValues?" + q.Encode()
 	}
-	// A value in each of the nurse's forms, on central.
+	// A value in each of the nurse's forms, on central: one element for each category
+	// combination the data set uses (overrides included).
 	forms, acc := formsOf(nurse)
 	if len(forms) == 0 {
 		t.Fatal("the nurse may enter no form")
 	}
 	for _, f := range forms {
 		ds := acc.DataSets[f.ds]
-		des := slices.Sorted(maps.Keys(ds.Elements))
-		for _, de := range des {
+		seeded := map[string]bool{}
+		for _, de := range slices.Sorted(maps.Keys(ds.Elements)) {
 			el, combo := acc.Elements[de], acc.Combos[ds.Elements[de]]
-			if el == nil || combo == nil || len(combo.COCs) == 0 {
+			if el == nil || combo == nil || len(combo.COCs) == 0 || seeded[combo.ID] {
 				continue
 			}
 			val := ""
@@ -467,7 +469,7 @@ func TestAggregateOracle(t *testing.T) {
 				}
 			}
 			e.SetCentralDataValueIn(f.ds, f.pe, de, combo.COCs[0].ID, f.cc, f.cp, val)
-			break
+			seeded[combo.ID] = true
 		}
 	}
 	e.Sync()
