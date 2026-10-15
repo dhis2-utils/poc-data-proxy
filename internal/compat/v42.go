@@ -195,6 +195,18 @@ func (v42) FetchPath(facility, program string, trackedEntities []string) string 
 	return "/api/tracker/trackedEntities?" + q.Encode()
 }
 
+func (v42) EventsPath(facility, program, updatedAfter, occurredAfter string, page, pageSize int) string {
+	q := url.Values{"program": {program}, "orgUnit": {facility}, "orgUnitMode": {"SELECTED"}, "includeDeleted": {"true"},
+		"fields": {"*"}, "page": {strconv.Itoa(page)}, "pageSize": {strconv.Itoa(pageSize)}, "order": {"createdAt:asc"}}
+	if updatedAfter != "" {
+		q.Set("updatedAfter", updatedAfter)
+	}
+	if occurredAfter != "" {
+		q.Set("occurredAfter", occurredAfter)
+	}
+	return "/api/tracker/events?" + q.Encode()
+}
+
 func (v42) OwnedPath(facility, program string, page, pageSize int) string {
 	q := pullValues(facility, program, true)
 	q.Set("fields", "trackedEntity")

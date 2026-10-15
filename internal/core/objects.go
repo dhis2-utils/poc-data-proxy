@@ -274,6 +274,20 @@ func (h *Hub) MarkVisible(userID int64, slots []uint32) error {
 	return h.setVisibility(userID, changes)
 }
 
+// HideSlots removes objects from a user's visibility (an event deleted on central).
+func (h *Hub) HideSlots(userID int64, slots []uint32) error {
+	changes := map[uint32]bool{}
+	for _, s := range slots {
+		if s != 0 {
+			changes[s] = false
+		}
+	}
+	if len(changes) == 0 {
+		return nil
+	}
+	return h.setVisibility(userID, changes)
+}
+
 // RecordScopes notes that these tracked entities were fetched in full for scope.
 func (h *Hub) RecordScopes(tes []string, scope string) error {
 	err := h.Store.Tx(context.Background(), func(tx *sql.Tx) error {

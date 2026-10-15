@@ -659,7 +659,15 @@ func (w *Worker) pullFor(ctx context.Context, g []*puller, p string, full bool, 
 			}
 		}
 	}
-	maxUpdated, n, perr := w.pullProgram(ctx, h.API(), rep.auth, rep.u.ID, h.Facility(), p, after, seen)
+	var maxUpdated string
+	var n int
+	var perr error
+	pm := h.Catalog().Programs[p]
+	if pm != nil && pm.Event {
+		maxUpdated, n, perr = w.pullEvents(ctx, h.API(), g, h.Facility(), p, after, seen)
+	} else {
+		maxUpdated, n, perr = w.pullProgram(ctx, h.API(), rep.auth, rep.u.ID, h.Facility(), p, after, seen)
+	}
 	if perr != nil {
 		st := central.Status(perr)
 		switch {
@@ -680,7 +688,7 @@ func (w *Worker) pullFor(ctx context.Context, g []*puller, p string, full bool, 
 			return false, false, nil
 		}
 	}
-	if _, ok := readers[p]; !ok && !strings.HasPrefix(p, "tet:") {
+	if _, ok := readers[p]; !ok && !strings.HasPrefix(p, "tet:") && (pm == nil || !pm.Event) {
 		readers[p] = rep.auth
 	}
 	if maxUpdated == "" {

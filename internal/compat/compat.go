@@ -37,6 +37,9 @@ type API interface {
 	ListPath(facility, program, updatedAfter string, page, pageSize int) string
 	// FetchPath returns these tracked entities in full, as PullPath would.
 	FetchPath(facility, program string, trackedEntities []string) string
+	// EventsPath lists an event program's events at the facility, whole, with deleted
+	// ones; occurredAfter bounds them by retention ("" for all).
+	EventsPath(facility, program, updatedAfter, occurredAfter string, page, pageSize int) string
 	// OwnedPath lists the identifiers of the tracked entities the facility owns in the
 	// program (the ownership check).
 	OwnedPath(facility, program string, page, pageSize int) string
