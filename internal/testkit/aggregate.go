@@ -35,8 +35,12 @@ func (c *Client) PostDataValue(path string, fields map[string]string) (int, []by
 // CentralDataValue reads one value from central as the superuser.
 func (e *Env) CentralDataValue(ds, pe, de, coc, aoc string) (value, storedBy string, ok bool) {
 	e.T.Helper()
+	// 2.43 answers a request for one data set, period and org unit with the period
+	// and attribute option combination once, at the top, not on each value.
 	var res struct {
-		DataValues []struct {
+		Period               string `json:"period"`
+		AttributeOptionCombo string `json:"attributeOptionCombo"`
+		DataValues           []struct {
 			DataElement, Period, CategoryOptionCombo, AttributeOptionCombo, Value, StoredBy string
 			Deleted                                                                         bool
 		} `json:"dataValues"`
@@ -46,6 +50,12 @@ func (e *Env) CentralDataValue(ds, pe, de, coc, aoc string) (value, storedBy str
 		e.T.Fatal(err)
 	}
 	for _, v := range res.DataValues {
+		if v.Period == "" {
+			v.Period = res.Period
+		}
+		if v.AttributeOptionCombo == "" {
+			v.AttributeOptionCombo = res.AttributeOptionCombo
+		}
 		if v.DataElement == de && v.Period == pe && v.CategoryOptionCombo == coc && v.AttributeOptionCombo == aoc && !v.Deleted {
 			return v.Value, v.StoredBy, true
 		}

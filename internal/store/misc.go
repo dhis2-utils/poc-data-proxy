@@ -72,6 +72,18 @@ func (s *Store) GetCache(userID int64, method, url string) (*CachedResponse, err
 	return r, err
 }
 
+// HasCache reports whether a response for url is cached for the user, or, with
+// anyUser, for anyone; without opening it.
+func (s *Store) HasCache(userID int64, anyUser bool, method, url string) bool {
+	var n int
+	if anyUser {
+		s.DB().QueryRow(`SELECT count(*) FROM http_cache WHERE method=? AND url=?`, method, url).Scan(&n)
+	} else {
+		s.DB().QueryRow(`SELECT count(*) FROM http_cache WHERE user_id=? AND method=? AND url=?`, userID, method, url).Scan(&n)
+	}
+	return n > 0
+}
+
 // GetCacheAnyUser returns a cached response for url from any user. Only used for
 // static app files, which hold no user data.
 func (s *Store) GetCacheAnyUser(method, url string) (*CachedResponse, error) {

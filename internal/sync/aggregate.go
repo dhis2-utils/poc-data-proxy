@@ -1,8 +1,10 @@
 package sync
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/dhis2/facility-hub/internal/aggregate"
 	"github.com/dhis2/facility-hub/internal/central"
+	"github.com/dhis2/facility-hub/internal/core"
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
@@ -57,28 +60,32 @@ func (w *Worker) pullAggregate(ctx context.Context) error {
 	now, ret, facility := h.CentralNow(), h.AggRetention(), h.Facility()
 	held := map[string]bool{}
 	fetched := map[string]bool{}
+	pulled := map[string]bool{} // data sets some group pulled completely this cycle
+	var errs []error
 	for _, g := range groups {
-		if err := w.pullAggGroup(ctx, g, now, ret, facility, held, fetched); err != nil {
+		if err := w.pullAggGroup(ctx, g, now, ret, facility, held, fetched, pulled); err != nil {
 			if central.IsNetwork(err) {
 				return err
 			}
-			slog.Warn("aggregate pull", "err", err)
+			errs = append(errs, err)
 		}
 	}
 	forms, err := h.Store.AggForms()
 	if err != nil {
 		return err
 	}
+	// Only forms of data sets pulled this cycle are dropped: a failed pull, or a group
+	// whose users cannot be read as now, keeps what the hub holds.
 	for _, f := range forms {
-		if !held[f.Key] && !h.Store.HasPendingOutboxFor(f.Key, 0) {
+		if pulled[f.DataSet] && !held[f.Key] && !h.Store.HasPendingOutboxFor(f.Key, 0) {
 			h.Store.DeleteAggForm(f.Key)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (w *Worker) pullAggGroup(ctx context.Context, g *aggGroup, now time.Time, ret aggregate.Retention, facility string,
-	held, fetched map[string]bool) error {
+	held, fetched, pulled map[string]bool) error {
 	h := w.H
 	windows := map[string][]aggregate.Period{}
 	var start, end time.Time
@@ -219,6 +226,12 @@ func (w *Worker) pullAggGroup(ctx context.Context, g *aggGroup, now time.Time, r
 	if full {
 		h.Store.SetPrivate(stateKey+":full", store.Now())
 	}
+	for id := range windows {
+		pulled[id] = true
+		if h.Store.Private(core.AggPulledKey(id)) == "" {
+			h.Store.SetPrivate(core.AggPulledKey(id), store.Now())
+		}
+	}
 	return nil
 }
 
@@ -255,9 +268,24 @@ func (w *Worker) fetchForm(ctx context.Context, g *aggGroup, ds *aggregate.DataS
 // next pull fetches the form again.
 func (w *Worker) pushAggregate(ctx context.Context, e *store.OutboxEntry) (pushResult, error) {
 	h := w.H
+	// The entry may have been replaced by a later edit of its cell since the push
+	// read the outbox: send what it holds now.
+	payload, err := h.Store.OutboxPayload(e.Seq)
+	if err != nil {
+		return pushResult{}, err
+	}
 	var ed aggregate.Edit
-	if err := json.Unmarshal(e.Payload, &ed); err != nil {
+	if err := json.Unmarshal(payload, &ed); err != nil {
 		return pushResult{}, h.Store.FinishOutbox(e.Seq, store.OutboxRejected, "corrupt payload: "+err.Error())
+	}
+	// Edits of one cell, and a form's completion after its edits, go in the order
+	// they were made: wait while an earlier one waits (its author must log in).
+	order := ed.Form.String()
+	if ed.Op != aggregate.OpComplete {
+		order += "|" + ed.DataElement + "|" + ed.COC
+	}
+	if h.Store.EarlierPendingFor(e.Seq, order) {
+		return pushResult{}, nil
 	}
 	auth, err := h.UpstreamAuth(e.UserID)
 	if err != nil {
@@ -285,17 +313,24 @@ func (w *Worker) pushAggregate(ctx context.Context, e *store.OutboxEntry) (pushR
 	case resp.StatusCode >= 500:
 		h.Store.NoteAttempt(e.Seq, fmt.Sprintf("central returned %d", resp.StatusCode))
 		return pushResult{stop: true}, nil
-	case resp.StatusCode/100 == 2:
-		w.applyToStoredForm(&ed)
-		return pushResult{}, h.Store.FinishOutbox(e.Seq, store.OutboxSynced, "")
 	}
 	var msg struct {
 		Message   string `json:"message"`
 		ErrorCode string `json:"errorCode"`
 	}
 	json.Unmarshal(rb, &msg)
+	// Clearing a value central never had (entered and cleared offline) is done.
+	gone := ed.Op == aggregate.OpDelete && resp.StatusCode == http.StatusConflict && strings.Contains(msg.Message, "does not exist")
+	if resp.StatusCode/100 == 2 || gone {
+		w.applyToStoredForm(&ed)
+		_, err := h.Store.FinishOutboxIfUnchanged(e.Seq, store.OutboxSynced, "", payload)
+		return pushResult{}, err
+	}
 	if msg.Message == "" {
 		msg.Message = fmt.Sprintf("central returned %d", resp.StatusCode)
+	}
+	if cur, err := h.Store.OutboxPayload(e.Seq); err != nil || !bytes.Equal(cur, payload) {
+		return pushResult{}, err // replaced by a later edit meanwhile: push that one
 	}
 	issue, _ := json.Marshal(map[string]any{"message": msg.Message,
 		"errorReports": []map[string]string{{"errorCode": msg.ErrorCode, "message": msg.Message}}, "edit": ed})

@@ -54,6 +54,16 @@ func (c *Central) aggregate(w http.ResponseWriter, r *http.Request, u *User) boo
 		p = "/api/" + p[len(m):]
 	}
 	opts, enters := aggUsers[u.Username]
+	c.mu.Lock()
+	fail, hook := c.AggFail[p], c.OnAggWrite
+	c.mu.Unlock()
+	if fail != 0 {
+		webMessage(w, fail, "failing as asked", "")
+		return true
+	}
+	if hook != nil && p == "/api/dataValues" {
+		hook()
+	}
 	switch p {
 	case "/api/dataEntry/metadata":
 		if !enters {
@@ -266,6 +276,11 @@ func (c *Central) aggWrite(w http.ResponseWriter, r *http.Request, u *User, ente
 		c.aggValues[k] = v
 	}
 	if r.Method == http.MethodDelete {
+		if v.Value == "" && v.Comment == "" {
+			delete(c.aggValues, k)
+			webMessage(w, 409, "Data value cannot be deleted because it does not exist", "")
+			return
+		}
 		v.Deleted, v.LastUpdated = true, now
 		w.WriteHeader(204)
 		return

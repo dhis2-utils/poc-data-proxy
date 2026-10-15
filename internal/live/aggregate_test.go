@@ -434,3 +434,140 @@ func TestAggregateOnlineWriteSeenOffline(t *testing.T) {
 		t.Fatalf("offline, the clerk sees %q, want the nurse's online value %s", got, val)
 	}
 }
+
+// Review fix: an edit folded into an outbox entry while that entry is being pushed
+// is not lost: the newer value reaches central.
+func TestAggregateEditDuringPush(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	e.NeedFake()
+	pe := tk.CurrentMonth(e)
+	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
+	e.Offline()
+	nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "1"))
+	e.Online()
+	done := false
+	e.Fake.OnAggWrite = func() { // the nurse edits the cell again while its entry is on its way
+		if !done {
+			done = true
+			if st, b := nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "2")); st != 201 {
+				t.Errorf("edit during the push: %d %s", st, b)
+			}
+		}
+	}
+	e.Sync()
+	e.Fake.OnAggWrite = nil
+	e.Sync()
+	if val, _, _ := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "2" {
+		t.Fatalf("on central: %q, want the newer 2", val)
+	}
+}
+
+// Review fix: while an earlier author's edits wait (their token refused), later
+// edits of the same cell, and completions of the same form, wait behind them.
+func TestAggregateBlockedAuthorKeepsOrder(t *testing.T) {
+	e, ag, nurse, clerk := aggregateEnv(t)
+	e.NeedFake()
+	pe := tk.CurrentMonth(e)
+	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
+	e.Offline()
+	nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "1"))
+	nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Required, ag.COC, "value", "7"))
+	clerk.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "2"))
+	clerk.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Integer, ag.COC, "value", "3"))
+	clerk.JSON("POST", "/api/"+e.App.Hub.APIMinor()+"/dataEntry/dataSetCompletion",
+		map[string]any{"dataSet": ag.DataSet, "period": pe, "orgUnit": e.M.Facility.ID, "completed": true}, 200)
+	u, _ := e.App.Hub.Store.UserByName(nurse.User)
+	e.Fake.RevokeToken(u.PATUID)
+	e.Online()
+	e.Sync()
+	if _, _, ok := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); ok {
+		t.Fatal("the clerk's edit of the cell went ahead of the nurse's waiting one")
+	}
+	if e.Fake.Complete(ag.DataSet, pe, ag.DefaultAOC) {
+		t.Fatal("the completion went ahead of the nurse's waiting values")
+	}
+	nurse.Login()
+	e.Sync()
+	if val, by, _ := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "2" || by != clerk.User {
+		t.Fatalf("after the nurse's login: %q by %q, want the clerk's later 2", val, by)
+	}
+	if !e.Fake.Complete(ag.DataSet, pe, ag.DefaultAOC) {
+		t.Fatal("completion not pushed after the values")
+	}
+}
+
+// Review fix: a data set the hub has not pulled is answered locked, not as an empty,
+// open form.
+func TestAggregateUnpulledFormLocked(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	e.NeedFake()
+	h := e.App.Hub
+	h.Store.SetPrivate("agg_pulled:"+ag.DataSet, "") // as on a hub that never pulled it
+	e.Offline()
+	form := nurse.JSON("GET", formPath(e, ag.DataSet, tk.CurrentMonth(e)), nil, 200)
+	if form["lockStatus"] != "LOCKED" {
+		t.Fatalf("a data set never pulled: %v", form["lockStatus"])
+	}
+}
+
+// Review fix: central answering errors keeps what the hub holds: forms are not pruned,
+// a user's aggregate access is not emptied.
+func TestAggregateErrorsKeepForms(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	e.NeedFake()
+	h := e.App.Hub
+	pe := tk.CurrentMonth(e)
+	e.SetCentralDataValue(ag.DataSet, pe, ag.Integer, ag.COC, "4")
+	e.Sync()
+	key := aggregate.FormKey{DataSet: ag.DataSet, Period: pe, OrgUnit: e.M.Facility.ID, AOC: ag.DefaultAOC}.String()
+	if f, _ := h.Store.GetAggForm(key); f == nil {
+		t.Fatal("form not pulled")
+	}
+	e.Fake.AggFail = map[string]int{"/api/dataValueSets": 500, "/api/dataEntry/metadata": 500}
+	u, _ := h.Store.UserByName(nurse.User)
+	h.RefreshAccess(context.Background(), u.ID)
+	e.App.Worker.Cycle(context.Background()) // reports the errors
+	e.Fake.AggFail = nil
+	if f, _ := h.Store.GetAggForm(key); f == nil {
+		t.Fatal("a failing pull pruned the form")
+	}
+	if acc := h.AggAccess(u.ID); acc == nil || acc.DataSets[ag.DataSet] == nil {
+		t.Fatal("a failing metadata request emptied the nurse's aggregate access")
+	}
+}
+
+// Review fix: during an upgrade an aggregate write is refused with a 409, never a
+// 503 (the app would queue it in the browser).
+func TestAggregateWriteDuringUpgrade(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	h := e.App.Hub
+	e.Offline()
+	h.FreezeLocalWrites()
+	defer h.ThawLocalWrites()
+	st, b := nurse.PostDataValue("/api/"+h.APIMinor()+"/dataValues", cell(e, ag.DataSet, tk.CurrentMonth(e), ag.Number, ag.COC, "value", "1"))
+	if st != 409 {
+		t.Fatalf("write during an upgrade: %d %s, want 409", st, b)
+	}
+}
+
+// Review fix: clearing a value that was only entered offline is no refusal: central
+// has nothing to delete.
+func TestAggregateDeleteOfflineOnlyValue(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	pe := tk.CurrentMonth(e)
+	e.DeleteCentralDataValue(ag.DataSet, pe, ag.Integer, ag.COC)
+	e.Sync()
+	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
+	e.Offline()
+	nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Integer, ag.COC, "value", "5"))
+	q := url.Values{"de": {ag.Integer}, "co": {ag.COC}, "ds": {ag.DataSet}, "ou": {e.M.Facility.ID}, "pe": {pe}}
+	if st, b := nurse.Do("DELETE", v+"?"+q.Encode(), nil); st != 204 {
+		t.Fatalf("offline delete: %d %s", st, b)
+	}
+	e.Online()
+	e.Sync()
+	if n := e.App.Hub.Store.CountIssues(); n != 0 {
+		is, _ := e.App.Hub.Store.Issues(false, 5)
+		t.Fatalf("%d issues for a value that never reached central: %s", n, is[0].Error)
+	}
+}

@@ -70,13 +70,6 @@ func (p *Proxy) Forward(ctx context.Context, r *http.Request, body []byte, a cen
 		hdr.Del(k)
 	}
 	hdr.Del("X-Forwarded-For")
-	// A 304 cannot be cached for offline use: a browser holding another user's copy
-	// (one browser, two staff) asks conditionally, and this user would get nothing
-	// offline. Ask central for the full answer.
-	if r.Method == http.MethodGet {
-		hdr.Del("If-None-Match")
-		hdr.Del("If-Modified-Since")
-	}
 	resp, err := p.H.Central.Do(ctx, r.Method, r.URL.RequestURI(), body, a, hdr)
 	if err != nil {
 		return nil, err
@@ -290,6 +283,16 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.H.Online() {
+		// A 304 cannot be cached for offline use: a browser holding another user's
+		// copy (one browser, two staff) asks conditionally, and this user would have
+		// nothing offline. Without a copy the hub could answer offline with, ask
+		// central for the full answer.
+		if r.Method == http.MethodGet && (r.Header.Get("If-None-Match") != "" || r.Header.Get("If-Modified-Since") != "") &&
+			p.H.Store.Unlocked() && !p.H.Store.HasCache(cacheUser(sess), sess != nil && shared(r.URL.Path), r.Method, r.URL.RequestURI()) {
+			r = r.Clone(r.Context())
+			r.Header.Del("If-None-Match")
+			r.Header.Del("If-Modified-Since")
+		}
 		res, err := p.Forward(r.Context(), r, body, p.Upstream(sess))
 		if err == nil {
 			if r.Method == http.MethodGet && cacheable(r, res.Status) && len(res.Body) <= maxCacheBody &&

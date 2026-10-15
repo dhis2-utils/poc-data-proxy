@@ -690,6 +690,21 @@ func TestOfflineAppShellAndConditionalGets(t *testing.T) {
 	}
 }
 
+// A user whose copy the hub holds keeps getting 304s from central: conditions are
+// dropped only when the hub has nothing for this user to answer offline with.
+func TestConditionalGetWithCachedCopy(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	nurse := e.web("nurse_a")
+	nurse.login()
+	if st, _ := nurse.do("GET", "/api/42/userSettings", nil); st != 200 {
+		t.Fatalf("first GET: %d", st)
+	}
+	if st, _ := nurse.getWith("/api/42/userSettings", map[string]string{"If-None-Match": `"fake-settings"`}); st != 304 {
+		t.Fatalf("conditional GET with the hub holding a copy: %d, want 304", st)
+	}
+}
+
 func TestOfflineStaticCache(t *testing.T) {
 	e := newEnv(t)
 	e.setup()

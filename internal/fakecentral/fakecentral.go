@@ -94,6 +94,10 @@ type Central struct {
 	aggRegs       map[string]*aggReg
 	approved      map[string]bool
 	AggExpiryDays float64 // expiry days of AggDataSet
+	// OnAggWrite runs as an aggregate write arrives, before it is handled (tests).
+	OnAggWrite func()
+	// AggFail makes an aggregate path answer this status (tests).
+	AggFail map[string]int
 }
 
 func New() *Central {

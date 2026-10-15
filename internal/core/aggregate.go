@@ -61,7 +61,8 @@ func (h *Hub) RefreshAggAccess(ctx context.Context, userID int64, auth central.A
 	b, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	a := &aggregate.Access{}
-	if resp.StatusCode == http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
 		if a, err = aggregate.ParseMetadata(b, authorities); err != nil {
 			return fmt.Errorf("dataEntry/metadata: %w", err)
 		}
@@ -73,6 +74,9 @@ func (h *Hub) RefreshAggAccess(ctx context.Context, userID int64, auth central.A
 		if err := h.Store.PutCache(userID, "GET", path, &store.CachedResponse{Status: 200, Header: hdr, Body: b}); err != nil {
 			return err
 		}
+	case http.StatusForbidden, http.StatusNotFound: // no aggregate data entry for this user
+	default: // keep the last answer
+		return &central.HTTPError{Status: resp.StatusCode, Body: b}
 	}
 	js, _ := json.Marshal(a)
 	if err := h.Store.SetState(aggAccessKey(userID), js); err != nil {
@@ -127,6 +131,10 @@ func (h *Hub) fillAttributeCombos(ctx context.Context, a *aggregate.Access, auth
 	}
 	return nil
 }
+
+// AggPulledKey marks a data set the hub has pulled at least once: before that its
+// forms are answered locked offline, not as empty forms open for entry.
+func AggPulledKey(dataSet string) string { return "agg_pulled:" + dataSet }
 
 const aggRetentionKey = "agg_retention"
 

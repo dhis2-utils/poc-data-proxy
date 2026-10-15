@@ -1,6 +1,8 @@
 package store
 
 import (
+	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -180,4 +182,57 @@ func (s *Store) PendingAggregateAll() ([]*OutboxEntry, error) {
 		return nil, err
 	}
 	return s.scanOutbox(rows, true)
+}
+
+// OutboxPayload is an entry's current payload: an aggregate entry's can be replaced
+// by a later edit of its cell while it waits (AppendAggregate).
+func (s *Store) OutboxPayload(seq int64) ([]byte, error) {
+	var ct []byte
+	if err := s.DB().QueryRow(`SELECT payload_enc FROM outbox WHERE seq=?`, seq).Scan(&ct); err != nil {
+		return nil, err
+	}
+	return s.OpenBlob(fmt.Sprintf("outbox:%d", seq), ct)
+}
+
+// FinishOutboxIfUnchanged finishes an entry only if its payload is still the one
+// pushed; if a later edit replaced it meanwhile, the entry stays pending and the newer
+// edit is pushed next. It reports whether the entry was finished.
+func (s *Store) FinishOutboxIfUnchanged(seq int64, state, lastError string, pushed []byte) (bool, error) {
+	finished := false
+	err := s.Tx(context.Background(), func(tx *sql.Tx) error {
+		var ct []byte
+		if err := tx.QueryRow(`SELECT payload_enc FROM outbox WHERE seq=?`, seq).Scan(&ct); err != nil {
+			return err
+		}
+		cur, err := s.OpenBlob(fmt.Sprintf("outbox:%d", seq), ct)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(cur, pushed) {
+			return nil
+		}
+		var errCT []byte
+		if lastError != "" {
+			if errCT, err = s.Seal(fmt.Sprintf("outbox-err:%d", seq), []byte(lastError)); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec(`UPDATE outbox SET state=?, attempts=attempts+1, last_error_enc=? WHERE seq=?`, state, errCT, seq); err != nil {
+			return err
+		}
+		finished = true
+		return nil
+	})
+	return finished, err
+}
+
+// EarlierPendingFor reports whether a pending entry before seq refers to uid (a cell
+// without its field, or a form): aggregate entries of one cell, and a form's
+// completion, are pushed in the order they were made even when an earlier author's
+// entries must wait.
+func (s *Store) EarlierPendingFor(seq int64, uid string) bool {
+	var n int
+	s.DB().QueryRow(`SELECT count(*) FROM outbox o JOIN outbox_objects b ON b.seq=o.seq
+ WHERE o.state=? AND o.seq<? AND b.uid=?`, OutboxPending, seq, uid).Scan(&n)
+	return n > 0
 }

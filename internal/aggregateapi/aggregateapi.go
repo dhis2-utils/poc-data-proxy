@@ -112,6 +112,9 @@ func (a *API) formOf(w http.ResponseWriter, acc *aggregate.Access, ds, pe, ou, c
 	}
 	k := aggregate.FormKey{DataSet: ds, Period: pe, OrgUnit: ou, AOC: aoc}
 	per, inWindow := aggregate.InWindow(d, a.H.CentralNow(), a.H.AggRetention().For(ds), pe)
+	// A data set not pulled yet is answered like one outside the window: locked, not
+	// an empty form open for entry.
+	inWindow = inWindow && a.H.Store.Private(core.AggPulledKey(ds)) != ""
 	return d, k, per, inWindow, true
 }
 
@@ -261,7 +264,8 @@ func (a *API) lock(acc *aggregate.Access, d *aggregate.DataSet, k aggregate.Form
 // queue appends the edit to the outbox as the session's user.
 func (a *API) queue(w http.ResponseWriter, sess *core.Session, ed *aggregate.Edit, completion bool) bool {
 	if !a.H.BeginLocalWrite() {
-		a.H.UpgradingError(w)
+		// A 409, not the usual 503: the app would queue the edit in the browser.
+		a.H.WebError(w, http.StatusConflict, "the hub is upgrading; try again in a few minutes", "")
 		return false
 	}
 	defer a.H.EndLocalWrite()
