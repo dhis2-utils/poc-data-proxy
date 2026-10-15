@@ -183,7 +183,7 @@ Keeping five years of everything locally is not needed. All people are kept, so 
 | Set-up with the first pull; a user's first pull; the next cycle | 25 s; 34 s; 2 s | 28 s; 35 s; 2 s |
 | Working list offline (event date, newest first, 20 a page): page 1, page 50 | 1.6 s, 1.5 s | 3 ms, 8 ms |
 | One device's download of a program (Android's paging, 3 001 pages of 50) | 28 min | 55 s |
-| Retention of 12 months: 198 000 events pruned | 13 s | 19 s |
+| Retention of 12 months: 198 000 events pruned | 13 s (one transaction) | 16 s, in transactions of 1 000 rows (offline writes wait for one at most) |
 
 Each page read and sorted the program's events; `objects_events` (creation order, Android's download) and `objects_events_occurred` (event date, newest first, read on by key) let a page read only itself. Per cycle and access group, an event program costs one listing of the events changed since the last pull.
 
