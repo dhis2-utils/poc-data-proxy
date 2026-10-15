@@ -1,0 +1,1839 @@
+{
+    "dataSets": [
+        {
+            "code": "DS_242322",
+            "name": "Mortality < 5 years by age group",
+            "created": "2016-10-10T16:17:29.155",
+            "lastUpdated": "2016-10-12T13:20:45.583",
+            "shortName": "Mortality < 5 years by age group",
+            "dimensionItemType": "REPORTING_RATE",
+            "periodType": "Monthly",
+            "dataInputPeriods": [],
+            "indicators": [],
+            "compulsoryDataElementOperands": [],
+            "sections": [],
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            },
+            "mobile": false,
+            "version": 0,
+            "expiryDays": 0.0,
+            "timelyDays": 15.0,
+            "notifyCompletingUser": false,
+            "openFuturePeriods": 0,
+            "openPeriodsAfterCoEndDate": 0,
+            "fieldCombinationRequired": false,
+            "validCompleteOnly": false,
+            "noValueRequiresComment": false,
+            "skipOffline": false,
+            "dataElementDecoration": false,
+            "renderAsTabs": false,
+            "renderHorizontally": false,
+            "compulsoryFieldsCompleteOnly": false,
+            "displayOptions": "{}",
+            "formType": "DEFAULT",
+            "displayName": "Mortality < 5 years by age group",
+            "favorite": false,
+            "dimensionItem": "ce7DSxx5H2I",
+            "displayShortName": "Mortality < 5 years by age group",
+            "displayFormName": "Mortality < 5 years by age group",
+            "id": "ce7DSxx5H2I",
+            "dataSetElements": [
+                {
+                    "dataElement": {
+                        "id": "FTRrcoaog83"
+                    },
+                    "categoryCombo": {
+                        "id": "pbvcDRasDav"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "LjNlMTl9Nq9"
+                    },
+                    "categoryCombo": {
+                        "id": "pbvcDRasDav"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "eY5ehpbEsB7"
+                    },
+                    "categoryCombo": {
+                        "id": "pbvcDRasDav"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "Ix2HsbDMLea"
+                    },
+                    "categoryCombo": {
+                        "id": "pbvcDRasDav"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "NpJtsQkMTm3"
+                    },
+                    "categoryCombo": {
+                        "id": "pbvcDRasDav"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "r6nrJANOqMw"
+                    },
+                    "categoryCombo": {
+                        "id": "pbvcDRasDav"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "f7n9E0hX8qk"
+                    },
+                    "categoryCombo": {
+                        "id": "pbvcDRasDav"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "MSZuQ1mTsia"
+                    },
+                    "categoryCombo": {
+                        "id": "pbvcDRasDav"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "lXolhoWewYH"
+                    },
+                    "categoryCombo": {
+                        "id": "pbvcDRasDav"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "jVDAvs6kIAP"
+                    },
+                    "categoryCombo": {
+                        "id": "pbvcDRasDav"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "Vp12ncSU1Av"
+                    },
+                    "categoryCombo": {
+                        "id": "pbvcDRasDav"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "hM4ya5T2AqX"
+                    },
+                    "categoryCombo": {
+                        "id": "pbvcDRasDav"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "Yy9NtNfwYZJ"
+                    },
+                    "categoryCombo": {
+                        "id": "pbvcDRasDav"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "USBq0VHSkZq"
+                    },
+                    "categoryCombo": {
+                        "id": "pbvcDRasDav"
+                    }
+                }
+            ],
+            "organisationUnits": [
+                "DiszpKrYNg8"
+            ]
+        },
+        {
+            "code": "DS_812532",
+            "name": "Mortality < 5 years by gender",
+            "created": "2016-10-10T15:43:50.026",
+            "lastUpdated": "2016-10-12T13:21:05.884",
+            "shortName": "Mortality < 5 years by gender",
+            "dimensionItemType": "REPORTING_RATE",
+            "periodType": "Monthly",
+            "dataInputPeriods": [],
+            "indicators": [],
+            "compulsoryDataElementOperands": [],
+            "sections": [],
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            },
+            "mobile": false,
+            "version": 0,
+            "expiryDays": 0.0,
+            "timelyDays": 15.0,
+            "notifyCompletingUser": false,
+            "openFuturePeriods": 0,
+            "openPeriodsAfterCoEndDate": 0,
+            "fieldCombinationRequired": false,
+            "validCompleteOnly": false,
+            "noValueRequiresComment": false,
+            "skipOffline": false,
+            "dataElementDecoration": false,
+            "renderAsTabs": false,
+            "renderHorizontally": false,
+            "compulsoryFieldsCompleteOnly": false,
+            "displayOptions": "{}",
+            "formType": "DEFAULT",
+            "displayName": "Mortality < 5 years by gender",
+            "favorite": false,
+            "dimensionItem": "YFTk3VdO9av",
+            "displayShortName": "Mortality < 5 years by gender",
+            "displayFormName": "Mortality < 5 years by gender",
+            "id": "YFTk3VdO9av",
+            "dataSetElements": [
+                {
+                    "dataElement": {
+                        "id": "FTRrcoaog83"
+                    },
+                    "categoryCombo": {
+                        "id": "dPmavA0qloX"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "LjNlMTl9Nq9"
+                    },
+                    "categoryCombo": {
+                        "id": "dPmavA0qloX"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "eY5ehpbEsB7"
+                    },
+                    "categoryCombo": {
+                        "id": "dPmavA0qloX"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "Ix2HsbDMLea"
+                    },
+                    "categoryCombo": {
+                        "id": "dPmavA0qloX"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "NpJtsQkMTm3"
+                    },
+                    "categoryCombo": {
+                        "id": "dPmavA0qloX"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "r6nrJANOqMw"
+                    },
+                    "categoryCombo": {
+                        "id": "dPmavA0qloX"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "f7n9E0hX8qk"
+                    },
+                    "categoryCombo": {
+                        "id": "dPmavA0qloX"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "MSZuQ1mTsia"
+                    },
+                    "categoryCombo": {
+                        "id": "dPmavA0qloX"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "lXolhoWewYH"
+                    },
+                    "categoryCombo": {
+                        "id": "dPmavA0qloX"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "jVDAvs6kIAP"
+                    },
+                    "categoryCombo": {
+                        "id": "dPmavA0qloX"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "Vp12ncSU1Av"
+                    },
+                    "categoryCombo": {
+                        "id": "dPmavA0qloX"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "hM4ya5T2AqX"
+                    },
+                    "categoryCombo": {
+                        "id": "dPmavA0qloX"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "Yy9NtNfwYZJ"
+                    },
+                    "categoryCombo": {
+                        "id": "dPmavA0qloX"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "USBq0VHSkZq"
+                    },
+                    "categoryCombo": {
+                        "id": "dPmavA0qloX"
+                    }
+                }
+            ],
+            "organisationUnits": [
+                "DiszpKrYNg8"
+            ]
+        },
+        {
+            "code": "DS_359711",
+            "name": "Child Health",
+            "created": "2012-11-14T18:00:36.863",
+            "lastUpdated": "2026-10-15T07:44:18.905",
+            "shortName": "Child Health",
+            "dimensionItemType": "REPORTING_RATE",
+            "periodType": "Monthly",
+            "dataInputPeriods": [],
+            "indicators": [],
+            "compulsoryDataElementOperands": [
+                {
+                    "dataElement": {
+                        "id": "O05mAByOgAv"
+                    },
+                    "categoryOptionCombo": {
+                        "id": "V6L425pT3A0"
+                    }
+                }
+            ],
+            "sections": [
+                {
+                    "name": "Immunization",
+                    "created": "2012-04-26T19:26:02.933",
+                    "lastUpdated": "2016-10-12T13:22:42.731",
+                    "description": "Immunization dose administration",
+                    "dataElements": [
+                        "s46m5MS0hxu",
+                        "UOlfIjgN8X6",
+                        "z7duEFcpApd",
+                        "x3Do5e7g4Qo",
+                        "pikOziyCXbM",
+                        "O05mAByOgAv",
+                        "vI2csg55S9C",
+                        "xc8gmAKfO95",
+                        "mGN1az8Xub6",
+                        "L2kxa2IA2cs",
+                        "fClA2Erf6IO",
+                        "I78gJm4KBo7",
+                        "n6aMJNLdvep",
+                        "l6byfWFUGaP",
+                        "YtbsuPPo010"
+                    ],
+                    "indicators": [],
+                    "greyedFields": [],
+                    "sortOrder": 2,
+                    "showRowTotals": false,
+                    "showColumnTotals": false,
+                    "disableDataElementAutoGroup": false,
+                    "displayOptions": "{}",
+                    "displayName": "Immunization",
+                    "favorite": false,
+                    "id": "Y2rk0vzgvAx"
+                },
+                {
+                    "name": "Nutrition",
+                    "created": "2012-04-26T19:26:02.933",
+                    "lastUpdated": "2017-01-30T16:51:54.683",
+                    "description": "Nutrition",
+                    "dataElements": [
+                        "qw2sIef52Fu",
+                        "Y53Jcc9LBYh",
+                        "d5xTg3WR3DP",
+                        "DUSpd8Jq3M7",
+                        "dU0GquGkGQr",
+                        "pEOVd4Z3TAS",
+                        "Rmixc9wJl0G",
+                        "GCGfEY82Wz6",
+                        "ca8lfO062zg",
+                        "tU7GixyHhsv",
+                        "bTcRDVjC66S",
+                        "ldGXl6SEdqf",
+                        "NLnXLV5YpZF",
+                        "pnL2VG8Bn7N",
+                        "qPVDd87kS9Z",
+                        "lVsbKXoF0zX"
+                    ],
+                    "indicators": [],
+                    "greyedFields": [
+                        {
+                            "dataElement": {
+                                "id": "dU0GquGkGQr"
+                            },
+                            "categoryOptionCombo": {
+                                "id": "hEFKSsPV5et"
+                            }
+                        },
+                        {
+                            "dataElement": {
+                                "id": "dU0GquGkGQr"
+                            },
+                            "categoryOptionCombo": {
+                                "id": "psbwp3CQEhs"
+                            }
+                        },
+                        {
+                            "dataElement": {
+                                "id": "ca8lfO062zg"
+                            },
+                            "categoryOptionCombo": {
+                                "id": "V6L425pT3A0"
+                            }
+                        },
+                        {
+                            "dataElement": {
+                                "id": "ca8lfO062zg"
+                            },
+                            "categoryOptionCombo": {
+                                "id": "Prlt0C1RF0s"
+                            }
+                        },
+                        {
+                            "dataElement": {
+                                "id": "DUSpd8Jq3M7"
+                            },
+                            "categoryOptionCombo": {
+                                "id": "psbwp3CQEhs"
+                            }
+                        },
+                        {
+                            "dataElement": {
+                                "id": "d5xTg3WR3DP"
+                            },
+                            "categoryOptionCombo": {
+                                "id": "V6L425pT3A0"
+                            }
+                        },
+                        {
+                            "dataElement": {
+                                "id": "d5xTg3WR3DP"
+                            },
+                            "categoryOptionCombo": {
+                                "id": "Prlt0C1RF0s"
+                            }
+                        },
+                        {
+                            "dataElement": {
+                                "id": "DUSpd8Jq3M7"
+                            },
+                            "categoryOptionCombo": {
+                                "id": "hEFKSsPV5et"
+                            }
+                        }
+                    ],
+                    "sortOrder": 3,
+                    "showRowTotals": false,
+                    "showColumnTotals": false,
+                    "disableDataElementAutoGroup": false,
+                    "displayOptions": "{}",
+                    "displayName": "Nutrition",
+                    "favorite": false,
+                    "id": "vtOr8PTJVxS"
+                }
+            ],
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            },
+            "mobile": false,
+            "version": 65,
+            "expiryDays": 0.0,
+            "timelyDays": 0.0,
+            "notifyCompletingUser": false,
+            "openFuturePeriods": 10,
+            "openPeriodsAfterCoEndDate": 0,
+            "fieldCombinationRequired": false,
+            "validCompleteOnly": false,
+            "noValueRequiresComment": false,
+            "skipOffline": false,
+            "dataElementDecoration": true,
+            "renderAsTabs": false,
+            "renderHorizontally": false,
+            "compulsoryFieldsCompleteOnly": false,
+            "displayOptions": "{}",
+            "formType": "SECTION",
+            "displayName": "Child Health",
+            "favorite": false,
+            "dimensionItem": "BfMAe6Itzgt",
+            "displayShortName": "Child Health",
+            "displayFormName": "Child Health",
+            "id": "BfMAe6Itzgt",
+            "dataSetElements": [
+                {
+                    "dataElement": {
+                        "id": "dU0GquGkGQr"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "L2kxa2IA2cs"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "d5xTg3WR3DP"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "z7duEFcpApd"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "mGN1az8Xub6"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "Y53Jcc9LBYh"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "pEOVd4Z3TAS"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "lVsbKXoF0zX"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "pikOziyCXbM"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "x3Do5e7g4Qo"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "bTcRDVjC66S"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "fClA2Erf6IO"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "I78gJm4KBo7"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "ldGXl6SEdqf"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "YtbsuPPo010"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "pnL2VG8Bn7N"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "qw2sIef52Fu"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "s46m5MS0hxu"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "GCGfEY82Wz6"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "NLnXLV5YpZF"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "qPVDd87kS9Z"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "vI2csg55S9C"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "UOlfIjgN8X6"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "ca8lfO062zg"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "xc8gmAKfO95"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "n6aMJNLdvep"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "l6byfWFUGaP"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "DUSpd8Jq3M7"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "tU7GixyHhsv"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "Rmixc9wJl0G"
+                    }
+                },
+                {
+                    "dataElement": {
+                        "id": "O05mAByOgAv"
+                    }
+                }
+            ],
+            "organisationUnits": [
+                "DiszpKrYNg8"
+            ]
+        }
+    ],
+    "dataElements": [
+        {
+            "code": "DE_19",
+            "name": "OPV1 doses given",
+            "created": "2012-11-05T12:55:05.154",
+            "lastUpdated": "2014-11-11T21:56:05.529",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "OPV1 doses given",
+            "displayName": "OPV1 doses given",
+            "displayFormName": "OPV1 doses given",
+            "id": "pikOziyCXbM",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_20",
+            "name": "OPV2 doses given",
+            "created": "2012-11-05T12:47:11.853",
+            "lastUpdated": "2014-11-11T21:56:05.833",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "OPV2 doses given",
+            "displayName": "OPV2 doses given",
+            "displayFormName": "OPV2 doses given",
+            "id": "O05mAByOgAv",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_21",
+            "name": "OPV3 doses given",
+            "created": "2012-11-05T12:47:33.202",
+            "lastUpdated": "2014-11-11T21:56:05.531",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "OPV3 doses given",
+            "displayName": "OPV3 doses given",
+            "displayFormName": "OPV3 doses given",
+            "id": "vI2csg55S9C",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_22",
+            "name": "Q_Early breastfeeding (within 1 hr after delivery) at BCG",
+            "created": "2010-02-05T10:57:07.949",
+            "lastUpdated": "2014-11-11T21:56:05.842",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "EarlyBreastfeed.BCG",
+            "displayName": "Q_Early breastfeeding (within 1 hr after delivery) at BCG",
+            "displayFormName": "Q_Early breastfeeding (within 1 hr after delivery) at BCG",
+            "id": "dU0GquGkGQr",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_23",
+            "name": "Penta1 doses given",
+            "created": "2012-11-05T12:47:53.340",
+            "lastUpdated": "2014-11-11T21:56:05.879",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Penta1 doses given",
+            "displayName": "Penta1 doses given",
+            "displayFormName": "Penta1 doses given",
+            "id": "fClA2Erf6IO",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_24",
+            "name": "Penta2 doses given",
+            "created": "2012-11-05T12:48:08.439",
+            "lastUpdated": "2014-11-11T21:56:05.822",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Penta2 doses given",
+            "displayName": "Penta2 doses given",
+            "displayFormName": "Penta2 doses given",
+            "id": "I78gJm4KBo7",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_25",
+            "name": "Penta3 doses given",
+            "created": "2012-11-05T12:56:39.621",
+            "lastUpdated": "2014-11-11T21:56:05.768",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Penta3 doses given",
+            "displayName": "Penta3 doses given",
+            "displayFormName": "Penta3 doses given",
+            "id": "n6aMJNLdvep",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_33",
+            "name": "Q_Exclusive breastfeeding at time of Penta 3",
+            "created": "2011-12-24T12:24:25.088",
+            "lastUpdated": "2014-11-11T21:56:05.908",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "QexclusivBreast.DPT3",
+            "displayName": "Q_Exclusive breastfeeding at time of Penta 3",
+            "displayFormName": "Q_Exclusive breastfeeding at time of Penta 3",
+            "id": "pEOVd4Z3TAS",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_34",
+            "name": "Measles doses given",
+            "created": "2012-11-05T12:48:30.861",
+            "lastUpdated": "2014-11-11T21:56:05.875",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Measles doses given",
+            "displayName": "Measles doses given",
+            "displayFormName": "Measles doses given",
+            "id": "YtbsuPPo010",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_35",
+            "name": "Yellow Fever doses given",
+            "created": "2011-12-24T12:24:25.088",
+            "lastUpdated": "2015-08-06T13:28:05.512",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Yellow Fever doses given",
+            "displayName": "Yellow Fever doses given",
+            "displayFormName": "Yellow Fever doses given",
+            "id": "l6byfWFUGaP",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_36",
+            "name": "Fully Immunized child",
+            "created": "2012-11-05T12:48:48.279",
+            "lastUpdated": "2015-02-24T16:03:07.926",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Fully Immunized Child",
+            "displayName": "Fully Immunized child",
+            "displayFormName": "Fully Immunized child",
+            "id": "UOlfIjgN8X6",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_268",
+            "name": "Q_Slept under LLIN last night Measles",
+            "created": "2011-12-24T12:24:25.088",
+            "lastUpdated": "2014-11-11T21:56:05.761",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "SleptLlinLastNighMea",
+            "displayName": "Q_Slept under LLIN last night Measles",
+            "displayFormName": "Q_Slept under LLIN last night Measles",
+            "id": "GCGfEY82Wz6",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359706",
+            "name": "BCG doses given",
+            "created": "2010-02-05T10:58:19.053",
+            "lastUpdated": "2015-04-02T19:51:21.183",
+            "description": "BCG doses administered.",
+            "aggregationType": "SUM",
+            "valueType": "INTEGER",
+            "zeroIsSignificant": false,
+            "displayShortName": "BCG doses given",
+            "displayName": "BCG doses given",
+            "displayFormName": "BCG doses given",
+            "id": "s46m5MS0hxu",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359707",
+            "name": "OPV0 doses given",
+            "created": "2010-02-05T10:57:23.270",
+            "lastUpdated": "2014-11-11T21:56:05.530",
+            "description": "0-13 days after birth.",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "OPV0 doses given",
+            "displayName": "OPV0 doses given",
+            "displayFormName": "OPV0 doses given",
+            "id": "x3Do5e7g4Qo",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359709",
+            "name": "LLITN given at Penta3",
+            "created": "2010-02-05T10:57:58.041",
+            "lastUpdated": "2014-11-11T21:56:05.884",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "LLITN at Penta3",
+            "displayName": "LLITN given at Penta3",
+            "displayFormName": "LLITN given at Penta3",
+            "id": "z7duEFcpApd",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359710",
+            "name": "Newborn protected at birth against tetanus (TT2+)",
+            "created": "2010-02-05T10:57:33.276",
+            "lastUpdated": "2014-11-11T21:56:05.714",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Newborn protected",
+            "displayName": "Newborn protected at birth against tetanus (TT2+)",
+            "displayFormName": "Newborn protected at birth against tetanus (TT2+)",
+            "id": "DUSpd8Jq3M7",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359722",
+            "name": "PCV1 doses given",
+            "created": "2010-02-05T10:57:21.613",
+            "lastUpdated": "2014-11-11T21:56:05.913",
+            "description": "Pneumococcal Vaccine",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "PCV1 doses given",
+            "displayName": "PCV1 doses given",
+            "displayFormName": "PCV1 doses given",
+            "id": "xc8gmAKfO95",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359723",
+            "name": "PCV2 doses given",
+            "created": "2010-02-05T10:57:21.488",
+            "lastUpdated": "2014-11-11T21:56:05.920",
+            "description": "Penumococcal Vaccine",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "PCV2 doses given",
+            "displayName": "PCV2 doses given",
+            "displayFormName": "PCV2 doses given",
+            "id": "mGN1az8Xub6",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359724",
+            "name": "PCV3 doses given",
+            "created": "2010-02-05T10:57:21.363",
+            "lastUpdated": "2014-11-11T21:56:05.713",
+            "description": "Penumococcal Vaccine",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "PCV3 doses given",
+            "displayName": "PCV3 doses given",
+            "displayFormName": "PCV3 doses given",
+            "id": "L2kxa2IA2cs",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359725",
+            "name": "Weight for height 80 percent and above",
+            "created": "2010-02-05T10:56:09.554",
+            "lastUpdated": "2014-11-11T21:56:05.809",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Weight/height 80+",
+            "displayName": "Weight for height 80 percent and above",
+            "displayFormName": "Weight for height 80 percent and above",
+            "id": "qPVDd87kS9Z",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359726",
+            "name": "Weight for height 70-79 percent",
+            "created": "2010-02-05T10:56:09.570",
+            "lastUpdated": "2014-11-11T21:56:05.692",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Weight/height 70-79",
+            "displayName": "Weight for height 70-79 percent",
+            "displayFormName": "Weight for height 70-79 percent",
+            "id": "pnL2VG8Bn7N",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359727",
+            "name": "Weight for height below 70 percent",
+            "created": "2010-02-05T10:58:44.397",
+            "lastUpdated": "2014-11-11T21:56:05.674",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Weight/height <70",
+            "displayName": "Weight for height below 70 percent",
+            "displayFormName": "Weight for height below 70 percent",
+            "id": "lVsbKXoF0zX",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359729",
+            "name": "Weight for age on or above middle line (green)",
+            "created": "2010-02-05T10:56:09.570",
+            "lastUpdated": "2014-11-11T21:56:05.650",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Weight/age green",
+            "displayName": "Weight for age on or above middle line (green)",
+            "displayFormName": "Weight for age on or above middle line (green)",
+            "id": "NLnXLV5YpZF",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359730",
+            "name": "Weight for age between middle and lower line (yellow)",
+            "created": "2010-02-05T10:56:09.586",
+            "lastUpdated": "2014-11-11T21:56:05.922",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Weight/age yellow",
+            "displayName": "Weight for age between middle and lower line (yellow)",
+            "displayFormName": "Weight for age between middle and lower line (yellow)",
+            "id": "ldGXl6SEdqf",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359731",
+            "name": "Weight for age below lower line (red)",
+            "created": "2010-02-05T10:56:09.601",
+            "lastUpdated": "2014-11-11T21:56:05.652",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Weight/age red",
+            "displayName": "Weight for age below lower line (red)",
+            "displayFormName": "Weight for age below lower line (red)",
+            "id": "bTcRDVjC66S",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359732",
+            "name": "Mebendazole/Albendazole (for children 12-59 months)",
+            "created": "2010-02-05T10:57:41.922",
+            "lastUpdated": "2014-11-11T21:56:05.643",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "De-worming 12-59m",
+            "displayName": "Mebendazole/Albendazole (for children 12-59 months)",
+            "displayFormName": "Mebendazole/Albendazole (for children 12-59 months)",
+            "id": "d5xTg3WR3DP",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359733",
+            "name": "Vitamin A given to < 5y",
+            "created": "2010-02-05T10:56:09.617",
+            "lastUpdated": "2014-11-11T21:56:05.645",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Vitamin A <5",
+            "displayName": "Vitamin A given to < 5y",
+            "displayFormName": "Vitamin A given to < 5y",
+            "id": "tU7GixyHhsv",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359734",
+            "name": "Q_Vitamin A received 4-6 months ago at 12-59 dose",
+            "created": "2010-02-05T10:57:05.635",
+            "lastUpdated": "2014-11-11T21:56:05.899",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Q_VitA_4-6m_VitA2",
+            "displayName": "Q_Vitamin A received 4-6 months ago at 12-59 dose",
+            "displayFormName": "Q_Vitamin A received 4-6 months ago at 12-59 dose",
+            "id": "ca8lfO062zg",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359735",
+            "name": "Q_LLITN given at time of 2nd Vit A dose",
+            "created": "2010-02-05T10:57:05.963",
+            "lastUpdated": "2014-11-11T21:56:05.661",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Q_LLITN at VitA2",
+            "displayName": "Q_LLITN given at time of 2nd Vit A dose",
+            "displayFormName": "Q_LLITN given at time of 2nd Vit A dose",
+            "id": "Rmixc9wJl0G",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359737",
+            "name": "Children supplied with food supplemements",
+            "created": "2010-02-05T10:58:14.426",
+            "lastUpdated": "2014-11-11T21:56:05.613",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Child food suppl.",
+            "displayName": "Children supplied with food supplemements",
+            "displayFormName": "Children supplied with food supplemements",
+            "id": "Y53Jcc9LBYh",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_359738",
+            "name": "Children getting therapeutic feeding",
+            "created": "2010-02-05T10:58:15.114",
+            "lastUpdated": "2014-11-11T21:56:05.758",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Child thera. feeding",
+            "displayName": "Children getting therapeutic feeding",
+            "displayFormName": "Children getting therapeutic feeding",
+            "id": "qw2sIef52Fu",
+            "categoryCombo": {
+                "id": "dzjKKQq0cSO"
+            }
+        },
+        {
+            "code": "DE_1148614",
+            "name": "Accute Flaccid Paralysis (Deaths < 5 yrs)",
+            "created": "2011-04-20T17:54:58.775",
+            "lastUpdated": "2017-05-19T15:13:52.488",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Accute Flaccid Paral (Deaths < 5 yrs)",
+            "displayName": "Accute Flaccid Paralysis (Deaths < 5 yrs)",
+            "displayFormName": "Accute Flaccid Paralysis (Deaths < 5 yrs)",
+            "id": "FTRrcoaog83",
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            }
+        },
+        {
+            "code": "DE_1148615",
+            "name": "Animal Bites - Rabid (Deaths < 5 yrs)",
+            "created": "2011-04-20T17:55:10.860",
+            "lastUpdated": "2016-08-01T15:01:26.103",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Animal Bites - Rabid (Deaths < 5 yrs)",
+            "displayName": "Animal Bites - Rabid (Deaths < 5 yrs)",
+            "displayFormName": "Animal Bites - Rabid (Deaths < 5 yrs)",
+            "id": "LjNlMTl9Nq9",
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            }
+        },
+        {
+            "code": "DE_1148616",
+            "name": "Cholera (Deaths < 5 yrs)",
+            "created": "2011-04-20T17:57:10.163",
+            "lastUpdated": "2016-08-01T15:01:36.881",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Cholera (Deaths < 5 yrs)",
+            "displayName": "Cholera (Deaths < 5 yrs)",
+            "displayFormName": "Cholera (Deaths < 5 yrs)",
+            "id": "eY5ehpbEsB7",
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            }
+        },
+        {
+            "code": "DE_1148617",
+            "name": "Dysentery (Deaths < 5 yrs)",
+            "created": "2011-04-20T17:57:24.216",
+            "lastUpdated": "2016-08-01T15:06:23.055",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Dysentery (Deaths < 5 yrs)",
+            "displayName": "Dysentery (Deaths < 5 yrs)",
+            "displayFormName": "Dysentery (Deaths < 5 yrs)",
+            "id": "Ix2HsbDMLea",
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            }
+        },
+        {
+            "code": "DE_1148618",
+            "name": "Louse Borne Typhus - Relapsing fever (Deaths < 5 yrs)",
+            "created": "2011-04-20T17:55:52.623",
+            "lastUpdated": "2016-08-01T15:02:29.425",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Louse Borne Typhus (Deaths < 5 yrs)",
+            "displayName": "Louse Borne Typhus - Relapsing fever (Deaths < 5 yrs)",
+            "displayFormName": "Louse Borne Typhus - Relapsing fever (Deaths < 5 yrs)",
+            "id": "NpJtsQkMTm3",
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            }
+        },
+        {
+            "code": "DE_1148619",
+            "name": "Measles (Deaths < 5 yrs)",
+            "created": "2011-04-20T17:57:47.406",
+            "lastUpdated": "2016-08-01T15:03:32.371",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Measles (Deaths < 5 yrs)",
+            "displayName": "Measles (Deaths < 5 yrs)",
+            "displayFormName": "Measles (Deaths < 5 yrs)",
+            "id": "f7n9E0hX8qk",
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            }
+        },
+        {
+            "code": "DE_1148620",
+            "name": "Meningitis (Deaths < 5 yrs)",
+            "created": "2011-04-20T17:56:17.015",
+            "lastUpdated": "2016-08-01T15:03:43.649",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Meningitis (Deaths < 5 yrs)",
+            "displayName": "Meningitis (Deaths < 5 yrs)",
+            "displayFormName": "Meningitis (Deaths < 5 yrs)",
+            "id": "MSZuQ1mTsia",
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            }
+        },
+        {
+            "code": "DE_1148621",
+            "name": "Plague (Deaths < 5 yrs)",
+            "created": "2011-04-20T17:58:10.931",
+            "lastUpdated": "2016-08-01T15:03:57.351",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Plague (Deaths < 5 yrs)",
+            "displayName": "Plague (Deaths < 5 yrs)",
+            "displayFormName": "Plague (Deaths < 5 yrs)",
+            "id": "lXolhoWewYH",
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            }
+        },
+        {
+            "code": "DE_1148622",
+            "name": "Rabies (Deaths < 5 yrs)",
+            "created": "2011-04-20T17:58:29.823",
+            "lastUpdated": "2016-08-01T15:04:14.289",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Rabies (Deaths < 5 yrs)",
+            "displayName": "Rabies (Deaths < 5 yrs)",
+            "displayFormName": "Rabies (Deaths < 5 yrs)",
+            "id": "jVDAvs6kIAP",
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            }
+        },
+        {
+            "code": "DE_1148623",
+            "name": "Tetanus Neonatal (Deaths < 5 yrs)",
+            "created": "2011-04-20T17:59:07.083",
+            "lastUpdated": "2016-08-01T15:04:24.617",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Tetanus Neonatal (Deaths < 5 yrs)",
+            "displayName": "Tetanus Neonatal (Deaths < 5 yrs)",
+            "displayFormName": "Tetanus Neonatal (Deaths < 5 yrs)",
+            "id": "Vp12ncSU1Av",
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            }
+        },
+        {
+            "code": "DE_1148625",
+            "name": "Tetanus Other (Deaths < 5 yrs)",
+            "created": "2011-04-20T17:59:19.073",
+            "lastUpdated": "2016-08-01T15:04:36.155",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Tetanus Other (Deaths < 5 yrs)",
+            "displayName": "Tetanus Other (Deaths < 5 yrs)",
+            "displayFormName": "Tetanus Other (Deaths < 5 yrs)",
+            "id": "hM4ya5T2AqX",
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            }
+        },
+        {
+            "code": "DE_1148626",
+            "name": "Typhoid (Deaths < 5 yrs)",
+            "created": "2011-04-20T17:59:32.885",
+            "lastUpdated": "2016-08-01T15:04:46.136",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Typhoid (Deaths < 5 yrs)",
+            "displayName": "Typhoid (Deaths < 5 yrs)",
+            "displayFormName": "Typhoid (Deaths < 5 yrs)",
+            "id": "Yy9NtNfwYZJ",
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            }
+        },
+        {
+            "code": "DE_1148627",
+            "name": "Yellow Fever (Deaths < 5 yrs)",
+            "created": "2011-04-20T17:59:43.440",
+            "lastUpdated": "2016-08-01T15:04:58.325",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Yellow Fever (Deaths < 5 yrs)",
+            "displayName": "Yellow Fever (Deaths < 5 yrs)",
+            "displayFormName": "Yellow Fever (Deaths < 5 yrs)",
+            "id": "USBq0VHSkZq",
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            }
+        },
+        {
+            "code": "DE_1153190",
+            "name": "Malaria (Deaths < 5 yrs)",
+            "created": "2013-11-12T21:14:54.933",
+            "lastUpdated": "2016-08-01T15:02:57.418",
+            "aggregationType": "SUM",
+            "valueType": "NUMBER",
+            "zeroIsSignificant": false,
+            "displayShortName": "Malaria (Deaths < 5 yrs)",
+            "displayName": "Malaria (Deaths < 5 yrs)",
+            "displayFormName": "Malaria (Deaths < 5 yrs)",
+            "id": "r6nrJANOqMw",
+            "categoryCombo": {
+                "id": "bjDvmb4bfuf"
+            }
+        }
+    ],
+    "indicators": [],
+    "categoryCombos": [
+        {
+            "code": "default",
+            "name": "default",
+            "created": "2011-12-24T12:24:25.203",
+            "lastUpdated": "2016-04-12T20:37:49.126",
+            "categories": [
+                "GLevLNI9wkl"
+            ],
+            "dataDimensionType": "DISAGGREGATION",
+            "skipTotal": false,
+            "displayName": "default",
+            "favorite": false,
+            "id": "bjDvmb4bfuf",
+            "categoryOptionCombos": [
+                {
+                    "code": "default",
+                    "name": "default",
+                    "categoryOptions": [
+                        "xYerKDKCefk"
+                    ],
+                    "displayName": "default",
+                    "id": "HllvX50cXC0"
+                }
+            ],
+            "isDefault": true
+        },
+        {
+            "name": "Location and age group",
+            "created": "2011-12-24T12:24:25.203",
+            "lastUpdated": "2011-12-24T12:24:25.203",
+            "categories": [
+                "fMZEcRHuamy",
+                "YNZyaJHiHYq"
+            ],
+            "dataDimensionType": "DISAGGREGATION",
+            "skipTotal": false,
+            "displayName": "Location and age group",
+            "favorite": false,
+            "id": "dzjKKQq0cSO",
+            "categoryOptionCombos": [
+                {
+                    "code": "COC_290",
+                    "name": "Outreach, <1y",
+                    "categoryOptions": [
+                        "wbrDrL2aYEc",
+                        "btOyqprQ9e8"
+                    ],
+                    "displayName": "Outreach, <1y",
+                    "id": "V6L425pT3A0"
+                },
+                {
+                    "code": "COC_289",
+                    "name": "Outreach, >1y",
+                    "categoryOptions": [
+                        "wbrDrL2aYEc",
+                        "GEqzEKCHoGA"
+                    ],
+                    "displayName": "Outreach, >1y",
+                    "id": "hEFKSsPV5et"
+                },
+                {
+                    "code": "COC_292",
+                    "name": "Fixed, <1y",
+                    "categoryOptions": [
+                        "qkPbeWaFsnU",
+                        "btOyqprQ9e8"
+                    ],
+                    "displayName": "Fixed, <1y",
+                    "id": "Prlt0C1RF0s"
+                },
+                {
+                    "code": "COC_291",
+                    "name": "Fixed, >1y",
+                    "categoryOptions": [
+                        "qkPbeWaFsnU",
+                        "GEqzEKCHoGA"
+                    ],
+                    "displayName": "Fixed, >1y",
+                    "id": "psbwp3CQEhs"
+                }
+            ],
+            "isDefault": false
+        },
+        {
+            "code": "Gender",
+            "name": "Gender",
+            "created": "2016-10-10T15:41:06.551",
+            "lastUpdated": "2016-10-10T15:41:06.719",
+            "categories": [
+                "cX5k9anHEHd"
+            ],
+            "dataDimensionType": "DISAGGREGATION",
+            "skipTotal": false,
+            "displayName": "Gender",
+            "favorite": false,
+            "id": "dPmavA0qloX",
+            "categoryOptionCombos": [
+                {
+                    "name": "Female",
+                    "categoryOptions": [
+                        "apsOixVZlf1"
+                    ],
+                    "displayName": "Female",
+                    "id": "qk6n4eMAdtK"
+                },
+                {
+                    "name": "Male",
+                    "categoryOptions": [
+                        "jRbMi0aBjYn"
+                    ],
+                    "displayName": "Male",
+                    "id": "KQ50BVoUrd6"
+                }
+            ],
+            "isDefault": false
+        },
+        {
+            "code": "Morbidity Age",
+            "name": "Morbidity Age",
+            "created": "2016-10-10T16:17:05.628",
+            "lastUpdated": "2016-10-10T16:17:05.681",
+            "categories": [
+                "fkAkrdC7eJF"
+            ],
+            "dataDimensionType": "DISAGGREGATION",
+            "skipTotal": false,
+            "displayName": "Morbidity Age",
+            "favorite": false,
+            "id": "pbvcDRasDav",
+            "categoryOptionCombos": [
+                {
+                    "name": "0-11m",
+                    "categoryOptions": [
+                        "FbLZS3ueWbQ"
+                    ],
+                    "displayName": "0-11m",
+                    "id": "sqGRzCziswD"
+                },
+                {
+                    "name": "5-14y",
+                    "categoryOptions": [
+                        "dUm5jaCTPBb"
+                    ],
+                    "displayName": "5-14y",
+                    "id": "b7fjZVL3q9b"
+                },
+                {
+                    "name": "15y+",
+                    "categoryOptions": [
+                        "ZZxYuoTCcDd"
+                    ],
+                    "displayName": "15y+",
+                    "id": "tMwM3ZBd7BN"
+                },
+                {
+                    "name": "12-59m",
+                    "categoryOptions": [
+                        "rEq3Hkd3XXH"
+                    ],
+                    "displayName": "12-59m",
+                    "id": "LEDQQXEpWUl"
+                }
+            ],
+            "isDefault": false
+        }
+    ],
+    "categories": [
+        {
+            "code": "default",
+            "name": "default",
+            "created": "2012-11-21T12:15:18.537",
+            "lastUpdated": "2026-10-15T10:03:33.212",
+            "shortName": "default",
+            "dimensionType": "CATEGORY",
+            "dataDimensionType": "DISAGGREGATION",
+            "dataDimension": false,
+            "allItems": false,
+            "categoryOptions": [
+                "xYerKDKCefk"
+            ],
+            "dimension": "GLevLNI9wkl",
+            "displayShortName": "default",
+            "displayName": "default",
+            "favorite": false,
+            "displayFormName": "default",
+            "id": "GLevLNI9wkl"
+        },
+        {
+            "code": "LOC_FIX_OUTREACH",
+            "name": "Location Fixed/Outreach",
+            "created": "2011-12-24T12:24:25.155",
+            "lastUpdated": "2013-05-28T09:59:32.881",
+            "shortName": "Location Fixed/Outreach",
+            "dimensionType": "CATEGORY",
+            "dataDimensionType": "DISAGGREGATION",
+            "dataDimension": true,
+            "allItems": false,
+            "categoryOptions": [
+                "qkPbeWaFsnU",
+                "wbrDrL2aYEc"
+            ],
+            "dimension": "fMZEcRHuamy",
+            "displayShortName": "Location Fixed/Outreach",
+            "displayName": "Location Fixed/Outreach",
+            "favorite": false,
+            "displayFormName": "Location Fixed/Outreach",
+            "id": "fMZEcRHuamy"
+        },
+        {
+            "code": "EPI_NUTR_AGE",
+            "name": "EPI/nutrition age",
+            "created": "2011-12-24T12:24:25.155",
+            "lastUpdated": "2013-05-28T09:32:43.922",
+            "shortName": "EPI/nutrition age",
+            "dimensionType": "CATEGORY",
+            "dataDimensionType": "DISAGGREGATION",
+            "dataDimension": true,
+            "allItems": false,
+            "categoryOptions": [
+                "btOyqprQ9e8",
+                "GEqzEKCHoGA"
+            ],
+            "dimension": "YNZyaJHiHYq",
+            "displayShortName": "EPI/nutrition age",
+            "displayName": "EPI/nutrition age",
+            "favorite": false,
+            "displayFormName": "EPI/nutrition age",
+            "id": "YNZyaJHiHYq"
+        },
+        {
+            "code": "GENDER",
+            "name": "Gender",
+            "created": "2011-12-24T12:24:25.155",
+            "lastUpdated": "2013-05-28T09:27:46.728",
+            "shortName": "Gender",
+            "dimensionType": "CATEGORY",
+            "dataDimensionType": "DISAGGREGATION",
+            "dataDimension": true,
+            "allItems": false,
+            "categoryOptions": [
+                "apsOixVZlf1",
+                "jRbMi0aBjYn"
+            ],
+            "dimension": "cX5k9anHEHd",
+            "displayShortName": "Gender",
+            "displayName": "Gender",
+            "favorite": false,
+            "displayFormName": "Gender",
+            "id": "cX5k9anHEHd"
+        },
+        {
+            "code": "MORB_AGE",
+            "name": "Morbidity Age",
+            "created": "2011-12-24T12:24:25.155",
+            "lastUpdated": "2013-05-28T09:26:34.719",
+            "shortName": "Morbidity Age",
+            "dimensionType": "CATEGORY",
+            "dataDimensionType": "DISAGGREGATION",
+            "dataDimension": true,
+            "allItems": false,
+            "categoryOptions": [
+                "FbLZS3ueWbQ",
+                "rEq3Hkd3XXH",
+                "dUm5jaCTPBb",
+                "ZZxYuoTCcDd"
+            ],
+            "dimension": "fkAkrdC7eJF",
+            "displayShortName": "Morbidity Age",
+            "displayName": "Morbidity Age",
+            "favorite": false,
+            "displayFormName": "Morbidity Age",
+            "id": "fkAkrdC7eJF"
+        }
+    ],
+    "categoryOptions": [
+        {
+            "code": "default",
+            "name": "default",
+            "created": "2011-12-24T12:24:24.149",
+            "lastUpdated": "2016-04-12T20:37:48.414",
+            "shortName": "default",
+            "dimensionItemType": "CATEGORY_OPTION",
+            "organisationUnits": [],
+            "dimensionItem": "xYerKDKCefk",
+            "displayShortName": "default",
+            "displayName": "default",
+            "favorite": false,
+            "displayFormName": "default",
+            "id": "xYerKDKCefk",
+            "isDefault": true
+        },
+        {
+            "code": "<1y",
+            "name": "<1y",
+            "created": "2011-12-24T12:24:24.149",
+            "lastUpdated": "2015-03-11T11:56:54.123",
+            "shortName": "<1y",
+            "dimensionItemType": "CATEGORY_OPTION",
+            "organisationUnits": [],
+            "dimensionItem": "btOyqprQ9e8",
+            "displayShortName": "<1y",
+            "displayName": "<1y",
+            "favorite": false,
+            "displayFormName": "<1y",
+            "id": "btOyqprQ9e8",
+            "isDefault": false
+        },
+        {
+            "code": ">1y",
+            "name": ">1y",
+            "created": "2011-12-24T12:24:24.149",
+            "lastUpdated": "2014-03-05T04:57:24.116",
+            "shortName": ">1y",
+            "dimensionItemType": "CATEGORY_OPTION",
+            "organisationUnits": [],
+            "dimensionItem": "GEqzEKCHoGA",
+            "displayShortName": ">1y",
+            "displayName": ">1y",
+            "favorite": false,
+            "displayFormName": ">1y",
+            "id": "GEqzEKCHoGA",
+            "isDefault": false
+        },
+        {
+            "code": "FIXED",
+            "name": "Fixed",
+            "created": "2011-12-24T12:24:24.149",
+            "lastUpdated": "2011-12-24T12:24:24.149",
+            "shortName": "Fixed",
+            "dimensionItemType": "CATEGORY_OPTION",
+            "organisationUnits": [],
+            "dimensionItem": "qkPbeWaFsnU",
+            "displayShortName": "Fixed",
+            "displayName": "Fixed",
+            "favorite": false,
+            "displayFormName": "Fixed",
+            "id": "qkPbeWaFsnU",
+            "isDefault": false
+        },
+        {
+            "code": "OUTREACH\nOUTREACH",
+            "name": "Outreach",
+            "created": "2011-12-24T12:24:24.149",
+            "lastUpdated": "2011-12-24T12:24:24.149",
+            "shortName": "Outreach",
+            "dimensionItemType": "CATEGORY_OPTION",
+            "organisationUnits": [],
+            "dimensionItem": "wbrDrL2aYEc",
+            "displayShortName": "Outreach",
+            "displayName": "Outreach",
+            "favorite": false,
+            "displayFormName": "Outreach",
+            "id": "wbrDrL2aYEc",
+            "isDefault": false
+        },
+        {
+            "code": "MLE",
+            "name": "Male",
+            "created": "2011-12-24T12:24:24.149",
+            "lastUpdated": "2011-12-24T12:24:24.149",
+            "shortName": "Male",
+            "dimensionItemType": "CATEGORY_OPTION",
+            "organisationUnits": [],
+            "dimensionItem": "jRbMi0aBjYn",
+            "displayShortName": "Male",
+            "displayName": "Male",
+            "favorite": false,
+            "displayFormName": "Male",
+            "id": "jRbMi0aBjYn",
+            "isDefault": false
+        },
+        {
+            "code": "FMLE",
+            "name": "Female",
+            "created": "2011-12-24T12:24:24.149",
+            "lastUpdated": "2011-12-24T12:24:24.149",
+            "shortName": "Female",
+            "dimensionItemType": "CATEGORY_OPTION",
+            "organisationUnits": [],
+            "dimensionItem": "apsOixVZlf1",
+            "displayShortName": "Female",
+            "displayName": "Female",
+            "favorite": false,
+            "displayFormName": "Female",
+            "id": "apsOixVZlf1",
+            "isDefault": false
+        },
+        {
+            "code": "0_11_M",
+            "name": "0-11m",
+            "created": "2011-12-24T12:24:24.149",
+            "lastUpdated": "2016-04-18T16:25:58.225",
+            "shortName": "0-11m",
+            "dimensionItemType": "CATEGORY_OPTION",
+            "organisationUnits": [],
+            "dimensionItem": "FbLZS3ueWbQ",
+            "displayShortName": "0-11m",
+            "displayName": "0-11m",
+            "favorite": false,
+            "displayFormName": "0-11m",
+            "id": "FbLZS3ueWbQ",
+            "isDefault": false
+        },
+        {
+            "code": "12_59_M",
+            "name": "12-59m",
+            "created": "2011-12-24T12:24:24.149",
+            "lastUpdated": "2015-03-11T11:10:02.159",
+            "shortName": "12-59m",
+            "dimensionItemType": "CATEGORY_OPTION",
+            "organisationUnits": [],
+            "dimensionItem": "rEq3Hkd3XXH",
+            "displayShortName": "12-59m",
+            "displayName": "12-59m",
+            "favorite": false,
+            "displayFormName": "12-59m",
+            "id": "rEq3Hkd3XXH",
+            "isDefault": false
+        },
+        {
+            "code": "5_14Y",
+            "name": "5-14y",
+            "created": "2011-12-24T12:24:24.149",
+            "lastUpdated": "2011-12-24T12:24:24.149",
+            "shortName": "5-14y",
+            "dimensionItemType": "CATEGORY_OPTION",
+            "organisationUnits": [],
+            "dimensionItem": "dUm5jaCTPBb",
+            "displayShortName": "5-14y",
+            "displayName": "5-14y",
+            "favorite": false,
+            "displayFormName": "5-14y",
+            "id": "dUm5jaCTPBb",
+            "isDefault": false
+        },
+        {
+            "code": "15_PLUSY",
+            "name": "15y+",
+            "created": "2011-12-24T12:24:24.149",
+            "lastUpdated": "2015-03-11T11:12:23.883",
+            "shortName": "15y+",
+            "dimensionItemType": "CATEGORY_OPTION",
+            "organisationUnits": [],
+            "dimensionItem": "ZZxYuoTCcDd",
+            "displayShortName": "15y+",
+            "displayName": "15y+",
+            "favorite": false,
+            "displayFormName": "15y+",
+            "id": "ZZxYuoTCcDd",
+            "isDefault": false
+        }
+    ],
+    "optionSets": []
+}

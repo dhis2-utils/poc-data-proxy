@@ -1,0 +1,111 @@
+{
+    "dataValues": [
+        {
+            "dataElement": "O05mAByOgAv",
+            "period": "202610",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "V6L425pT3A0",
+            "attribute": {
+                "combo": "bjDvmb4bfuf",
+                "options": [
+                    "xYerKDKCefk"
+                ]
+            },
+            "value": "32",
+            "followUp": false,
+            "storedBy": "hsl_clerk",
+            "created": "2026-10-15T08:15:46.399",
+            "lastUpdated": "2026-10-15T08:15:46.399"
+        },
+        {
+            "dataElement": "fClA2Erf6IO",
+            "period": "202610",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "HllvX50cXC0",
+            "attribute": {
+                "combo": "bjDvmb4bfuf",
+                "options": [
+                    "xYerKDKCefk"
+                ]
+            },
+            "value": "1",
+            "followUp": false,
+            "storedBy": "hsl_nurse",
+            "created": "2026-10-15T09:41:33.094",
+            "lastUpdated": "2026-10-15T09:41:33.094"
+        },
+        {
+            "dataElement": "fClA2Erf6IO",
+            "period": "202610",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "V6L425pT3A0",
+            "attribute": {
+                "combo": "bjDvmb4bfuf",
+                "options": [
+                    "xYerKDKCefk"
+                ]
+            },
+            "value": "31",
+            "comment": "checked",
+            "followUp": true,
+            "storedBy": "hsl_nurse",
+            "created": "2026-10-15T07:43:34.896",
+            "lastUpdated": "2026-10-15T09:40:53.929"
+        },
+        {
+            "dataElement": "s46m5MS0hxu",
+            "period": "202610",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "V6L425pT3A0",
+            "attribute": {
+                "combo": "bjDvmb4bfuf",
+                "options": [
+                    "xYerKDKCefk"
+                ]
+            },
+            "value": "-3",
+            "followUp": false,
+            "storedBy": "hsl_nurse",
+            "created": "2026-10-15T07:43:35.608",
+            "lastUpdated": "2026-10-15T09:41:32.838"
+        }
+    ],
+    "minMaxValues": [
+        {
+            "dataElement": "UOlfIjgN8X6",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "psbwp3CQEhs",
+            "minValue": 1,
+            "maxValue": 11111
+        },
+        {
+            "dataElement": "xc8gmAKfO95",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "Prlt0C1RF0s",
+            "minValue": 4,
+            "maxValue": 44
+        },
+        {
+            "dataElement": "xc8gmAKfO95",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "hEFKSsPV5et",
+            "minValue": 5,
+            "maxValue": 24
+        },
+        {
+            "dataElement": "s46m5MS0hxu",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "hEFKSsPV5et",
+            "minValue": 2,
+            "maxValue": 100
+        }
+    ],
+    "lockStatus": "OPEN",
+    "completeStatus": {
+        "complete": false,
+        "created": "2026-10-15T07:43:37.675",
+        "createdBy": "hsl_nurse",
+        "lastUpdated": "2026-10-15T09:40:54.403",
+        "lastUpdatedBy": "hsl_nurse"
+    }
+}

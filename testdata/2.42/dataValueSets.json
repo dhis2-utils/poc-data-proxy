@@ -1,0 +1,109 @@
+{
+    "dataValues": [
+        {
+            "dataElement": "fClA2Erf6IO",
+            "period": "202605",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "V6L425pT3A0",
+            "attributeOptionCombo": "HllvX50cXC0",
+            "value": "5",
+            "storedBy": "hsl_nurse",
+            "created": "2026-10-15T07:43:43.997+0000",
+            "lastUpdated": "2026-10-15T07:43:43.997+0000",
+            "comment": null,
+            "followup": false
+        },
+        {
+            "dataElement": "s46m5MS0hxu",
+            "period": "202605",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "V6L425pT3A0",
+            "attributeOptionCombo": "HllvX50cXC0",
+            "value": "33",
+            "storedBy": "hsl_clerk",
+            "created": "2026-10-15T08:15:46.520+0000",
+            "lastUpdated": "2026-10-15T08:15:46.520+0000",
+            "comment": null,
+            "followup": false
+        },
+        {
+            "dataElement": "fClA2Erf6IO",
+            "period": "202607",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "V6L425pT3A0",
+            "attributeOptionCombo": "HllvX50cXC0",
+            "value": "3",
+            "storedBy": "hsl_nurse",
+            "created": "2026-10-15T07:43:40.231+0000",
+            "lastUpdated": "2026-10-15T07:43:40.231+0000",
+            "comment": null,
+            "followup": false
+        },
+        {
+            "dataElement": "O05mAByOgAv",
+            "period": "202610",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "V6L425pT3A0",
+            "attributeOptionCombo": "HllvX50cXC0",
+            "value": "32",
+            "storedBy": "hsl_clerk",
+            "created": "2026-10-15T08:15:46.399+0000",
+            "lastUpdated": "2026-10-15T08:15:46.399+0000",
+            "comment": null,
+            "followup": false
+        },
+        {
+            "dataElement": "fClA2Erf6IO",
+            "period": "202610",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "HllvX50cXC0",
+            "attributeOptionCombo": "HllvX50cXC0",
+            "value": "1",
+            "storedBy": "hsl_nurse",
+            "created": "2026-10-15T09:41:33.094+0000",
+            "lastUpdated": "2026-10-15T09:41:33.094+0000",
+            "comment": null,
+            "followup": false
+        },
+        {
+            "dataElement": "fClA2Erf6IO",
+            "period": "202610",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "V6L425pT3A0",
+            "attributeOptionCombo": "HllvX50cXC0",
+            "value": "31",
+            "storedBy": "hsl_nurse",
+            "created": "2026-10-15T07:43:34.896+0000",
+            "lastUpdated": "2026-10-15T09:40:53.929+0000",
+            "comment": "checked",
+            "followup": true
+        },
+        {
+            "dataElement": "YtbsuPPo010",
+            "period": "202610",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "V6L425pT3A0",
+            "attributeOptionCombo": "HllvX50cXC0",
+            "value": "34",
+            "storedBy": "hsl_clerk",
+            "created": "2026-10-15T08:15:46.917+0000",
+            "lastUpdated": "2026-10-15T09:40:54.064+0000",
+            "comment": null,
+            "followup": false,
+            "deleted": true
+        },
+        {
+            "dataElement": "s46m5MS0hxu",
+            "period": "202610",
+            "orgUnit": "DiszpKrYNg8",
+            "categoryOptionCombo": "V6L425pT3A0",
+            "attributeOptionCombo": "HllvX50cXC0",
+            "value": "-3",
+            "storedBy": "hsl_nurse",
+            "created": "2026-10-15T07:43:35.608+0000",
+            "lastUpdated": "2026-10-15T09:41:32.838+0000",
+            "comment": null,
+            "followup": false
+        }
+    ]
+}

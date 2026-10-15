@@ -1,0 +1,40 @@
+{
+    "completeDataSetRegistrations": [
+        {
+            "period": "202610",
+            "dataSet": "BfMAe6Itzgt",
+            "organisationUnit": "DiszpKrYNg8",
+            "attributeOptionCombo": "HllvX50cXC0",
+            "date": "2026-10-15",
+            "storedBy": "hsl_nurse",
+            "completed": false
+        },
+        {
+            "period": "202608",
+            "dataSet": "BfMAe6Itzgt",
+            "organisationUnit": "DiszpKrYNg8",
+            "attributeOptionCombo": "HllvX50cXC0",
+            "date": "2026-10-15",
+            "storedBy": "hsl_nurse",
+            "completed": true
+        },
+        {
+            "period": "202605",
+            "dataSet": "BfMAe6Itzgt",
+            "organisationUnit": "DiszpKrYNg8",
+            "attributeOptionCombo": "HllvX50cXC0",
+            "date": "2026-10-15",
+            "storedBy": "hsl_nurse",
+            "completed": true
+        },
+        {
+            "period": "202609",
+            "dataSet": "BfMAe6Itzgt",
+            "organisationUnit": "DiszpKrYNg8",
+            "attributeOptionCombo": "HllvX50cXC0",
+            "date": "2026-10-15",
+            "storedBy": "hsl_nurse",
+            "completed": false
+        }
+    ]
+}
