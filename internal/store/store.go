@@ -275,6 +275,15 @@ CREATE TABLE agg_forms(
 CREATE INDEX agg_forms_ds ON agg_forms(data_set, fetched_at);
 ALTER TABLE outbox ADD COLUMN kind TEXT NOT NULL DEFAULT 'tracker';
 `,
+	// Event lists in the orders the apps ask for, read in index order: Android's
+	// download (creation) and working lists (event date, newest first). With 150 000
+	// events in a program, sorting per page cost 0.5 to 1.6 s (docs/PERFORMANCE.md).
+	`
+ALTER TABLE objects ADD COLUMN occurred_at TEXT NOT NULL DEFAULT '';
+UPDATE objects SET occurred_at = coalesce(json_extract(slim, '$.occurredAt'), '') WHERE kind = 'event' AND slim IS NOT NULL;
+CREATE INDEX objects_events ON objects(kind, program, owner_org_unit, created_at, uid);
+CREATE INDEX objects_events_occurred ON objects(kind, program, owner_org_unit, occurred_at DESC, uid);
+`,
 }
 
 // SchemaVersion is the number of key file migrations this binary knows.

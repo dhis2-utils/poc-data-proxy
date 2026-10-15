@@ -99,4 +99,24 @@ func TestQueryPlansUseIndexes(t *testing.T) {
 	plan("ev by enrollments", "ev", url.Values{"enrollments": {"EnAaaaaaaa1"}})
 	plan("ev by program", "ev", url.Values{"program": {"PrAaaaaaaa1"}, "orgUnits": {ou}, "order": {"createdAt:desc"}})
 	plan("ev by stage+status", "ev", url.Values{"program": {"PrAaaaaaaa1"}, "programStage": {""}, "orgUnits": {ou}, "enrollmentStatus": {"ACTIVE"}})
+	// A program's events, in the orders Android's download (creation) and the working
+	// lists (event date, newest first) ask for, are read in the index's order: with
+	// 150 000 events a sort per page cost 0.5 to 1.6 s (docs/PERFORMANCE.md).
+	for _, c := range []struct {
+		name  string
+		order string
+	}{{"ev program, Android's paging", ""}, {"ev program, working list", "occurredAt:desc"}} {
+		q := url.Values{"program": {"PrAaaaaaaa1"}, "orgUnit": {ou}}
+		if c.order != "" {
+			q.Set("order", c.order)
+		}
+		p, err := ix.searchEvents(v, q, "PrAaaaaaaa1")
+		if err != nil || p.order == "" {
+			t.Fatalf("%s: %v, order %q", c.name, err, p.order)
+		}
+		if got := explain(c.name, p.sel+" ORDER BY "+p.order, p.args...); strings.Contains(got, "TEMP B-TREE") {
+			t.Errorf("%s sorts: %s", c.name, got)
+		}
+		plan(c.name, "ev", q) // and reading on keeps the order
+	}
 }

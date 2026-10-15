@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -236,4 +237,65 @@ func pagingFixture(t *testing.T, n int) (*Index, *Viewer, *plan) {
 		t.Fatal(apiErr)
 	}
 	return ix, v, p
+}
+
+// An event program's events paged by event date, newest first (the working lists),
+// read on from the last position, are the pages read from the start: the same events
+// in the same order, with several on one date.
+func TestEventPagesByDateReadOn(t *testing.T) {
+	s := testStore(t)
+	ix := NewStoreIndex(s)
+	const ou, prog, stage = "OuAaaaaaaa1", "PrEvAaaaaa1", "StEvAaaaaa1"
+	var slots []uint32
+	err := s.Tx(context.Background(), func(tx *sql.Tx) error {
+		for i := 1; i <= 40; i++ {
+			ev := &Obj{UID: fmt.Sprintf("EvAaaaaa%03d", i), Kind: store.KindEvent, Program: prog, Stage: stage, OwnerOrgUnit: ou,
+				Origin: store.OriginCentral, SyncState: store.SyncSynced,
+				Data: M{"occurredAt": time.Date(2026, 1, (i+2)/3, 0, 0, 0, 0, time.UTC).Format("2006-01-02T15:04:05.000"),
+					"createdAt": "2026-02-01T00:00:00.000", "event": fmt.Sprintf("EvAaaaaa%03d", i), "program": prog, "programStage": stage, "orgUnit": ou}}
+			ev.Slot = ix.SlotFor(ev.UID)
+			if err := s.PutObject(tx, ev.ToStore()); err != nil {
+				return err
+			}
+			slots = append(slots, ev.Slot)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes := map[uint32]bool{}
+	for _, sl := range slots {
+		changes[sl] = true
+	}
+	ix.PrepareVisibility(1, changes).Done(true)
+	v := &Viewer{UserID: 1, Facility: ou, Access: &access.List{Programs: map[string]access.Perm{prog: {Read: true}},
+		Stages: map[string]access.Perm{stage: {Read: true}}},
+		Catalog: &access.Catalog{Programs: map[string]*access.ProgramMeta{prog: {ID: prog, Event: true, Stages: []string{stage}}}}}
+	query := func(pg int) url.Values {
+		return url.Values{"program": {prog}, "orgUnit": {ou}, "order": {"occurredAt:desc"}, "pageSize": {"6"},
+			"page": {fmt.Sprint(pg)}, "fields": {"event"}}
+	}
+	pageOf := func(pg int) string {
+		res, err := ix.Search(v, "events", query(pg))
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := json.Marshal(res.Items)
+		return string(b)
+	}
+	var fresh []string
+	for pg := 1; pg <= 8; pg++ {
+		ix.pages.clear()
+		fresh = append(fresh, pageOf(pg))
+	}
+	ix.pages.clear()
+	for pg := 1; pg <= 8; pg++ {
+		if got := pageOf(pg); got != fresh[pg-1] {
+			t.Fatalf("page %d read on = %s, from the start = %s", pg, got, fresh[pg-1])
+		}
+	}
+	if !strings.Contains(fresh[0], "EvAaaaaa040") {
+		t.Fatalf("newest first: %s", fresh[0])
+	}
 }

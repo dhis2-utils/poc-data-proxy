@@ -80,6 +80,22 @@ func createdOrder(order string) (ok, desc bool) {
 	return f == "createdAt", strings.EqualFold(dir, "desc")
 }
 
+// keyOrder is the column a single-key order sorts by in SQL, whether descending, and
+// whether SQL can give it: creation (also the default), and for events the event
+// date (occurred_at, as working lists ask).
+func keyOrder(order string, events bool) (col string, desc, ok bool) {
+	if byCreated, d := createdOrder(order); byCreated {
+		return "created_at", d, true
+	}
+	keys := splitList(order)
+	if events && len(keys) == 1 {
+		if f, dir, _ := strings.Cut(keys[0], ":"); f == "occurredAt" {
+			return "occurred_at", strings.EqualFold(dir, "desc"), true
+		}
+	}
+	return "", false, false
+}
+
 // updatedFloor is a lower bound for the update times of objects updated after the
 // updatedAfter date: a day earlier, in the form stored times start with, so that a
 // string comparison keeps a superset whatever the time zones (central's times carry
@@ -546,14 +562,14 @@ func (ix *Index) searchEnrollments(v *Viewer, q url.Values, program string) (*pl
 func (ix *Index) simplePlan(v *Viewer, w *where, q url.Values, alias string, tfs []timeFilter, upd timeFilter,
 	finish func([]*Obj) ([]*Obj, *APIError)) *plan {
 	p := &plan{sel: "SELECT " + store.ObjectCols(alias) + " FROM objects " + alias + " WHERE " + w.sql(), args: w.args}
-	byCreated, desc := createdOrder(q.Get("order"))
-	if byCreated && finish == nil {
-		p.order = alias + ".created_at"
+	col, desc, ok := keyOrder(q.Get("order"), alias == "ev")
+	if ok && finish == nil {
+		p.order = alias + "." + col
 		if desc {
 			p.order += " DESC"
 		}
 		p.order += ", " + alias + ".uid"
-		p.key, p.keyDesc = [2]string{alias + ".created_at", alias + ".uid"}, desc
+		p.key, p.keyDesc = [2]string{alias + "." + col, alias + ".uid"}, desc
 	}
 	p.needData = p.order == ""
 	for _, tf := range tfs {

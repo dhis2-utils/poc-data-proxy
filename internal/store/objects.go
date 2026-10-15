@@ -59,14 +59,16 @@ type Attr struct{ Attr, Value string }
 // not wait for while other writers hold the rest of the pool waiting for its lock.
 const (
 	sqlPutObject = `INSERT INTO objects(uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at,
- origin, sync_state, payload_enc, slot, created_at, status, rel_from, rel_to, slim, te_created)
+ origin, sync_state, payload_enc, slot, created_at, status, rel_from, rel_to, slim, te_created, occurred_at)
  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
- CASE WHEN ?2 = 'enrollment' THEN coalesce((SELECT created_at FROM objects WHERE uid = ?3 AND kind = 'trackedEntity'), '') ELSE '' END)
+ CASE WHEN ?2 = 'enrollment' THEN coalesce((SELECT created_at FROM objects WHERE uid = ?3 AND kind = 'trackedEntity'), '') ELSE '' END,
+ CASE WHEN ?2 = 'event' THEN coalesce(json_extract(?18, '$.occurredAt'), '') ELSE '' END)
 ON CONFLICT(uid) DO UPDATE SET kind=excluded.kind, te_uid=excluded.te_uid, enrollment_uid=excluded.enrollment_uid,
  program=excluded.program, stage=excluded.stage, tet=excluded.tet, owner_org_unit=excluded.owner_org_unit,
  updated_at=excluded.updated_at, origin=excluded.origin, sync_state=excluded.sync_state, payload_enc=excluded.payload_enc,
  slot=coalesce(objects.slot, excluded.slot), created_at=excluded.created_at, status=excluded.status,
- rel_from=excluded.rel_from, rel_to=excluded.rel_to, slim=excluded.slim, te_created=excluded.te_created`
+ rel_from=excluded.rel_from, rel_to=excluded.rel_to, slim=excluded.slim, te_created=excluded.te_created,
+ occurred_at=excluded.occurred_at`
 	sqlTECreated     = `UPDATE objects INDEXED BY objects_te SET te_created = ? WHERE te_uid = ? AND kind = 'enrollment' AND te_created <> ?`
 	sqlDeleteAttrs   = `DELETE FROM te_attrs WHERE te_uid = ?`
 	sqlInsertAttr    = `INSERT OR REPLACE INTO te_attrs(te_uid, attr, value, value_lc) VALUES(?,?,?,?)`
