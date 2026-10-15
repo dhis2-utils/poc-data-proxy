@@ -20,6 +20,9 @@ type Scale struct {
 	Programs                 int // generated tracker programs, each with three repeatable stages
 	Users                    int // perf_001 … with Password
 	Years                    int // enrollment dates spread over this many years up to now
+	// EventPrograms generated event programs (GenEvP…), each with ProgramEvents events
+	// whose dates are spread over the last 36 months.
+	EventPrograms, ProgramEvents int
 }
 
 type generated struct {

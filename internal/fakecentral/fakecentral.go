@@ -364,6 +364,8 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"id": Facility, "name": "Ngelehun CHC", "code": "OU_559"})
 	case p == "/api/tracker/events" && isEventProgram(r.URL.Query().Get("program")):
 		c.listProgramEvents(w, r, u)
+	case p == "/api/tracker/events" && c.gen != nil && strings.HasPrefix(r.URL.Query().Get("program"), "GenEvP"):
+		c.gen.listEvents(w, r)
 	case p == "/api/categoryCombos":
 		c.categoryCombos(w, r, u)
 	case p == "/api/tracker/trackedEntities":
@@ -476,6 +478,9 @@ func (c *Central) programs(w http.ResponseWriter, r *http.Request, u *User) {
 		all = append(all, c.gen.programMeta()...)
 	}
 	all = append(all, eventProgramMeta(u)...)
+	if c.gen != nil {
+		all = append(all, c.gen.eventProgramMeta()...)
+	}
 	// The filters the hub uses: programType:eq:X and id:in:[a,b].
 	var progs []any
 	for _, x := range all {
