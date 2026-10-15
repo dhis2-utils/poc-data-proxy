@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
@@ -414,5 +415,22 @@ func TestAggregateOracle(t *testing.T) {
 		if cl != hl || cd != hd {
 			t.Errorf("%s: lock %s/%s, complete %v/%v (central/hub)", c.User, cl, hl, cd, hd)
 		}
+	}
+}
+
+// A value entered online through the hub just before an outage is shown offline to
+// colleagues: the hub learns from the writes it passes to central, as for tracker.
+func TestAggregateOnlineWriteSeenOffline(t *testing.T) {
+	e, ag, nurse, clerk := aggregateEnv(t)
+	pe := tk.CurrentMonth(e)
+	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
+	val := fmt.Sprint(100 + time.Now().Nanosecond()%800)
+	if st, b := nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", val)); st != 201 {
+		t.Fatalf("online value: %d %s", st, b)
+	}
+	e.Offline() // before any sync
+	form := clerk.JSON("GET", formPath(e, ag.DataSet, pe), nil, 200)
+	if got, _ := formValue(form, ag.Number, ag.COC); got != val {
+		t.Fatalf("offline, the clerk sees %q, want the nurse's online value %s", got, val)
 	}
 }

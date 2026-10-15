@@ -22,6 +22,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/central"
 	"github.com/dhis2/facility-hub/internal/core"
 	"github.com/dhis2/facility-hub/internal/proxy"
+	"github.com/dhis2/facility-hub/internal/store"
 )
 
 type API struct {
@@ -58,6 +59,9 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		res, err := a.Proxy.Forward(r.Context(), r, body, up)
 		if err == nil {
+			if sess != nil && r.Method != http.MethodGet && res.Status/100 == 2 {
+				a.learn(r, body, sess)
+			}
 			proxy.Write(w, a.Proxy.Localize(r, res))
 			return
 		}
@@ -336,4 +340,94 @@ func (a *API) complete(w http.ResponseWriter, body []byte, sess *core.Session, a
 	if a.queue(w, sess, ed, true) {
 		w.WriteHeader(http.StatusOK)
 	}
+}
+
+// learn puts a write central accepted into the stored form, so a value entered just
+// before an outage is shown offline (as tracker's online writes are). The form is
+// fetched again at the next pull.
+func (a *API) learn(r *http.Request, body []byte, sess *core.Session) {
+	acc := a.H.AggAccess(sess.UserID)
+	if acc == nil || !a.H.Store.Unlocked() {
+		return
+	}
+	ed := &aggregate.Edit{By: sess.Username, At: a.H.CentralTime(a.H.CentralNow())}
+	var cc string
+	var cp []string
+	switch r.URL.Path {
+	case "/api/dataValues":
+		q := params(r, body)
+		cc, cp = q.Get("cc"), splitCP(q.Get("cp"))
+		ed.Form = aggregate.FormKey{DataSet: q.Get("ds"), Period: q.Get("pe"), OrgUnit: q.Get("ou")}
+		ed.Op, ed.DataElement, ed.COC = aggregate.OpValue, q.Get("de"), q.Get("co")
+		switch {
+		case r.Method == http.MethodDelete:
+			ed.Op = aggregate.OpDelete
+		case q.Has("value"):
+			v := q.Get("value")
+			ed.Value = &v
+		case q.Has("comment"):
+			c := q.Get("comment")
+			ed.Comment = &c
+		case q.Has("followUp"):
+			f := q.Get("followUp") == "true"
+			ed.FollowUp = &f
+		default:
+			return
+		}
+	case "/api/dataEntry/dataSetCompletion":
+		var req struct {
+			DataSet   string `json:"dataSet"`
+			Period    string `json:"period"`
+			OrgUnit   string `json:"orgUnit"`
+			Attribute *struct {
+				Combo   string   `json:"combo"`
+				Options []string `json:"options"`
+			} `json:"attribute"`
+			Completed bool `json:"completed"`
+		}
+		if json.Unmarshal(body, &req) != nil {
+			return
+		}
+		if req.Attribute != nil {
+			cc, cp = req.Attribute.Combo, req.Attribute.Options
+		}
+		ed.Op, ed.Completed = aggregate.OpComplete, req.Completed
+		ed.Form = aggregate.FormKey{DataSet: req.DataSet, Period: req.Period, OrgUnit: req.OrgUnit}
+	default:
+		return
+	}
+	d := acc.DataSets[ed.Form.DataSet]
+	if d == nil || ed.Form.OrgUnit != a.H.Facility() {
+		return
+	}
+	aoc, ok := acc.AOC(d, cc, cp)
+	if !ok {
+		return
+	}
+	ed.Form.AOC = aoc
+	if _, in := aggregate.InWindow(d, a.H.CentralNow(), a.H.AggRetention().For(d.ID), ed.Form.Period); !in {
+		return
+	}
+	key := ed.Form.String()
+	f, err := a.H.Store.GetAggForm(key)
+	if err != nil {
+		return
+	}
+	form := aggregate.EmptyForm()
+	if f != nil {
+		if json.Unmarshal(f.Body, &form) != nil {
+			return
+		}
+	} else {
+		f = &store.AggForm{Key: key, DataSet: ed.Form.DataSet, Period: ed.Form.Period, OrgUnit: ed.Form.OrgUnit, AOC: aoc}
+	}
+	combo, opts, _ := acc.Attribute(d, aoc)
+	form.Apply(ed, combo, opts)
+	f.Body, _ = json.Marshal(form)
+	f.FetchedAt = store.Now()
+	if err := a.H.Store.PutAggForm(f); err != nil {
+		slog.Warn("store online aggregate write", "err", err)
+		return
+	}
+	a.H.Store.MarkAggFormStale(key)
 }
