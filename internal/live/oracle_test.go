@@ -141,8 +141,36 @@ func knownGap(o tk.Outcome, q tk.Query, dims map[string]string, m *tk.Manifest) 
 		return "an ACCESSIBLE search with fewer attributes than the program requires: central refuses it (409), the hub answers from facility data"
 	case o.Verdict == tk.Missing && q.Kind == "events" && dims["tet"] == "none":
 		return "events for a user without tracked entity type access: central shows them, the hub pulls by tracked entity"
+	case o.Verdict == tk.Differs && q.Single && q.Kind == "events" && strings.HasPrefix(m.DHIS2Version, "2.42") &&
+		onlyMoreDataValues(o.Detail):
+		return "2.42's single-event endpoint leaves out data values its event lists show the same user (Laos); the hub answers as the lists"
 	}
 	return ""
+}
+
+// onlyMoreDataValues reports whether a DIFFERS detail ("hub: {...}\ncentral: {...}")
+// differs only by data values the hub shows and central's answer leaves out.
+func onlyMoreDataValues(detail string) bool {
+	hubPart, centralPart, ok := strings.Cut(strings.TrimPrefix(detail, "hub: "), "\ncentral: ")
+	if !ok {
+		return false
+	}
+	var hub, central map[string]any
+	if json.Unmarshal([]byte(hubPart), &hub) != nil || json.Unmarshal([]byte(centralPart), &central) != nil {
+		return false
+	}
+	hv, _ := hub["dataValues"].([]any)
+	cv, _ := central["dataValues"].([]any)
+	for _, v := range cv {
+		if !slices.Contains(hv, v) {
+			return false
+		}
+	}
+	delete(hub, "dataValues")
+	delete(central, "dataValues")
+	a, _ := json.Marshal(hub)
+	b, _ := json.Marshal(central)
+	return string(a) == string(b) && len(hv) > len(cv)
 }
 
 func rank(v string) int { return strings.Index(tk.Leak+tk.Missing+tk.Differs, v) }
@@ -193,4 +221,13 @@ func samples(t *testing.T, e *tk.Env, p tk.Program, truth *tk.Truth) map[string]
 		out["foreign"] = res.TEs[0].TrackedEntity
 	}
 	return out
+}
+
+func TestOnlyMoreDataValues(t *testing.T) {
+	more := "hub: {\"event\":\"E\",\"dataValues\":[\"a\",\"b\"]}\ncentral: {\"event\":\"E\",\"dataValues\":[\"a\"]}"
+	other := "hub: {\"event\":\"E\",\"status\":\"ACTIVE\",\"dataValues\":[\"a\",\"b\"]}\ncentral: {\"event\":\"E\",\"status\":\"COMPLETED\",\"dataValues\":[\"a\"]}"
+	fewer := "hub: {\"event\":\"E\",\"dataValues\":[\"a\"]}\ncentral: {\"event\":\"E\",\"dataValues\":[\"a\",\"b\"]}"
+	if !onlyMoreDataValues(more) || onlyMoreDataValues(other) || onlyMoreDataValues(fewer) {
+		t.Fatal("onlyMoreDataValues")
+	}
 }
