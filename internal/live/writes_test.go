@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dhis2/facility-hub/internal/store"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
@@ -79,6 +80,46 @@ func TestWriteOracle(t *testing.T) {
 			writes = append(writes, write{"event in an enrollment the sibling facility owns", p, func(bool) (string, string, map[string]any) {
 				ev, body := m.NewEvent(p, p.Stages[0], sib)
 				return ev, "events", body
+			}})
+		}
+		// Attribute option combinations: accepted offline only by users who may write
+		// each of their options (E1099 otherwise), as central decides.
+		if own != "" {
+			for _, aoc := range p.AOCs {
+				aoc := aoc
+				writes = append(writes, write{"event under option combination " + aoc, p, func(bool) (string, string, map[string]any) {
+					ev, body := m.NewEvent(p, p.Stages[0], own)
+					body["events"].([]any)[0].(map[string]any)["attributeOptionCombo"] = aoc
+					return ev, "events", body
+				}})
+			}
+		}
+		for _, aoc := range p.EnrollmentAOCs {
+			aoc := aoc
+			writes = append(writes, write{"register a person enrolled under option combination " + aoc, p, func(bool) (string, string, map[string]any) {
+				pr := m.NewPerson(p, "Wr"+tk.UID()[:6])
+				for _, en := range pr.Payload["trackedEntities"].([]any)[0].(map[string]any)["enrollments"].([]any) {
+					en.(map[string]any)["attributeOptionCombo"] = aoc
+				}
+				return pr.TE, "trackedEntities", pr.Payload
+			}})
+		}
+	}
+	for _, p := range m.EventPrograms {
+		p := p
+		aocs := p.AOCs
+		if len(aocs) == 0 {
+			aocs = []string{""}
+		}
+		for _, aoc := range aocs {
+			aoc := aoc
+			name := "event in an event program"
+			if aoc != "" {
+				name += " under option combination " + aoc
+			}
+			writes = append(writes, write{name, p, func(bool) (string, string, map[string]any) {
+				uid, body := programEvent(m, p, aoc)
+				return uid, "events", body
 			}})
 		}
 	}
@@ -157,6 +198,23 @@ func TestWriteOracle(t *testing.T) {
 	if n := e.App.Hub.Store.CountOutbox(store.OutboxPending); n > e.App.Hub.StuckOutbox() {
 		t.Errorf("%d outbox entries still pending after sync", n)
 	}
+}
+
+func programEvent(m *tk.Manifest, p tk.Program, aoc string) (string, map[string]any) {
+	uid := tk.UID()
+	ev := map[string]any{"event": uid, "program": p.ID, "programStage": p.Stages[0], "orgUnit": m.Facility.ID,
+		"occurredAt": time.Now().UTC().Format(time.DateOnly), "status": "ACTIVE"}
+	if aoc != "" {
+		ev["attributeOptionCombo"] = aoc
+	}
+	if vals := p.EventValues[p.Stages[0]]; len(vals) > 0 {
+		var dv []any
+		for de, v := range vals {
+			dv = append(dv, map[string]any{"dataElement": de, "value": v})
+		}
+		ev["dataValues"] = dv
+	}
+	return uid, map[string]any{"events": []any{ev}}
 }
 
 // enrollmentAt returns an enrollment in program p of a tracked entity owned by ou.

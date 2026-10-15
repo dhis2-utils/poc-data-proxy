@@ -48,6 +48,7 @@ const (
 	prTb  = "SynPrgTb001" // CLOSED
 	prCom = "SynPrgCom01" // OPEN, data shared publicly
 	prEvt = "SynPrgEvt01" // WITHOUT_REGISTRATION
+	prEvD = "SynPrgEvD01" // WITHOUT_REGISTRATION, donor attribute combination
 
 	stAnc = "SynStAnc001" // repeatable
 	stDel = "SynStDel001"
@@ -57,6 +58,7 @@ const (
 	stTbV = "SynStTbV001"
 	stCom = "SynStCom001"
 	stEvt = "SynStEvt001"
+	stEvD = "SynStEvD001"
 
 	rtMotherChild = "SynRtMoChi1"
 
@@ -261,7 +263,7 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 	l := &Layout{Prefix: "Syn", UserPrefix: "syn_", Root: ouRoot, District: ouNorth, OtherDistrict: ouSouth,
 		Facility: ouFac, Sibling: ouSib, RestrictedStage: stLab, RelationshipTypes: []string{rtMotherChild},
 		Programs: []ProgramLayout{{prMat, tetPerson, []string{stAnc, stDel, stLab}}, {prHiv, tetPerson, []string{stIni, stFup}},
-			{prTb, tetPerson, []string{stTbV}}, {prCom, tetPerson, []string{stCom}}, {prEvt, "", []string{stEvt}},
+			{prTb, tetPerson, []string{stTbV}}, {prCom, tetPerson, []string{stCom}}, {prEvt, "", []string{stEvt}}, {prEvD, "", []string{stEvD}},
 			{prHhs, tetHousehold, []string{stHhs}}},
 		SharedOption: coDonorA, HiddenOption: coDonorB}
 	l.Open, l.Protected, l.Closed = &l.Programs[0], &l.Programs[1], &l.Programs[2]
@@ -299,6 +301,9 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 		map[string]any{"id": prEvt, "name": "Synthetic facility events", "shortName": "Syn facility events",
 			"programType": "WITHOUT_REGISTRATION", "programStages": refs(stEvt), "organisationUnits": refs(facilities...),
 			"sharing": sh(prEvt).json()},
+		map[string]any{"id": prEvD, "name": "Synthetic donor events", "shortName": "Syn donor events",
+			"programType": "WITHOUT_REGISTRATION", "programStages": refs(stEvD), "organisationUnits": refs(facilities...),
+			"categoryCombo": ref(ccDonor), "sharing": sh(prEvD).json()},
 	}
 	psde := func(id string, compulsory bool) map[string]any {
 		return map[string]any{"dataElement": ref(id), "compulsory": compulsory}
@@ -316,6 +321,7 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 		stage(stTbV, "TB visit", prTb, 1, true, []any{psde(deSmear, false), psde(deWeight, false)}),
 		stage(stCom, "outreach visit", prCom, 1, true, []any{psde(deNote, false)}),
 		stage(stEvt, "facility event", prEvt, 1, true, []any{psde(deNote, false), psde(deWeight, false)}),
+		stage(stEvD, "donor event", prEvD, 1, true, []any{psde(deNote, false)}),
 		stage(stHhs, "household visit", prHhs, 1, true, []any{psde(deNote, false)}),
 	}
 

@@ -42,6 +42,8 @@ type Manifest struct {
 	// Aggregate: data sets at the facility for the aggregate tests; nil when this
 	// setup has none (the tests skip).
 	Aggregate *Aggregate `json:"aggregate,omitempty"`
+	// EventPrograms: event programs (without registration) at the facility.
+	EventPrograms []Program `json:"eventPrograms,omitempty"`
 }
 
 // Aggregate names what the aggregate tests use. Number and Integer are data elements
@@ -105,6 +107,13 @@ type Program struct {
 	// EnrollmentCombo: enrollments carry an attribute option combo, so who sees them
 	// depends on category option sharing (2.43's enrollmentCategoryCombo).
 	EnrollmentCombo bool `json:"enrollmentCombo,omitempty"`
+	// Event: an event program (no tracked entity type, no enrollments).
+	Event bool `json:"event,omitempty"`
+	// AOCs: option combinations of the program's attribute category combination (its
+	// events); EnrollmentAOCs: of its enrollment category combination (2.43). At most
+	// two each: the write oracle tries every user with each.
+	AOCs           []string `json:"aocs,omitempty"`
+	EnrollmentAOCs []string `json:"enrollmentAocs,omitempty"`
 }
 
 type User struct {

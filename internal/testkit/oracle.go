@@ -49,8 +49,25 @@ type Truth struct {
 
 // ReadTruth asks central which tracked entities the facility owns, per program, and,
 // under the key "tet:<uid>", which of a type are registered there (no program).
-func ReadTruth(c *Central, facility string, programs, tets []string) (*Truth, error) {
+//
+// For event programs, "owned" is the facility's events (keyed by event UID).
+func ReadTruth(c *Central, facility string, programs, tets, eventPrograms []string) (*Truth, error) {
 	t := &Truth{Owned: map[string]map[string]bool{}}
+	for _, p := range eventPrograms {
+		var res struct {
+			Events []struct {
+				Event string `json:"event"`
+			} `json:"events"`
+		}
+		q := url.Values{"program": {p}, "orgUnit": {facility}, "paging": {"false"}, "fields": {"event"}}
+		if err := c.JSON("GET", "/api/tracker/events?"+q.Encode(), nil, &res); err != nil {
+			return nil, err
+		}
+		t.Owned[p] = map[string]bool{}
+		for _, ev := range res.Events {
+			t.Owned[p][ev.Event] = true
+		}
+	}
 	scopes := append([]string{}, programs...)
 	for _, tet := range tets {
 		scopes = append(scopes, "tet:"+tet)
@@ -126,6 +143,40 @@ func Queries(m *Manifest, p Program, sample map[string]string) []Query {
 			qs = append(qs, Query{Kind: "trackedEntities", Program: p.ID, Single: true,
 				Path: "/api/tracker/trackedEntities/" + uid + "?" + url.Values{"program": {p.ID}, "fields": {te}}.Encode()})
 		}
+	}
+	return qs
+}
+
+// EventQueries is what the Capture apps ask of an event program: the working list
+// (newest first, paged), by stage, Android's download, and one event.
+func EventQueries(m *Manifest, p Program, sampleEvent string) []Query {
+	ev := "event,programStage,orgUnit,status,occurredAt,attributeOptionCombo,dataValues[dataElement,value]"
+	enc := func(v url.Values) string { return "/api/tracker/events?" + v.Encode() }
+	base := func() url.Values { return url.Values{"program": {p.ID}, "orgUnit": {m.Facility.ID}, "fields": {ev}} }
+	var qs []Query
+	add := func(v url.Values) { qs = append(qs, Query{Kind: "events", Program: p.ID, Path: enc(v)}) }
+	v := base()
+	v.Set("paging", "false")
+	add(v)
+	v = base()
+	v.Set("order", "occurredAt:desc")
+	v.Set("page", "1")
+	v.Set("pageSize", "20")
+	add(v)
+	for _, st := range p.Stages {
+		v = base()
+		v.Set("programStage", st)
+		v.Set("paging", "false")
+		add(v)
+	}
+	v = base()
+	for k, x := range map[string]string{"orgUnitMode": "DESCENDANTS", "includeDeleted": "true", "paging": "true", "page": "1", "pageSize": "50"} {
+		v.Set(k, x)
+	}
+	add(v)
+	if sampleEvent != "" {
+		qs = append(qs, Query{Kind: "events", Program: p.ID, Single: true,
+			Path: "/api/tracker/events/" + sampleEvent + "?" + url.Values{"fields": {ev}}.Encode()})
 	}
 	return qs
 }
@@ -281,6 +332,9 @@ func teOf(kind, uid string, o map[string]any) string {
 		return uid
 	}
 	s, _ := o["trackedEntity"].(string)
+	if s == "" && kind == "events" { // an event program's event: owned as itself
+		return uid
+	}
 	return s
 }
 

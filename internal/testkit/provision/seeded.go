@@ -280,6 +280,15 @@ func Seeded(c *testkit.Central, o SeededOptions) (*testkit.Manifest, error) {
 		return nil
 	}
 	l.Protected, l.Closed = take("PROTECTED"), take("CLOSED")
+	// Event programs at the facility, granted like the tracker programs.
+	evps, err := seededEventPrograms(c, facility)
+	if err != nil {
+		return nil, err
+	}
+	for _, ep := range evps {
+		l.Programs = append(l.Programs, ProgramLayout{ID: ep.ID, Stages: ep.Stages})
+		m.EventPrograms = append(m.EventPrograms, ep)
+	}
 
 	acc := buildAccess(l)
 	m.SetupGroup, m.Users, m.Matrix = acc.Setup, acc.Roles, acc.Matrix
@@ -507,4 +516,90 @@ func useAggregate(c *testkit.Central, m *testkit.Manifest, ds, coc, number, inte
 	log.Printf("seeded: aggregate tests use data set %s (%s, %s, %s; option combination %s)", ds, number, integer,
 		required, coc)
 	return nil
+}
+
+// seededEventPrograms picks up to three event programs with events at the facility,
+// those with an attribute category combination first, then the busiest; with the
+// first two option combinations of their combination and a valid value for each
+// compulsory data element.
+func seededEventPrograms(c *testkit.Central, facility string) ([]testkit.Program, error) {
+	var res struct {
+		Programs []struct {
+			ID            string `json:"id"`
+			Name          string `json:"name"`
+			CategoryCombo struct {
+				ID        string `json:"id"`
+				IsDefault bool   `json:"isDefault"`
+			} `json:"categoryCombo"`
+			ProgramStages []struct {
+				ID                       string `json:"id"`
+				ProgramStageDataElements []struct {
+					Compulsory  bool     `json:"compulsory"`
+					DataElement seedAttr `json:"dataElement"`
+				} `json:"programStageDataElements"`
+			} `json:"programStages"`
+		} `json:"programs"`
+	}
+	af := "id,valueType,unique,generated,optionSet[options[code]]"
+	fields := "id,name,categoryCombo[id,isDefault],programStages[id,programStageDataElements[compulsory,dataElement[" + af + "]]]"
+	if err := c.JSON("GET", "/api/programs?paging=false&filter=programType:eq:WITHOUT_REGISTRATION&filter=organisationUnits.id:eq:"+
+		facility+"&fields="+url.QueryEscape(fields), nil, &res); err != nil {
+		return nil, err
+	}
+	type cand struct {
+		p     testkit.Program
+		n     int
+		combo bool
+	}
+	var cands []cand
+	for _, p := range res.Programs {
+		var page struct {
+			Pager struct {
+				Total int `json:"total"`
+			} `json:"pager"`
+		}
+		q := url.Values{"program": {p.ID}, "orgUnit": {facility}, "totalPages": {"true"}, "pageSize": {"1"}, "fields": {"event"}}
+		if err := c.JSON("GET", "/api/tracker/events?"+q.Encode(), nil, &page); err != nil || page.Pager.Total == 0 {
+			continue
+		}
+		tp := testkit.Program{ID: p.ID, Name: p.Name, Event: true, EventValues: map[string]map[string]string{}}
+		for _, st := range p.ProgramStages {
+			tp.Stages = append(tp.Stages, st.ID)
+			vals := map[string]string{}
+			for _, de := range st.ProgramStageDataElements {
+				if de.Compulsory {
+					vals[de.DataElement.ID] = sampleValue(de.DataElement, facility)
+				}
+			}
+			tp.EventValues[st.ID] = vals
+		}
+		if !p.CategoryCombo.IsDefault {
+			var cocs struct {
+				Combos []struct {
+					ID string `json:"id"`
+				} `json:"categoryOptionCombos"`
+			}
+			if err := c.JSON("GET", "/api/categoryOptionCombos?paging=false&fields=id&filter=categoryCombo.id:eq:"+p.CategoryCombo.ID, nil, &cocs); err != nil {
+				return nil, err
+			}
+			for _, x := range cocs.Combos {
+				tp.AOCs = append(tp.AOCs, x.ID)
+			}
+			slices.Sort(tp.AOCs)
+			tp.AOCs = tp.AOCs[:min(2, len(tp.AOCs))]
+		}
+		cands = append(cands, cand{tp, page.Pager.Total, !p.CategoryCombo.IsDefault})
+	}
+	sort.Slice(cands, func(i, j int) bool {
+		if cands[i].combo != cands[j].combo {
+			return cands[i].combo
+		}
+		return cands[i].n > cands[j].n || (cands[i].n == cands[j].n && cands[i].p.ID < cands[j].p.ID)
+	})
+	var out []testkit.Program
+	for _, x := range cands[:min(3, len(cands))] {
+		out = append(out, x.p)
+	}
+	log.Printf("seeded: %d event programs", len(out))
+	return out, nil
 }

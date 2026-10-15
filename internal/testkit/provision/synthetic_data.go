@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"slices"
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/compat"
@@ -82,6 +83,32 @@ func Synthetic(c *testkit.Central, size int) (*testkit.Manifest, error) {
 	if err := c.JSON("GET", "/api/categoryOptionCombos?fields=id&filter=categoryCombo.id:eq:"+ccDonor+
 		"&filter=categoryOptions.id:eq:"+coDonorA, nil, &donor); err != nil || len(donor.Combos) != 1 {
 		return nil, fmt.Errorf("donor option combination: %v %+v", err, donor)
+	}
+	// Option combinations of the donor combination, for the write oracle.
+	var donorCOCs struct {
+		Combos []struct {
+			ID string `json:"id"`
+		} `json:"categoryOptionCombos"`
+	}
+	if err := c.JSON("GET", "/api/categoryOptionCombos?fields=id&filter=categoryCombo.id:eq:"+ccDonor, nil, &donorCOCs); err != nil {
+		return nil, err
+	}
+	var aocs []string
+	for _, x := range donorCOCs.Combos {
+		aocs = append(aocs, x.ID)
+	}
+	slices.Sort(aocs)
+	m.EventPrograms = []testkit.Program{
+		{ID: prEvt, Name: "Synthetic facility events", Event: true, Stages: []string{stEvt}},
+		{ID: prEvD, Name: "Synthetic donor events", Event: true, Stages: []string{stEvD}, AOCs: aocs},
+	}
+	for i := range m.Programs {
+		if m.Programs[i].ID == prHhs {
+			m.Programs[i].AOCs = aocs
+			if m.Programs[i].EnrollmentCombo {
+				m.Programs[i].EnrollmentAOCs = aocs
+			}
+		}
 	}
 	m.Aggregate = &testkit.Aggregate{DataSet: dsMonth, ValidDataSet: dsValid, DonorDataSet: dsDonor,
 		Number: deAggNum, Integer: deAggInt, Required: deAggReq, COC: defaultCOC, DefaultAOC: defaultCOC,
@@ -287,11 +314,20 @@ func syntheticData(c *testkit.Central, size int, ouParam string, enrollmentAOC m
 	}
 	// Records that were deleted: the hub must not resurrect them.
 	deleteTEs = append(deleteTEs, byFacility[ouFac][len(byFacility[ouFac])-1], byFacility[ouFac][len(byFacility[ouFac])-2])
-	// Events of the event program at the facility.
-	for i := 0; i < 10*size; i++ {
+	// Events of the event programs at the facility: spread over three years (retention
+	// has something to prune), and per donor in the donor program.
+	for i := 0; i < 20*size; i++ {
 		events = append(events, map[string]any{"event": uid("SynEv"), "program": prEvt, "programStage": stEvt,
-			"orgUnit": ouFac, "occurredAt": day(i), "status": "COMPLETED",
+			"orgUnit": ouFac, "occurredAt": day(-(i * 1095) / (20 * size)), "status": "COMPLETED",
 			"dataValues": []any{map[string]any{"dataElement": deWeight, "value": fmt.Sprint(60 + i%20)}}})
+	}
+
+	for i := 0; i < 10*size; i++ {
+		for _, donor := range []string{coDonorA, coDonorB} {
+			events = append(events, map[string]any{"event": uid("SynEv"), "program": prEvD, "programStage": stEvD,
+				"orgUnit": ouFac, "occurredAt": day(-i), "status": "COMPLETED", "attributeCategoryOptions": donor,
+				"dataValues": []any{map[string]any{"dataElement": deNote, "value": "donor visit"}}})
+		}
 	}
 
 	// Households: each has a visit funded by donor A (shared per the matrix) and one by

@@ -48,13 +48,26 @@ func TestOracle(t *testing.T) {
 			tets = append(tets, p.TET)
 		}
 	}
-	truth, err := tk.ReadTruth(e.Central, m.Facility.ID, programs, tets)
+	var eventPrograms []string
+	for _, p := range m.EventPrograms {
+		eventPrograms = append(eventPrograms, p.ID)
+	}
+	truth, err := tk.ReadTruth(e.Central, m.Facility.ID, programs, tets, eventPrograms)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var queries []tk.Query
 	for _, p := range m.Programs {
 		queries = append(queries, tk.Queries(m, p, samples(t, e, p, truth))...)
+	}
+	for _, p := range m.EventPrograms {
+		sample := ""
+		for uid := range truth.Owned[p.ID] {
+			if sample == "" || uid < sample {
+				sample = uid
+			}
+		}
+		queries = append(queries, tk.EventQueries(m, p, sample)...)
 	}
 	e.Offline()
 
