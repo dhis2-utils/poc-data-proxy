@@ -105,7 +105,9 @@ func (h *Hub) FetchAccess(ctx context.Context, auth central.Auth) (*access.List,
 	}
 	for _, p := range resp.Programs {
 		l.Programs[p.ID] = p.Access.Data
-		l.TETs[p.TrackedEntityType.ID] = p.TrackedEntityType.Access.Data
+		if p.TrackedEntityType.ID != "" { // event programs have none
+			l.TETs[p.TrackedEntityType.ID] = p.TrackedEntityType.Access.Data
+		}
 		for _, s := range p.ProgramStages {
 			l.Stages[s.ID] = s.Access.Data
 		}
@@ -377,10 +379,12 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 				Repeatable bool   `json:"repeatable"`
 			} `json:"programStages"`
 			CategoryCombo struct {
-				IsDefault *bool `json:"isDefault"`
+				ID        string `json:"id"`
+				IsDefault *bool  `json:"isDefault"`
 			} `json:"categoryCombo"`
 			EnrollmentCategoryCombo struct {
-				IsDefault *bool `json:"isDefault"`
+				ID        string `json:"id"`
+				IsDefault *bool  `json:"isDefault"`
 			} `json:"enrollmentCategoryCombo"` // 2.43
 			ProgramTrackedEntityAttributes []attr `json:"programTrackedEntityAttributes"`
 		} `json:"programs"`
@@ -415,6 +419,12 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 		pm := &access.ProgramMeta{ID: p.ID, Name: p.Name, TET: p.TrackedEntityType.ID, Attributes: conv(p.ProgramTrackedEntityAttributes),
 			AttributeCombo:           p.CategoryCombo.IsDefault != nil && !*p.CategoryCombo.IsDefault,
 			EnrollmentAttributeCombo: p.EnrollmentCategoryCombo.IsDefault != nil && !*p.EnrollmentCategoryCombo.IsDefault}
+		if pm.AttributeCombo {
+			pm.CategoryCombo = p.CategoryCombo.ID
+		}
+		if pm.EnrollmentAttributeCombo {
+			pm.EnrollmentCategoryCombo = p.EnrollmentCategoryCombo.ID
+		}
 		for _, s := range p.ProgramStages {
 			pm.Stages = append(pm.Stages, s.ID)
 			if !s.Repeatable {
@@ -423,6 +433,57 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 		}
 		c.Programs[p.ID] = pm
 		c.TETAttributes[p.TrackedEntityType.ID] = conv(p.TrackedEntityType.TrackedEntityTypeAttributes)
+	}
+	// Event programs (WITHOUT_REGISTRATION): events without a person or enrollment.
+	var evResp struct {
+		Programs []struct {
+			ID            string `json:"id"`
+			Name          string `json:"name"`
+			CategoryCombo struct {
+				ID        string `json:"id"`
+				IsDefault *bool  `json:"isDefault"`
+			} `json:"categoryCombo"`
+			ProgramStages []struct {
+				ID string `json:"id"`
+			} `json:"programStages"`
+		} `json:"programs"`
+	}
+	if err := h.Central.JSON(ctx, "GET", central.Q("/api/programs", "filter", "programType:eq:WITHOUT_REGISTRATION",
+		"filter", "organisationUnits.id:eq:"+facility, "fields", "id,name,categoryCombo[id,isDefault],programStages[id]",
+		"paging", "false"), nil, auth, &evResp); err != nil {
+		return nil, err
+	}
+	for _, p := range evResp.Programs {
+		pm := &access.ProgramMeta{ID: p.ID, Name: p.Name, Event: true, Attributes: []access.AttrMeta{},
+			AttributeCombo: p.CategoryCombo.IsDefault != nil && !*p.CategoryCombo.IsDefault}
+		if pm.AttributeCombo {
+			pm.CategoryCombo = p.CategoryCombo.ID
+		}
+		for _, s := range p.ProgramStages {
+			pm.Stages = append(pm.Stages, s.ID)
+		}
+		c.Programs[p.ID] = pm
+	}
+	if combos := c.AttributeCombos(); len(combos) > 0 {
+		var cocs struct {
+			COCs []struct {
+				ID            string  `json:"id"`
+				CategoryCombo idRef   `json:"categoryCombo"`
+				Options       []idRef `json:"categoryOptions"`
+			} `json:"categoryOptionCombos"`
+		}
+		if err := h.Central.JSON(ctx, "GET", central.Q("/api/categoryOptionCombos", "filter",
+			"categoryCombo.id:in:["+strings.Join(combos, ",")+"]", "fields", "id,categoryCombo[id],categoryOptions[id]",
+			"paging", "false"), nil, auth, &cocs); err != nil {
+			return nil, err
+		}
+		c.AOCs, c.ComboAOCs = map[string][]string{}, map[string][]string{}
+		for _, coc := range cocs.COCs {
+			for _, o := range coc.Options {
+				c.AOCs[coc.ID] = append(c.AOCs[coc.ID], o.ID)
+			}
+			c.ComboAOCs[coc.CategoryCombo.ID] = append(c.ComboAOCs[coc.CategoryCombo.ID], coc.ID)
+		}
 	}
 	c.Index()
 	return c, nil

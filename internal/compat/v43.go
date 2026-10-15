@@ -11,7 +11,7 @@ func (v43) Major() int { return 43 }
 // attribute option combo, and who may see or write them depends on access to its
 // category options, as for events.
 func (v v43) ProgramFields(af string) string {
-	return v.v42.ProgramFields(af) + ",enrollmentCategoryCombo[isDefault]"
+	return v.v42.ProgramFields(af) + ",enrollmentCategoryCombo[id,isDefault]"
 }
 
 // TransferOrgUnit: 2.43 takes orgUnit= and answers 400 "Required parameter

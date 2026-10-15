@@ -150,6 +150,13 @@ type ProgramMeta struct {
 	// EnrollmentAttributeCombo: the same for enrollments (2.43's
 	// enrollmentCategoryCombo).
 	EnrollmentAttributeCombo bool `json:"enrollmentAttributeCombo,omitempty"`
+	// Event: an event program (WITHOUT_REGISTRATION): events without a person or
+	// enrollment, owned by their org unit.
+	Event bool `json:"event,omitempty"`
+	// CategoryCombo and EnrollmentCategoryCombo: the program's (2.43: its
+	// enrollments') category combination, when not the default.
+	CategoryCombo           string `json:"categoryCombo,omitempty"`
+	EnrollmentCategoryCombo string `json:"enrollmentCategoryCombo,omitempty"`
 }
 
 // Catalog is the facility's program set plus tracked entity type attributes.
@@ -161,6 +168,11 @@ type Catalog struct {
 	// (TrackedEntityAggregate.getAllowedAttributeUids).
 	TypeAttributes map[string]bool   `json:"typeAttributes,omitempty"`
 	StageProgram   map[string]string `json:"-"`
+	// AOCs: each attribute option combination of the programs' attribute category
+	// combinations (events, and 2.43 enrollments) with its category options;
+	// ComboAOCs: each such combination's option combinations.
+	AOCs      map[string][]string `json:"aocs,omitempty"`
+	ComboAOCs map[string][]string `json:"comboAocs,omitempty"`
 }
 
 // TETs lists the tracked entity types of the catalog's programs, sorted.
@@ -190,6 +202,22 @@ func (c *Catalog) Merge(o *Catalog) {
 			c.TETAttributes[tet] = as
 		}
 	}
+	for aoc, opts := range o.AOCs {
+		if c.AOCs == nil {
+			c.AOCs = map[string][]string{}
+		}
+		if _, ok := c.AOCs[aoc]; !ok {
+			c.AOCs[aoc] = opts
+		}
+	}
+	for cc, aocs := range o.ComboAOCs {
+		if c.ComboAOCs == nil {
+			c.ComboAOCs = map[string][]string{}
+		}
+		if _, ok := c.ComboAOCs[cc]; !ok {
+			c.ComboAOCs[cc] = aocs
+		}
+	}
 	for id := range o.TypeAttributes {
 		if c.TypeAttributes == nil {
 			c.TypeAttributes = map[string]bool{}
@@ -197,6 +225,21 @@ func (c *Catalog) Merge(o *Catalog) {
 		c.TypeAttributes[id] = true
 	}
 	c.Index()
+}
+
+// AttributeCombos lists the non-default category combinations of the catalog's
+// programs (events) and enrollments (2.43), sorted.
+func (c *Catalog) AttributeCombos() []string {
+	var out []string
+	for _, p := range c.Programs {
+		for _, cc := range []string{p.CategoryCombo, p.EnrollmentCategoryCombo} {
+			if cc != "" && !slices.Contains(out, cc) {
+				out = append(out, cc)
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 func (c *Catalog) Index() {
