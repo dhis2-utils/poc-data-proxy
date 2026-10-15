@@ -272,6 +272,67 @@ func (a *API) queue(w http.ResponseWriter, sess *core.Session, ed *aggregate.Edi
 	}
 	return true
 }
+
+// Completing offline: refused where the data set must pass validation first
+// (validCompleteOnly: the hub does not evaluate validation rules, and central does
+// not check them on completion) and where a compulsory field is empty (central
+// refuses that too); otherwise queued after the form's earlier edits.
 func (a *API) complete(w http.ResponseWriter, body []byte, sess *core.Session, acc *aggregate.Access) {
-	a.H.WebError(w, http.StatusConflict, "Completing needs a connection", "")
+	var req struct {
+		DataSet   string `json:"dataSet"`
+		Period    string `json:"period"`
+		OrgUnit   string `json:"orgUnit"`
+		Attribute *struct {
+			Combo   string   `json:"combo"`
+			Options []string `json:"options"`
+		} `json:"attribute"`
+		Completed bool `json:"completed"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		a.H.WebError(w, http.StatusBadRequest, "invalid completion: "+err.Error(), "")
+		return
+	}
+	cc, cp := "", []string(nil)
+	if req.Attribute != nil {
+		cc, cp = req.Attribute.Combo, req.Attribute.Options
+	}
+	d, k, per, inWindow, ok := a.formOf(w, acc, req.DataSet, req.Period, req.OrgUnit, cc, cp)
+	if !ok {
+		return
+	}
+	if !inWindow || a.lock(acc, d, k, per) != aggregate.Open {
+		a.H.WebError(w, http.StatusConflict, "Data set is locked", "E2017")
+		return
+	}
+	if req.Completed && d.ValidCompleteOnly {
+		a.H.WebError(w, http.StatusConflict, "Completing needs a connection: this data set must pass validation first", "")
+		return
+	}
+	if req.Completed && d.CompulsoryFieldsCompleteOnly {
+		form, err := a.current(acc, d, k, per)
+		if err != nil {
+			a.H.WebError(w, http.StatusInternalServerError, err.Error(), "")
+			return
+		}
+		var missing []string
+		for _, op := range d.Compulsory {
+			if v, ok := form.Value(op.DataElement, op.COC); !ok || v == "" {
+				name := op.DataElement
+				if e := acc.Elements[op.DataElement]; e != nil {
+					name = e.Name
+				}
+				missing = append(missing, name+" "+acc.COCName(op.COC))
+			}
+		}
+		if len(missing) > 0 {
+			a.H.WebError(w, http.StatusConflict, "All compulsory data element operands need to be filled: ["+
+				strings.Join(missing, ", ")+"]", "")
+			return
+		}
+	}
+	ed := &aggregate.Edit{Op: aggregate.OpComplete, Form: k, CC: cc, CP: cp, Completed: req.Completed, By: sess.Username,
+		At: a.H.CentralTime(a.H.CentralNow())}
+	if a.queue(w, sess, ed, true) {
+		w.WriteHeader(http.StatusOK)
+	}
 }

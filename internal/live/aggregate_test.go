@@ -149,7 +149,6 @@ func TestAggregateLockedOnPushKeepsValue(t *testing.T) {
 
 // Review focus 5: a completion waits for the form's earlier entries.
 func TestAggregateCompletionWaitsForValues(t *testing.T) {
-	t.Skip("completion: Task 11")
 	e, ag, nurse, clerk := aggregateEnv(t)
 	e.NeedFake()
 	pe := tk.CurrentMonth(e)
@@ -159,13 +158,13 @@ func TestAggregateCompletionWaitsForValues(t *testing.T) {
 	clerk.JSON("POST", "/api/"+e.App.Hub.APIMinor()+"/dataEntry/dataSetCompletion",
 		map[string]any{"dataSet": ag.DataSet, "period": pe, "orgUnit": e.M.Facility.ID, "completed": true}, 200)
 	u, _ := e.App.Hub.Store.UserByName(nurse.User)
-	e.App.Hub.Store.SetNeedsLogin(u.ID, true) // the nurse's value cannot be pushed yet
+	e.Fake.RevokeToken(u.PATUID) // central refuses the nurse's token: her value waits
 	e.Online()
 	e.Sync()
 	if e.Fake.Complete(ag.DataSet, pe, ag.DefaultAOC) {
 		t.Fatal("completion pushed before the value it needs")
 	}
-	e.App.Hub.Store.SetNeedsLogin(u.ID, false)
+	nurse.Login() // online: a new token
 	e.Sync()
 	if !e.Fake.Complete(ag.DataSet, pe, ag.DefaultAOC) {
 		t.Fatal("completion not pushed after the value")
@@ -287,5 +286,43 @@ func TestAggregatePassesThroughOnline(t *testing.T) {
 	st, hdr, _ := nurse.DoHeader("GET", formPath(e, ag.DataSet, tk.CurrentMonth(e)))
 	if st != 200 || hdr.Get("X-Hub-Mode") != "" {
 		t.Fatalf("online form: %d %q", st, hdr.Get("X-Hub-Mode"))
+	}
+}
+
+// Completion offline: queued for an ordinary data set; refused where validation is
+// mandatory (central does not check it, so a queued completion would bypass it) or
+// a compulsory field is empty.
+func TestAggregateCompletionOffline(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	pe := tk.CurrentMonth(e)
+	path := "/api/" + e.App.Hub.APIMinor() + "/dataEntry/dataSetCompletion"
+	req := func(ds string) map[string]any {
+		return map[string]any{"dataSet": ds, "period": pe, "orgUnit": e.M.Facility.ID, "completed": true}
+	}
+	e.Offline()
+	if st, b := nurse.Do("POST", path, req(ag.ValidDataSet)); st != 409 || !strings.Contains(string(b), "Completing needs a connection") {
+		t.Fatalf("validCompleteOnly offline: %d %s", st, b)
+	}
+	if st, b := nurse.Do("POST", path, req(ag.DataSet)); st != 409 || !strings.Contains(string(b), "compulsory") {
+		t.Fatalf("compulsory field empty: %d %s", st, b)
+	}
+	nurse.PostDataValue("/api/"+e.App.Hub.APIMinor()+"/dataValues", cell(e, ag.DataSet, pe, ag.Required, ag.COC, "value", "1"))
+	nurse.JSON("POST", path, req(ag.DataSet), 200)
+	form := nurse.JSON("GET", formPath(e, ag.DataSet, pe), nil, 200)
+	if cs := form["completeStatus"].(map[string]any); cs["complete"] != true {
+		t.Fatalf("form after offline completion: %v", cs)
+	}
+	e.Online()
+	e.Sync()
+	var regs struct {
+		Registrations []struct {
+			Period    string `json:"period"`
+			Completed bool   `json:"completed"`
+		} `json:"completeDataSetRegistrations"`
+	}
+	q := url.Values{"dataSet": {ag.DataSet}, "orgUnit": {e.M.Facility.ID}, "period": {pe}}
+	e.Central.JSON("GET", "/api/completeDataSetRegistrations?"+q.Encode(), nil, &regs)
+	if len(regs.Registrations) != 1 || !regs.Registrations[0].Completed {
+		t.Fatalf("on central: %+v", regs)
 	}
 }
