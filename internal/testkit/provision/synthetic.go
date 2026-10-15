@@ -72,6 +72,15 @@ const (
 	caDonor      = "SynCaDonor1"
 	ccDonor      = "SynCcDonor1"
 
+	// Aggregate (docs/superpowers/specs/2026-10-15-aggregate-data-entry-design.md).
+	deAggNum   = "SynDeAggNm1"
+	deAggInt   = "SynDeAggIn1"
+	deAggReq   = "SynDeAggRq1"
+	dsMonth    = "SynDsMonth1" // compulsory field
+	dsValid    = "SynDsValid1" // validCompleteOnly
+	dsDonor    = "SynDsDonor1" // attribute combination ccDonor (category options shared per user)
+	defaultCOC = "HllvX50cXC0" // DHIS2's default category option combination, the same everywhere
+
 	Password = "Hub-Test-2026!"
 )
 
@@ -303,6 +312,33 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 		stage(stHhs, "household visit", prHhs, 1, true, []any{psde(deNote, false)}),
 	}
 
+	aggDE := func(id, name, vt string) map[string]any {
+		return map[string]any{"id": id, "name": "Syn agg " + name, "shortName": "Syn agg " + name, "valueType": vt,
+			"domainType": "AGGREGATE", "aggregationType": "SUM", "sharing": meta}
+	}
+	dataElements = append(dataElements, aggDE(deAggNum, "number", "NUMBER"), aggDE(deAggInt, "integer", "INTEGER"),
+		aggDE(deAggReq, "required", "NUMBER"))
+	aggDS := func(id, name string, extra map[string]any) map[string]any {
+		sh(id).Public = acWrite
+		d := map[string]any{"id": id, "name": name, "shortName": name, "periodType": "Monthly", "openFuturePeriods": 1,
+			"dataSetElements": []any{
+				map[string]any{"dataElement": ref(deAggNum), "dataSet": ref(id)},
+				map[string]any{"dataElement": ref(deAggInt), "dataSet": ref(id)},
+				map[string]any{"dataElement": ref(deAggReq), "dataSet": ref(id)}},
+			"organisationUnits": refs(ouFac, ouSib), "sharing": sh(id).json()}
+		for k, v := range extra {
+			d[k] = v
+		}
+		return d
+	}
+	dataSets := []any{
+		aggDS(dsMonth, "Syn monthly", map[string]any{"compulsoryFieldsCompleteOnly": true,
+			"compulsoryDataElementOperands": []any{map[string]any{"dataElement": ref(deAggReq),
+				"categoryOptionCombo": ref(defaultCOC)}}}),
+		aggDS(dsValid, "Syn validated", map[string]any{"validCompleteOnly": true}),
+		aggDS(dsDonor, "Syn donor", map[string]any{"categoryCombo": ref(ccDonor)}),
+	}
+
 	metadata := map[string]any{
 		"organisationUnits": ous,
 		"optionSets":        optionSets, "options": options,
@@ -326,6 +362,7 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 		"categoryCombos": []any{map[string]any{"id": ccDonor, "name": "Synthetic donor", "dataDimensionType": "ATTRIBUTE",
 			"categories": refs(caDonor), "sharing": meta}},
 		"dataElements":  dataElements,
+		"dataSets":      dataSets,
 		"programs":      programs,
 		"programStages": stages,
 		"relationshipTypes": []any{map[string]any{"id": rtMotherChild, "name": "Synthetic mother of",

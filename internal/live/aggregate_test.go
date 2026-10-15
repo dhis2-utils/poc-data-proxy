@@ -37,7 +37,7 @@ func TestAggregateAccessRefreshed(t *testing.T) {
 	h := e.App.Hub
 	u, _ := h.Store.UserByName(nurse.User)
 	acc := h.AggAccess(u.ID)
-	if acc == nil || acc.DataSets[ag.DataSet] == nil || acc.DataSets[ag.ValidDataSet] == nil {
+	if acc == nil || acc.DataSets[ag.DataSet] == nil || (ag.ValidDataSet != "" && acc.DataSets[ag.ValidDataSet] == nil) {
 		t.Fatalf("nurse's aggregate access: %+v", acc)
 	}
 	e.Offline()
@@ -306,9 +306,13 @@ func TestAggregateCompletionOffline(t *testing.T) {
 	req := func(ds string) map[string]any {
 		return map[string]any{"dataSet": ds, "period": pe, "orgUnit": e.M.Facility.ID, "completed": true}
 	}
+	e.DeleteCentralDataValue(ag.DataSet, pe, ag.Required, ag.COC) // live instances keep earlier runs' values
+	e.Sync()
 	e.Offline()
-	if st, b := nurse.Do("POST", path, req(ag.ValidDataSet)); st != 409 || !strings.Contains(string(b), "Completing needs a connection") {
-		t.Fatalf("validCompleteOnly offline: %d %s", st, b)
+	if ag.ValidDataSet != "" {
+		if st, b := nurse.Do("POST", path, req(ag.ValidDataSet)); st != 409 || !strings.Contains(string(b), "Completing needs a connection") {
+			t.Fatalf("validCompleteOnly offline: %d %s", st, b)
+		}
 	}
 	if st, b := nurse.Do("POST", path, req(ag.DataSet)); st != 409 || !strings.Contains(string(b), "compulsory") {
 		t.Fatalf("compulsory field empty: %d %s", st, b)
@@ -359,5 +363,56 @@ func TestAggregateExpiryWarning(t *testing.T) {
 	admin.Login()
 	if st, page := admin.Do("GET", "/hub/ui", nil); st != 200 || !strings.Contains(string(page), "Locks soon") {
 		t.Fatalf("admin page: %d, no expiry warning", st)
+	}
+}
+
+// The hub's offline forms match central's, for each aggregate user and each form of
+// the window that has values: values (with comment, follow-up, stored by), lock and
+// completion.
+func TestAggregateOracle(t *testing.T) {
+	e, ag, nurse, clerk := aggregateEnv(t)
+	pe := tk.CurrentMonth(e)
+	e.SetCentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, "17")
+	e.Sync()
+	type cellState struct {
+		Value, Comment, StoredBy string
+		FollowUp                 bool
+	}
+	norm := func(form map[string]any) (map[string]cellState, string, bool) {
+		out := map[string]cellState{}
+		for _, v := range form["dataValues"].([]any) {
+			m := v.(map[string]any)
+			c, _ := m["comment"].(string)
+			f, _ := m["followUp"].(bool)
+			out[m["dataElement"].(string)+"."+m["categoryOptionCombo"].(string)] = cellState{m["value"].(string), c,
+				m["storedBy"].(string), f}
+		}
+		cs, _ := form["completeStatus"].(map[string]any)
+		done, _ := cs["complete"].(bool)
+		lock, _ := form["lockStatus"].(string)
+		return out, lock, done
+	}
+	online := map[string]map[string]any{}
+	for _, c := range []*tk.Client{nurse, clerk} {
+		online[c.User] = c.JSON("GET", formPath(e, ag.DataSet, pe), nil, 200)
+	}
+	e.Offline()
+	for _, c := range []*tk.Client{nurse, clerk} {
+		off := c.JSON("GET", formPath(e, ag.DataSet, pe), nil, 200)
+		cv, cl, cd := norm(online[c.User])
+		hv, hl, hd := norm(off)
+		for k, v := range cv {
+			if hv[k] != v {
+				t.Errorf("%s %s: MISSING or DIFFERS: central %+v, hub %+v", c.User, k, v, hv[k])
+			}
+		}
+		for k, v := range hv {
+			if _, ok := cv[k]; !ok {
+				t.Errorf("%s %s: LEAK: hub shows %+v, central nothing", c.User, k, v)
+			}
+		}
+		if cl != hl || cd != hd {
+			t.Errorf("%s: lock %s/%s, complete %v/%v (central/hub)", c.User, cl, hl, cd, hd)
+		}
 	}
 }

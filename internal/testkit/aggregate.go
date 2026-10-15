@@ -38,7 +38,7 @@ func (e *Env) CentralDataValue(ds, pe, de, coc, aoc string) (value, storedBy str
 	var res struct {
 		DataValues []struct {
 			DataElement, Period, CategoryOptionCombo, AttributeOptionCombo, Value, StoredBy string
-			Deleted                                                                 bool
+			Deleted                                                                         bool
 		} `json:"dataValues"`
 	}
 	q := url.Values{"dataSet": {ds}, "period": {pe}, "orgUnit": {e.M.Facility.ID}}
@@ -64,3 +64,13 @@ func (e *Env) SetCentralDataValue(ds, pe, de, coc, value string) {
 
 // CurrentMonth is this month's period ID in central's time zone.
 func CurrentMonth(e *Env) string { return e.App.Hub.CentralNow().Format("200601") }
+
+// DeleteCentralDataValue deletes a value on central as the superuser (default
+// attribute); a missing value is fine.
+func (e *Env) DeleteCentralDataValue(ds, pe, de, coc string) {
+	e.T.Helper()
+	q := url.Values{"ds": {ds}, "pe": {pe}, "ou": {e.M.Facility.ID}, "de": {de}, "co": {coc}}
+	if st, b, err := e.Central.Do("DELETE", "/api/dataValues?"+q.Encode(), nil); err != nil || (st/100 != 2 && st != 404 && st != 409) {
+		e.T.Fatalf("delete central value: %d %s %v", st, b, err)
+	}
+}

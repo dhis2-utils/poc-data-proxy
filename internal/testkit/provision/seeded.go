@@ -300,6 +300,9 @@ func Seeded(c *testkit.Central, o SeededOptions) (*testkit.Manifest, error) {
 			return nil, err
 		}
 	}
+	if err := seededAggregate(c, m); err != nil {
+		return nil, err
+	}
 	return m, verifyLogins(c, m)
 }
 
@@ -377,4 +380,42 @@ func sampleValue(a seedAttr, facility string) string {
 		return "https://example.org"
 	}
 	return "Test"
+}
+
+// childHealth is Sierra Leone's Child Health data set: monthly, default attribute
+// combination, Penta1 and BCG with the option combination "Outreach, <1y".
+const childHealth = "BfMAe6Itzgt"
+
+// seededAggregate prepares Child Health for the aggregate tests when the facility has
+// it: data write for the role users, and a compulsory field (OPV2 <1y outreach)
+// needed for completion.
+func seededAggregate(c *testkit.Central, m *testkit.Manifest) error {
+	var ds struct {
+		DataSets []struct {
+			ID string `json:"id"`
+		} `json:"dataSets"`
+	}
+	if err := c.JSON("GET", "/api/dataSets?fields=id&filter=id:eq:"+childHealth+"&filter=organisationUnits.id:eq:"+
+		m.Facility.ID, nil, &ds); err != nil || len(ds.DataSets) == 0 {
+		return err
+	}
+	g := &sharing{}
+	for _, u := range m.Users {
+		g.grant(u.UID, "", acWrite)
+	}
+	if err := addSharing(c, "dataSet", childHealth, g, false); err != nil {
+		return err
+	}
+	const coc = "V6L425pT3A0" // Outreach, <1y
+	if err := c.JSON("PATCH", "/api/dataSets/"+childHealth, []map[string]any{
+		{"op": "replace", "path": "/compulsoryFieldsCompleteOnly", "value": true},
+		{"op": "add", "path": "/compulsoryDataElementOperands", "value": []any{map[string]any{
+			"dataElement": map[string]any{"id": "O05mAByOgAv"}, "categoryOptionCombo": map[string]any{"id": coc}}}},
+	}, nil); err != nil {
+		return fmt.Errorf("child health: %w", err)
+	}
+	m.Aggregate = &testkit.Aggregate{DataSet: childHealth, Number: "fClA2Erf6IO", Integer: "s46m5MS0hxu",
+		Required: "O05mAByOgAv", COC: coc, DefaultAOC: "HllvX50cXC0",
+		NumberLabel: "Penta1 doses given", IntegerLabel: "BCG doses given", Column: 3}
+	return nil
 }

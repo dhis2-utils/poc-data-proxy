@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/dhis2/facility-hub/internal/aggregate"
@@ -64,6 +65,9 @@ func (h *Hub) RefreshAggAccess(ctx context.Context, userID int64, auth central.A
 		if a, err = aggregate.ParseMetadata(b, authorities); err != nil {
 			return fmt.Errorf("dataEntry/metadata: %w", err)
 		}
+		if err := h.fillAttributeCombos(ctx, a, auth); err != nil {
+			return err
+		}
 		hdr := resp.Header.Clone()
 		hdr.Del("Set-Cookie")
 		if err := h.Store.PutCache(userID, "GET", path, &store.CachedResponse{Status: 200, Header: hdr, Body: b}); err != nil {
@@ -77,6 +81,50 @@ func (h *Hub) RefreshAggAccess(ctx context.Context, userID int64, auth central.A
 	h.mu.Lock()
 	h.aggAccess[userID] = a
 	h.mu.Unlock()
+	return nil
+}
+
+// fillAttributeCombos reads the option combinations of the data sets' attribute
+// category combinations: dataEntry/metadata lists the combinations' categories but
+// not their option combinations, which name the forms (and values) on central.
+func (h *Hub) fillAttributeCombos(ctx context.Context, a *aggregate.Access, auth central.Auth) error {
+	var ids []string
+	for _, ds := range a.DataSets {
+		if c := a.Combos[ds.CategoryCombo]; c != nil && len(c.COCs) == 0 && !slices.Contains(ids, c.ID) {
+			ids = append(ids, c.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	var res struct {
+		COCs []struct {
+			ID            string `json:"id"`
+			DisplayName   string `json:"displayName"`
+			CategoryCombo struct {
+				ID string `json:"id"`
+			} `json:"categoryCombo"`
+			Options []struct {
+				ID string `json:"id"`
+			} `json:"categoryOptions"`
+		} `json:"categoryOptionCombos"`
+	}
+	path := central.Q("/api/categoryOptionCombos", "filter", "categoryCombo.id:in:["+strings.Join(ids, ",")+"]",
+		"fields", "id,displayName,categoryCombo[id],categoryOptions[id]", "paging", "false")
+	if err := h.Central.JSON(ctx, "GET", path, nil, auth, &res); err != nil {
+		return fmt.Errorf("attribute option combinations: %w", err)
+	}
+	for _, coc := range res.COCs {
+		c := a.Combos[coc.CategoryCombo.ID]
+		if c == nil {
+			continue
+		}
+		var opts []string
+		for _, o := range coc.Options {
+			opts = append(opts, o.ID)
+		}
+		c.COCs = append(c.COCs, aggregate.COC{ID: coc.ID, Name: coc.DisplayName, Options: opts})
+	}
 	return nil
 }
 

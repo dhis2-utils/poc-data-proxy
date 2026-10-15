@@ -72,6 +72,21 @@ func Synthetic(c *testkit.Central, size int) (*testkit.Manifest, error) {
 	if err := syntheticData(c, size, transferParam(info.Version), enrollmentAOC); err != nil {
 		return nil, err
 	}
+	// The nurse's donor option (shared with the nurses' group for data write; the clerks'
+	// group may only read it) and its attribute option combination.
+	var donor struct {
+		Combos []struct {
+			ID string `json:"id"`
+		} `json:"categoryOptionCombos"`
+	}
+	if err := c.JSON("GET", "/api/categoryOptionCombos?fields=id&filter=categoryCombo.id:eq:"+ccDonor+
+		"&filter=categoryOptions.id:eq:"+coDonorA, nil, &donor); err != nil || len(donor.Combos) != 1 {
+		return nil, fmt.Errorf("donor option combination: %v %+v", err, donor)
+	}
+	m.Aggregate = &testkit.Aggregate{DataSet: dsMonth, ValidDataSet: dsValid, DonorDataSet: dsDonor,
+		Number: deAggNum, Integer: deAggInt, Required: deAggReq, COC: defaultCOC, DefaultAOC: defaultCOC,
+		DonorCC: ccDonor, DonorOptionNurse: coDonorA, DonorAOCNurse: donor.Combos[0].ID,
+		NumberLabel: "Syn agg number", IntegerLabel: "Syn agg integer", Column: 1}
 	return m, verifyLogins(c, m)
 }
 

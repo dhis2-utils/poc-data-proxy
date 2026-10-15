@@ -102,7 +102,8 @@ func (a *API) formOf(w http.ResponseWriter, acc *aggregate.Access, ds, pe, ou, c
 	}
 	aoc, ok := acc.AOC(d, cc, cp)
 	if !ok || !acc.MayUse(d, aoc) {
-		a.H.WebError(w, http.StatusConflict, "User does not have write access for attribute option combo", "E2010")
+		a.H.WebError(w, http.StatusConflict, "User does not have write access to category option combo: `"+cc+" "+
+			strings.Join(cp, ";")+"`", "E2031")
 		return nil, aggregate.FormKey{}, aggregate.Period{}, false, false
 	}
 	k := aggregate.FormKey{DataSet: ds, Period: pe, OrgUnit: ou, AOC: aoc}

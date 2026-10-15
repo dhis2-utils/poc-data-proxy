@@ -223,7 +223,8 @@ func buildAccess(l *Layout) *Access {
 		gm["users"] = refs(members[gm["id"].(string)]...)
 	}
 	a.Role = map[string]any{"id": role, "name": l.Prefix + " hub test user",
-		"authorities": []string{"M_dhis-web-capture", "M_dhis-web-dashboard", "F_UNCOMPLETE_EVENT"}}
+		"authorities": []string{"M_dhis-web-capture", "M_dhis-web-dashboard", "F_UNCOMPLETE_EVENT",
+			"M_dhis-web-aggregate-data-entry", "F_DATAVALUE_ADD", "F_DATAVALUE_DELETE"}}
 	for _, s := range specs {
 		a.Users = append(a.Users, map[string]any{"id": s.uid, "username": s.username, "password": Password,
 			"firstName": s.first, "surname": s.surname, "userRoles": refs(role), "organisationUnits": refs(s.capture...),

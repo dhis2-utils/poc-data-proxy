@@ -77,6 +77,17 @@ func (c *Central) aggregate(w http.ResponseWriter, r *http.Request, u *User) boo
 		c.aggValueSets(w, r)
 	case "/api/completeDataSetRegistrations":
 		c.aggRegistrations(w, r)
+	case "/api/categoryOptionCombos":
+		// The donor combination's option combinations: dataEntry/metadata leaves out
+		// those of attribute combinations, as central does.
+		if !strings.Contains(r.URL.Query().Get("filter"), AggDonorCC) {
+			return false
+		}
+		writeJSON(w, 200, map[string]any{"categoryOptionCombos": []any{
+			map[string]any{"id": AggDonorAOCA, "displayName": "Donor A", "categoryCombo": map[string]any{"id": AggDonorCC},
+				"categoryOptions": []any{map[string]any{"id": AggDonorOptA}}},
+			map[string]any{"id": AggDonorAOCB, "displayName": "Donor B", "categoryCombo": map[string]any{"id": AggDonorCC},
+				"categoryOptions": []any{map[string]any{"id": AggDonorOptB}}}}})
 	default:
 		return false
 	}
@@ -120,11 +131,8 @@ func (c *Central) aggMetadata(opts []string) map[string]any {
 	c.mu.Lock()
 	expiry := c.AggExpiryDays
 	c.mu.Unlock()
-	donorCOCs := []any{}
-	options := []any{ref(AggOption)}
+	options := []any{ref(AggOption)} // the options the user may write, as central lists them
 	for _, o := range opts {
-		aoc := map[string]string{AggDonorOptA: AggDonorAOCA, AggDonorOptB: AggDonorAOCB}[o]
-		donorCOCs = append(donorCOCs, map[string]any{"id": aoc, "displayName": "Donor " + o, "categoryOptions": []string{o}})
 		options = append(options, ref(o))
 	}
 	return map[string]any{
@@ -142,7 +150,7 @@ func (c *Central) aggMetadata(opts []string) map[string]any {
 		"categoryCombos": []any{
 			map[string]any{"id": AggCC, "isDefault": true, "categoryOptionCombos": []any{
 				map[string]any{"id": AggCOC, "displayName": "default", "categoryOptions": []string{AggOption}}}},
-			map[string]any{"id": AggDonorCC, "isDefault": false, "categoryOptionCombos": donorCOCs},
+			map[string]any{"id": AggDonorCC, "isDefault": false}, // no option combinations, as on central
 		},
 		"categories": []any{}, "categoryOptions": options, "optionSets": []any{}, "indicators": []any{},
 	}
@@ -240,7 +248,7 @@ func (c *Central) aggWrite(w http.ResponseWriter, r *http.Request, u *User, ente
 		return
 	}
 	if ds == AggDonorDS && !strings.Contains(strings.Join(opts, ","), q.Get("cp")) {
-		webMessage(w, 409, "User does not have write access for category option combo: `"+aoc+"`", "E2010")
+		webMessage(w, 409, "User does not have write access to category option combo: `"+aoc+"`", "E2031")
 		return
 	}
 	c.mu.Lock()

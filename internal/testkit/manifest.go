@@ -62,6 +62,11 @@ type Aggregate struct {
 	DonorCC          string `json:"donorCc,omitempty"`
 	DonorOptionNurse string `json:"donorOptionNurse,omitempty"`
 	DonorAOCNurse    string `json:"donorAocNurse,omitempty"`
+	// For the real app (TestAggregateDataEntryApp): Number's and Integer's row labels
+	// in the form, and the 1-based data cell of COC in their rows.
+	NumberLabel  string `json:"numberLabel,omitempty"`
+	IntegerLabel string `json:"integerLabel,omitempty"`
+	Column       int    `json:"column,omitempty"`
 }
 
 type MatrixUser struct {
