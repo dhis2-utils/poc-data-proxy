@@ -269,6 +269,10 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case p == "/api/auth/login":
 		c.login(w, r)
 		return
+	case strings.HasPrefix(p, "/apps/"):
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><meta name="dhis2-base-url" content="http://` + r.Host + `">global shell ` + p + "</html>"))
+		return
 	case strings.HasPrefix(p, "/dhis-web-capture/"):
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(`<html><meta name="dhis2-base-url" content="http://` + r.Host + `">capture app ` + p + "</html>"))
@@ -280,6 +284,13 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case p == "/api/userSettings" || p == "/api/42/userSettings":
+		w.Header().Set("ETag", `"fake-settings"`)
+		if r.Header.Get("If-None-Match") == `"fake-settings"` {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"keyUiLocale": "en"})
 	case p == "/api/system/info":
 		writeJSON(w, 200, map[string]any{"version": c.Version, "revision": "fake", "serverTimeZoneId": c.zone().String()})
 	case p == "/api/me":

@@ -154,6 +154,22 @@ func (c *client) doHost(host, method, path string, body any) (int, []byte) {
 	return resp.StatusCode, b
 }
 
+// getWith is a GET with extra request headers.
+func (c *client) getWith(path string, hdr map[string]string) (int, []byte) {
+	c.e.t.Helper()
+	req, _ := http.NewRequest("GET", c.e.srv.URL+path, nil)
+	for k, v := range hdr {
+		req.Header.Set(k, v)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		c.e.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, b
+}
+
 // postForm posts a form like a browser on the hub's own page: with an Origin header.
 func (c *client) postForm(path string, form url.Values) (*http.Response, error) {
 	req, _ := http.NewRequest("POST", c.e.srv.URL+path, strings.NewReader(form.Encode()))
@@ -646,6 +662,31 @@ func TestResetHub(t *testing.T) {
 	}
 	if reg := e.central.DataStoreValue("facility-hub-registry", oldID); reg["status"] != "retired" {
 		t.Fatalf("old registry entry: %v", reg)
+	}
+}
+
+// TestOfflineAppShellAndConditionalGets: on 2.42+ apps open at /apps/<app>, a page
+// without a file extension; offline it is served to any user, like other app files.
+// A browser that holds another user's copy asks conditionally: the hub must still
+// get (and cache) a full answer for this user.
+func TestOfflineAppShellAndConditionalGets(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	nurse, clerk := e.web("nurse_a"), e.web("clerk_c")
+	nurse.login()
+	clerk.login()
+	if st, _ := nurse.do("GET", "/apps/aggregate-data-entry", nil); st != 200 {
+		t.Fatalf("online shell page: %d", st)
+	}
+	if st, _ := clerk.getWith("/api/42/userSettings", map[string]string{"If-None-Match": `"fake-settings"`}); st != 200 {
+		t.Fatalf("conditional GET through the hub: %d, want 200 (the hub asks without the condition)", st)
+	}
+	e.offline()
+	if st, b := clerk.do("GET", "/apps/aggregate-data-entry", nil); st != 200 || !strings.Contains(string(b), "global shell") {
+		t.Fatalf("offline, a user who never opened the shell page: %d %s", st, b)
+	}
+	if st, b := clerk.do("GET", "/api/42/userSettings", nil); st != 200 || !strings.Contains(string(b), "keyUiLocale") {
+		t.Fatalf("offline userSettings for the clerk: %d %s", st, b)
 	}
 }
 

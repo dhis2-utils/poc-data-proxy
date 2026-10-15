@@ -70,6 +70,13 @@ func (p *Proxy) Forward(ctx context.Context, r *http.Request, body []byte, a cen
 		hdr.Del(k)
 	}
 	hdr.Del("X-Forwarded-For")
+	// A 304 cannot be cached for offline use: a browser holding another user's copy
+	// (one browser, two staff) asks conditionally, and this user would get nothing
+	// offline. Ask central for the full answer.
+	if r.Method == http.MethodGet {
+		hdr.Del("If-None-Match")
+		hdr.Del("If-Modified-Since")
+	}
 	resp, err := p.H.Central.Do(ctx, r.Method, r.URL.RequestURI(), body, a, hdr)
 	if err != nil {
 		return nil, err
@@ -252,6 +259,11 @@ func cacheUser(sess *core.Session) int64 {
 func isStatic(p string) bool {
 	if strings.HasPrefix(p, "/api/") && !strings.HasPrefix(p, "/api/apps/") {
 		return false
+	}
+	// 2.42+ opens apps at /apps/<app> in its global shell: an app file without an
+	// extension.
+	if rest, ok := strings.CutPrefix(p, "/apps/"); ok && rest != "" && !strings.Contains(rest, "/") {
+		return true
 	}
 	switch strings.ToLower(path.Ext(p)) {
 	case ".js", ".css", ".html", ".png", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".json", ".jpg", ".gif", ".map", ".webmanifest", ".txt":
