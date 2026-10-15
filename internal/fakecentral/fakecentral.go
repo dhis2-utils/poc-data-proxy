@@ -96,6 +96,8 @@ type Central struct {
 	AggExpiryDays float64 // expiry days of AggDataSet
 	// OnAggWrite runs as an aggregate write arrives, before it is handled (tests).
 	OnAggWrite func()
+	// ClockSkew shifts central's clock against the hub's (tests).
+	ClockSkew time.Duration
 	// AggFail makes an aggregate path answer this status (tests).
 	AggFail map[string]int
 }
@@ -125,7 +127,9 @@ func (c *Central) SetDown(down bool) { c.down.Store(down) }
 
 // now is the current time as DHIS2 writes it: in the server's time zone, without an
 // offset.
-func (c *Central) now() string { return time.Now().In(c.zone()).Format("2006-01-02T15:04:05.000") }
+func (c *Central) now() string {
+	return time.Now().Add(c.ClockSkew).In(c.zone()).Format("2006-01-02T15:04:05.000")
+}
 
 // zone is TimeZone loaded, or UTC.
 func (c *Central) zone() *time.Location {

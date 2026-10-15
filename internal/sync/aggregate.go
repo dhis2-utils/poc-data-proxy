@@ -108,10 +108,11 @@ func (w *Worker) pullAggGroup(ctx context.Context, g *aggGroup, now time.Time, r
 	if len(windows) == 0 {
 		return nil
 	}
+	// The cursor is central's time: the newest lastUpdated central listed, so the
+	// hub's own clock never decides what is new.
 	stateKey := "agg_pull:" + g.key
-	since := h.Store.Private(stateKey)
-	full := since == "" || time.Since(store.ParseTime(h.Store.Private(stateKey+":full"))) > aggFullEvery
-	cycleStart := time.Now()
+	cursor := h.Store.Private(stateKey + ":cursor")
+	full := time.Since(store.ParseTime(h.Store.Private(stateKey+":full"))) > aggFullEvery
 
 	byPeriod := func(ds, pe string) bool {
 		for _, p := range windows[ds] {
@@ -133,20 +134,25 @@ func (w *Worker) pullAggGroup(ctx context.Context, g *aggGroup, now time.Time, r
 	}
 	q := url.Values{"dataSet": dsIDs, "orgUnit": {facility}, "startDate": {start.Format(time.DateOnly)},
 		"endDate": {end.Format(time.DateOnly)}, "includeDeleted": {"true"}}
-	if !full {
-		q.Set("lastUpdated", h.CentralTime(store.ParseTime(since)))
+	if !full && cursor != "" {
+		q.Set("lastUpdated", cursor)
 	}
 	var vs struct {
 		DataValues []struct {
 			DataElement          string `json:"dataElement"`
 			Period               string `json:"period"`
 			AttributeOptionCombo string `json:"attributeOptionCombo"`
+			LastUpdated          string `json:"lastUpdated"`
 		} `json:"dataValues"`
 	}
 	if err := h.Central.JSON(ctx, "GET", "/api/dataValueSets?"+q.Encode(), nil, g.auth, &vs); err != nil {
 		return err
 	}
+	newest := cursor
 	for _, v := range vs.DataValues {
+		if lu := centralTime(v.LastUpdated); lu > newest {
+			newest = lu
+		}
 		for id, ds := range g.acc.DataSets {
 			if _, in := ds.Elements[v.DataElement]; in && byPeriod(id, v.Period) {
 				mark(aggregate.FormKey{DataSet: id, Period: v.Period, OrgUnit: facility, AOC: v.AttributeOptionCombo})
@@ -222,7 +228,7 @@ func (w *Worker) pullAggGroup(ctx context.Context, g *aggGroup, now time.Time, r
 		}
 		fetched[k.String()] = true
 	}
-	h.Store.SetPrivate(stateKey, cycleStart.UTC().Format(time.RFC3339Nano))
+	h.Store.SetPrivate(stateKey+":cursor", newest)
 	if full {
 		h.Store.SetPrivate(stateKey+":full", store.Now())
 	}
@@ -362,4 +368,13 @@ func (w *Worker) applyToStoredForm(ed *aggregate.Edit) {
 	f.Body, _ = json.Marshal(form)
 	h.Store.PutAggForm(f)
 	h.Store.MarkAggFormStale(f.Key)
+}
+
+// centralTime is a dataValueSets timestamp ("2026-10-15T08:15:46.399+0000") as the
+// lastUpdated filter takes it: central's wall clock, without the offset.
+func centralTime(s string) string {
+	if len(s) > len("2006-01-02T15:04:05.000") {
+		return s[:len("2006-01-02T15:04:05.000")]
+	}
+	return s
 }

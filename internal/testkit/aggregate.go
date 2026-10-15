@@ -84,3 +84,17 @@ func (e *Env) DeleteCentralDataValue(ds, pe, de, coc string) {
 		e.T.Fatalf("delete central value: %d %s %v", st, b, err)
 	}
 }
+
+// SetCentralDataValueIn enters a value on central as the superuser, under an
+// attribute combination and options (cc, cp ";"-joined; empty for the default).
+func (e *Env) SetCentralDataValueIn(ds, pe, de, coc, cc, cp, value string) {
+	e.T.Helper()
+	q := url.Values{"ds": {ds}, "pe": {pe}, "ou": {e.M.Facility.ID}, "de": {de}, "co": {coc}, "value": {value}}
+	if cc != "" {
+		q.Set("cc", cc)
+		q.Set("cp", cp)
+	}
+	if st, b, err := e.Central.Do("POST", "/api/dataValues?"+q.Encode(), nil); err != nil || st/100 != 2 {
+		e.T.Fatalf("set central value %s %s %s/%s: %d %s %v", ds, pe, de, coc, st, b, err)
+	}
+}

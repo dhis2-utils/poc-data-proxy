@@ -3,6 +3,7 @@ package provision
 import (
 	"fmt"
 	"log"
+	"maps"
 	"net/url"
 	"slices"
 	"sort"
@@ -386,36 +387,123 @@ func sampleValue(a seedAttr, facility string) string {
 // combination, Penta1 and BCG with the option combination "Outreach, <1y".
 const childHealth = "BfMAe6Itzgt"
 
-// seededAggregate prepares Child Health for the aggregate tests when the facility has
-// it: data write for the role users, and a compulsory field (OPV2 <1y outreach)
-// needed for completion.
+type seedCombo struct {
+	ID   string `json:"id"`
+	COCs []struct {
+		ID string `json:"id"`
+	} `json:"categoryOptionCombos"`
+}
+
+type seedDataSet struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	FormType      string `json:"formType"`
+	CategoryCombo struct {
+		ID        string `json:"id"`
+		IsDefault bool   `json:"isDefault"`
+	} `json:"categoryCombo"`
+	Elements []struct {
+		DataElement struct {
+			ID        string    `json:"id"`
+			FormName  string    `json:"displayFormName"`
+			ValueType string    `json:"valueType"`
+			CatCombo  seedCombo `json:"categoryCombo"`
+		} `json:"dataElement"`
+		CategoryCombo *seedCombo `json:"categoryCombo"`
+	} `json:"dataSetElements"`
+}
+
+// seededAggregate prepares a data set at the facility for the aggregate tests: Child
+// Health where the facility has it (Sierra Leone), otherwise the first monthly data
+// set with the default attribute combination and a section or default form that has
+// three numeric elements under one category combination. The role users get data
+// write on it, and one element becomes compulsory for completion.
 func seededAggregate(c *testkit.Central, m *testkit.Manifest) error {
-	var ds struct {
-		DataSets []struct {
-			ID string `json:"id"`
-		} `json:"dataSets"`
+	var res struct {
+		DataSets []seedDataSet `json:"dataSets"`
 	}
-	if err := c.JSON("GET", "/api/dataSets?fields=id&filter=id:eq:"+childHealth+"&filter=organisationUnits.id:eq:"+
-		m.Facility.ID, nil, &ds); err != nil || len(ds.DataSets) == 0 {
+	fields := "id,name,formType,categoryCombo[id,isDefault],dataSetElements[categoryCombo[id,categoryOptionCombos[id]]," +
+		"dataElement[id,displayFormName,valueType,categoryCombo[id,categoryOptionCombos[id]]]]"
+	if err := c.JSON("GET", "/api/dataSets?paging=false&filter=periodType:eq:Monthly&filter=organisationUnits.id:eq:"+
+		m.Facility.ID+"&fields="+url.QueryEscape(fields), nil, &res); err != nil {
 		return err
 	}
+	slices.SortFunc(res.DataSets, func(a, b seedDataSet) int {
+		if (a.ID == childHealth) != (b.ID == childHealth) { // Child Health first where it is
+			if a.ID == childHealth {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+	numeric := func(vt string) bool { return vt == "NUMBER" || strings.HasPrefix(vt, "INTEGER") }
+	for _, ds := range res.DataSets {
+		if !ds.CategoryCombo.IsDefault || ds.FormType == "CUSTOM" {
+			continue
+		}
+		type el struct{ id, label, vt string }
+		groups := map[string][]el{} // effective category combination -> numeric elements
+		cocOf := map[string]string{}
+		for _, e := range ds.Elements {
+			cc := e.DataElement.CatCombo
+			if e.CategoryCombo != nil && e.CategoryCombo.ID != "" {
+				cc = *e.CategoryCombo
+			}
+			if !numeric(e.DataElement.ValueType) || len(cc.COCs) == 0 {
+				continue
+			}
+			groups[cc.ID] = append(groups[cc.ID], el{e.DataElement.ID, e.DataElement.FormName, e.DataElement.ValueType})
+			cocOf[cc.ID] = cc.COCs[0].ID
+		}
+		for _, cc := range slices.Sorted(maps.Keys(groups)) {
+			g := groups[cc]
+			if len(g) < 3 {
+				continue
+			}
+			slices.SortFunc(g, func(a, b el) int { return strings.Compare(a.id, b.id) })
+			if ds.ID == childHealth { // the elements earlier runs and the spike used
+				g = []el{{"fClA2Erf6IO", "Penta1 doses given", "NUMBER"}, {"s46m5MS0hxu", "BCG doses given", "INTEGER"},
+					{"O05mAByOgAv", "OPV2 doses given", "NUMBER"}}
+				cocOf[cc] = "V6L425pT3A0" // Outreach, <1y
+			}
+			return useAggregate(c, m, ds.ID, cocOf[cc], g[0].id, g[1].id, g[2].id, g[0].label, g[1].label,
+				ds.ID == childHealth)
+		}
+	}
+	log.Printf("seeded: no monthly data set at the facility suits the aggregate tests; they will skip")
+	return nil
+}
+
+// useAggregate grants the role users data write on the data set, makes required
+// compulsory for completion, and names it all in the manifest. labels: the rows of
+// number and integer in the form; the real-app test needs their column (known for
+// Child Health, 3; 1 for the default category combination).
+func useAggregate(c *testkit.Central, m *testkit.Manifest, ds, coc, number, integer, required, numberLabel,
+	integerLabel string, childHealthForm bool) error {
 	g := &sharing{}
 	for _, u := range m.Users {
 		g.grant(u.UID, "", acWrite)
 	}
-	if err := addSharing(c, "dataSet", childHealth, g, false); err != nil {
+	if err := addSharing(c, "dataSet", ds, g, false); err != nil {
 		return err
 	}
-	const coc = "V6L425pT3A0" // Outreach, <1y
-	if err := c.JSON("PATCH", "/api/dataSets/"+childHealth, []map[string]any{
+	if err := c.JSON("PATCH", "/api/dataSets/"+ds, []map[string]any{
 		{"op": "replace", "path": "/compulsoryFieldsCompleteOnly", "value": true},
 		{"op": "add", "path": "/compulsoryDataElementOperands", "value": []any{map[string]any{
-			"dataElement": map[string]any{"id": "O05mAByOgAv"}, "categoryOptionCombo": map[string]any{"id": coc}}}},
+			"dataElement": map[string]any{"id": required}, "categoryOptionCombo": map[string]any{"id": coc}}}},
 	}, nil); err != nil {
-		return fmt.Errorf("child health: %w", err)
+		return fmt.Errorf("aggregate data set %s: %w", ds, err)
 	}
-	m.Aggregate = &testkit.Aggregate{DataSet: childHealth, Number: "fClA2Erf6IO", Integer: "s46m5MS0hxu",
-		Required: "O05mAByOgAv", COC: coc, DefaultAOC: "HllvX50cXC0",
-		NumberLabel: "Penta1 doses given", IntegerLabel: "BCG doses given", Column: 3}
+	m.Aggregate = &testkit.Aggregate{DataSet: ds, Number: number, Integer: integer, Required: required, COC: coc,
+		DefaultAOC: "HllvX50cXC0"}
+	switch {
+	case childHealthForm:
+		m.Aggregate.NumberLabel, m.Aggregate.IntegerLabel, m.Aggregate.Column = numberLabel, integerLabel, 3
+	case coc == "HllvX50cXC0":
+		m.Aggregate.NumberLabel, m.Aggregate.IntegerLabel, m.Aggregate.Column = numberLabel, integerLabel, 1
+	}
+	log.Printf("seeded: aggregate tests use data set %s (%s, %s, %s; option combination %s)", ds, number, integer,
+		required, coc)
 	return nil
 }

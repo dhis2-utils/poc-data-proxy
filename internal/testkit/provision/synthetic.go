@@ -80,6 +80,13 @@ const (
 	dsValid    = "SynDsValid1" // validCompleteOnly
 	dsDonor    = "SynDsDonor1" // attribute combination ccDonor (category options shared per user)
 	defaultCOC = "HllvX50cXC0" // DHIS2's default category option combination, the same everywhere
+	// A category combination override: deAggSex has the default combination, and
+	// dsMonth disaggregates it by sex.
+	deAggSex = "SynDeAggSx1"
+	coMale   = "SynCoMale01"
+	coFemale = "SynCoFeml01"
+	caSex    = "SynCaSex001"
+	ccSex    = "SynCcSex001"
 
 	Password = "Hub-Test-2026!"
 )
@@ -312,12 +319,13 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 		stage(stHhs, "household visit", prHhs, 1, true, []any{psde(deNote, false)}),
 	}
 
+	everyone := (&sharing{Public: acWrite}).json() // disaggregation options: anyone enters data for them
 	aggDE := func(id, name, vt string) map[string]any {
 		return map[string]any{"id": id, "name": "Syn agg " + name, "shortName": "Syn agg " + name, "valueType": vt,
 			"domainType": "AGGREGATE", "aggregationType": "SUM", "sharing": meta}
 	}
 	dataElements = append(dataElements, aggDE(deAggNum, "number", "NUMBER"), aggDE(deAggInt, "integer", "INTEGER"),
-		aggDE(deAggReq, "required", "NUMBER"))
+		aggDE(deAggReq, "required", "NUMBER"), aggDE(deAggSex, "by sex", "NUMBER"))
 	aggDS := func(id, name string, extra map[string]any) map[string]any {
 		sh(id).Public = acWrite
 		d := map[string]any{"id": id, "name": name, "shortName": name, "periodType": "Monthly", "openFuturePeriods": 1,
@@ -333,6 +341,11 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 	}
 	dataSets := []any{
 		aggDS(dsMonth, "Syn monthly", map[string]any{"compulsoryFieldsCompleteOnly": true,
+			"dataSetElements": []any{
+				map[string]any{"dataElement": ref(deAggNum), "dataSet": ref(dsMonth)},
+				map[string]any{"dataElement": ref(deAggInt), "dataSet": ref(dsMonth)},
+				map[string]any{"dataElement": ref(deAggReq), "dataSet": ref(dsMonth)},
+				map[string]any{"dataElement": ref(deAggSex), "dataSet": ref(dsMonth), "categoryCombo": ref(ccSex)}},
 			"compulsoryDataElementOperands": []any{map[string]any{"dataElement": ref(deAggReq),
 				"categoryOptionCombo": ref(defaultCOC)}}}),
 		aggDS(dsValid, "Syn validated", map[string]any{"validCompleteOnly": true}),
@@ -356,11 +369,17 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 				"sharing": sh(tetHousehold).json()}},
 		"categoryOptions": []any{
 			map[string]any{"id": coDonorA, "name": "Synthetic donor A", "shortName": "Syn donor A", "sharing": sh(coDonorA).json()},
-			map[string]any{"id": coDonorB, "name": "Synthetic donor B", "shortName": "Syn donor B", "sharing": sh(coDonorB).json()}},
+			map[string]any{"id": coDonorB, "name": "Synthetic donor B", "shortName": "Syn donor B", "sharing": sh(coDonorB).json()},
+			map[string]any{"id": coMale, "name": "Synthetic male", "shortName": "Syn male", "sharing": everyone},
+			map[string]any{"id": coFemale, "name": "Synthetic female", "shortName": "Syn female", "sharing": everyone}},
 		"categories": []any{map[string]any{"id": caDonor, "name": "Synthetic donor", "shortName": "Syn donor",
-			"dataDimensionType": "ATTRIBUTE", "categoryOptions": refs(coDonorA, coDonorB), "sharing": meta}},
+			"dataDimensionType": "ATTRIBUTE", "categoryOptions": refs(coDonorA, coDonorB), "sharing": meta},
+			map[string]any{"id": caSex, "name": "Synthetic sex", "shortName": "Syn sex",
+				"dataDimensionType": "DISAGGREGATION", "categoryOptions": refs(coMale, coFemale), "sharing": meta}},
 		"categoryCombos": []any{map[string]any{"id": ccDonor, "name": "Synthetic donor", "dataDimensionType": "ATTRIBUTE",
-			"categories": refs(caDonor), "sharing": meta}},
+			"categories": refs(caDonor), "sharing": meta},
+			map[string]any{"id": ccSex, "name": "Synthetic sex", "dataDimensionType": "DISAGGREGATION",
+				"categories": refs(caSex), "sharing": meta}},
 		"dataElements":  dataElements,
 		"dataSets":      dataSets,
 		"programs":      programs,

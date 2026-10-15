@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -248,9 +250,11 @@ func TestAggregateOfflineRefusals(t *testing.T) {
 	pe := tk.CurrentMonth(e)
 	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
 	e.Offline()
-	if st, b := nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Integer, ag.COC, "value", "1.5")); st != 409 ||
+	// Not a number, so wrong for every numeric type (aggregate.TestValidValue checks
+	// each type's rules).
+	if st, b := nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Integer, ag.COC, "value", "x1")); st != 409 ||
 		!strings.Contains(string(b), "E2030") {
-		t.Fatalf("1.5 for an integer: %d %s", st, b)
+		t.Fatalf("x1 for a number: %d %s", st, b)
 	}
 	old := e.App.Hub.CentralNow().AddDate(-3, 0, 0).Format("200601")
 	form := nurse.JSON("GET", formPath(e, ag.DataSet, old), nil, 200)
@@ -367,13 +371,72 @@ func TestAggregateExpiryWarning(t *testing.T) {
 	}
 }
 
-// The hub's offline forms match central's, for each aggregate user and each form of
-// the window that has values: values (with comment, follow-up, stored by), lock and
-// completion.
+// The hub's offline forms match central's, for each aggregate user and every form of
+// the current period the user may enter: every data set at the facility and every
+// attribute option combination the user may use. Each form gets a value on central
+// first, in its first element under the element's category combination in that data
+// set (category combination overrides included). Compared: values (with comment,
+// follow-up, stored by), lock and completion.
 func TestAggregateOracle(t *testing.T) {
-	e, ag, nurse, clerk := aggregateEnv(t)
-	pe := tk.CurrentMonth(e)
-	e.SetCentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, "17")
+	e, _, nurse, clerk := aggregateEnv(t)
+	h := e.App.Hub
+	type form struct{ ds, pe, cc, cp, label string }
+	formsOf := func(c *tk.Client) ([]form, *aggregate.Access) {
+		u, _ := h.Store.UserByName(c.User)
+		acc := h.AggAccess(u.ID)
+		var out []form
+		for _, ds := range acc.DataSets {
+			cur, ok := aggregate.Current(ds.PeriodType, h.CentralNow())
+			combo := acc.Combos[ds.CategoryCombo]
+			if !ok || !ds.Assigned(e.M.Facility.ID) || combo == nil {
+				continue
+			}
+			for _, coc := range combo.COCs {
+				if !acc.MayUse(ds, coc.ID) {
+					continue
+				}
+				f := form{ds: ds.ID, pe: cur.ID, label: ds.Name + " " + cur.ID + " " + coc.Name}
+				if !combo.Default {
+					f.cc, f.cp = combo.ID, strings.Join(coc.Options, ";")
+				}
+				out = append(out, f)
+			}
+		}
+		slices.SortFunc(out, func(a, b form) int { return strings.Compare(a.label, b.label) })
+		return out, acc
+	}
+	path := func(f form) string {
+		q := url.Values{"ds": {f.ds}, "pe": {f.pe}, "ou": {e.M.Facility.ID}}
+		if f.cc != "" {
+			q.Set("cc", f.cc)
+			q.Set("cp", f.cp)
+		}
+		return "/api/" + h.APIMinor() + "/dataEntry/dataValues?" + q.Encode()
+	}
+	// A value in each of the nurse's forms, on central.
+	forms, acc := formsOf(nurse)
+	if len(forms) == 0 {
+		t.Fatal("the nurse may enter no form")
+	}
+	for _, f := range forms {
+		ds := acc.DataSets[f.ds]
+		des := slices.Sorted(maps.Keys(ds.Elements))
+		for _, de := range des {
+			el, combo := acc.Elements[de], acc.Combos[ds.Elements[de]]
+			if el == nil || combo == nil || len(combo.COCs) == 0 {
+				continue
+			}
+			val := ""
+			for _, v := range []string{"1", "true", h.CentralNow().Format(time.DateOnly), "x"} {
+				if aggregate.ValidValue(el.ValueType, v) {
+					val = v
+					break
+				}
+			}
+			e.SetCentralDataValueIn(f.ds, f.pe, de, combo.COCs[0].ID, f.cc, f.cp, val)
+			break
+		}
+	}
 	e.Sync()
 	type cellState struct {
 		Value, Comment, StoredBy string
@@ -381,11 +444,13 @@ func TestAggregateOracle(t *testing.T) {
 	}
 	norm := func(form map[string]any) (map[string]cellState, string, bool) {
 		out := map[string]cellState{}
-		for _, v := range form["dataValues"].([]any) {
+		vs, _ := form["dataValues"].([]any)
+		for _, v := range vs {
 			m := v.(map[string]any)
 			c, _ := m["comment"].(string)
 			f, _ := m["followUp"].(bool)
-			out[m["dataElement"].(string)+"."+m["categoryOptionCombo"].(string)] = cellState{m["value"].(string), c,
+			val, _ := m["value"].(string)
+			out[m["dataElement"].(string)+"."+m["categoryOptionCombo"].(string)] = cellState{val, c,
 				m["storedBy"].(string), f}
 		}
 		cs, _ := form["completeStatus"].(map[string]any)
@@ -393,29 +458,40 @@ func TestAggregateOracle(t *testing.T) {
 		lock, _ := form["lockStatus"].(string)
 		return out, lock, done
 	}
-	online := map[string]map[string]any{}
-	for _, c := range []*tk.Client{nurse, clerk} {
-		online[c.User] = c.JSON("GET", formPath(e, ag.DataSet, pe), nil, 200)
+	users := []*tk.Client{nurse, clerk}
+	online := map[string]map[string]map[string]any{}
+	userForms := map[string][]form{}
+	for _, c := range users {
+		userForms[c.User], _ = formsOf(c)
+		online[c.User] = map[string]map[string]any{}
+		for _, f := range userForms[c.User] {
+			online[c.User][f.label] = c.JSON("GET", path(f), nil, 200)
+		}
 	}
 	e.Offline()
-	for _, c := range []*tk.Client{nurse, clerk} {
-		off := c.JSON("GET", formPath(e, ag.DataSet, pe), nil, 200)
-		cv, cl, cd := norm(online[c.User])
-		hv, hl, hd := norm(off)
-		for k, v := range cv {
-			if hv[k] != v {
-				t.Errorf("%s %s: MISSING or DIFFERS: central %+v, hub %+v", c.User, k, v, hv[k])
+	compared := 0
+	for _, c := range users {
+		for _, f := range userForms[c.User] {
+			off := c.JSON("GET", path(f), nil, 200)
+			cv, cl, cd := norm(online[c.User][f.label])
+			hv, hl, hd := norm(off)
+			for k, v := range cv {
+				if hv[k] != v {
+					t.Errorf("%s, %s %s: MISSING or DIFFERS: central %+v, hub %+v", c.User, f.label, k, v, hv[k])
+				}
 			}
-		}
-		for k, v := range hv {
-			if _, ok := cv[k]; !ok {
-				t.Errorf("%s %s: LEAK: hub shows %+v, central nothing", c.User, k, v)
+			for k, v := range hv {
+				if _, ok := cv[k]; !ok {
+					t.Errorf("%s, %s %s: LEAK: hub shows %+v, central nothing", c.User, f.label, k, v)
+				}
 			}
-		}
-		if cl != hl || cd != hd {
-			t.Errorf("%s: lock %s/%s, complete %v/%v (central/hub)", c.User, cl, hl, cd, hd)
+			if cl != hl || cd != hd {
+				t.Errorf("%s, %s: lock %s/%s, complete %v/%v (central/hub)", c.User, f.label, cl, hl, cd, hd)
+			}
+			compared++
 		}
 	}
+	t.Logf("compared %d forms", compared)
 }
 
 // A value entered online through the hub just before an outage is shown offline to
@@ -569,5 +645,23 @@ func TestAggregateDeleteOfflineOnlyValue(t *testing.T) {
 	if n := e.App.Hub.Store.CountIssues(); n != 0 {
 		is, _ := e.App.Hub.Store.Issues(false, 5)
 		t.Fatalf("%d issues for a value that never reached central: %s", n, is[0].Error)
+	}
+}
+
+// The incremental pull follows central's clock, not the hub's: with central's clock
+// an hour behind, a value entered on central after a pull is still pulled.
+func TestAggregatePullFollowsCentralClock(t *testing.T) {
+	e, ag, _, clerk := aggregateEnv(t)
+	e.NeedFake()
+	e.Fake.ClockSkew = -time.Hour
+	pe := tk.CurrentMonth(e)
+	e.SetCentralDataValue(ag.DataSet, pe, ag.Integer, ag.COC, "8")
+	e.Sync()
+	e.SetCentralDataValue(ag.DataSet, pe, ag.Integer, ag.COC, "9")
+	e.Sync()
+	e.Offline()
+	form := clerk.JSON("GET", formPath(e, ag.DataSet, pe), nil, 200)
+	if got, _ := formValue(form, ag.Integer, ag.COC); got != "9" {
+		t.Fatalf("offline after two pulls: %q, want 9", got)
 	}
 }

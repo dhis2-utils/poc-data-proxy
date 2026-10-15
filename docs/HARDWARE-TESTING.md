@@ -29,6 +29,7 @@ Questions the runs answer:
 - Boot from the storage under test where possible. Otherwise boot from a small card and put the hub's data folder on the storage under test; say which in the results.
 - Before testing, check the board does not throttle: `vcgencmd get_throttled` should print `throttled=0x0`, under load too.
 - For USB SSDs on the Pi 4: `lsusb -t` should show `Driver=uas`, and `dmesg` should stay free of resets under load.
+- The clock: the Pi 5's RTC battery fitted, or an RTC module on the Pi 4 (DEPLOYMENT.md, "Clock"). Check that it keeps time across a power cut with the network unplugged: `timedatectl` after power-on shows the right time before any network comes up.
 
 ### The hub on the board
 
