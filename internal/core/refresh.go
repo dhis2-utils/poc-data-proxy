@@ -314,6 +314,9 @@ func (h *Hub) RefreshCatalog(ctx context.Context) error {
 	if aerr := h.refreshAggRetention(ctx); aerr != nil && central.IsNetwork(aerr) {
 		return aerr
 	}
+	if rerr := h.refreshRetention(ctx); rerr != nil && central.IsNetwork(rerr) {
+		return rerr
+	}
 	if err != nil {
 		return fmt.Errorf("catalog with hub token: %w", err)
 	}
