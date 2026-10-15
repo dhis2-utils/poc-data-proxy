@@ -60,6 +60,23 @@ func (s *Store) AppendOutbox(tx *sql.Tx, userID int64, payload []byte, params st
 	return seq, nil
 }
 
+// PendingAuthors returns the users with pending entries, without opening any entry.
+func (s *Store) PendingAuthors() []int64 {
+	rows, err := s.DB().Query(`SELECT DISTINCT user_id FROM outbox WHERE state = ?`, OutboxPending)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if rows.Scan(&id) == nil {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // LatestPendingSeqFor returns the highest seq of a pending entry that contains any of uids.
 func (s *Store) LatestPendingSeqFor(q interface {
 	QueryRow(string, ...any) *sql.Row

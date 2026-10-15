@@ -277,6 +277,19 @@ func (e *Env) Android(role string) *Client {
 
 func (c *Client) Do(method, path string, body any) (int, []byte) {
 	c.e.T.Helper()
+	st, _, b := c.do(method, path, body)
+	return st, b
+}
+
+// DoHeader is a GET that also returns the answer's headers (X-Hub-Mode says whether
+// the hub answered itself).
+func (c *Client) DoHeader(method, path string) (int, http.Header, []byte) {
+	c.e.T.Helper()
+	return c.do(method, path, nil)
+}
+
+func (c *Client) do(method, path string, body any) (int, http.Header, []byte) {
+	c.e.T.Helper()
 	var rd io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -294,7 +307,7 @@ func (c *Client) Do(method, path string, body any) (int, []byte) {
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, b
+	return resp.StatusCode, resp.Header, b
 }
 
 // JSON does a request, requires the status, and decodes an object answer.

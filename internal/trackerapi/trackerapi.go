@@ -86,8 +86,9 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Online writes go to central even during an upgrade: central holds them, and
-	// what the hub learns from them comes back with the next pull.
-	if a.H.Online() {
+	// what the hub learns from them comes back with the next pull. After an outage the
+	// hub keeps answering until its outbox is pushed (core.PassThrough).
+	if a.H.PassThrough() {
 		res, err := a.Proxy.Forward(r.Context(), r, body, a.Proxy.Upstream(sess))
 		if err == nil {
 			a.learn(sess, r, body, res)

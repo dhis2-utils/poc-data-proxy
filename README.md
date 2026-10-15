@@ -81,7 +81,7 @@ The hub has no facility-specific configuration. It reads one small image-default
 | `listen` | Listen address, e.g. `:8443` |
 | `data_dir` | Store (`hub.db` key file, `hub.db.data` encrypted data file), TLS certificate (`ca.crt` for devices, also served at `/hub/ca.crt`), request log, upgrade files |
 | `sync_interval`, `ping_interval`, `ping_timeout` | Sync cadence (default 15m, with ±10 % jitter) and connectivity probe (15s, 5s; spec 5.2) |
-| `reconnect_delay` | After an outage, wait up to this long at random before syncing, so hubs do not reach central together (default 1m) |
+| `reconnect_delay` | After an outage, wait up to this long at random before syncing, so hubs do not reach central together (default 5m). Until the outbox is pushed, the hub keeps answering tracker requests itself |
 | `access_refresh_interval` | How often each user's access list is re-read from central, besides at login (default 1h) |
 | `pat_expiry_days` | Lifetime of the personal access tokens the hub creates |
 | `release_channel`, `release_public_key` | Where to look for upgrades, and the ed25519 key releases must be signed with |

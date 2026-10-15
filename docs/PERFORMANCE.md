@@ -84,7 +84,7 @@ Each page read every row before it (page *n* reads *n* × 50 matches, since visi
 | Sync every 15 min (±10 %), access refreshed hourly and at login, weekly full pull | 53 000 | 153 MB | 310 requests/s |
 | Listing once per access group | 9 400 | 32 MB | 54 requests/s |
 
-The generated users share one access, so the last row is the best case; a real facility has a handful of access groups. What remains is mostly the hourly access refresh (four reads per user). After an outage each hub waits up to a minute at random before syncing, so hubs do not reach central in the same second.
+The generated users share one access, so the last row is the best case; a real facility has a handful of access groups. What remains is mostly the hourly access refresh (four reads per user). After an outage each hub waits up to five minutes at random before syncing, so hubs do not reach central in the same second: 500 hubs start under two pushes a second. Until its outbox is pushed, a hub keeps answering tracker requests itself, so the wait is invisible to staff (FINDINGS.md, "Reconnecting").
 
 ## Running the tests
 

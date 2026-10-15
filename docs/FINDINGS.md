@@ -131,7 +131,7 @@ The hub cannot tell the user on its own. The tracker API has no field for partia
 
 **Requirement for Capture web, the app runtime and Android:**
 
-1. A state "connected through a facility hub, central unreachable", read from the hub (`GET /hub/status` reports `"mode": "offline"`; every offline answer from the hub carries `X-Hub-Mode: offline`). Show it next to the online indicator.
+1. A state "connected through a facility hub, central unreachable", read from the hub (`GET /hub/status` reports `"mode": "offline"`; every tracker answer the hub gives itself carries `X-Hub-Mode: offline`, also right after reconnecting while its outbox is pushed). Show it next to the online indicator.
 2. On search results in that state, a note: "Searched this facility only. Patients registered elsewhere won't appear." Offline searches that the hub narrowed carry `X-Hub-Scope: facility`. Optionally, before a new registration: "Check online before registering, if possible."
 
 The hub side of this exists; the Capture side is to build.
@@ -315,6 +315,10 @@ Tested with Capture 3.4.2 on the emulator, server URL `http://10.0.2.2:<port>` (
 - **Offline validation is structural only** (spec 10.2). In run 4 an offline event carried the value `false` for a TRUE_ONLY data element. The hub accepted it; central rejected it on push (E1302), and it appeared as an issue. Value-type validation offline would need data element metadata on the hub. Spec 10.2 deliberately leaves that out, and the Capture apps validate value types themselves; the bad value came from a hand-written API call.
 
 The emulator test also created the key `ANDROID_SETTING_APP/general_settings` (`allowScreenCapture: true`) on the test instance, so screenshots of the app are possible.
+
+## Reconnecting
+
+When central came back, the hub passed tracker requests through at once, while its outbox was still waiting to be pushed (a random wait of up to a minute, then the push itself). In that window central lacked what was written offline: a person registered offline an hour before was not found, an event for them failed on central, and new writes could reach central before older offline ones. The hub now keeps answering tracker requests itself, and queueing writes behind the offline ones, until every entry it can push has been pushed; entries waiting for their author's online login do not count, or one of them would keep the hub local for good. A push that leaves new entries behind (written while it ran) is followed by another at once. With that, the wait before the first push is invisible to staff and was raised to five minutes, to spread hubs over central after a national outage (`TestReconnectBeforePush`).
 
 ## DHIS2 2.43
 

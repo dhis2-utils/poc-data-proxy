@@ -180,8 +180,15 @@ func (w *Worker) cycle(ctx context.Context) error {
 	} else if len(pruned) > 0 {
 		slog.Info("removed unused key slots", "users", pruned)
 	}
+	before := h.Store.CountOutbox(store.OutboxPending)
 	if err := w.Push(ctx); err != nil {
 		return err
+	}
+	// Writes made while the push ran keep the hub answering tracker requests itself
+	// (core.PassThrough): push them in the next cycle at once rather than in 15
+	// minutes, as long as pushing makes progress.
+	if h.Store.CountOutbox(store.OutboxPending) < before && h.OutboxWaiting() {
+		defer h.TriggerSync()
 	}
 	if err := w.ReportIssues(ctx); err != nil {
 		errs = append(errs, err)

@@ -140,6 +140,27 @@ func (h *Hub) StuckOutbox() int {
 	return n
 }
 
+// OutboxWaiting reports whether the outbox holds entries the next push can send: any
+// pending entry whose author does not need an online login first. While it does, the
+// hub answers tracker requests itself even when central is reachable (PassThrough).
+func (h *Hub) OutboxWaiting() bool {
+	if !h.Store.Unlocked() {
+		return false
+	}
+	for _, id := range h.Store.PendingAuthors() {
+		if u, _ := h.Store.UserByID(id); u != nil && !u.NeedsLogin {
+			return true
+		}
+	}
+	return false
+}
+
+// PassThrough reports whether tracker requests go to central: it is reachable, and the
+// outbox has nothing waiting to be pushed. Until the outbox is pushed after an outage,
+// central lacks what was written offline: reads there would not show it, and a write
+// that refers to it would fail or overtake it.
+func (h *Hub) PassThrough() bool { return h.Online() && !h.OutboxWaiting() }
+
 // MarkOffline flags an answer the hub gave itself because central is unreachable,
 // for clients that want to show it (FINDINGS: offline search scope).
 func MarkOffline(w http.ResponseWriter) { w.Header().Set("X-Hub-Mode", "offline") }

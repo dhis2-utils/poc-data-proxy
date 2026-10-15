@@ -72,7 +72,7 @@ func Default() Config {
 		FullPullInterval:       7 * 24 * time.Hour,
 		OwnershipCheckInterval: time.Hour,
 		AccessRefreshInterval:  time.Hour,
-		ReconnectDelay:         time.Minute,
+		ReconnectDelay:         5 * time.Minute,
 		OfflineSearchFacility:  true,
 		SessionIdle:            time.Hour,
 		SessionMax:             12 * time.Hour,
