@@ -45,6 +45,8 @@ var (
 	doFill   = flag.Bool("fill", false, "register the users online and wait for the first pull")
 	reconn   = flag.Bool("reconnect", true, "after the load, restore the uplink and time the push")
 	out      = flag.String("out", "", "also write the report to this file")
+	confFile = flag.String("confirmed", "", "append every write the hub confirmed to this file (the power-cut test)")
+	verifyF  = flag.String("verify", "", "read back every write confirmed in this file, with central down, and exit (the power-cut test)")
 )
 
 func main() {
@@ -58,6 +60,15 @@ func main() {
 		report = append(report, s)
 	}
 	waitUp(3 * time.Minute)
+	if *verifyF != "" {
+		if verify(*verifyF) > 0 {
+			os.Exit(1)
+		}
+		return
+	}
+	if *confFile != "" {
+		openConfirmed(*confFile)
+	}
 	if *doSetup {
 		setup()
 		note("hub set up")
@@ -84,7 +95,15 @@ func main() {
 	var wg sync.WaitGroup
 	stop := time.Now().Add(*duration)
 	nWeb := int(float64(*users) * *webShare)
-	for i := 0; i < *users; i++ {
+	if *paced {
+		var all []*user
+		for i := 0; i < *users; i++ {
+			all = append(all, newUser(i))
+		}
+		pacedDay(m, all, *duration)
+		nWeb = 0
+	}
+	for i := 0; i < *users && !*paced; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -338,11 +357,13 @@ func (u *user) web(m *metrics, stop time.Time, lo, hi time.Duration) {
 		pause(lo, hi)
 
 		if mrand.IntN(3) == 0 {
+			ev := uid()
 			st, b, d = u.do("POST", "/api/tracker?async=false&importStrategy=CREATE_AND_UPDATE&atomicMode=ALL", map[string]any{
-				"events": []any{map[string]any{"event": uid(), "enrollment": enr, "trackedEntity": pick.TE, "program": prog,
+				"events": []any{map[string]any{"event": ev, "enrollment": enr, "trackedEntity": pick.TE, "program": prog,
 					"programStage": fc.GenStage(p, 1), "orgUnit": ou, "status": "COMPLETED",
 					"occurredAt": time.Now().Format("2006-01-02"), "dataValues": []any{}}}})
 			m.add("web: new event", st, d)
+			confirm(u.name, st, b, [2]string{"events", ev})
 			if st != 200 {
 				m.sample("web: new event error", b)
 			}
@@ -445,11 +466,13 @@ func (u *user) android(m *metrics, stop time.Time) {
 			return
 		}
 		if enr != "" {
+			ev := uid()
 			st, b, d := u.do("POST", "/api/tracker?async=false&importStrategy=CREATE_AND_UPDATE&atomicMode=OBJECT", map[string]any{
-				"events": []any{map[string]any{"event": uid(), "enrollment": enr, "trackedEntity": te, "program": fc.GenProgram(0),
+				"events": []any{map[string]any{"event": ev, "enrollment": enr, "trackedEntity": te, "program": fc.GenProgram(0),
 					"programStage": fc.GenStage(0, 2), "orgUnit": ou, "status": "COMPLETED",
 					"occurredAt": time.Now().Format("2006-01-02"), "dataValues": []any{}}}})
 			m.add("android: upload", st, d)
+			confirm(u.name, st, b, [2]string{"events", ev})
 			if st != 200 {
 				m.sample("android: upload error", b)
 			}

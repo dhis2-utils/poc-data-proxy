@@ -131,11 +131,31 @@ For the SD card's endurance and the SSD's rated total writes: read the storage's
 cat /sys/block/mmcblk0/stat   # SD card; /sys/block/sda/stat for a USB SSD, nvme0n1 for NVMe
 ```
 
-The 7th field is sectors written (512 bytes each). The paced load itself is still **(to build)** in `hubload`; the realistic run gives a first, high estimate.
+The 7th field is sectors written (512 bytes each). The paced load spreads one day's volume of a busy HC IV (560 new people with an enrollment, 2 600 events, 27 000 reads) evenly over `-duration`:
+
+```sh
+docker run --rm -v "$PWD/perf/results:/results" --entrypoint hubload facility-hub-perf \
+  -hub http://<pi>:8080 -central http://host.docker.internal:8090 -users 20 -setup -fill \
+  -paced -duration 3h -out /results/<board>-<storage>-<size>-paced.txt
+```
+
+`-day-people`, `-day-events` and `-day-reads` change the day's volume. The writes happen offline (the uplink is cut for the run), and the reconnect at the end pushes them, so both the local write and the push are counted.
 
 ### 5. Power cuts (later)
 
-Cut power under load 50 to 100 times per storage, and after each restart check that the data file opens and that every save the load generator saw confirmed is still there. This needs `hubload` to log the saves it saw confirmed and a check that reads them back **(to build)**. Test with and without a UPS or supercapacitor module, if one is part of the kit (DEPLOYMENT.md, options under consideration).
+Cut power under load 50 to 100 times per storage, and after each restart check that the data file opens and that every save the hub confirmed is still there. `hubload -confirmed FILE` appends every write the hub confirmed (a 200 with nothing ignored) to FILE; `hubload -verify FILE` cuts central off, so the hub must answer from its own store, and reads every one of them back as its author, reporting the missing ones and exiting with an error if there are any.
+
+```sh
+# a load that logs confirmed saves; cut the board's power while it runs
+docker run --rm -v "$PWD/perf/results:/results" --entrypoint hubload facility-hub-perf \
+  -hub http://<pi>:8080 -central http://host.docker.internal:8090 -users 20 \
+  -paced -duration 30m -reconnect=false -confirmed /results/confirmed.tsv
+# power back on, the hub started: every confirmed save must still be there
+docker run --rm -v "$PWD/perf/results:/results" --entrypoint hubload facility-hub-perf \
+  -hub http://<pi>:8080 -central http://host.docker.internal:8090 -verify /results/confirmed.tsv
+```
+
+Run the first command with `-setup -fill` the first time only. Keep one confirmed file per storage across the cuts: each verify checks everything confirmed so far. Tried in the sandbox with the hub killed hard (`kill -9`) in the middle of an offline load: 85 of 85 confirmed records were there after the restart. A killed process is not a power cut (the operating system still writes what the hub handed it), so the boards' runs are the real test. Test with and without a UPS or supercapacitor module, if one is part of the kit (DEPLOYMENT.md, options under consideration).
 
 ### 6. Real clients (optional)
 

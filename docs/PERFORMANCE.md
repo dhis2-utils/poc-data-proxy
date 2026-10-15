@@ -114,6 +114,7 @@ sh perf/pi.sh bench pi4             # calibration: storage benchmarks and fio in
 **The load** (`cmd/hubload`): the users log in online, the uplink is cut (the fake central refuses connections), they work offline, the uplink returns and the push is timed in steps (uplink restored, hub online, outbox empty).
 
 - **Web users** (70 %): working list, search by name, dashboard, a new event; 2–10 s between actions in the realistic run, none in the hammer run.
+- **Paced** (`-paced`): instead of users clicking, one day's volume of a busy HC IV spread evenly over `-duration`, for the bytes written per day (docs/HARDWARE-TESTING.md). With `-confirmed FILE`, every write the hub confirmed is logged, and `-verify FILE` reads them back after a power cut.
 - **Android users** (30 %): a first download of up to 500 people per program (`-android-limit`), then incremental syncs every 5 minutes (`-android-sync`) with an upload. `-android-first` sets when first downloads happen: `all` at the start at once (deployment day), `spread` over the first half of the run, `none` (done before: a working day). The ladder's realistic run uses `none`, its hammer run `all`.
 
 **Proposed pass criteria** (realistic run, `pi5`): working list and search p95 < 1 s; dashboard p95 < 500 ms; event write p95 < 300 ms; no errors; hub memory < 70 % of the limit, stable over an hour; startup after a reboot < 2 min; an Android first download < 10 min. The hammer run has none: it shows where the hub saturates and that it slows rather than fails.
