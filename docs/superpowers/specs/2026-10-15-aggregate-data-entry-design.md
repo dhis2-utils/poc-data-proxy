@@ -1,6 +1,6 @@
 # Aggregate data entry through the hub
 
-Status: design, approved in discussion 2026-10-15. Event programs (without registration) get a spec of their own.
+Status: implemented 2026-10-15 (plan: docs/superpowers/plans/2026-10-15-aggregate-data-entry.md; results in docs/FINDINGS.md, "Aggregate Data Entry through the hub"). Event programs (without registration) get a spec of their own.
 
 ## Goal
 
@@ -104,6 +104,6 @@ The app calls `/api/42/…` or `/api/43/…`; the hub routes both, and response 
 
 ## Open questions
 
-- The answer for forms outside the window (see above).
-- How the app presents "Completing needs a connection".
-- Default retention, and whether the dataStore table is shared with tracker's retention table.
+- The answer for forms outside the window (see above): still "locked"; to revisit once seen in use.
+- How the app presents "Completing needs a connection": answered. Through the hub the app first asks for validation, which the hub cannot run offline; where validation is mandatory the app refuses itself ("Couldn't validate the form, please try again later") and sends nothing, so the hub's refusal is a guard for other clients.
+- Default retention, and whether the dataStore table is shared with tracker's retention table: default 12 periods, in `facility-hub-config/aggregate`; tracker's retention is not built yet.

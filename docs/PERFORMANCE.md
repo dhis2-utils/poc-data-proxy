@@ -84,6 +84,8 @@ Each page read every row before it (page *n* reads *n* × 50 matches, since visi
 | Sync every 15 min (±10 %), access refreshed hourly and at login, weekly full pull | 53 000 | 153 MB | 310 requests/s |
 | Listing once per access group | 9 400 | 32 MB | 54 requests/s |
 
+Aggregate data adds, per access group and cycle, one `dataValueSets` and one `completeDataSetRegistrations` request and one request per form that changed on central, and once a day one per held form (a few hundred at a facility with 26 data sets and 12 months kept).
+
 The generated users share one access, so the last row is the best case; a real facility has a handful of access groups. What remains is mostly the hourly access refresh (four reads per user). After an outage each hub waits up to five minutes at random before syncing, so hubs do not reach central in the same second: 500 hubs start under two pushes a second. Until its outbox is pushed, a hub keeps answering tracker requests itself, so the wait is invisible to staff (FINDINGS.md, "Reconnecting").
 
 ## Running the tests
@@ -168,6 +170,10 @@ Keeping five years of everything locally is not needed. All people are kept, so 
 - **No plaintext on disk.** Sorting stays in memory (`temp_store=memory`); the journal and WAL go through the encrypting layer. The scenario test that greps the disk for plaintext covers it.
 - **Plaintext in memory.** Decrypted pages sit in SQLite's page cache, and up to 4 096 decoded payloads in the hub's payload cache, dropped when the store locks.
 
+## Aggregate data
+
+`internal/perf.TestAggregate`, in process: 12 months of 4 000 values each (48 000 values; every fake form holds its month's 4 000, far larger forms than real ones). Set-up with the first pull 1.4 s, the next cycle 0.2 s; each offline form answered in 25–55 ms; an offline edit 30 ms; heap 12 MB, data file 31 MB. Aggregate data is small next to tracker: it does not change the sizing.
+
 ## History
 
 - **2026-10-08, in-memory design.** At 10 % of the first target (10 000 people, 50 users) the hub used about 1 GB and the first pull took 12 minutes, both growing with users × objects. The redesign: visibility as per-user bitmaps, ID-list pulls, a slim in-memory index; then a fixed set-up hub that kept every payload in memory, batched payload reads, paged results kept for a minute, cheaper sorts, and a garbage-collector limit at 70 % of RAM. The first container ladder still ran out of memory at 50 % of the first target.
@@ -179,3 +185,4 @@ Keeping five years of everything locally is not needed. All people are kept, so 
 - **2026-10-14, later pages.** Only page 1 stopped reading at a full page; later pages read the whole program, and a one-minute cache of results hid it. Every page now stops at its end and the cache is gone. At 100 000 people, Android page 10 (the last with the 500 limit): 1.03 s the first time, 13 ms cached → 36 ms the first time, 9 ms after; a working list's page 3: 606 ms → 2 ms. A download without the limit costs more per page the deeper it goes (page 251: 141 ms).
 - **2026-10-14, incremental syncs.** The second ladder's working-day run put `pi5` out of memory at 100 k: Android's `updatedAfter` check decoded every enrollment and event of each candidate person, kept for the whole request, and with the fake central's data (every object updated at its start) every person of a program is a candidate. The check now reads the stored update times only. Locally at 100 k, 60 users: peak memory 2.7 GB → 260 MB, incremental sync 44 s → 25 s (p50), Android page 7.8 s → 4.0 s. What remains of the 25 s is each page checking every candidate, which real data, with update times spread over years, makes far fewer.
 - **2026-10-15, full downloads.** eRegisters downloads every person per program (Android stops at 500): one device's download grew with the square of the facility, 1 h 14 min at HC IV size in process. The hub now keeps, per user and query, the last row of the page it served for ten minutes, and the next page reads on from that row's creation key (`pagePositions`): 4 min 10 s at HC IV size, every page 17–36 ms. A first try kept the SQL row offset instead; SQLite still stepped through the skipped rows (3 min 35 s at 100 k instead of 1 min 2 s). `TestQueryPlansUseIndexes` checks that reading on keeps the index's order.
+- **2026-10-15, aggregate data.** The Aggregate Data Entry app offline: a store of forms per data set window, pulled per access group (the numbers above).

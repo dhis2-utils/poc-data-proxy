@@ -36,6 +36,8 @@ A small device on a facility LAN that caches the facility's DHIS2 tracker data a
 | `internal/hubcrypto` | Data key, Argon2id key slots, AES-256-GCM (spec 9.1) |
 | `internal/tracker` | Object model, the query index over the store, visibility bitmaps, offline searches and import validation (spec 8.2, 9.3, 10) |
 | `internal/trackerapi` | `/api/tracker/*` and generated attribute values, online and offline (spec 10) |
+| `internal/aggregate` | Aggregate data entry: periods, windows and locks, access from `dataEntry/metadata`, edits |
+| `internal/aggregateapi` | The Aggregate Data Entry app's data endpoints, online and offline |
 | `internal/proxy` | Pass-through with a per-user GET cache (spec 5.1) |
 | `internal/sync` | Outbox push, issue reporting, pull, reserved value pool, heartbeat (spec 11) |
 | `internal/ui` | `/hub/status`, setup flow, admin page (spec 6.2, 12) |
@@ -49,7 +51,7 @@ A small device on a facility LAN that caches the facility's DHIS2 tracker data a
 | `internal/live` | The live suite: scenarios and oracles against a provisioned instance or the fake |
 | `internal/perf` | In-process performance tests: pulls, queries, load on central |
 | `perf` | Container runs on Pi-class profiles (`perf/pi.sh`) and their results |
-| `clients` | Playwright drivers for the real web apps (Capture web, eRegisters) used by the live suite, and the eRegisters instance setup |
+| `clients` | Playwright drivers for the real web apps (Capture web, eRegisters, Aggregate Data Entry) used by the live suite, and the eRegisters instance setup |
 | `testdata/2.42` | Request/response fixtures and Capture endpoint lists recorded from DHIS2 2.42.6, plus the first round's manual test setup (`SETUP.md`, `setup_instance.py`) |
 | `deploy` | Example image defaults file and systemd unit |
 | `scripts/test-upgrade.sh` | Scenario 11: self-upgrade, rollback, unsigned release |
@@ -81,7 +83,8 @@ The hub has no facility-specific configuration. It reads one small image-default
 | `listen` | Listen address, e.g. `:8443` |
 | `data_dir` | Store (`hub.db` key file, `hub.db.data` encrypted data file), TLS certificate (`ca.crt` for devices, also served at `/hub/ca.crt`), request log, upgrade files |
 | `sync_interval`, `ping_interval`, `ping_timeout` | Sync cadence (default 15m, with ±10 % jitter) and connectivity probe (15s, 5s; spec 5.2) |
-| `reconnect_delay` | After an outage, wait up to this long at random before syncing, so hubs do not reach central together (default 5m). Until the outbox is pushed, the hub keeps answering tracker requests itself |
+| `reconnect_delay` | After an outage, wait up to this long at random before syncing, so hubs do not reach central together (default 5m). Until the outbox is pushed, the hub keeps answering tracker and aggregate requests itself |
+| `aggregate_retention_periods` | Periods of each aggregate data set the hub keeps for offline use, the current one included (default 12). Central's dataStore key `facility-hub-config/aggregate` overrides it for all hubs: `{"retentionPeriods": 12, "dataSets": {"<data set>": 6}}` |
 | `access_refresh_interval` | How often each user's access list is re-read from central, besides at login (default 1h) |
 | `pat_expiry_days` | Lifetime of the personal access tokens the hub creates |
 | `release_channel`, `release_public_key` | Where to look for upgrades, and the ed25519 key releases must be signed with |

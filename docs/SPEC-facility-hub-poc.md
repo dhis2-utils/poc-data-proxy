@@ -28,11 +28,11 @@ These are fixed. Do not reopen them in the POC.
 - Anything the hub cannot decide is refused ("fail closed"), with a clear "needs connection" error.
 - The hub pushes and pulls as each individual user, using a personal access token (PAT) per user. It never uses a shared service account for data writes.
 - Data at rest is encrypted with a per-hub key. The key is wrapped once per user with a key derived from that user's password (key slots).
-- No analytics, no aggregate data, no server-side program rules.
+- No analytics, no server-side program rules. Aggregate data entry was added later: docs/superpowers/specs/2026-10-15-aggregate-data-entry-design.md.
 
 ## 3. Non-goals for the POC
 
-- Aggregate data (`/api/dataValueSets`).
+- Aggregate data (`/api/dataValueSets`). Superseded for the Aggregate Data Entry app: docs/superpowers/specs/2026-10-15-aggregate-data-entry-design.md.
 - Metadata editing of any kind.
 - Server-side program rule evaluation. Both Capture apps evaluate rules on the client.
 - Merging conflicting edits. The hub keeps the latest local write; central decides on push.
