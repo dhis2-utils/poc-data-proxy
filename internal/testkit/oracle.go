@@ -170,7 +170,10 @@ func EventQueries(m *Manifest, p Program, sampleEvent string) []Query {
 		add(v)
 	}
 	v = base()
-	for k, x := range map[string]string{"orgUnitMode": "DESCENDANTS", "includeDeleted": "true", "paging": "true", "page": "1", "pageSize": "50"} {
+	// Android's download parameters, compared over the whole download: Android reads
+	// every page, and central's default order (newest first) is not the hub's, so a
+	// single page would differ while the download does not.
+	for k, x := range map[string]string{"orgUnitMode": "DESCENDANTS", "includeDeleted": "true", "paging": "true", "page": "1", "pageSize": "10000"} {
 		v.Set(k, x)
 	}
 	add(v)
