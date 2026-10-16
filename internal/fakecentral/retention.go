@@ -32,12 +32,13 @@ func (c *Central) Backdate(uid, updatedAt string) {
 }
 
 // enrollOnce is central's check of a new enrollment against the person's others in
-// the program (E1015, E1016), counting those accepted earlier in the payload.
-func (c *Central) enrollOnce(it *tracker.Item, accepted []*tracker.Item) (code, msg string) {
+// the program, counting those accepted earlier in the payload: E1016 and E1015, both
+// when both apply, as 2.42 answers.
+func (c *Central) enrollOnce(it *tracker.Item, accepted []*tracker.Item) [][2]string {
 	status := cmp.Or(tracker.Str(it.Data, "status"), "ACTIVE")
 	te, program := it.TE, tracker.Str(it.Data, "program")
 	if status == "CANCELLED" {
-		return "", ""
+		return nil
 	}
 	var others []tracker.M
 	for _, u := range c.order {
@@ -50,16 +51,20 @@ func (c *Central) enrollOnce(it *tracker.Item, accepted []*tracker.Item) (code, 
 			others = append(others, x.Data)
 		}
 	}
+	var e1015, e1016 bool
 	for _, o := range others {
 		st := cmp.Or(tracker.Str(o, "status"), "ACTIVE")
-		if status == "ACTIVE" && st == "ACTIVE" {
-			return "E1015", fmt.Sprintf("TrackedEntity: `%s`, already has an active Enrollment in Program `%s`.", te, program)
-		}
-		if program == Program && c.OnlyEnrollOnce && (st == "ACTIVE" || st == "COMPLETED") {
-			return "E1016", fmt.Sprintf("TrackedEntity: `%s`, already has an active enrollment in Program: `%s`, and this program only allows enrolling one time.", te, program)
-		}
+		e1015 = e1015 || (status == "ACTIVE" && st == "ACTIVE")
+		e1016 = e1016 || (program == Program && c.OnlyEnrollOnce && (st == "ACTIVE" || st == "COMPLETED"))
 	}
-	return "", ""
+	var out [][2]string
+	if e1016 {
+		out = append(out, [2]string{"E1016", fmt.Sprintf("TrackedEntity: `%s` already has an Enrollment in Program: `%s`, and this Program only allows enrolling once.", te, program)})
+	}
+	if e1015 {
+		out = append(out, [2]string{"E1015", fmt.Sprintf("TrackedEntity: `%s` already has an active Enrollment in Program `%s`.", te, program)})
+	}
+	return out
 }
 
 // FetchCount is how often a tracked entity was fetched by its identifier.

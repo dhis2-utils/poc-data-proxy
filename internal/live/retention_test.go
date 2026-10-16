@@ -2,6 +2,7 @@ package live
 
 import (
 	"encoding/json"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -129,6 +130,8 @@ func TestEnrollmentRulesOffline(t *testing.T) {
 			t.Errorf("enrolling twice where once is allowed, the first a stub: %d %s", st, b)
 		}
 	})
+	t.Run("as central", func(t *testing.T) { enrollmentRulesAsCentral(t, false) })
+	t.Run("as central, once", func(t *testing.T) { enrollmentRulesAsCentral(t, true) })
 	t.Run("completed then new", func(t *testing.T) {
 		e, nurse := setup(t, false, "COMPLETED")
 		if st, b := newEnrollment(nurse, "RetEn000003", "RetTe000002"); st != 200 {
@@ -142,14 +145,10 @@ func TestEnrollmentRulesOffline(t *testing.T) {
 	})
 }
 
-// setRetention sets facility-hub-config/retention on the fake central and the hub's
-// copy of it.
+// setRetention sets facility-hub-config/retention on central and the hub's copy of it.
 func setRetention(e *tk.Env, v string) {
 	e.T.Helper()
-	if e.Fake.DataStore["facility-hub-config"] == nil {
-		e.Fake.DataStore["facility-hub-config"] = map[string]json.RawMessage{}
-	}
-	e.Fake.DataStore["facility-hub-config"]["retention"] = json.RawMessage(v)
+	e.CentralSetRetention(v)
 	if err := e.App.Hub.Store.SetState("retention", []byte(v)); err != nil && e.App.Hub.Store.Unlocked() {
 		e.T.Fatal(err)
 	}
@@ -362,3 +361,172 @@ func TestPruneKeepsReferenced(t *testing.T) {
 	expectHeld(t, e, map[string][]string{"RetTe000011": full, "RetEn000011": full, "RetEv000011": full})
 }
 
+// errorReports returns the error reports of an import answer, as "code: message".
+func errorReports(body []byte) []string {
+	var r struct {
+		ValidationReport struct {
+			ErrorReports []struct{ Message, ErrorCode string } `json:"errorReports"`
+		} `json:"validationReport"`
+	}
+	json.Unmarshal(body, &r)
+	var out []string
+	for _, x := range r.ValidationReport.ErrorReports {
+		out = append(out, x.ErrorCode+": "+x.Message)
+	}
+	return out
+}
+
+// enrollmentRulesAsCentral checks that the hub refuses offline what central refuses,
+// with the same codes and messages: a second active enrollment in a program (E1015);
+// with once, in a program that allows one enrollment only, a second one completed
+// (E1016 alone) and a second one active (both rules apply: which code central gives).
+// Live, the primary program's onlyEnrollOnce is set as the case needs for the test,
+// and restored after.
+func enrollmentRulesAsCentral(t *testing.T, once bool) {
+	e := tk.Start(t)
+	program := e.M.Primary().ID
+	if e.Fake != nil {
+		e.Fake.OnlyEnrollOnce = once
+		e.Fake.Seed("RetTe000005", "RetEn000005", "Active", "NAT-9005", nil)
+	} else {
+		var cur struct{ OnlyEnrollOnce bool }
+		if st, b, err := e.Central.Do("GET", "/api/programs/"+program+"?fields=onlyEnrollOnce", nil); err != nil || st != 200 {
+			t.Fatalf("reading %s: %d %v %.300s", program, st, err, b)
+		} else {
+			json.Unmarshal(b, &cur)
+		}
+		patch := func(v bool) {
+			st, b, err := e.Central.Do("PATCH", "/api/programs/"+program,
+				[]any{map[string]any{"op": "replace", "path": "/onlyEnrollOnce", "value": v}})
+			if err != nil || st >= 300 {
+				t.Fatalf("setting onlyEnrollOnce=%v on %s: %d %v %.500s", v, program, st, err, b)
+			}
+		}
+		if cur.OnlyEnrollOnce != once {
+			patch(once)
+			t.Cleanup(func() { patch(cur.OnlyEnrollOnce) })
+		}
+	}
+	e.Setup()
+	if pm := e.App.Hub.Catalog().Programs[program]; pm == nil || pm.OnlyEnrollOnce != once {
+		t.Fatalf("catalog: %s onlyEnrollOnce %+v, want %v", program, pm, once)
+	}
+	nurse := e.Android(tk.RoleNurse)
+	nurse.Do("GET", "/api/me?fields=id", nil)
+	body := nurse.JSON("GET", "/api/tracker/trackedEntities?program="+program+"&orgUnits="+e.M.Facility.ID+
+		"&enrollmentStatus=ACTIVE&pageSize=1&fields=trackedEntity,attributes[attribute,value]", nil, 200)
+	tes := asList(body["trackedEntities"])
+	if len(tes) == 0 {
+		t.Skipf("no one with an active enrollment in %s at the facility", program)
+	}
+	te := tes[0].(map[string]any)
+	statuses := []string{"ACTIVE"}
+	if once {
+		statuses = []string{"COMPLETED", "ACTIVE"}
+	}
+	var payloads []map[string]any
+	for _, st := range statuses {
+		payloads = append(payloads, map[string]any{"enrollments": []any{map[string]any{
+			"enrollment": tk.UID(), "trackedEntity": te["trackedEntity"], "program": program, "orgUnit": e.M.Facility.ID,
+			"status": st, "enrolledAt": "2026-10-16", "occurredAt": "2026-10-16", "attributes": orEmptyList(te["attributes"])}}})
+	}
+	e.Sync()
+	e.Offline()
+	offline := make([][]string, len(payloads))
+	for i, p := range payloads {
+		st, b := nurse.Do("POST", "/api/tracker?async=false", p)
+		if offline[i] = errorReports(b); st != 409 || len(offline[i]) == 0 {
+			t.Errorf("a second %s enrollment offline: %d %.800s", statuses[i], st, b)
+		}
+	}
+	e.Online()
+	for i, p := range payloads {
+		st, b := nurse.Do("POST", "/api/tracker?async=false", p)
+		if st == 200 {
+			e.CentralDelete("enrollments", p["enrollments"].([]any)[0].(map[string]any)["enrollment"].(string))
+		}
+		// Both codes apply at times; central's order of them varies between runs.
+		got := errorReports(b)
+		slices.Sort(got)
+		slices.Sort(offline[i])
+		t.Logf("central, a second %s enrollment (once=%v): %d %q", statuses[i], once, st, got)
+		if st != 409 || !slices.Equal(got, offline[i]) {
+			t.Errorf("a second %s enrollment: the hub says %q, central %d %q", statuses[i], offline[i], st, got)
+		}
+	}
+}
+
+func orEmptyList(v any) []any {
+	if l := asList(v); l != nil {
+		return l
+	}
+	return []any{}
+}
+
+// With a window on the primary program, the people the hub lists offline for it are
+// those central lists for the same user with an enrollment in the program that is
+// active or changed since the cut-off; central accepts both of the full pull's
+// listings, and the active one's time is recorded.
+func TestRetentionWindowLive(t *testing.T) {
+	e := tk.Start(t)
+	months := 1
+	if e.Fake != nil {
+		seedRetention(e)
+		months = 12
+	}
+	program := e.M.Primary().ID
+	e.CentralSetRetention(`{"programs": {"` + program + `": ` + strconv.Itoa(months) + `}}`)
+	e.Setup()
+	nurse := e.Android(tk.RoleNurse)
+	nurse.Do("GET", "/api/me?fields=id", nil)
+	e.Sync()
+	cutoff, ok := e.App.Hub.Retention().Cutoff(program, e.App.Hub.CentralNow())
+	if !ok {
+		t.Fatal("the hub did not read the retention setting")
+	}
+	// Central as the nurse, directly (reads through the hub would be stored).
+	c := tk.NewCentral(e.M.CentralURL, e.M.Users[tk.RoleNurse].Username, e.M.Password)
+	api := e.App.Hub.API()
+	want := map[string]bool{}
+	for i, path := range []string{api.ActivePath(e.M.Facility.ID, program, 1, 10000), api.ListPath(e.M.Facility.ID, program, cutoff, 1, 10000)} {
+		// The pull's own listings, with the fields this check reads.
+		u, _ := url.Parse(path)
+		q := u.Query()
+		q.Set("fields", "trackedEntity,enrollments[program,status,updatedAt,deleted]")
+		u.RawQuery = q.Encode()
+		path = u.String()
+		start := time.Now()
+		st, b, err := c.Do("GET", path, nil)
+		if err != nil || st != 200 {
+			t.Fatalf("central refused a listing: %s: %d %v %.500s", path, st, err, b)
+		}
+		if i == 0 {
+			t.Logf("active-enrollment listing on central: %v, %d bytes", time.Since(start), len(b))
+		}
+		var body map[string]any
+		json.Unmarshal(b, &body)
+		for _, x := range asList(body["trackedEntities"]) {
+			te := x.(map[string]any)
+			for _, en := range asList(te["enrollments"]) {
+				m := en.(map[string]any)
+				if m["program"] == program && m["deleted"] != true &&
+					(m["status"] == "ACTIVE" || tracker.Str(m, "updatedAt") >= cutoff) {
+					want[tracker.Str(te, "trackedEntity")] = true
+				}
+			}
+		}
+	}
+	e.Offline()
+	q := url.Values{"program": {program}, "orgUnits": {e.M.Facility.ID}, "fields": {"trackedEntity"}, "paging": {"false"}}
+	got := listed(nurse.JSON("GET", "/api/tracker/trackedEntities?"+q.Encode(), nil, 200), "trackedEntities", "trackedEntity")
+	for _, te := range got {
+		if !want[te] {
+			t.Errorf("listed offline, not by central's window: %s", te)
+		}
+		delete(want, te)
+	}
+	for te := range want {
+		t.Errorf("listed by central's window, not offline: %s", te)
+	}
+	t.Logf("%d people in %s with a %d-month window", len(got), program, months)
+}

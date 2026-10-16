@@ -354,24 +354,29 @@ func (im *Importer) validateEnrollment(it *Item, old *Obj) (*Obj, bool, []ErrorR
 }
 
 // enrollOnce applies central's checks on a new enrollment against the person's others
-// in the program: a second active one (E1015) and, where the program allows one ever,
-// any second one (E1016; a cancelled enrollment counts for neither). Stubs of pruned
-// enrollments count: keeping them is what makes E1016 work offline.
+// in the program: where the program allows one ever, any second one (E1016), and a
+// second active one (E1015); central reports both when both apply (2.42, checked live;
+// its order of the two varies). A cancelled enrollment counts for neither. Stubs of pruned enrollments
+// count: keeping them is what makes E1016 work offline.
 func (im *Importer) enrollOnce(it *Item, te, program string, once bool) []ErrorReport {
 	status := cmp.Or(Str(it.Data, "status"), "ACTIVE")
 	if status == "CANCELLED" {
 		return nil
 	}
+	var e1015, e1016 bool
 	for _, e := range im.enrollmentsIn(te, program) {
 		st := Str(withData(e).Data, "status")
-		if status == "ACTIVE" && st == "ACTIVE" {
-			return im.errf(it, "E1015", "TrackedEntity: `%s`, already has an active Enrollment in Program `%s`.", te, program)
-		}
-		if once && (st == "ACTIVE" || st == "COMPLETED") {
-			return im.errf(it, "E1016", "TrackedEntity: `%s`, already has an active enrollment in Program: `%s`, and this program only allows enrolling one time.", te, program)
-		}
+		e1015 = e1015 || (status == "ACTIVE" && st == "ACTIVE")
+		e1016 = e1016 || (once && (st == "ACTIVE" || st == "COMPLETED"))
 	}
-	return nil
+	var errs []ErrorReport
+	if e1016 {
+		errs = append(errs, im.errf(it, "E1016", "TrackedEntity: `%s` already has an Enrollment in Program: `%s`, and this Program only allows enrolling once.", te, program)...)
+	}
+	if e1015 {
+		errs = append(errs, im.errf(it, "E1015", "TrackedEntity: `%s` already has an active Enrollment in Program `%s`.", te, program)...)
+	}
+	return errs
 }
 
 // enrollmentsIn returns te's enrollments in program the hub holds (stubs included,

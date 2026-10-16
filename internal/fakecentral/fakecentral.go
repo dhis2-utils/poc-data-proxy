@@ -718,8 +718,8 @@ func (c *Central) importTracker(w http.ResponseWriter, r *http.Request, u *User)
 			} else if !u.ProgramWrite {
 				fail("E1091", "no data write access to Program")
 			} else if c.objects[it.UID] == nil {
-				if code, msg := c.enrollOnce(it, okItems); code != "" {
-					fail(code, msg)
+				for _, f := range c.enrollOnce(it, okItems) {
+					fail(f[0], f[1])
 				}
 			}
 		case "event":

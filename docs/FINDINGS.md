@@ -419,4 +419,22 @@ Event programs (without registration) work offline through the hub since 2026-10
 - The pulls of tracker and event programs ask for deletions (`includeDeleted=true`) and keep each deleted object as a tombstone: the row stays, marked `deleted`. The pull of people enrolled in nothing (by type) does not, because of the bug above; a person deleted there leaves the hub at the weekly full pull.
 - Offline, lists, a person's enrollments and events, and single reads leave tombstones out (a single read answers 404, as central). With `includeDeleted=true` (Android's download) they are returned with `deleted: true`, so a device drops what it downloaded before: before, an event deleted on central stayed on a tablet that synced only through the hub.
 - An offline edit of a tombstone is refused with central's code.
-- Event-program tombstones are pruned with retention like other events; tracker tombstones stay until tracker retention exists.
+- Event-program tombstones are pruned with retention like other events. Tracker tombstones stay; tracker retention (below) prunes by enrollment status and age, not by deletion.
+
+## Retention for tracker programs
+
+**What central does** (2.42 and 2.43; synthetic, Sierra Leone and Laos databases; checked live by `TestEnrollmentRulesOffline` and `TestRetentionWindowLive`, the same on every run):
+
+- A program listing accepts `enrollmentStatus=ACTIVE` together with `updatedAfter`, `includeDeleted=true` and the identifiers-only fields. The active listing answered in 0.08–0.25 s at the test facility (Laos: 248 people listed with a 1-month window).
+- A second active enrollment in a program is refused with E1015: "TrackedEntity: `X` already has an active Enrollment in Program `P`." (no comma after the tracked entity).
+- A second enrollment in a program that allows one only (`onlyEnrollOnce`; Sierra Leone's malaria program is one, the tests switch the flag on elsewhere) is refused with E1016: "TrackedEntity: `X` already has an Enrollment in Program: `P`, and this Program only allows enrolling once.", also when the second one is completed.
+- When both apply (a second active enrollment where one only is allowed), central reports both, and the order of the two varies between requests.
+
+**What the hub does:**
+
+- Retention by program (`facility-hub-config/retention`, as for event programs) applies to tracker programs; `trackedEntityTypes` adds windows by tracked entity type, with no default, so people are kept unless a country names their type.
+- A full pull of a program with a window lists two things: people with an active enrollment, and people changed since the cut-off. Incremental pulls are unchanged.
+- A completed or cancelled enrollment whose last change is before the cut-off is kept as a stub: its program, person, status and dates, marked `hubStub`, with no data and no events. Stubs never appear in lists, searches, a person's enrollments or Android's download. A single read answers "needs connection", since central has the enrollment. A stub is never merged with a full enrollment; one that is reopened on central comes back in full at the next pull.
+- What a listing shows under a stub with the same `updatedAt` counts as held, so a full pull does not fetch those people again.
+- Pruning runs after each sync cycle: aged enrollments become stubs and their events go; then tracked entities of types with a window that have nothing left in full go, with their stubs and relationships. Nothing with a pending or rejected change is pruned, and nothing a pending change refers to.
+- Offline, E1015 and E1016 are refused with central's codes and messages, E1016 also against a stub. A cancelled new enrollment is checked by neither rule.

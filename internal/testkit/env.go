@@ -406,3 +406,25 @@ func (e *Env) SetUplink(up bool) error {
 	}
 	return nil
 }
+
+// CentralSetRetention sets facility-hub-config/retention on central (the hub reads it
+// at its next catalog refresh). Live, it is deleted when the test ends.
+func (e *Env) CentralSetRetention(v string) {
+	e.T.Helper()
+	if e.Fake != nil {
+		if e.Fake.DataStore["facility-hub-config"] == nil {
+			e.Fake.DataStore["facility-hub-config"] = map[string]json.RawMessage{}
+		}
+		e.Fake.DataStore["facility-hub-config"]["retention"] = json.RawMessage(v)
+		return
+	}
+	const path = "/api/dataStore/facility-hub-config/retention"
+	st, b, err := e.Central.Do("PUT", path, []byte(v))
+	if err == nil && st == 404 {
+		st, b, err = e.Central.Do("POST", path, []byte(v))
+	}
+	if err != nil || st >= 300 {
+		e.T.Fatalf("setting retention on central: %d %v %.500s", st, err, b)
+	}
+	e.T.Cleanup(func() { e.Central.Do("DELETE", path, nil) })
+}
