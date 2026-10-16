@@ -81,3 +81,16 @@ func (c *Central) TEListQueries() []string {
 	defer c.mu.Unlock()
 	return slices.Clone(c.teLists)
 }
+
+// TokensOf counts a user's personal access tokens.
+func (c *Central) TokensOf(username string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := 0
+	for _, u := range c.tokens {
+		if u == username {
+			n++
+		}
+	}
+	return n
+}

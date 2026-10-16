@@ -140,3 +140,29 @@ func TestHubTokenTakeOver(t *testing.T) {
 		t.Errorf("heartbeat: owner %v, expires %v", hb["hubTokenOwner"], hb["hubTokenExpires"])
 	}
 }
+
+// Review fix: a take-over by someone whose account cannot write the hub's records on
+// central (the facility-hub-* namespaces protected as advised) is refused before the
+// old token goes, so the hub never ends up silent.
+func TestTakeOverNeedsWriteAccess(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	e.Setup()
+	admin := e.M.Users[tk.RoleAdmin].Username
+	e.Fake.HubWriters = map[string]bool{admin: true}
+	old := e.App.Hub.Runtime().HubToken
+	nurse := e.Web(tk.RoleNurse)
+	nurse.Login()
+	resp, err := nurse.PostForm("/hub/ui/takeover", url.Values{"password": {e.M.Password}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if rt := e.App.Hub.Runtime(); rt.HubToken != old || rt.TokenOwner() != admin || !e.Fake.TokenValid(old) {
+		t.Fatalf("taken over without write access: owner %q, old token valid %v", rt.TokenOwner(), e.Fake.TokenValid(old))
+	}
+	nurseName := e.M.Users[tk.RoleNurse].Username
+	if n := e.Fake.TokensOf(nurseName); n > 1 { // the nurse's own login token only
+		t.Errorf("the refused take-over left %d tokens of the nurse", n)
+	}
+}

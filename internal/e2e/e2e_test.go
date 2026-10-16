@@ -670,6 +670,94 @@ func TestResetHub(t *testing.T) {
 	}
 }
 
+// Review fix: a reset by any staff member does not silently drop changes central
+// refused: they need a second confirmation, and the registry says who reset.
+func TestResetKeepsRefusedChanges(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.offline()
+	e.central.Seed("CentralTe78", "CentralEn78", "Other", "NAT-7878", nil)
+	a.json("POST", postSync, newPatient("DupTe000078", "DupEn000078", "Dup", "NAT-7878", nil), 200)
+	e.online()
+	e.sync()
+	if e.app.Hub.Store.CountOutbox(store.OutboxRejected)+e.app.Hub.Store.CountOutbox(store.OutboxPartial) == 0 {
+		t.Fatal("no refused change to keep")
+	}
+	oldID := e.app.Hub.HubID()
+	reset := func(confirm string) {
+		t.Helper()
+		resp, err := a.postForm("/hub/ui/reset", url.Values{"confirm": {confirm}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+	}
+	reset("RESET")
+	if e.app.Hub.Mode() != "active" || e.app.Hub.HubID() != oldID {
+		t.Fatal("reset with refused changes and only RESET")
+	}
+	reset("RESET AND DISCARD")
+	if e.app.Hub.Mode() != "setup" {
+		t.Fatalf("mode %s after RESET AND DISCARD", e.app.Hub.Mode())
+	}
+	if reg := e.central.DataStoreValue("facility-hub-registry", oldID); reg["status"] != "retired" || reg["retiredByUser"] != "nurse_a" {
+		t.Fatalf("old registry entry: %v", reg)
+	}
+}
+
+// Review fix: the heartbeat counts refused changes that are still unresolved; one
+// fixed and sent again no longer counts.
+func TestRefusedCountsClearWhenFixed(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.offline()
+	e.central.Seed("CentralTe79", "CentralEn79", "Other", "NAT-7979", nil)
+	a.json("POST", postSync, newPatient("DupTe000079", "DupEn000079", "Dup", "NAT-7979", nil), 200)
+	e.online()
+	e.sync()
+	refused := func() string {
+		b, _ := json.Marshal(e.central.DataStoreValue("facility-hub-status", e.app.Hub.HubID())["refused"])
+		return string(b)
+	}
+	if !strings.Contains(refused(), "E1064") {
+		t.Fatalf("refused: %s", refused())
+	}
+	e.offline() // fixed at the facility, sent through the hub
+	a.json("POST", postSync, newPatient("DupTe000079", "DupEn000079", "Dup", "NAT-8080", nil), 200)
+	e.online()
+	e.sync()
+	if e.central.Object("DupTe000079") == nil {
+		t.Fatal("the fixed person did not reach central")
+	}
+	if r := refused(); r != "null" {
+		t.Fatalf("refused after the fix: %s", r)
+	}
+}
+
+// Review fix: a user with one org unit above facility level (a district officer) is
+// offered the facilities below it, rather than setting the hub up for the district.
+func TestSetupByDistrictUserOffersFacilities(t *testing.T) {
+	e := newEnv(t)
+	c := e.web("district_e")
+	resp, err := c.postForm("/hub/setup", url.Values{"step": {"login"}, "central_url": {e.cSrv.URL},
+		"username": {"district_e"}, "password": {fc.Password}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if strings.Contains(string(b), "This hub now serves") || e.app.Hub.Mode() != "setup" {
+		t.Fatalf("set up for the district itself: facility %q", e.app.Hub.Facility())
+	}
+	if !strings.Contains(string(b), fc.Facility) || !strings.Contains(string(b), fc.OtherFacility) {
+		t.Fatalf("facilities not offered: %.1500s", b)
+	}
+}
+
 // TestOfflineAppShellAndConditionalGets: on 2.42+ apps open at /apps/<app>, a page
 // without a file extension; offline it is served to any user, like other app files.
 // A browser that holds another user's copy asks conditionally: the hub must still

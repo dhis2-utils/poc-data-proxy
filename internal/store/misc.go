@@ -139,8 +139,21 @@ func (s *Store) Issues(onlyUnreported bool, limit int) ([]*Issue, error) {
 	if onlyUnreported {
 		q += ` WHERE reported_central_at=''`
 	}
-	q += ` ORDER BY id DESC LIMIT ?`
-	rows, err := s.DB().Query(q, limit)
+	return s.issues(q+` ORDER BY id DESC LIMIT ?`, limit)
+}
+
+// UnresolvedIssues returns the issues still open, newest first: a tracker object still
+// marked rejected (sending a fixed version clears it), or an aggregate edit whose
+// outbox entry is still refused.
+func (s *Store) UnresolvedIssues(limit int) ([]*Issue, error) {
+	return s.issues(`SELECT id, outbox_seq, object_uid, kind, user_id, error_enc, created_at, reported_central_at FROM issues i
+ WHERE (i.kind = ? AND EXISTS (SELECT 1 FROM outbox o WHERE o.seq = i.outbox_seq AND o.state IN (?, ?)))
+ OR EXISTS (SELECT 1 FROM objects ob WHERE ob.uid = i.object_uid AND ob.sync_state = ?)
+ ORDER BY id DESC LIMIT ?`, OutboxAggregate, OutboxRejected, OutboxPartial, SyncRejected, limit)
+}
+
+func (s *Store) issues(q string, args ...any) ([]*Issue, error) {
+	rows, err := s.DB().Query(q, args...)
 	if err != nil {
 		return nil, err
 	}

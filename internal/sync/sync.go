@@ -1118,9 +1118,10 @@ func Status(h *core.Hub) map[string]any {
 
 // refusedCounts counts the changes central refused that are not resolved, by kind,
 // program and error code: with hundreds stuck after a metadata change, central sees
-// the pattern without reading each issue. Codes only, no values.
+// the pattern without reading each issue. Codes only, no values. Only open issues are
+// read (and decrypted), so the cost follows what is stuck, not the hub's history.
 func refusedCounts(h *core.Hub) []map[string]any {
-	issues, err := h.Store.Issues(false, 100000)
+	issues, err := h.Store.UnresolvedIssues(100000)
 	if err != nil || len(issues) == 0 {
 		return nil
 	}

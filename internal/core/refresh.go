@@ -229,6 +229,8 @@ func (h *Hub) EnsurePAT(ctx context.Context, u *store.User, with central.Auth, p
 // pat_expiry_days after setup. A PAT may create a PAT on 2.42
 // (testdata/2.42/apiToken_create_with_pat.json).
 func (h *Hub) RenewHubToken(ctx context.Context) error {
+	h.tokenMu.Lock()
+	defer h.tokenMu.Unlock()
 	rt := h.Runtime()
 	if rt == nil || rt.HubToken == "" {
 		return nil
@@ -544,6 +546,8 @@ func (rt *Runtime) TokenOwner() string {
 // assigned to the facility, and deletes the old token: for when the person who set
 // the hub up leaves (docs/DEPLOYMENT.md, "The hub's own account").
 func (h *Hub) TakeOverHubToken(ctx context.Context, username, password string) error {
+	h.tokenMu.Lock()
+	defer h.tokenMu.Unlock()
 	rt := h.Runtime()
 	if rt == nil {
 		return errors.New("the hub is not set up")
@@ -563,6 +567,20 @@ func (h *Hub) TakeOverHubToken(ctx context.Context, username, password string) e
 	uid, key, err := h.CreatePAT(ctx, with, exp)
 	if err != nil {
 		return fmt.Errorf("creating a token: %w", err)
+	}
+	// The new token must do the housekeeping before the old one goes: countries protect
+	// the facility-hub-* namespaces, and a token that cannot write them would leave the
+	// hub silent. Writing the registry entry, with its new owner, is the test.
+	newAuth := central.Auth{PAT: key}
+	var reg map[string]any
+	err = h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-registry/"+url.PathEscape(h.HubID()), nil, newAuth, &reg)
+	if err == nil {
+		reg["hubTokenOwner"] = me.Username
+		err = h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-registry/"+url.PathEscape(h.HubID()), reg, newAuth, nil)
+	}
+	if err != nil {
+		h.Central.JSON(ctx, "DELETE", "/api/apiToken/"+url.PathEscape(uid), nil, newAuth, nil)
+		return fmt.Errorf("your account cannot write the hub's records on central (the facility-hub namespaces); ask the national team for access: %w", err)
 	}
 	oldUID, oldKey := rt.HubTokenUID, rt.HubToken
 	if err := h.UpdateRuntime(func(rt *Runtime) {

@@ -214,16 +214,17 @@ func (u *UI) setupLogin(ctx context.Context, centralURL, username, password stri
 	}
 	p = &pendingSetup{Nonce: core.NewUID(), CentralURL: centralURL, Username: username, Password: password, Me: me,
 		Version: version, Expires: time.Now().Add(5 * time.Minute)} // holds the password
-	if len(me.OrganisationUnits) == 1 {
-		f := me.OrganisationUnits[0]
-		p.Facility = &f
-	} else {
-		if p.Facilities, err = u.facilityChoices(ctx, auth, me.OrganisationUnits); err != nil {
-			return nil, err
-		}
-		if len(p.Facilities) == 0 {
-			return nil, errors.New("no facility-level org units in your scope")
-		}
+	// The facility-level org units in the user's scope: one is taken as it is; several
+	// are offered. A single org unit above that level (a district officer's) is not a
+	// facility: its facilities are offered.
+	if p.Facilities, err = u.facilityChoices(ctx, auth, me.OrganisationUnits); err != nil {
+		return nil, err
+	}
+	switch len(p.Facilities) {
+	case 0:
+		return nil, errors.New("no facility-level org units in your scope")
+	case 1:
+		p.Facility, p.Facilities = &p.Facilities[0], nil
 	}
 	u.setup.mu.Lock()
 	u.setup.pending = p

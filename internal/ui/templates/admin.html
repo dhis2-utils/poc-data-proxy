@@ -49,7 +49,7 @@
 
 <div class="card"><h2>Reset hub</h2>
 <p>Pushes the outbox, then wipes all data and returns to setup mode.</p>
-<form method="post" action="/hub/ui/reset"><label for="c">Type RESET to confirm</label><input id="c" type="text" name="confirm"><p><button class="danger">Reset hub</button></p></form>
+<form method="post" action="/hub/ui/reset"><label for="c">Type RESET to confirm (RESET AND DISCARD if changes central refused are still on the hub: they would be lost)</label><input id="c" type="text" name="confirm"><p><button class="danger">Reset hub</button></p></form>
 </div>
 </main>
 {{template "foot"}}

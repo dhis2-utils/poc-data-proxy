@@ -81,7 +81,7 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 	if err := ui.EnsureSetupToken(h); err != nil {
 		return nil, fmt.Errorf("setup token: %w", err)
 	}
-	u.Reset = func() error { return Reset(h, worker) }
+	u.Reset = func(by string, discard bool) error { return Reset(h, worker, by, discard) }
 
 	// The hub's own pages use a ServeMux. Everything else is dispatched by hand: a
 	// ServeMux answers 301/307 for slash or path-cleaning mismatches, and the Android
@@ -141,12 +141,14 @@ func (a *App) Close() error { return a.Hub.Store.Close() }
 
 // Reset pushes the outbox, wipes all data and returns to setup mode (spec 6.2). No
 // sync cycle may run meanwhile: a pull committing after the wipe would leave rows
-// sealed under the old data key.
-func Reset(h *core.Hub, w *hubsync.Worker) error {
-	return w.Exclusive(func() error { return reset(h, w) })
+// sealed under the old data key. Any staff member may reset (no setup group), so
+// changes central refused are reported first and wiped only with discard: the
+// clients were told they were saved, and central holds them only masked.
+func Reset(h *core.Hub, w *hubsync.Worker, by string, discard bool) error {
+	return w.Exclusive(func() error { return reset(h, w, by, discard) })
 }
 
-func reset(h *core.Hub, w *hubsync.Worker) error {
+func reset(h *core.Hub, w *hubsync.Worker, by string, discard bool) error {
 	if !h.Online() {
 		return errors.New("the hub must be online to push its outbox before a reset")
 	}
@@ -158,9 +160,18 @@ func reset(h *core.Hub, w *hubsync.Worker) error {
 	if n := h.Store.CountOutbox(store.OutboxPending); n > 0 {
 		return fmt.Errorf("%d outbox entries are still pending", n)
 	}
+	if err := w.ReportIssues(ctx); err != nil {
+		return fmt.Errorf("reporting refused changes to central: %w", err)
+	}
+	if is, _ := h.Store.Issues(true, 1); len(is) > 0 {
+		return errors.New("refused changes are not yet reported to central")
+	}
+	if n := h.Store.CountOutbox(store.OutboxRejected) + h.Store.CountOutbox(store.OutboxPartial); n > 0 && !discard {
+		return fmt.Errorf("%d changes central refused would be lost (central has them only with their values masked); type RESET AND DISCARD to reset anyway", n)
+	}
 	if rt := h.Runtime(); rt != nil {
 		reg := map[string]any{"hubId": h.HubID(), "facility": rt.Facility, "status": "retired", "retiredAt": store.Now(),
-			"retiredBy": "reset"}
+			"retiredBy": "reset", "retiredByUser": by}
 		if err := h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-registry/"+h.HubID(), reg, h.HubAuth(), nil); err != nil {
 			slog.Warn("reset: registry update", "err", err)
 		}

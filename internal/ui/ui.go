@@ -40,7 +40,7 @@ type UI struct {
 	Auth   *auth.Auth
 	Worker *hubsync.Worker
 	// Reset wipes the store and returns to setup mode (set by main).
-	Reset func() error
+	Reset func(by string, discard bool) error
 	setup setupFlow
 }
 
@@ -301,11 +301,13 @@ func (u *UI) handleUplink(w http.ResponseWriter, r *http.Request) {
 }
 
 func (u *UI) handleReset(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost || r.FormValue("confirm") != "RESET" {
+	confirm := r.FormValue("confirm")
+	sess := u.H.Sessions.FromCookie(r)
+	if r.Method != http.MethodPost || sess == nil || (confirm != "RESET" && confirm != "RESET AND DISCARD") {
 		http.Redirect(w, r, "/hub/ui?msg=Type+RESET+to+confirm", http.StatusFound)
 		return
 	}
-	if err := u.Reset(); err != nil {
+	if err := u.Reset(sess.Username, confirm == "RESET AND DISCARD"); err != nil {
 		http.Redirect(w, r, "/hub/ui?msg="+template.URLQueryEscaper("Reset refused: "+err.Error()), http.StatusFound)
 		return
 	}

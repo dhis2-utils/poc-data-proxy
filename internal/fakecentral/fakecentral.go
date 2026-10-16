@@ -28,6 +28,7 @@ import (
 const (
 	Facility      = "DiszpKrYNg8"
 	OtherFacility = "g8upMTyEZGZ"
+	District      = "FakeDistr01" // above both facilities (level 3)
 	Program       = "ur1Edk5Oe2n"
 	Stage1        = "EPEcjy3FWmI"
 	Stage2        = "ZkbAXlQUYJG"
@@ -60,6 +61,9 @@ type User struct {
 type Central struct {
 	// TimeZone is the server's time zone (serverTimeZoneId); empty: UTC.
 	TimeZone string
+	// HubWriters, when set, are the only users who may write the facility-hub-*
+	// dataStore namespaces (protected by sharing, as DEPLOYMENT.md advises).
+	HubWriters map[string]bool
 	// OnlyEnrollOnce: the TB program allows one enrollment ever (central's E1016).
 	OnlyEnrollOnce bool
 	fetched        map[string]int // tracked entity -> times fetched by uid
@@ -118,6 +122,7 @@ func New() *Central {
 			"nurse_a":    {UID: "HubUsrNursA", Username: "nurse_a", OrgUnits: []string{Facility}, ProgramRead: true, ProgramWrite: true, StageRead: all, StageWrite: all},
 			"nurse_b":    {UID: "HubUsrNursB", Username: "nurse_b", OrgUnits: []string{Facility}, ProgramRead: true, ProgramWrite: true, StageRead: no3, StageWrite: no3},
 			"clerk_c":    {UID: "HubUsrClrkC", Username: "clerk_c", OrgUnits: []string{Facility}, ProgramRead: true, StageRead: no3, StageWrite: map[string]bool{}},
+			"district_e": {UID: "HubUsrDistE", Username: "district_e", OrgUnits: []string{District}, ProgramRead: true, StageRead: no3, StageWrite: map[string]bool{}},
 			"outsider_d": {UID: "HubUsrOutsD", Username: "outsider_d", OrgUnits: []string{OtherFacility}, ProgramRead: true, ProgramWrite: true, StageRead: no3, StageWrite: no3},
 		},
 		tokens: map[string]string{}, tokenIDs: map[string]string{}, sessions: map[string]string{},
@@ -330,7 +335,11 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case p == "/api/me":
 		ous := []any{}
 		for _, ou := range u.OrgUnits {
-			ous = append(ous, map[string]any{"id": ou, "name": ou, "level": 4, "code": "OU_" + ou, "path": "/root/" + ou})
+			level := 4
+			if ou == District {
+				level = 3
+			}
+			ous = append(ous, map[string]any{"id": ou, "name": ou, "level": level, "code": "OU_" + ou, "path": "/root/" + ou})
 		}
 		groups := []any{}
 		for _, g := range u.Groups {
@@ -373,6 +382,15 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"id": Program, "name": "TB program"})
 	case p == "/api/categoryOptionCombos":
 		writeJSON(w, 200, map[string]any{"categoryOptionCombos": []any{map[string]any{"id": DefaultAOC}}})
+	case p == "/api/organisationUnitLevels":
+		writeJSON(w, 200, map[string]any{"organisationUnitLevels": []any{map[string]any{"level": 4}}})
+	case p == "/api/organisationUnits" && strings.Contains(r.URL.RawQuery, District):
+		// The facilities below the district (paths kept flat elsewhere in the fake).
+		var ous []any
+		for _, ou := range []string{Facility, OtherFacility} {
+			ous = append(ous, map[string]any{"id": ou, "name": ou, "code": "OU_" + ou, "level": 4, "path": "/root/" + District + "/" + ou})
+		}
+		writeJSON(w, 200, map[string]any{"organisationUnits": ous})
 	case p == "/api/organisationUnits/"+Facility:
 		writeJSON(w, 200, map[string]any{"id": Facility, "name": "Ngelehun CHC", "code": "OU_559"})
 	case p == "/api/tracker/events" && isEventProgram(r.URL.Query().Get("program")):
@@ -414,7 +432,7 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		c.mu.Unlock()
 		writeJSON(w, 200, out)
 	case strings.HasPrefix(p, "/api/dataStore/"):
-		c.dataStore(w, r)
+		c.dataStore(w, r, u)
 	default:
 		webMessage(w, 404, "not found in fake central: "+p, "")
 	}
@@ -788,11 +806,16 @@ func orEmptyErr(e []errReport) []errReport {
 	return e
 }
 
-func (c *Central) dataStore(w http.ResponseWriter, r *http.Request) {
+func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/dataStore/"), "/")
 	ns := parts[0]
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.HubWriters != nil && r.Method != "GET" && strings.HasPrefix(ns, "facility-hub-") && !c.HubWriters[u.Username] {
+		// The namespaces protected as DEPLOYMENT.md advises: only some accounts write.
+		webMessage(w, 403, "Access denied for key", "E1102")
+		return
+	}
 	if c.DataStore[ns] == nil {
 		c.DataStore[ns] = map[string]json.RawMessage{}
 	}

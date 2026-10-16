@@ -70,6 +70,9 @@ type Runtime struct {
 
 // Hub is shared by every package that serves requests or syncs.
 type Hub struct {
+	// tokenMu serialises changes of the hub token (renewal, take-over): each creates a
+	// token over the network before saving it, and one must not overwrite the other.
+	tokenMu  sync.Mutex
 	zoneMu   sync.Mutex
 	zone     *time.Location // central's, loaded from MetaServerTimeZone
 	Cfg      config.Config
