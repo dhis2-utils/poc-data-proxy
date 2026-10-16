@@ -756,3 +756,47 @@ func (s *Store) uids(query string, args ...any) ([]string, error) {
 	})
 	return out, err
 }
+
+// StubEnrollments rewrites these synced enrollments as stubs (tracker retention): stub
+// returns the new payload and slim JSON from the old payload. A thousand per
+// transaction, as DeleteObjects; a row that turned pending meanwhile stays.
+func (s *Store) StubEnrollments(uids []string, stub func(payload []byte) ([]byte, []byte, error)) (int, error) {
+	n := 0
+	for start := 0; start < len(uids); start += 1000 {
+		chunk := uids[start:min(start+1000, len(uids))]
+		err := s.Tx(context.Background(), func(tx *sql.Tx) error {
+			for _, u := range chunk {
+				var ct []byte
+				err := tx.QueryRow(`SELECT payload_enc FROM objects WHERE uid = ? AND sync_state = ?`, u, SyncSynced).Scan(&ct)
+				if errors.Is(err, sql.ErrNoRows) {
+					continue
+				}
+				if err != nil {
+					return err
+				}
+				old, err := s.OpenBlob(objAAD(u), ct)
+				if err != nil {
+					return err
+				}
+				payload, slim, err := stub(old)
+				if err != nil {
+					return err
+				}
+				sealed, err := s.Seal(objAAD(u), payload)
+				if err != nil {
+					return err
+				}
+				if _, err := tx.Exec(`UPDATE objects SET payload_enc = ?1, slim = ?2, stub = coalesce(json_extract(?2, '$.hubStub'), 0)
+ WHERE uid = ?3 AND sync_state = ?4`, sealed, string(slim), u, SyncSynced); err != nil {
+					return err
+				}
+				n++
+			}
+			return nil
+		})
+		if err != nil {
+			return n, err
+		}
+	}
+	return n, nil
+}

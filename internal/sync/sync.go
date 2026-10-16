@@ -210,6 +210,11 @@ func (w *Worker) cycle(ctx context.Context) error {
 	} else if n > 0 {
 		slog.Info("retention pruned events", "events", n)
 	}
+	if s, d, err := h.PruneTracker(); err != nil {
+		errs = append(errs, fmt.Errorf("tracker retention: %w", err))
+	} else if s+d > 0 {
+		slog.Info("retention pruned tracker", "stubbed", s, "deleted", d)
+	}
 	if err := w.RefillPool(ctx); err != nil {
 		errs = append(errs, err)
 	}

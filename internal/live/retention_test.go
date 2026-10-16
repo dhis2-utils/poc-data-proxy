@@ -302,3 +302,63 @@ func TestNoRetentionUnchanged(t *testing.T) {
 		}
 	}
 }
+
+// prune runs tracker pruning and fails the test on error.
+func prune(t *testing.T, e *tk.Env) (stubbed, deleted int) {
+	t.Helper()
+	s, d, err := e.App.Hub.PruneTracker()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s, d
+}
+
+// Pruning turns closed enrollments whose last change fell out of the window into
+// stubs and deletes their events; a second run changes nothing.
+func TestTrackerRetentionPrunes(t *testing.T) {
+	e, _ := retentionEnv(t, "")
+	setRetention(e, window12)
+	if s, d := prune(t, e); s != 2 || d != 2 {
+		t.Errorf("pruned: %d stubbed, %d deleted; want 2 and 2", s, d)
+	}
+	expectHeld(t, e, map[string][]string{
+		"RetTe000010": full, "RetEn000010": full, "RetEv000010": full,
+		"RetTe000011": full, "RetEn000011": {"stub"}, "RetEv000011": none,
+		"RetTe000012": full, "RetEn000012": full, "RetEv000012": full,
+		"RetTe000013": full, "RetEn000013": {"stub"}, "RetEv000013": none,
+	})
+	if d := e.App.Hub.Index.Full(e.App.Hub.Index.Get("RetEn000011")); d["hubStub"] != true || d["status"] != "COMPLETED" {
+		t.Errorf("stub payload: %v", d)
+	}
+	if s, d := prune(t, e); s != 0 || d != 0 {
+		t.Errorf("a second run pruned: %d stubbed, %d deleted", s, d)
+	}
+}
+
+// With a window on the tracked entity type, people whose last change is old and who
+// have nothing left in full go, with their stubs.
+func TestTypeRetentionRemovesEntities(t *testing.T) {
+	e, _ := retentionEnv(t, "")
+	setRetention(e, `{"programs": {"`+fc.Program+`": 12}, "trackedEntityTypes": {"`+fc.TET+`": 12}}`)
+	prune(t, e)
+	expectHeld(t, e, map[string][]string{
+		"RetTe000010": full, "RetEn000010": full, // an active enrollment
+		"RetTe000011": none, "RetEn000011": none, "RetEv000011": none,
+		"RetTe000012": full,                          // a recent enrollment
+		"RetTe000013": full, "RetEn000013": {"stub"}, // changed last month
+	})
+}
+
+// An edit waiting to be pushed keeps what it touches, and what that refers to, out of
+// pruning.
+func TestPruneKeepsReferenced(t *testing.T) {
+	e, nurse := retentionEnv(t, "")
+	e.Offline()
+	nurse.JSON("POST", "/api/tracker?async=false", map[string]any{"events": []any{map[string]any{
+		"event": "RetEv000011", "enrollment": "RetEn000011", "trackedEntity": "RetTe000011", "program": fc.Program,
+		"programStage": fc.Stage1, "orgUnit": fc.Facility, "status": "ACTIVE", "occurredAt": "2024-10-01", "dataValues": []any{}}}}, 200)
+	setRetention(e, `{"programs": {"`+fc.Program+`": 12}, "trackedEntityTypes": {"`+fc.TET+`": 12}}`)
+	prune(t, e)
+	expectHeld(t, e, map[string][]string{"RetTe000011": full, "RetEn000011": full, "RetEv000011": full})
+}
+
