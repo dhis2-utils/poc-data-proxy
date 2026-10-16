@@ -557,6 +557,11 @@ func TestAcceptance(t *testing.T) {
 				t.Fatalf("issue payload leaks values: %s", s)
 			}
 		}
+		// Central staff see which attribute was the problem, not the value.
+		dup, _ := json.Marshal(e.central.DataStoreValue("facility-hub-issues", e.app.Hub.HubID()+"-"+issueID(issues, "DupTe000001")))
+		if want := "Non-unique attribute value `***` for attribute `" + fc.AttrNationalI + "`."; !bytes.Contains(dup, []byte(want)) {
+			t.Fatalf("issue for DupTe000001 lacks %q: %s", want, dup)
+		}
 		admin := e.web("hub_admin")
 		admin.login()
 		st, page := admin.do("GET", "/hub/ui", nil)
@@ -734,4 +739,13 @@ func TestOfflineStaticCache(t *testing.T) {
 	if st != 200 || !strings.Contains(string(body), "nurse_b") || strings.Contains(string(body), "nurse_a") {
 		t.Fatalf("me offline: %d %s", st, body)
 	}
+}
+
+func issueID(issues []*store.Issue, uid string) string {
+	for _, is := range issues {
+		if is.ObjectUID == uid {
+			return fmt.Sprint(is.ID)
+		}
+	}
+	return ""
 }

@@ -6,6 +6,7 @@ package tracker
 import (
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -24,6 +25,7 @@ type Obj struct {
 	Origin, SyncState                                            string
 	Data                                                         M      // payload without nested children
 	Slot                                                         uint32 // in the visibility bitmaps (visibility.go)
+	Deleted                                                      bool   // a tombstone: deleted on central
 	// slim: Data holds only what queries filter and sort on (slim.go); the full
 	// payload is in the store (Index.Full).
 	slim bool
@@ -247,26 +249,106 @@ func clone(m M) M {
 
 var backticked = regexp.MustCompile("`([^`]*)`")
 
-// Redact removes values from a DHIS2 error message, keeping UIDs. Central quotes the
-// offending value in some messages (E1064 "Non-unique attribute value `...`"), and
-// issue reports and the admin page must not carry patient values (spec 11.2, 12).
+// Redact removes values from a DHIS2 error message, keeping what is quoted only when it
+// is an identifier or a metadata type or field name. Central quotes the offending value
+// in some messages (E1064 "Non-unique attribute value `...`"), and issue reports and the
+// admin page must not carry patient values (spec 11.2, 12).
 func Redact(msg string) string {
 	return backticked.ReplaceAllStringFunc(msg, func(s string) string {
 		inner := s[1 : len(s)-1]
-		if ValidUID(inner) {
+		if ValidUID(inner) || quotedNames[inner] {
 			return s
 		}
 		return "`***`"
 	})
 }
 
-// OutgoingReports reduces error reports to their structured fields for anything that
-// leaves the hub: central's messages are free text and can quote patient values in
-// ways no pattern catches (review M6).
-func OutgoingReports(reps []ErrorReport) []ErrorReport {
+// quotedNames are the metadata type and field names central's messages quote.
+var quotedNames = map[string]bool{}
+
+func init() {
+	for _, n := range strings.Fields(`TrackedEntity Enrollment Event Relationship DataElement TrackedEntityAttribute
+		Attribute Program ProgramStage OrganisationUnit TrackedEntityType CategoryOptionCombo CategoryOption Option
+		OptionSet RelationshipType User Note trackedEntity trackedEntities trackedEntityType enrollment event
+		relationship program programStage orgUnit attributeOptionCombo dataElement attribute occurredAt
+		enrolledAt scheduledAt status`) {
+		quotedNames[n] = true
+	}
+}
+
+// refKeys hold references to metadata or tracker objects, not values a person entered.
+var refKeys = map[string]bool{"trackedEntity": true, "enrollment": true, "event": true, "relationship": true,
+	"program": true, "programStage": true, "orgUnit": true, "trackedEntityType": true, "attribute": true,
+	"dataElement": true, "attributeOptionCombo": true, "attributeCategoryOptions": true, "relationshipType": true,
+	"status": true, "note": true, "dataSet": true, "categoryOptionCombo": true}
+
+// SentValues are the values in these payloads that someone entered or that describe a
+// person (attribute and data values, notes, dates, names): everything but references
+// (refKeys) and booleans. MaskMessage hides them wherever central quotes them.
+func SentValues(payloads ...M) []string {
+	seen := map[string]bool{}
+	var walk func(k string, v any)
+	walk = func(k string, v any) {
+		switch x := v.(type) {
+		case M:
+			for kk, vv := range x {
+				walk(kk, vv)
+			}
+		case []any:
+			for _, vv := range x {
+				walk(k, vv)
+			}
+		case string:
+			if !refKeys[k] {
+				seen[strings.TrimSpace(x)] = true
+			}
+		case float64, json.Number:
+			if !refKeys[k] {
+				seen[fmt.Sprint(x)] = true
+			}
+		}
+	}
+	for _, p := range payloads {
+		walk("", p)
+	}
+	out := make([]string, 0, len(seen))
+	for v := range seen {
+		if len(v) >= 3 {
+			out = append(out, v)
+		}
+	}
+	// Longest first, so a value inside a longer one does not leave the rest behind.
+	slices.SortFunc(out, func(a, b string) int { return len(b) - len(a) })
+	return out
+}
+
+var longNumber = regexp.MustCompile(`[0-9]{3,}`)
+
+// MaskMessage is a message from central fit to leave the hub: every value the hub sent
+// (SentValues) is masked wherever it appears, what is quoted stays only when Redact
+// keeps it, and long numbers outside quotes are masked. A message that quotes nothing
+// is left out, since its free text could carry a value no rule catches (review M6).
+func MaskMessage(msg string, sent []string) string {
+	if !strings.Contains(msg, "`") {
+		return ""
+	}
+	for _, v := range sent {
+		msg = strings.ReplaceAll(msg, v, "***")
+	}
+	msg = Redact(msg)
+	parts := strings.Split(msg, "`")
+	for i := 0; i < len(parts); i += 2 { // outside the quotes
+		parts[i] = longNumber.ReplaceAllString(parts[i], "***")
+	}
+	return strings.Join(parts, "`")
+}
+
+// OutgoingReports reduces error reports to what may leave the hub: their structured
+// fields, and their messages masked (MaskMessage) against the values the hub sent.
+func OutgoingReports(reps []ErrorReport, sent []string) []ErrorReport {
 	out := make([]ErrorReport, len(reps))
 	for i, r := range reps {
-		out[i] = ErrorReport{ErrorCode: r.ErrorCode, TrackerType: r.TrackerType, UID: r.UID}
+		out[i] = ErrorReport{ErrorCode: r.ErrorCode, TrackerType: r.TrackerType, UID: r.UID, Message: MaskMessage(r.Message, sent)}
 	}
 	return out
 }

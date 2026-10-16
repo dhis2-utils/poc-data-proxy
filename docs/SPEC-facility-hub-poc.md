@@ -317,7 +317,7 @@ For each new issue, write to the central data store with a hub-level token (the 
 
 `POST {central}/api/dataStore/facility-hub-issues/{hub_id}-{issue_id}`
 
-Payload: `hub_id`, facility org unit, user ID, object UID, kind, central's error report, created time. No patient attribute values in the issue payload.
+Payload: `hub_id`, facility org unit, user ID, object UID, kind, central's error report, created time. No patient attribute values in the issue payload: each error report keeps its code, type and UID, and its message only masked (`tracker.MaskMessage`): every value the hub sent for the object, its person and its enrollment is replaced by `***` wherever it appears, quoted parts stay only when they are identifiers or metadata type and field names, long numbers are masked, and a message that quotes nothing is left out. Central staff so see which data element or attribute caused a refusal, not what was entered.
 
 ### 11.3 Pull
 

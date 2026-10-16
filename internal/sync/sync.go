@@ -454,7 +454,7 @@ func (w *Worker) ReportIssues(ctx context.Context) error {
 		}
 		json.Unmarshal(is.Error, &stored)
 		errBody := map[string]any{"message": tracker.OutgoingMessage(stored.Message, stored.ErrorReports),
-			"errorReports": tracker.OutgoingReports(stored.ErrorReports)}
+			"errorReports": tracker.OutgoingReports(stored.ErrorReports, w.sentValues(is))}
 		payload := map[string]any{"hub_id": h.HubID(), "facility": h.Facility(), "user": userUID, "objectUid": is.ObjectUID,
 			"kind": is.Kind, "outboxSeq": is.OutboxSeq, "error": errBody, "createdAt": is.CreatedAt}
 		key := fmt.Sprintf("%s-%d", h.HubID(), is.ID)
@@ -465,6 +465,49 @@ func (w *Worker) ReportIssues(ctx context.Context) error {
 		h.Store.MarkIssueReported(is.ID)
 	}
 	return nil
+}
+
+// sentValues are the values the hub sent with an issue's object, for masking central's
+// messages: an aggregate edit's, or a tracker object's with its person's and
+// enrollment's, which central may quote too.
+func (w *Worker) sentValues(is *store.Issue) []string {
+	if is.Kind == store.OutboxAggregate {
+		// Only what was entered: the edit's identifiers are metadata.
+		var stored struct {
+			Edit struct {
+				Value, Comment *string
+				By             string
+			} `json:"edit"`
+		}
+		json.Unmarshal(is.Error, &stored)
+		m := tracker.M{"by": stored.Edit.By}
+		for k, v := range map[string]*string{"value": stored.Edit.Value, "comment": stored.Edit.Comment} {
+			if v != nil {
+				m[k] = *v
+			}
+		}
+		return tracker.SentValues(m)
+	}
+	var payloads []tracker.M
+	uids := []string{is.ObjectUID}
+	for i := 0; i < len(uids); i++ {
+		o, err := w.H.Store.GetObject(uids[i])
+		if err != nil || o == nil {
+			continue
+		}
+		var p tracker.M
+		if json.Unmarshal(o.Payload, &p) == nil {
+			payloads = append(payloads, p)
+		}
+		if i == 0 {
+			for _, u := range []string{o.TE, o.Enrollment} {
+				if u != "" && u != o.UID {
+					uids = append(uids, u)
+				}
+			}
+		}
+	}
+	return tracker.SentValues(payloads...)
 }
 
 // --- pull (spec 11.3) ----------------------------------------------------------------

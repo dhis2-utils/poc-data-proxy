@@ -1,6 +1,9 @@
 package tracker
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRedact(t *testing.T) {
 	got := Redact("Non-unique attribute value `886649902` for attribute `AuPLng5hLbE`.")
@@ -43,7 +46,7 @@ func TestOutgoingMessage(t *testing.T) {
 	if got := OutgoingMessage(reps[0].Message, reps); got != "rejected by central: E1007" {
 		t.Fatal(got)
 	}
-	if got := OutgoingReports(reps); got[0].Message != "" || got[0].UID != "AAAAAAAAAA1" || got[0].ErrorCode != "E1007" {
+	if got := OutgoingReports(reps, nil); got[0].Message != "" || got[0].UID != "AAAAAAAAAA1" || got[0].ErrorCode != "E1007" {
 		t.Fatalf("%+v", got)
 	}
 	for msg, want := range map[string]string{
@@ -54,6 +57,43 @@ func TestOutgoingMessage(t *testing.T) {
 	} {
 		if got := OutgoingMessage(msg, nil); got != want {
 			t.Errorf("%q: got %q", msg, got)
+		}
+	}
+}
+
+// Central's messages leave the hub with only metadata references in them: what is
+// quoted in backticks stays if it is a type name or an identifier, unless it is one of
+// the values the hub sent; anything the hub sent is masked wherever it appears; a
+// message without backticks is left out.
+func TestOutgoingReportsMasked(t *testing.T) {
+	payload := M{"event": "EvtAAAAAAA1", "program": "PrgAAAAAAA1", "programStage": "StgAAAAAAA1", "orgUnit": "OuAAAAAAAA1",
+		"occurredAt": "2026-10-01", "dataValues": []any{
+			M{"dataElement": "DeAAAAAAAA1", "value": "Amina Otieno"},
+			M{"dataElement": "DeAAAAAAAA2", "value": "Nairobi7Rd9"}, // a value shaped like an identifier
+			M{"dataElement": "DeAAAAAAAA3", "value": "0722123456"},
+		}, "notes": []any{M{"value": "lives near the market"}}}
+	sent := SentValues(payload)
+	for msg, want := range map[string]string{
+		"Mandatory DataElement `DeAAAAAAAA1` is not present in Event `EvtAAAAAAA1`.":     "Mandatory DataElement `DeAAAAAAAA1` is not present in Event `EvtAAAAAAA1`.",
+		"User: `HubUsrNursB` has no data write access to ProgramStage: `StgAAAAAAA1`.":   "User: `HubUsrNursB` has no data write access to ProgramStage: `StgAAAAAAA1`.",
+		"Value `Amina Otieno` is not a valid option for `DeAAAAAAAA1`.":                  "Value `***` is not a valid option for `DeAAAAAAAA1`.",
+		"Value `Nairobi7Rd9` is not valid for `DeAAAAAAAA2`.":                            "Value `***` is not valid for `DeAAAAAAAA2`.",
+		"Non-unique attribute value `886649902` for attribute `AuPLng5hLbE`.":            "Non-unique attribute value `***` for attribute `AuPLng5hLbE`.",
+		"Value Amina Otieno for `DeAAAAAAAA1` is too long: lives near the market.":       "Value *** for `DeAAAAAAAA1` is too long: ***.",
+		"Phone 0722123456 already used by `DeAAAAAAAA3`.":                                "Phone *** already used by `DeAAAAAAAA3`.",
+		"Value `Person` of `DeAAAAAAAA1` is not allowed.":                                "Value `***` of `DeAAAAAAAA1` is not allowed.",
+		"Either `program`, `trackedEntityType` or `trackedEntities` should be specified": "Either `program`, `trackedEntityType` or `trackedEntities` should be specified",
+		"JSON parse error: problem: UID must be 11 characters, but was: Amina Otieno":    "",
+		"Value 'Amina Otieno' is not valid":                                              "",
+	} {
+		got := OutgoingReports([]ErrorReport{{Message: msg, ErrorCode: "E1000", UID: "EvtAAAAAAA1"}}, sent)
+		if got[0].Message != want {
+			t.Errorf("%q:\n got %q\nwant %q", msg, got[0].Message, want)
+		}
+		for _, v := range []string{"Amina", "Otieno", "Nairobi7Rd9", "0722123456", "886649902", "market"} {
+			if strings.Contains(got[0].Message, v) {
+				t.Errorf("%q leaks %q", msg, v)
+			}
 		}
 	}
 }
