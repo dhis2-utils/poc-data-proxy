@@ -273,7 +273,7 @@ A hub only serves its own facility. A community health worker's tablet that visi
   4. 100 %.
 
   Each hub checks after its sync cycle, pushes its outbox, migrates a copy of its store, swaps, health-checks and rolls back on failure. Results show up in the heartbeat.
-- **Before a DHIS2 server upgrade:** roll out a hub release that supports the new version first. Each hub release supports the current and the next DHIS2 major (spec 12a). Hubs on an unsupported version stay usable online, as pass-through only, and show "hub needs upgrade".
+- **Before a DHIS2 server upgrade:** run the live suite against the new version (docs/TESTING.md); if the hub needs changes, roll out that hub release first. A hub release only supports the DHIS2 versions it was tested against (spec 12a): new majors come about a year apart, with API changes nobody can plan for in advance. Hubs on an unsupported version stay usable online, as pass-through only, and show "hub needs upgrade".
 - **Operating system:** security updates install themselves (`unattended-upgrades`, with automatic reboot at night). Re-image only for major OS changes. That can be done by shipping a pre-flashed SSD, because the hub holds nothing that central does not.
 
 ### Support

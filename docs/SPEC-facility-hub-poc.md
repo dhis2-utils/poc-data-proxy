@@ -344,7 +344,7 @@ TLS in the POC: a self-signed certificate generated at first boot. Production TL
 
 Hubs must upgrade centrally and automatically. No one visits a facility to upgrade a hub.
 
-- Each hub release supports two DHIS2 major versions: the current one and the next. Roll out hub releases before the server upgrade.
+- A hub release supports the DHIS2 major versions it was tested against. A new major version can change the API in ways nobody knows a year ahead, so a hub may need a new release before the server moves to a new major version: test the hub against the new version first, and roll out the hub release before the server upgrade.
 - On each sync cycle, the hub checks `release_channel` for a newer release. A release is one binary plus a signature. The hub verifies the signature against a public key in the image.
 - Upgrade steps: push the outbox until empty (or until only rejected entries remain), download, verify, run SQLite migrations on a copy of the store, swap the binary, restart, run a health check (store opens, central reachable, `/hub/status` responds). If the health check fails, restore the previous binary and store copy.
 - Staged rollout: the release channel can list a percentage or a list of hub IDs. The hub decides from its hub ID whether it is in the current stage.
