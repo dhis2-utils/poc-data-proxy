@@ -714,7 +714,29 @@ func (w *Worker) pullFor(ctx context.Context, g []*puller, p string, full bool, 
 	if pm != nil && pm.Event {
 		maxUpdated, n, perr = w.pullEvents(ctx, h.API(), g, h.Facility(), p, after, seen)
 	} else {
-		maxUpdated, n, perr = w.pullProgram(ctx, h.API(), rep.auth, rep.u.ID, h.Facility(), p, after, seen)
+		api, facility := h.API(), h.Facility()
+		lists := []func(page int) string{func(page int) string { return api.ListPath(facility, p, after, page, listPageSize) }}
+		cutoff, windowed := w.window(p)
+		if full && windowed {
+			// Retention: a full pull lists the people with an active enrollment and those
+			// changed since the cut-off (a type: only the latter), not everyone ever.
+			lists = []func(page int) string{func(page int) string { return api.ListPath(facility, p, cutoff, page, listPageSize) }}
+			if !strings.HasPrefix(p, "tet:") {
+				lists = append(lists, func(page int) string { return api.ActivePath(facility, p, page, listPageSize) })
+			}
+		}
+		for _, list := range lists {
+			var mu string
+			var k int
+			mu, k, perr = w.pullProgram(ctx, api, rep.auth, rep.u.ID, facility, p, list, seen)
+			maxUpdated, n = max(maxUpdated, mu), n+k
+			if perr != nil {
+				break
+			}
+		}
+		if full && windowed && maxUpdated == "" {
+			maxUpdated = cutoff // nothing listed: the next pull still starts at the window
+		}
 	}
 	if perr != nil {
 		st := central.Status(perr)
@@ -763,14 +785,14 @@ func (w *Worker) pullFor(ctx context.Context, g []*puller, p string, full bool, 
 // uplink once, whoever is first to see it (docs/PERFORMANCE.md). It returns the
 // newest updatedAt listed (central's clock, used as the next updatedAfter).
 func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.Auth, userID int64,
-	facility, program, after string, seen map[uint32]bool) (string, int, error) {
+	facility, program string, list func(page int) string, seen map[uint32]bool) (string, int, error) {
 	h := w.H
 	maxUpdated, total := "", 0
 	covered := w.scopeCovers(program)
 	stale := &staleSet{}
 	var current []uint32
 	for page := 1; ; page++ {
-		items, more, err := w.getPage(ctx, api, auth, api.ListPath(facility, program, after, page, listPageSize), page, listPageSize)
+		items, more, err := w.getPage(ctx, api, auth, list(page), page, listPageSize)
 		if err != nil {
 			return "", total, err
 		}
@@ -792,9 +814,13 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 			isStale := !covered(uid)
 			var listed []string
 			var slots []uint32
+			underStub := stubsUnchanged(flat[i], held)
 			for _, it := range flat[i] {
 				upd := tracker.Str(it.Data, "updatedAt")
 				maxUpdated = max(maxUpdated, upd)
+				if underStub[it.Enrollment] {
+					continue // pruned by retention: what is under an unchanged stub counts as held
+				}
 				have, ok := held[it.UID]
 				if !ok || have.UpdatedAt < upd {
 					isStale = true
@@ -826,6 +852,50 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 	return maxUpdated, total, nil
 }
 
+// stubsUnchanged returns the enrollments of a listed person that the hub holds as stubs
+// (tracker retention) with the update time central lists: their events are not held,
+// and fetching the person for them would only store the stub again, at every full pull.
+func stubsUnchanged(items []*tracker.Item, held map[string]store.ObjectState) map[string]bool {
+	out := map[string]bool{}
+	for _, it := range items {
+		if have, ok := held[it.UID]; ok && it.Kind == store.KindEnrollment && have.Stub && have.UpdatedAt == tracker.Str(it.Data, "updatedAt") {
+			out[it.UID] = true
+		}
+	}
+	return out
+}
+
+// window is the retention cut-off of a tracker program, or of a tracked entity type
+// for "tet:<type>"; ok is false when it keeps everything.
+func (w *Worker) window(scope string) (string, bool) {
+	ret, now := w.H.Retention(), w.H.CentralNow()
+	if tet, ok := strings.CutPrefix(scope, "tet:"); ok {
+		return ret.TypeCutoff(tet, now)
+	}
+	return ret.Cutoff(scope, now)
+}
+
+// stubOld replaces, in fetched tracked entities, each closed enrollment whose last
+// change is before its program's retention cut-off by its stub, without its events:
+// central sends them with the person, e.g. one changed recently through another
+// program.
+func (w *Worker) stubOld(tes []tracker.M) {
+	cat := w.H.Catalog()
+	for _, te := range tes {
+		enrs, _ := te["enrollments"].([]any)
+		for i, x := range enrs {
+			en, _ := x.(tracker.M)
+			program := tracker.Str(en, "program")
+			if en == nil || cat == nil || cat.Programs[program] == nil || tracker.Str(en, "status") == "ACTIVE" {
+				continue
+			}
+			if cutoff, ok := w.window(program); ok && tracker.Str(en, "updatedAt") < cutoff {
+				enrs[i] = tracker.StubOf(en)
+			}
+		}
+	}
+}
+
 // staleSet is tracked entities to fetch in full, with what was listed under them.
 type staleSet struct {
 	tes, listed []string
@@ -842,6 +912,7 @@ func (w *Worker) fetchStale(ctx context.Context, api compat.API, auth central.Au
 		if err != nil {
 			return err
 		}
+		w.stubOld(items)
 		anyItems := make([]any, len(items))
 		for i, te := range items {
 			anyItems[i] = te

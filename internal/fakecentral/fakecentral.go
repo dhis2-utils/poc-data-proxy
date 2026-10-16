@@ -62,6 +62,8 @@ type Central struct {
 	TimeZone string
 	// OnlyEnrollOnce: the TB program allows one enrollment ever (central's E1016).
 	OnlyEnrollOnce bool
+	fetched        map[string]int // tracked entity -> times fetched by uid
+	teLists        []string       // queries of tracked entity listings
 	mu             sync.Mutex
 	Users          map[string]*User
 	tokens         map[string]string // PAT key -> username
@@ -545,6 +547,7 @@ func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 		}
 	}
 	c.mu.Lock()
+	c.teLists = append(c.teLists, r.URL.RawQuery)
 	var tes []tracker.M
 	for _, uid := range c.order {
 		o := c.objects[uid]
@@ -579,6 +582,12 @@ func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 			enrs = append(enrs, en)
 		}
 		if byType {
+			if only != nil && (after == "" || latest >= after) {
+				if c.fetched == nil {
+					c.fetched = map[string]int{}
+				}
+				c.fetched[uid]++
+			}
 			if after == "" || latest >= after {
 				te["relationships"] = []any{}
 				tes = append(tes, te)
@@ -587,6 +596,15 @@ func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 		}
 		if len(enrs) == 0 || (after != "" && latest < after) {
 			continue
+		}
+		if es := q.Get("enrollmentStatus"); es != "" && !slices.ContainsFunc(enrs, func(x any) bool { return x.(tracker.M)["status"] == es }) {
+			continue
+		}
+		if only != nil {
+			if c.fetched == nil {
+				c.fetched = map[string]int{}
+			}
+			c.fetched[uid]++
 		}
 		te["enrollments"] = enrs
 		te["relationships"] = []any{}

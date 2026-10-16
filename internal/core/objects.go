@@ -126,11 +126,16 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 				batch[it.UID] = old
 				continue
 			}
-			full := fulls[old.UID]
-			if full == nil {
-				full = h.Index.Full(old)
+			if old.Stub || it.Data["hubStub"] == true {
+				// A stub never merges: merging would keep the old fields or the stub mark.
+				o.Data = it.Data
+			} else {
+				full := fulls[old.UID]
+				if full == nil {
+					full = h.Index.Full(old)
+				}
+				o.Data = tracker.Merge(full, it.Data)
 			}
-			o.Data = tracker.Merge(full, it.Data)
 			if o.TET == "" {
 				o.TET = old.TET
 			}

@@ -3,6 +3,7 @@ package fakecentral
 import (
 	"cmp"
 	"fmt"
+	"slices"
 
 	"github.com/dhis2/facility-hub/internal/tracker"
 )
@@ -59,4 +60,19 @@ func (c *Central) enrollOnce(it *tracker.Item, accepted []*tracker.Item) (code, 
 		}
 	}
 	return "", ""
+}
+
+// FetchCount is how often a tracked entity was fetched by its identifier.
+func (c *Central) FetchCount(te string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.fetched[te]
+}
+
+// TEListQueries returns the query strings of the tracked entity listings and fetches
+// central answered, in order.
+func (c *Central) TEListQueries() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.teLists)
 }

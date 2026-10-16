@@ -35,6 +35,10 @@ type API interface {
 	// ListPath is the same query returning only identifiers and update times of the
 	// tracked entities, enrollments, events and relationships (the ID-list pull).
 	ListPath(facility, program, updatedAfter string, page, pageSize int) string
+	// ActivePath is ListPath of the people with an active enrollment in the program
+	// (enrollmentStatus=ACTIVE): with retention, a full pull lists them and those
+	// changed since the cut-off.
+	ActivePath(facility, program string, page, pageSize int) string
 	// FetchPath returns these tracked entities in full, as PullPath would.
 	FetchPath(facility, program string, trackedEntities []string) string
 	// EventsPath lists an event program's events at the facility, whole, with deleted

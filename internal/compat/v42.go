@@ -188,6 +188,10 @@ func (v42) ListPath(facility, program, updatedAfter string, page, pageSize int) 
 	return pullQuery(facility, program, updatedAfter, page, pageSize, true)
 }
 
+func (v42) ActivePath(facility, program string, page, pageSize int) string {
+	return pullQuery(facility, program, "", page, pageSize, true) + "&enrollmentStatus=ACTIVE"
+}
+
 func (v42) FetchPath(facility, program string, trackedEntities []string) string {
 	q := pullValues(facility, program, false)
 	withDeleted(q, program)

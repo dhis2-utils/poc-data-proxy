@@ -1,9 +1,12 @@
 package live
 
 import (
+	"encoding/json"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dhis2/facility-hub/internal/tracker"
 
@@ -137,4 +140,165 @@ func TestEnrollmentRulesOffline(t *testing.T) {
 			t.Error("the new enrollment did not reach central")
 		}
 	})
+}
+
+// setRetention sets facility-hub-config/retention on the fake central and the hub's
+// copy of it.
+func setRetention(e *tk.Env, v string) {
+	e.T.Helper()
+	if e.Fake.DataStore["facility-hub-config"] == nil {
+		e.Fake.DataStore["facility-hub-config"] = map[string]json.RawMessage{}
+	}
+	e.Fake.DataStore["facility-hub-config"]["retention"] = json.RawMessage(v)
+	if err := e.App.Hub.Store.SetState("retention", []byte(v)); err != nil && e.App.Hub.Store.Unlocked() {
+		e.T.Fatal(err)
+	}
+}
+
+// seedRetention seeds people in the TB program, each with one enrollment and event:
+//   - RetTe000010: active, last changed two years ago (kept in full);
+//   - RetTe000011: completed two years ago (old);
+//   - RetTe000012: completed last month (kept in full);
+//   - RetTe000013: completed two years ago, the person changed last month (listed by
+//     the window's second listing, with the old enrollment under them).
+func seedRetention(e *tk.Env) {
+	now := e.App.Hub.CentralNow()
+	ts := func(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000") }
+	old, recent := ts(now.AddDate(-2, 0, 0)), ts(now.AddDate(0, -1, 0))
+	for i, st := range []string{"ACTIVE", "COMPLETED", "COMPLETED", "COMPLETED"} {
+		n := strconv.Itoa(10 + i)
+		te, en, ev := "RetTe0000"+n, "RetEn0000"+n, "RetEv0000"+n
+		e.Fake.Seed(te, en, "Person"+n, "NAT-90"+n, map[string]string{ev: fc.Stage1})
+		e.Fake.SetStatus(en, st)
+		e.Fake.Backdate(te, old)
+	}
+	e.Fake.Backdate("RetTe000012", recent)
+	e.Fake.Backdate("RetTe000013", recent)
+	e.Fake.Backdate("RetEn000013", old)
+}
+
+// heldAs is "full", "stub" or "" (not held).
+func heldAs(e *tk.Env, uid string) string {
+	o := e.App.Hub.Index.Get(uid)
+	switch {
+	case o == nil:
+		return ""
+	case o.Stub:
+		return "stub"
+	}
+	return "full"
+}
+
+func expectHeld(t *testing.T, e *tk.Env, want map[string][]string) {
+	t.Helper()
+	for uid, ok := range want {
+		if got := heldAs(e, uid); !slices.Contains(ok, got) {
+			t.Errorf("%s held as %q, want one of %q", uid, got, ok)
+		}
+	}
+}
+
+var (
+	full     = []string{"full"}
+	stubOrNo = []string{"stub", ""}
+	none     = []string{""}
+)
+
+// retentionEnv starts a hub with the retention seeds and window, synced for a nurse.
+func retentionEnv(t *testing.T, window string) (*tk.Env, *tk.Client) {
+	e := tk.Start(t)
+	e.NeedFake()
+	seedRetention(e)
+	if window != "" {
+		setRetention(e, window)
+	}
+	e.Setup()
+	nurse := e.Android(tk.RoleNurse)
+	nurse.Do("GET", "/api/me?fields=id", nil)
+	e.Sync()
+	return e, nurse
+}
+
+const window12 = `{"programs": {"` + fc.Program + `": 12}}`
+
+// fullPull runs a sync cycle with a full pull.
+func fullPull(e *tk.Env) {
+	e.App.Hub.Cfg.FullPullInterval = time.Nanosecond
+	e.Sync()
+	e.App.Hub.Cfg.FullPullInterval = 7 * 24 * time.Hour
+}
+
+// With a window, the first pull leaves old closed enrollments and their events out, or
+// keeps them as stubs; people stay.
+func TestRetentionPullWindow(t *testing.T) {
+	e, _ := retentionEnv(t, window12)
+	expectHeld(t, e, map[string][]string{
+		"RetEn000010": full, "RetEv000010": full,
+		"RetEn000012": full, "RetEv000012": full,
+		"RetTe000011": full, "RetEn000011": stubOrNo, "RetEv000011": none,
+		"RetTe000013": full, "RetEn000013": {"stub"}, "RetEv000013": none,
+	})
+}
+
+// A full pull after pruning fetches no one again for what it holds as stubs.
+func TestNoRefetchAfterPrune(t *testing.T) {
+	e, _ := retentionEnv(t, window12)
+	before := map[string]int{}
+	for _, te := range []string{"RetTe000011", "RetTe000013"} {
+		before[te] = e.Fake.FetchCount(te)
+	}
+	fullPull(e)
+	for te, n := range before {
+		if got := e.Fake.FetchCount(te); got != n {
+			t.Errorf("%s fetched again at a full pull: %d -> %d", te, n, got)
+		}
+	}
+	expectHeld(t, e, map[string][]string{"RetEn000013": {"stub"}, "RetEv000013": none})
+}
+
+// A person whose only enrollment in a program is a stub is edited offline: the edit
+// reaches central, and the stub stays a stub (never merged into a full enrollment).
+func TestStubNeverMerges(t *testing.T) {
+	e, nurse := retentionEnv(t, window12)
+	e.Offline()
+	nurse.JSON("POST", "/api/tracker?async=false", map[string]any{"trackedEntities": []any{map[string]any{
+		"trackedEntity": "RetTe000013", "trackedEntityType": fc.TET, "orgUnit": fc.Facility,
+		"attributes": []any{map[string]any{"attribute": fc.AttrFirstName, "value": "Renamed"}}}}}, 200)
+	e.Online()
+	e.Sync()
+	e.Sync()
+	b, _ := json.Marshal(e.CentralObject("trackedEntities", "RetTe000013"))
+	if !strings.Contains(string(b), "Renamed") {
+		t.Errorf("the edit did not reach central: %s", b)
+	}
+	expectHeld(t, e, map[string][]string{"RetEn000013": {"stub"}, "RetEv000013": none})
+	if d := e.App.Hub.Index.Full(e.App.Hub.Index.Get("RetEn000013")); d["hubStub"] != true || d["events"] != nil {
+		t.Errorf("the stub was merged: %v", d)
+	}
+}
+
+// An enrollment reopened on central after it was stubbed comes back in full, with its
+// events, at the next pull.
+func TestReopenedEnrollmentReplacesStub(t *testing.T) {
+	e, _ := retentionEnv(t, window12)
+	expectHeld(t, e, map[string][]string{"RetEn000013": {"stub"}})
+	e.Fake.SetStatus("RetEn000013", "ACTIVE")
+	e.Fake.Backdate("RetEn000013", e.App.Hub.CentralNow().UTC().Format("2006-01-02T15:04:05.000"))
+	e.Sync()
+	expectHeld(t, e, map[string][]string{"RetEn000013": full, "RetEv000013": full})
+}
+
+// Without retention settings nothing changes: everything is held in full, and no
+// listing asks for enrollment status.
+func TestNoRetentionUnchanged(t *testing.T) {
+	e, _ := retentionEnv(t, "")
+	fullPull(e)
+	for _, n := range []string{"10", "11", "12", "13"} {
+		expectHeld(t, e, map[string][]string{"RetTe0000" + n: full, "RetEn0000" + n: full, "RetEv0000" + n: full})
+	}
+	for _, q := range e.Fake.TEListQueries() {
+		if strings.Contains(q, "enrollmentStatus") {
+			t.Errorf("a listing with enrollmentStatus: %s", q)
+		}
+	}
 }
