@@ -210,6 +210,8 @@ Estimate for the HC IV size with a 12-month window, from these figures and not m
 
 Changing an event moves its own and its tracked entity's `updatedAt`, not its enrollment's (2.42 and 2.43, `TestEventEditMovesUpdatedAtLive`). A listing without events would therefore have to fetch a person whenever their own `updatedAt` moved.
 
+**Upgrading a large hub.** Its data migrations run when the store unlocks, and sorts stay in memory (`temp_store=memory`, so no plaintext reaches the disk) inside SQLite's 4 GB. As first written, the retention migration rebuilt `objects_state` with the stub flag. That ran out of memory at 4.6 million objects (the `hc4-5y` size) and worked at 2.5 million (`internal/perf.TestRetentionMigration`). It now adds a partial index of stubs instead, which is empty at upgrade and took 5.8 s to build over 4.6 million objects (a 3.8 GB data file). Any migration that builds an index over existing rows has the same limit, so it needs this test at the largest size first.
+
 Still to measure: the same on `pi5`. Pruning a hub that already holds five years is a one-off of about half an hour at the HC IV size. It runs at the first sync cycle after a window is set, and offline writes wait for one transaction of 1 000 rows at most.
 
 ## Security of the SQLite index
@@ -250,3 +252,4 @@ Each page read and sorted the program's events; `objects_events` (creation order
 - **2026-10-15, aggregate data.** The Aggregate Data Entry app offline: a store of forms per data set window, pulled per access group (the numbers above).
 - **2026-10-15, event programs.** Held offline with retention by program; two indexes for event lists (the numbers above).
 - **2026-10-16, tracker retention.** Old closed enrollments are kept as stubs, with windows by program and by tracked entity type. With a 12-month window, at the HC IV size kept for five years, the data file went from 16.2 to 6.5 GB and the first fill from 35 to 20 minutes. Central's bytes did not shrink on this data, where nearly everyone had a recent enrollment somewhere.
+- **2026-10-17, migrations at the HC IV size.** Rebuilding an index over 4.6 million objects at upgrade ran out of SQLite's memory; the retention migration builds a partial index instead (5.8 s).

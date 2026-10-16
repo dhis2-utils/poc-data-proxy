@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -130,5 +131,47 @@ func TestRetentionQueries(t *testing.T) {
 	}
 	if got, _ := s.AgedEnrollments(prog, ou, cutoff); len(got) != 0 {
 		t.Fatalf("pending enrollment aged: %v", got)
+	}
+}
+
+// The pruning queries read indexes, never a whole table: they run each sync cycle on
+// hubs with millions of rows.
+func TestRetentionQueryPlans(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	k, _ := hubcrypto.NewKey()
+	if err := s.SetDK(k); err != nil {
+		t.Fatal(err)
+	}
+	scan := regexp.MustCompile(`SCAN [a-z]+( |$)`)
+	for _, q := range []struct {
+		name, sql string
+		args      []any
+	}{
+		{"aged enrollments", sqlAgedEnrollments, []any{KindEnrollment, "p", "o", SyncSynced, "2025-01-01"}},
+		{"events under stubs", sqlStubEvents, []any{KindEvent, SyncSynced, OutboxPending}},
+		{"prunable entities", sqlPrunableEntities, []any{KindTrackedEntity, "t", "o", SyncSynced, "2025-01-01", OutboxPending, KindEnrollment, SyncSynced, SyncSynced, SyncSynced}},
+		{"entity leftovers", sqlEntityLeftovers("?"), []any{"a", "a", "a"}},
+		{"relationships with", sqlRelationshipsWith("?"), []any{"a", "a"}},
+		{"object states", sqlObjectStates("?,?"), []any{"a", "b"}},
+	} {
+		rows, err := s.DB().Query("EXPLAIN QUERY PLAN "+q.sql, q.args...)
+		if err != nil {
+			t.Fatalf("%s: %v", q.name, err)
+		}
+		var plan []string
+		for rows.Next() {
+			var id, parent, notused int
+			var detail string
+			rows.Scan(&id, &parent, &notused, &detail)
+			plan = append(plan, detail)
+		}
+		rows.Close()
+		if p := strings.Join(plan, " | "); scan.MatchString(p) {
+			t.Errorf("%s scans a table: %s", q.name, p)
+		}
 	}
 }

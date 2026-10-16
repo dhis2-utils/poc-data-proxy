@@ -543,6 +543,7 @@ func (im *Importer) normalise(kind string, d M) {
 		}
 	}
 	def("deleted", false)
+	delete(d, "hubStub") // the hub's own mark of a pruned enrollment, never a client's
 	for _, k := range []string{"occurredAt", "scheduledAt", "enrolledAt", "completedAt", "createdAtClient", "updatedAtClient"} {
 		if v, ok := d[k].(string); ok && v != "" {
 			d[k] = NormaliseDate(v)

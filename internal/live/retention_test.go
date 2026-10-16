@@ -580,3 +580,72 @@ func TestPendingEventKeepsEnrollmentOnFetch(t *testing.T) {
 	}
 	expectHeld(t, e, map[string][]string{"RetEn000013": full, "RetEv000013": full})
 }
+
+// Review minor: hubStub is the hub's own mark; a client that sends it does not hide
+// its enrollment.
+func TestClientCannotMarkStub(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	e.Fake.SeedPerson("RetTe000030", "Unenrolled")
+	e.Setup()
+	nurse := e.Android(tk.RoleNurse)
+	nurse.Do("GET", "/api/me?fields=id", nil)
+	e.Sync()
+	e.Offline()
+	nurse.JSON("POST", "/api/tracker?async=false", map[string]any{"enrollments": []any{map[string]any{
+		"enrollment": "RetEn000030", "trackedEntity": "RetTe000030", "program": fc.Program, "orgUnit": fc.Facility,
+		"status": "ACTIVE", "enrolledAt": "2026-10-16", "occurredAt": "2026-10-16", "hubStub": true}}}, 200)
+	expectHeld(t, e, map[string][]string{"RetEn000030": full})
+	ens := nurse.JSON("GET", "/api/tracker/enrollments?program="+fc.Program+"&orgUnit="+fc.Facility+"&fields=enrollment,hubStub", nil, 200)
+	if !slices.Contains(listed(ens, "enrollments", "enrollment"), "RetEn000030") {
+		t.Error("an enrollment sent with hubStub is hidden")
+	}
+}
+
+// Review Focus 3: a person with an active enrollment and a stub is listed and found by
+// attribute search; their record and the enrollment list show only the active one.
+func TestActiveAndStubOfOnePerson(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	e.Fake.Seed("RetTe000040", "RetEn000041", "Bothways", "NAT-9040", nil)
+	e.Fake.SetStatus("RetEn000041", "COMPLETED")
+	e.Fake.Seed("RetTe000040", "RetEn000040", "Bothways", "NAT-9040", nil)
+	e.Setup()
+	nurse := e.Android(tk.RoleNurse)
+	nurse.Do("GET", "/api/me?fields=id", nil)
+	e.Sync()
+	stubEnrollment(t, e, "RetEn000041")
+	e.Offline()
+	base := "/api/tracker/trackedEntities?program=" + fc.Program + "&orgUnits=" + fc.Facility + "&fields=trackedEntity"
+	if !slices.Contains(listed(nurse.JSON("GET", base, nil, 200), "trackedEntities", "trackedEntity"), "RetTe000040") {
+		t.Error("the person is not listed in the program of their active enrollment")
+	}
+	if !slices.Contains(listed(nurse.JSON("GET", base+"&filter="+fc.AttrFirstName+":eq:Bothways", nil, 200), "trackedEntities", "trackedEntity"), "RetTe000040") {
+		t.Error("attribute search does not find the person")
+	}
+	te := nurse.JSON("GET", "/api/tracker/trackedEntities/RetTe000040?program="+fc.Program+"&fields=enrollments[enrollment]", nil, 200)
+	if got := listed(te, "enrollments", "enrollment"); !slices.Equal(got, []string{"RetEn000040"}) {
+		t.Errorf("the person's enrollments: %v, want only the active one", got)
+	}
+	ens := listed(nurse.JSON("GET", "/api/tracker/enrollments?program="+fc.Program+"&orgUnit="+fc.Facility+"&fields=enrollment", nil, 200), "enrollments", "enrollment")
+	if !slices.Contains(ens, "RetEn000040") || slices.Contains(ens, "RetEn000041") {
+		t.Errorf("enrollments listed: %v", ens)
+	}
+}
+
+// Review minor: a relationship with an event that pruning deletes goes with it.
+func TestPruneRemovesRelationshipsOfDeletedEvents(t *testing.T) {
+	e, _ := retentionEnv(t, "")
+	ix := e.App.Hub.Index
+	ev := ix.Get("RetEv000011")
+	rel := &tracker.Obj{UID: "RetRel00011", Kind: "relationship", OwnerOrgUnit: ev.OwnerOrgUnit, Origin: ev.Origin,
+		SyncState: ev.SyncState, Slot: ev.Slot + 100000, UpdatedAt: ev.UpdatedAt, Data: tracker.M{"relationship": "RetRel00011",
+			"relationshipType": "RelTypeAbc1", "from": tracker.M{"event": tracker.M{"event": "RetEv000011"}},
+			"to": tracker.M{"trackedEntity": tracker.M{"trackedEntity": "RetTe000010"}}}}
+	if err := e.App.Hub.Store.PutObject(e.App.Hub.Store.DB(), rel.ToStore()); err != nil {
+		t.Fatal(err)
+	}
+	setRetention(e, window12)
+	prune(t, e)
+	expectHeld(t, e, map[string][]string{"RetEv000011": none, "RetRel00011": none})
+}

@@ -291,15 +291,12 @@ ALTER TABLE objects ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;
 UPDATE objects SET deleted = 1 WHERE json_extract(slim, '$.deleted') = 1;
 `,
 	// Stubs of pruned enrollments (tracker retention): hidden from reads, kept for the
-	// enrol-once check. The state index covers the stub flag, so a pull's stale check
-	// reads the index alone.
-	`
-ALTER TABLE objects ADD COLUMN stub INTEGER NOT NULL DEFAULT 0;
-DROP INDEX objects_state;
-CREATE INDEX objects_state ON objects(uid, updated_at, slot, stub);
-`,
-	// The stubs, for pruning the events under them each cycle without walking every
-	// event.
+	// enrol-once check.
+	`ALTER TABLE objects ADD COLUMN stub INTEGER NOT NULL DEFAULT 0;`,
+	// The stubs, for the pull's stale check and for pruning the events under them,
+	// without reading table rows. Partial, so building it on an existing hub sorts
+	// nothing: rebuilding objects_state with the stub flag instead ran out of SQLite's
+	// memory (4 GB, sorts kept in memory) at 4.6 million objects (docs/PERFORMANCE.md).
 	`CREATE INDEX objects_stubs ON objects(uid) WHERE stub = 1;`,
 }
 

@@ -74,10 +74,16 @@ func (h *Hub) PruneTracker() (stubbed, deleted int, err error) {
 	if err != nil {
 		return stubbed, deleted, err
 	}
-	n, err := h.Store.DeleteObjects(events)
-	deleted += n
+	rels, err := h.Store.RelationshipsWith(events) // read before the events go
 	if err != nil {
 		return stubbed, deleted, err
+	}
+	for _, uids := range [][]string{events, rels} {
+		n, err := h.Store.DeleteObjects(uids)
+		deleted += n
+		if err != nil {
+			return stubbed, deleted, err
+		}
 	}
 	for _, tet := range slices.Sorted(maps.Keys(ret.TrackedEntityTypes)) {
 		cutoff, ok := ret.TypeCutoff(tet, now)

@@ -334,7 +334,7 @@ func (s *Store) ObjectStates(uids []string) (map[string]ObjectState, error) {
 	sorted = slices.Compact(sorted)
 	out := make(map[string]ObjectState, len(sorted))
 	err := inBatches(sorted, func(args []any, marks string) error {
-		rows, err := s.query(`SELECT uid, updated_at, slot, stub FROM objects INDEXED BY objects_state WHERE uid IN (`+marks+`)`, args...)
+		rows, err := s.query(sqlObjectStates(marks), args...)
 		return scanRows(rows, err, func(r *sql.Rows) error {
 			var uid string
 			var st ObjectState
@@ -344,6 +344,13 @@ func (s *Store) ObjectStates(uids []string) (map[string]ObjectState, error) {
 		})
 	})
 	return out, err
+}
+
+// sqlObjectStates reads the state index and, for the stub flag, the partial index of
+// stubs: no table rows.
+func sqlObjectStates(marks string) string {
+	return `SELECT o.uid, o.updated_at, o.slot, EXISTS (SELECT 1 FROM objects s INDEXED BY objects_stubs WHERE s.uid = o.uid AND s.stub = 1)
+ FROM objects o INDEXED BY objects_state WHERE o.uid IN (` + marks + `)`
 }
 
 // SlotOrigins returns the origin and program of the objects in these slots, by slot.
@@ -729,10 +736,11 @@ func notReferenced(x string) string {
 // date) and that nothing pending refers to (stubbable): what tracker retention turns
 // into stubs.
 func (s *Store) AgedEnrollments(program, owner, cutoff string) ([]string, error) {
-	return s.uids(`SELECT uid FROM objects e WHERE kind = ? AND program = ? AND owner_org_unit = ? AND sync_state = ?
- AND stub = 0 AND status IN ('COMPLETED', 'CANCELLED') AND updated_at < ?`+stubbable("e"),
-		KindEnrollment, program, owner, SyncSynced, cutoff)
+	return s.uids(sqlAgedEnrollments, KindEnrollment, program, owner, SyncSynced, cutoff)
 }
+
+var sqlAgedEnrollments = `SELECT uid FROM objects e WHERE kind = ? AND program = ? AND owner_org_unit = ? AND sync_state = ?
+ AND stub = 0 AND status IN ('COMPLETED', 'CANCELLED') AND updated_at < ?` + stubbable("e")
 
 // sqlStubEvents lists the synced events under stubs that nothing pending refers to,
 // read from the stubs (objects_stubs): it runs each sync cycle.
@@ -750,27 +758,49 @@ func (s *Store) StubEnrollmentsEvents() ([]string, error) {
 // entry names and that no unsynced object refers to (as its tracked entity or as a
 // relationship's end).
 func (s *Store) PrunableEntities(tet, owner, cutoff string) ([]string, error) {
-	return s.uids(`SELECT uid FROM objects t WHERE kind = ? AND tet = ? AND owner_org_unit = ? AND sync_state = ?
- AND updated_at < ?`+notInPendingOutbox("t")+`
+	return s.uids(sqlPrunableEntities, KindTrackedEntity, tet, owner, SyncSynced, cutoff, OutboxPending, KindEnrollment, SyncSynced, SyncSynced, SyncSynced)
+}
+
+var sqlPrunableEntities = `SELECT uid FROM objects t WHERE kind = ? AND tet = ? AND owner_org_unit = ? AND sync_state = ?
+ AND updated_at < ?` + notInPendingOutbox("t") + `
  AND NOT EXISTS (SELECT 1 FROM objects x WHERE x.te_uid = t.uid AND x.kind = ? AND x.stub = 0)
  AND NOT EXISTS (SELECT 1 FROM objects x WHERE x.te_uid = t.uid AND x.sync_state <> ?)
  AND NOT EXISTS (SELECT 1 FROM objects x WHERE x.rel_from = t.uid AND x.sync_state <> ?)
- AND NOT EXISTS (SELECT 1 FROM objects x WHERE x.rel_to = t.uid AND x.sync_state <> ?)`,
-		KindTrackedEntity, tet, owner, SyncSynced, cutoff, OutboxPending, KindEnrollment, SyncSynced, SyncSynced, SyncSynced)
-}
+ AND NOT EXISTS (SELECT 1 FROM objects x WHERE x.rel_to = t.uid AND x.sync_state <> ?)`
 
 // EntityLeftovers lists what goes with these tracked entities when they are pruned:
 // their remaining rows (stubs, events under them) and relationships with them.
 func (s *Store) EntityLeftovers(tes []string) ([]string, error) {
 	var out []string
 	err := inBatches(tes, func(args []any, marks string) error {
-		got, err := s.uids(`SELECT uid FROM objects WHERE te_uid IN (`+marks+`)
- UNION SELECT uid FROM objects WHERE rel_from IN (`+marks+`)
- UNION SELECT uid FROM objects WHERE rel_to IN (`+marks+`)`, append(append(slices.Clone(args), args...), args...)...)
+		got, err := s.uids(sqlEntityLeftovers(marks), append(append(slices.Clone(args), args...), args...)...)
 		out = append(out, got...)
 		return err
 	})
 	return out, err
+}
+
+// RelationshipsWith lists the synced relationships with any of these objects as an
+// end: they go when pruning removes that end.
+func (s *Store) RelationshipsWith(uids []string) ([]string, error) {
+	var out []string
+	err := inBatches(uids, func(args []any, marks string) error {
+		got, err := s.uids(sqlRelationshipsWith(marks), append(slices.Clone(args), args...)...)
+		out = append(out, got...)
+		return err
+	})
+	return out, err
+}
+
+func sqlEntityLeftovers(marks string) string {
+	return `SELECT uid FROM objects WHERE te_uid IN (` + marks + `)
+ UNION SELECT uid FROM objects WHERE rel_from IN (` + marks + `)
+ UNION SELECT uid FROM objects WHERE rel_to IN (` + marks + `)`
+}
+
+func sqlRelationshipsWith(marks string) string {
+	return `SELECT uid FROM objects WHERE rel_from IN (` + marks + `) AND sync_state = '` + SyncSynced + `'
+ UNION SELECT uid FROM objects WHERE rel_to IN (` + marks + `) AND sync_state = '` + SyncSynced + `'`
 }
 
 // uids runs a query of one uid column.
