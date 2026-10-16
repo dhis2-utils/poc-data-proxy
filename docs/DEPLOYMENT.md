@@ -295,7 +295,7 @@ A hub only serves its own facility. A community health worker's tablet that visi
   - the national team fixes central (restores the option, relaxes the rule), then sets a retry instruction in the app for the affected hubs, error code and dates; hubs resend those changes as their original authors **(to build)**;
   - repairing changes that can never pass as they are is open. Ideas considered and dropped: exporting them encrypted to a national key (a golden key), per-export codes sent by SMS (a person on site relays them), a remote repair session (needs remote access).
 - **Before tightening metadata** (a new compulsory field, a removed option, a closed stage), check what hubs and tablets have captured offline under the old rules: those changes will be refused.
-- **Heartbeat volume:** one key per hub, overwritten each sync, so the namespace does not grow; whether central audits every dataStore write (and so grows an audit table) is not measured yet.
+- **Heartbeat volume:** one key per hub, overwritten each sync, so the namespace does not grow. dataStore writes are not audited (measured on 2.42 and 2.43: 5 500 heartbeat writes from 500 hubs left every audit table unchanged). 500 hubs need 0.6 writes per second; reading all their heartbeats takes about 0.1 s (docs/FINDINGS.md). No archiving is needed.
 
 ### Upgrades
 

@@ -438,3 +438,11 @@ Event programs (without registration) work offline through the hub since 2026-10
 - What a listing shows under a stub with the same `updatedAt` counts as held, so a full pull does not fetch those people again.
 - Pruning runs after each sync cycle: aged enrollments become stubs and their events go; then tracked entities of types with a window that have nothing left in full go, with their stubs and relationships. Nothing with a pending or rejected change is pruned, and nothing a pending change refers to.
 - Offline, E1015 and E1016 are refused with central's codes and messages, E1016 also against a stub. A cancelled new enrollment is checked by neither rule.
+
+## Listings, compression and the dataStore (measured)
+
+2.42 and 2.43, Sierra Leone (`TestListingBytesLive`, `TestEventEditMovesUpdatedAtLive`, a heartbeat script; numbers in docs/PERFORMANCE.md):
+
+- **No compression.** DHIS2 (Tomcat as deployed by the instance tooling) answers uncompressed even when the client sends `Accept-Encoding: gzip`. The hub's client asks for gzip, so a reverse proxy that compresses JSON (nginx with `gzip_types application/json`) makes ID listings 3–4 times smaller on the uplink. That belongs in central's deployment guidance: nginx's default compresses only HTML.
+- **Event updates** move the event's and the tracked entity's `updatedAt`, not the enrollment's.
+- **dataStore writes are not audited.** 500 hubs writing heartbeats 11 times each (5 500 writes) left every audit table unchanged. `facility-hub-status` stays at one row per hub, about 1 KB each with Postgres overhead. The writes ran at about 40 per second from 8 clients; 500 hubs syncing every 15 minutes need 0.6 per second. All 500 heartbeats read in one request in about 0.1 s.
