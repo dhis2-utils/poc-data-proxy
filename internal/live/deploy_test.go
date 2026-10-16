@@ -3,18 +3,71 @@ package live
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
+
+// dataStoreValue reads a dataStore entry on central (nil if missing).
+func dataStoreValue(t *testing.T, e *tk.Env, ns, key string) map[string]any {
+	t.Helper()
+	if e.Fake != nil {
+		return e.Fake.DataStoreValue(ns, key)
+	}
+	st, b, err := e.Central.Do("GET", "/api/dataStore/"+ns+"/"+key, nil)
+	if err != nil || st == 404 {
+		return nil
+	}
+	var v map[string]any
+	json.Unmarshal(b, &v)
+	return v
+}
+
+// putDataStore writes a dataStore entry on central, and live removes it afterwards.
+func putDataStore(t *testing.T, e *tk.Env, ns, key, value string) {
+	t.Helper()
+	if e.Fake != nil {
+		if e.Fake.DataStore[ns] == nil {
+			e.Fake.DataStore[ns] = map[string]json.RawMessage{}
+		}
+		e.Fake.DataStore[ns][key] = json.RawMessage(value)
+		return
+	}
+	path := "/api/dataStore/" + ns + "/" + key
+	st, b, err := e.Central.Do("PUT", path, []byte(value))
+	if err == nil && st == 404 {
+		st, b, err = e.Central.Do("POST", path, []byte(value))
+	}
+	if err != nil || st >= 300 {
+		t.Fatalf("writing %s: %d %v %.300s", path, st, err, b)
+	}
+	t.Cleanup(func() { e.Central.Do("DELETE", path, nil) })
+}
+
+// tokenValid reports whether central accepts a personal access token.
+func tokenValid(t *testing.T, e *tk.Env, key string) bool {
+	t.Helper()
+	if e.Fake != nil {
+		return e.Fake.TokenValid(key)
+	}
+	req, _ := http.NewRequest("GET", strings.TrimRight(e.M.CentralURL, "/")+"/api/me?fields=id", nil)
+	req.Header.Set("Authorization", "ApiToken "+key)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	return res.StatusCode == 200
+}
 
 // Anyone assigned to the facility sets the hub up and opens its admin page; there is
 // no setup user group (docs/DEPLOYMENT.md). Someone assigned to another facility
 // cannot open it.
 func TestStaffSetUpAndAdminister(t *testing.T) {
 	e := tk.Start(t)
-	e.NeedFake()
 	e.SetupAs(tk.RoleNurse)
 	if e.App.Hub.Facility() != e.M.Facility.ID {
 		t.Fatalf("facility %q, want %q", e.App.Hub.Facility(), e.M.Facility.ID)
@@ -35,16 +88,17 @@ func TestStaffSetUpAndAdminister(t *testing.T) {
 // hub replaced it, who did it and when; the new one says which it replaced.
 func TestReplacementRecorded(t *testing.T) {
 	e := tk.Start(t)
-	e.NeedFake()
-	e.Fake.DataStore["facility-hub-registry"] = map[string]json.RawMessage{
-		"OldHub00001": json.RawMessage(`{"hubId":"OldHub00001","facility":"` + e.M.Facility.ID + `","status":"active"}`)}
+	oldID := "OldHub" + tk.UID()[:5]
+	putDataStore(t, e, "facility-hub-registry", oldID,
+		`{"hubId":"`+oldID+`","facility":"`+e.M.Facility.ID+`","status":"active"}`)
 	e.SetupAs(tk.RoleNurse)
-	old := e.Fake.DataStoreValue("facility-hub-registry", "OldHub00001")
+	old := dataStoreValue(t, e, "facility-hub-registry", oldID)
 	nurse := e.M.Users[tk.RoleNurse].Username
 	if old["status"] != "retired" || old["retiredBy"] != e.App.Hub.HubID() || old["retiredByUser"] != nurse || old["retiredAt"] == nil {
 		t.Errorf("old entry: %v", old)
 	}
-	if cur := e.Fake.DataStoreValue("facility-hub-registry", e.App.Hub.HubID()); fmt.Sprint(cur["replaces"]) != "[OldHub00001]" {
+	cur := dataStoreValue(t, e, "facility-hub-registry", e.App.Hub.HubID())
+	if !strings.Contains(fmt.Sprint(cur["replaces"]), oldID) {
 		t.Errorf("new entry: %v", cur)
 	}
 }
@@ -55,7 +109,6 @@ func TestReplacementRecorded(t *testing.T) {
 // heartbeat says whose token it is.
 func TestHubTokenTakeOver(t *testing.T) {
 	e := tk.Start(t)
-	e.NeedFake()
 	e.Setup()
 	old := e.App.Hub.Runtime().HubToken
 	nurse := e.Web(tk.RoleNurse)
@@ -75,14 +128,14 @@ func TestHubTokenTakeOver(t *testing.T) {
 	take(e.M.Password)
 	rt := e.App.Hub.Runtime()
 	name := e.M.Users[tk.RoleNurse].Username
-	if rt.HubToken == old || rt.HubTokenOwner != name || !e.Fake.TokenValid(rt.HubToken) {
-		t.Fatalf("not taken over: owner %q, new token valid %v", rt.HubTokenOwner, e.Fake.TokenValid(rt.HubToken))
+	if rt.HubToken == old || rt.HubTokenOwner != name || !tokenValid(t, e, rt.HubToken) {
+		t.Fatalf("not taken over: owner %q, new token valid %v", rt.HubTokenOwner, tokenValid(t, e, rt.HubToken))
 	}
-	if e.Fake.TokenValid(old) {
+	if tokenValid(t, e, old) {
 		t.Error("the old token still works")
 	}
 	e.Sync()
-	hb := e.Fake.DataStoreValue("facility-hub-status", e.App.Hub.HubID())
+	hb := dataStoreValue(t, e, "facility-hub-status", e.App.Hub.HubID())
 	if hb["hubTokenOwner"] != name || hb["hubTokenExpires"] == nil {
 		t.Errorf("heartbeat: owner %v, expires %v", hb["hubTokenOwner"], hb["hubTokenExpires"])
 	}
