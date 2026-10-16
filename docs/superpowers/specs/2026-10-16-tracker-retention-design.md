@@ -47,6 +47,7 @@ Central's dataStore, `facility-hub-config/retention`, read at the catalog refres
 
   The union is fetched as today (only what the hub lacks or holds older). Visibility follows the union.
 - **Incremental pulls** are unchanged: what they list changed since the last pull, so it is within the window.
+- **No re-fetch of what was pruned.** A listing returns each person's enrollments and events in the program, old ones included, and today the hub fetches a person again when the listing shows something it does not hold. After pruning, that is every person with a stub: each full pull would fetch them again, store them as stubs again, and repeat. So anything listed under an enrollment the hub holds as a stub, with the same `updatedAt`, counts as held; a person is fetched again only if the stub's enrollment changed on central, or something else about them is newer.
 - **On storing,** a completed or cancelled enrollment whose `updatedAt` is before the cut-off is stored as a stub, without its events (central may send one, e.g. for a person changed recently through another program).
 - **Type pulls** (`tet:<type>`, people enrolled in nothing) of a type with a window list only entities changed since its cut-off.
 - **Pruning,** each sync cycle, after the pull: enrollments that aged out become stubs (their events deleted), then tracked entities of types with a window that have nothing left in full are removed. In transactions of 1 000 rows, as event pruning (docs/PERFORMANCE.md). The index cache is dropped after pruning, as today.
@@ -63,20 +64,28 @@ Central's dataStore, `facility-hub-config/retention`, read at the catalog refres
   - An edit of something pruned (a device editing an old event it still holds) answers "needs connection"; it stays on the device until it syncs online through the hub.
 - The 2.42 and 2.43 messages and codes are taken from central (checked live).
 
+## Load on central
+
+- First fill: smaller, since old closed enrollments and their events are not sent; this is the heaviest moment, during rollout waves.
+- Incremental pulls: unchanged. Pruning and the E1015 and E1016 checks: on the hub only.
+- Full pulls: two id listings per program and access group instead of one; the second is limited to changes since the cut-off. The active-enrollment listing makes central filter on enrollment status; its time on central is measured live (Sierra Leone).
+- A full pull repeated after pruning must fetch nothing new (the rule above); the performance test checks it.
+
 ## Testing
 
 - **Fake central:**
   - the full pull's two listings and the type pull's window, against the fake's support for `enrollmentStatus` and `updatedAfter`;
+  - a full pull after pruning fetches none of the pruned people again;
   - stubs written instead of full old enrollments, without events;
   - pruning: enrollments to stubs; entities of types with a window removed with stubs and relationships; nothing pending or referenced by a pending change pruned;
   - answers: stubs hidden, "needs connection" for pruned objects, Android's download without them and without deleted markers;
   - E1015 and E1016 offline, including E1016 against a stub;
   - no settings: nothing changes (the existing suites).
 - **Live, 2.42 and 2.43:**
-  - central accepts the listings' parameters with a program (`enrollmentStatus=ACTIVE`, `updatedAfter`), and the hub's full pull with a window set reads the same people as central lists;
+  - central accepts the listings' parameters with a program (`enrollmentStatus=ACTIVE`, `updatedAfter`), and the hub's full pull with a window set reads the same people as central lists; the active-enrollment listing's time on central is recorded (Sierra Leone);
   - the write oracle adds offline E1015 and E1016 cases, which must match central's refusals;
   - the read oracle narrows central's answer to each program's window when a window is set. Data on central cannot be aged, so pruning itself is tested on the fake.
-- **Performance** (`internal/perf`): the busy HC IV sizing, first fill with and without retention, and a pruning run; numbers in docs/PERFORMANCE.md, which replace its "Retention by programme (planned)" section.
+- **Performance** (`internal/perf`): the busy HC IV sizing, first fill with and without retention, and a pruning run; central's requests and bytes for a full pull with and without retention, and for a second full pull after pruning (which must fetch no tracked entity again); numbers in docs/PERFORMANCE.md, which replace its "Retention by programme (planned)" section.
 
 ## Out of scope
 
