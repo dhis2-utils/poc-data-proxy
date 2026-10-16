@@ -1,6 +1,7 @@
 package live
 
 import (
+	"context"
 	"encoding/json"
 	"net/url"
 	"slices"
@@ -346,6 +347,11 @@ func TestTypeRetentionRemovesEntities(t *testing.T) {
 		"RetTe000012": full,                          // a recent enrollment
 		"RetTe000013": full, "RetEn000013": {"stub"}, // changed last month
 	})
+	var n int
+	e.App.Hub.Store.DB().QueryRow(`SELECT count(*) FROM te_attrs WHERE te_uid = 'RetTe000011'`).Scan(&n)
+	if n != 0 {
+		t.Errorf("a pruned person's attribute values stay: %d rows", n)
+	}
 }
 
 // An edit waiting to be pushed keeps what it touches, and what that refers to, out of
@@ -529,4 +535,48 @@ func TestRetentionWindowLive(t *testing.T) {
 		t.Errorf("listed by central's window, not offline: %s", te)
 	}
 	t.Logf("%d people in %s with a %d-month window", len(got), program, months)
+}
+
+// Review fix: an online read through the hub stores what central returns as the
+// pull does: old closed enrollments as stubs, without their events.
+func TestOnlineReadKeepsStubs(t *testing.T) {
+	e, nurse := retentionEnv(t, window12)
+	nurse.JSON("GET", "/api/tracker/trackedEntities?program="+fc.Program+"&orgUnits="+fc.Facility+
+		"&fields=*,enrollments[*,events[*]]&pageSize=50", nil, 200)
+	expectHeld(t, e, map[string][]string{
+		"RetEn000011": stubOrNo, "RetEv000011": none,
+		"RetEn000013": {"stub"}, "RetEv000013": none,
+	})
+}
+
+// Review fix: removing a window brings what was stubbed back at the next full pull.
+func TestWindowRemovedRestores(t *testing.T) {
+	e, _ := retentionEnv(t, window12)
+	setRetention(e, `{}`)
+	fullPull(e)
+	expectHeld(t, e, map[string][]string{"RetEn000013": full, "RetEv000013": full})
+}
+
+// Review fix: an enrollment with an offline edit under it is not stubbed when its
+// person is fetched again (here: changed on central while the push waits).
+func TestPendingEventKeepsEnrollmentOnFetch(t *testing.T) {
+	e, nurse := retentionEnv(t, "")
+	e.Offline()
+	nurse.JSON("POST", "/api/tracker?async=false", map[string]any{"events": []any{map[string]any{
+		"event": "RetEv000013", "enrollment": "RetEn000013", "trackedEntity": "RetTe000013", "program": fc.Program,
+		"programStage": fc.Stage1, "orgUnit": fc.Facility, "status": "ACTIVE", "occurredAt": "2024-10-01", "dataValues": []any{}}}}, 200)
+	e.Online()
+	setRetention(e, window12)
+	now := e.App.Hub.CentralNow()
+	e.Fake.Backdate("RetTe000013", now.UTC().Format("2006-01-02T15:04:05.000"))
+	e.Fake.Backdate("RetEn000013", now.AddDate(-2, 0, 0).UTC().Format("2006-01-02T15:04:05.000"))
+	e.Fake.AggFail = map[string]int{"/api/tracker": 503} // the push fails; the pull goes on
+	e.App.Hub.Cfg.FullPullInterval = time.Nanosecond
+	e.App.Worker.Cycle(context.Background())
+	e.App.Hub.Cfg.FullPullInterval = 7 * 24 * time.Hour
+	e.Fake.AggFail = nil
+	if e.Fake.FetchCount("RetTe000013") < 2 {
+		t.Fatal("the person was not fetched again")
+	}
+	expectHeld(t, e, map[string][]string{"RetEn000013": full, "RetEv000013": full})
 }

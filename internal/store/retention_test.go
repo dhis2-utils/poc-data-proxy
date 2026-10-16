@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dhis2/facility-hub/internal/hubcrypto"
@@ -75,6 +76,50 @@ func TestRetentionQueries(t *testing.T) {
 	if got, _ := s.PrunableEntities("Sample", ou, cutoff); slices.Contains(got, "TeStb000001") {
 		t.Fatal("an entity with an active enrollment is kept")
 	}
+
+	// The events under stubs are found from the stubs, not by walking every event: the
+	// query runs each sync cycle.
+	rows, err := s.DB().Query("EXPLAIN QUERY PLAN "+sqlStubEvents, KindEvent, SyncSynced, OutboxPending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan []string
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		rows.Scan(&id, &parent, &notused, &detail)
+		plan = append(plan, detail)
+	}
+	rows.Close()
+	if !strings.Contains(strings.Join(plan, " | "), "objects_stubs") {
+		t.Errorf("events under stubs not read from the stubs: %s", strings.Join(plan, " | "))
+	}
+
+	// Stubbing re-checks what may have turned pending since the aged list was read: an
+	// unsynced event under the enrollment keeps it.
+	put("EnOld000002", KindEnrollment, "TeOld000002", "", "", `{"status":"COMPLETED"}`)
+	slot++
+	if err := s.PutObject(s.DB(), &Object{UID: "EvPend00001", Kind: KindEvent, TE: "TeOld000002", Enrollment: "EnOld000002",
+		Program: prog, OwnerOrgUnit: ou, Origin: OriginLocal, SyncState: "pending", Slot: slot, Slim: []byte(`{}`), Payload: []byte(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.StubEnrollments([]string{"EnOld000002"}, func(p []byte) ([]byte, []byte, error) {
+		return []byte(`{"hubStub":true}`), []byte(`{"hubStub":true}`), nil
+	})
+	if err != nil || n != 0 {
+		t.Errorf("an enrollment with a pending event stubbed: %d %v", n, err)
+	}
+
+	// A pending relationship naming the aged enrollment keeps it.
+	slot++
+	if err := s.PutObject(s.DB(), &Object{UID: "RelPend0001", Kind: KindRelationship, RelFrom: "EnOld000001", RelTo: "TeAct000001",
+		OwnerOrgUnit: ou, Origin: OriginLocal, SyncState: "pending", Slot: slot, Slim: []byte(`{}`), Payload: []byte(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.AgedEnrollments(prog, ou, cutoff); len(got) != 0 {
+		t.Fatalf("enrollment named by a pending relationship aged: %v", got)
+	}
+	s.DB().Exec(`DELETE FROM objects WHERE uid = 'RelPend0001'`)
 
 	// A pending outbox entry naming the aged enrollment keeps it.
 	if err := s.Tx(context.Background(), func(tx *sql.Tx) error {

@@ -298,6 +298,9 @@ ALTER TABLE objects ADD COLUMN stub INTEGER NOT NULL DEFAULT 0;
 DROP INDEX objects_state;
 CREATE INDEX objects_state ON objects(uid, updated_at, slot, stub);
 `,
+	// The stubs, for pruning the events under them each cycle without walking every
+	// event.
+	`CREATE INDEX objects_stubs ON objects(uid) WHERE stub = 1;`,
 }
 
 // SchemaVersion is the number of key file migrations this binary knows.

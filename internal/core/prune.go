@@ -46,6 +46,10 @@ func (h *Hub) PruneTracker() (stubbed, deleted int, err error) {
 	if cat == nil {
 		return 0, 0, nil
 	}
+	if ret.DefaultMonths <= 0 && !slices.ContainsFunc(slices.Collect(maps.Values(ret.Programs)), func(m int) bool { return m > 0 }) &&
+		!slices.ContainsFunc(slices.Collect(maps.Values(ret.TrackedEntityTypes)), func(m int) bool { return m > 0 }) {
+		return 0, 0, nil // no window anywhere: nothing to read each cycle
+	}
 	defer func() {
 		if stubbed+deleted > 0 {
 			h.Index.Forget()

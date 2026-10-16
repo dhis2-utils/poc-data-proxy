@@ -794,6 +794,7 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 	h := w.H
 	maxUpdated, total := "", 0
 	covered := w.scopeCovers(program)
+	cutoff, windowed := w.window(program)
 	stale := &staleSet{}
 	var current []uint32
 	for page := 1; ; page++ {
@@ -819,7 +820,7 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 			isStale := !covered(uid)
 			var listed []string
 			var slots []uint32
-			underStub := stubsUnchanged(flat[i], held)
+			underStub := stubsUnchanged(flat[i], held, cutoff, windowed)
 			for _, it := range flat[i] {
 				upd := tracker.Str(it.Data, "updatedAt")
 				maxUpdated = max(maxUpdated, upd)
@@ -858,12 +859,18 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 }
 
 // stubsUnchanged returns the enrollments of a listed person that the hub holds as stubs
-// (tracker retention) with the update time central lists: their events are not held,
-// and fetching the person for them would only store the stub again, at every full pull.
-func stubsUnchanged(items []*tracker.Item, held map[string]store.ObjectState) map[string]bool {
+// (tracker retention) with the update time central lists, still before the program's
+// cut-off: their events are not held, and fetching the person for them would only
+// store the stub again, at every full pull. A stub the window no longer covers (it was
+// widened or removed) is fetched again, in full.
+func stubsUnchanged(items []*tracker.Item, held map[string]store.ObjectState, cutoff string, windowed bool) map[string]bool {
 	out := map[string]bool{}
+	if !windowed {
+		return out
+	}
 	for _, it := range items {
-		if have, ok := held[it.UID]; ok && it.Kind == store.KindEnrollment && have.Stub && have.UpdatedAt == tracker.Str(it.Data, "updatedAt") {
+		if have, ok := held[it.UID]; ok && it.Kind == store.KindEnrollment && have.Stub && have.UpdatedAt < cutoff &&
+			have.UpdatedAt == tracker.Str(it.Data, "updatedAt") {
 			out[it.UID] = true
 		}
 	}
@@ -878,27 +885,6 @@ func (w *Worker) window(scope string) (string, bool) {
 		return ret.TypeCutoff(tet, now)
 	}
 	return ret.Cutoff(scope, now)
-}
-
-// stubOld replaces, in fetched tracked entities, each closed enrollment whose last
-// change is before its program's retention cut-off by its stub, without its events:
-// central sends them with the person, e.g. one changed recently through another
-// program.
-func (w *Worker) stubOld(tes []tracker.M) {
-	cat := w.H.Catalog()
-	for _, te := range tes {
-		enrs, _ := te["enrollments"].([]any)
-		for i, x := range enrs {
-			en, _ := x.(tracker.M)
-			program := tracker.Str(en, "program")
-			if en == nil || cat == nil || cat.Programs[program] == nil || tracker.Str(en, "status") == "ACTIVE" {
-				continue
-			}
-			if cutoff, ok := w.window(program); ok && tracker.Str(en, "updatedAt") < cutoff {
-				enrs[i] = tracker.StubOf(en)
-			}
-		}
-	}
 }
 
 // staleSet is tracked entities to fetch in full, with what was listed under them.
@@ -917,7 +903,6 @@ func (w *Worker) fetchStale(ctx context.Context, api compat.API, auth central.Au
 		if err != nil {
 			return err
 		}
-		w.stubOld(items)
 		anyItems := make([]any, len(items))
 		for i, te := range items {
 			anyItems[i] = te

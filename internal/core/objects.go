@@ -62,6 +62,7 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 		}
 		return tracker.ProgramOwner(get(te), program)
 	}
+	stubbed := h.stubOld(items, get)
 	skipped := map[string]bool{}
 	var objs []*tracker.Obj
 	for _, it := range items {
@@ -98,6 +99,9 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 				continue
 			}
 		case store.KindEvent:
+			if stubbed[it.Enrollment] {
+				continue // under an enrollment kept as a stub (tracker retention)
+			}
 			o.TE, o.Enrollment = it.TE, it.Enrollment
 			o.Program, o.Stage = tracker.Str(it.Data, "program"), tracker.Str(it.Data, "programStage")
 			if o.TE == "" {
@@ -386,4 +390,46 @@ func (h *Hub) ApplyTransfer(teUID, program, owner string) error {
 	}
 	slog.Info("ownership moved away", "trackedEntity", teUID, "program", program, "owner", owner, "objects", len(objs))
 	return nil
+}
+
+// stubOld replaces, among items central returned, each closed enrollment whose last
+// change is before its program's retention cut-off by its stub (tracker retention),
+// and returns those it replaced: their events are not stored. Central sends them with
+// a person fetched for another reason, or to an online read. An enrollment something
+// unsynced refers to (an offline edit of one of its events, a relationship) is kept in
+// full until that is pushed.
+func (h *Hub) stubOld(items []*tracker.Item, get func(string) *tracker.Obj) map[string]bool {
+	out := map[string]bool{}
+	cat, ret, now := h.Catalog(), h.Retention(), h.CentralNow()
+	if cat == nil {
+		return out
+	}
+	for _, it := range items {
+		program := tracker.Str(it.Data, "program")
+		if it.Kind != store.KindEnrollment || it.Data["hubStub"] == true || cat.Programs[program] == nil ||
+			cat.Programs[program].Event || tracker.Str(it.Data, "status") == "ACTIVE" {
+			continue
+		}
+		cutoff, ok := ret.Cutoff(program, now)
+		if !ok || tracker.Str(it.Data, "updatedAt") >= cutoff || h.referenced(it.UID, get) {
+			continue
+		}
+		it.Data = tracker.StubOf(it.Data)
+		out[it.UID] = true
+	}
+	return out
+}
+
+// referenced reports whether something unsynced refers to a stored enrollment: the
+// enrollment itself, an event under it, or a relationship with it.
+func (h *Hub) referenced(uid string, get func(string) *tracker.Obj) bool {
+	if o := get(uid); o != nil && o.SyncState != store.SyncSynced {
+		return true
+	}
+	for _, o := range slices.Concat(h.Index.EventsOf(uid), h.Index.RelationshipsOf(uid)) {
+		if o.SyncState != store.SyncSynced {
+			return true
+		}
+	}
+	return false
 }

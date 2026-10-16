@@ -657,7 +657,8 @@ func (s *Store) OldProgramEvents(program, owner, cutoff string) ([]string, error
 	return out, rows.Err()
 }
 
-// DeleteObjects removes synced objects (pruning), a thousand per transaction so that
+// DeleteObjects removes synced objects (pruning), with a tracked entity's attribute
+// values and scopes, a thousand per transaction so that
 // offline writes are not held up; a row that turned pending meanwhile stays. The
 // highest slot removed is kept as a floor for MaxSlot: users' visibility bitmaps keep
 // the removed slots' bits, so a restart must never give those slots to new objects.
@@ -668,7 +669,8 @@ func (s *Store) DeleteObjects(uids []string) (int, error) {
 		err := s.Tx(context.Background(), func(tx *sql.Tx) error {
 			for _, u := range chunk {
 				var slot sql.NullInt64
-				err := tx.QueryRow(`DELETE FROM objects WHERE uid = ? AND sync_state = ? RETURNING slot`, u, SyncSynced).Scan(&slot)
+				var kind string
+				err := tx.QueryRow(`DELETE FROM objects WHERE uid = ? AND sync_state = ? RETURNING slot, kind`, u, SyncSynced).Scan(&slot, &kind)
 				if errors.Is(err, sql.ErrNoRows) {
 					continue
 				}
@@ -676,6 +678,14 @@ func (s *Store) DeleteObjects(uids []string) (int, error) {
 					return err
 				}
 				n++
+				if kind == KindTrackedEntity { // its attribute values and scopes go with it
+					if _, err := tx.Exec(`DELETE FROM te_attrs WHERE te_uid = ?`, u); err != nil {
+						return err
+					}
+					if _, err := tx.Exec(`DELETE FROM te_scopes WHERE te_uid = ?`, u); err != nil {
+						return err
+					}
+				}
 				if _, err := tx.Exec(`INSERT INTO kv(key, value) VALUES('slot_floor', ?)
  ON CONFLICT(key) DO UPDATE SET value = CAST(max(CAST(value AS INTEGER), CAST(excluded.value AS INTEGER)) AS TEXT)`,
 					fmt.Sprint(slot.Int64)); err != nil {
@@ -697,23 +707,42 @@ func notInPendingOutbox(x string) string {
 	return ` AND NOT EXISTS (SELECT 1 FROM outbox o JOIN outbox_objects oo ON oo.seq = o.seq WHERE o.state = ? AND oo.uid = ` + x + `.uid)`
 }
 
-// AgedEnrollments lists the facility's synced, closed (completed or cancelled)
-// enrollments of a program, not yet stubs, whose last change is before cutoff (a
-// date), that no pending outbox entry names and none of whose events is unsynced:
-// what tracker retention turns into stubs.
-func (s *Store) AgedEnrollments(program, owner, cutoff string) ([]string, error) {
-	return s.uids(`SELECT uid FROM objects e WHERE kind = ? AND program = ? AND owner_org_unit = ? AND sync_state = ?
- AND stub = 0 AND status IN ('COMPLETED', 'CANCELLED') AND updated_at < ?`+notInPendingOutbox("e")+`
- AND NOT EXISTS (SELECT 1 FROM objects ev WHERE ev.enrollment_uid = e.uid AND ev.sync_state <> ?)`,
-		KindEnrollment, program, owner, SyncSynced, cutoff, OutboxPending, SyncSynced)
+// stubbable is the condition, without arguments, that nothing pending refers to the
+// enrollment aliased x: no pending outbox entry names it, and no unsynced event under
+// it or relationship with it. Stubbing checks it twice: when listing, and again in
+// the transaction that writes the stub, since an offline edit may come in between.
+func stubbable(x string) string {
+	return ` AND NOT EXISTS (SELECT 1 FROM outbox o JOIN outbox_objects oo ON oo.seq = o.seq WHERE o.state = '` + OutboxPending + `' AND oo.uid = ` + x + `.uid)
+ AND NOT EXISTS (SELECT 1 FROM objects ev WHERE ev.enrollment_uid = ` + x + `.uid AND ev.sync_state <> '` + SyncSynced + `')` +
+		notReferenced(x)
 }
 
-// StubEnrollmentsEvents lists the synced events whose enrollment is a stub and that no
-// pending outbox entry names: they go once their enrollment is stubbed.
+// notReferenced is the condition, without arguments, that no unsynced relationship
+// has the row aliased x as an end.
+func notReferenced(x string) string {
+	return ` AND NOT EXISTS (SELECT 1 FROM objects r WHERE r.rel_from = ` + x + `.uid AND r.sync_state <> '` + SyncSynced + `')
+ AND NOT EXISTS (SELECT 1 FROM objects r WHERE r.rel_to = ` + x + `.uid AND r.sync_state <> '` + SyncSynced + `')`
+}
+
+// AgedEnrollments lists the facility's synced, closed (completed or cancelled)
+// enrollments of a program, not yet stubs, whose last change is before cutoff (a
+// date) and that nothing pending refers to (stubbable): what tracker retention turns
+// into stubs.
+func (s *Store) AgedEnrollments(program, owner, cutoff string) ([]string, error) {
+	return s.uids(`SELECT uid FROM objects e WHERE kind = ? AND program = ? AND owner_org_unit = ? AND sync_state = ?
+ AND stub = 0 AND status IN ('COMPLETED', 'CANCELLED') AND updated_at < ?`+stubbable("e"),
+		KindEnrollment, program, owner, SyncSynced, cutoff)
+}
+
+// sqlStubEvents lists the synced events under stubs that nothing pending refers to,
+// read from the stubs (objects_stubs): it runs each sync cycle.
+var sqlStubEvents = `SELECT ev.uid FROM objects e INDEXED BY objects_stubs JOIN objects ev ON ev.enrollment_uid = e.uid
+ WHERE e.stub = 1 AND ev.kind = ? AND ev.sync_state = ?` + notInPendingOutbox("ev") + notReferenced("ev")
+
+// StubEnrollmentsEvents lists the synced events whose enrollment is a stub and that
+// nothing pending refers to: they go once their enrollment is stubbed.
 func (s *Store) StubEnrollmentsEvents() ([]string, error) {
-	return s.uids(`SELECT ev.uid FROM objects ev JOIN objects e ON e.uid = ev.enrollment_uid
- WHERE ev.kind = ? AND e.stub = 1 AND ev.sync_state = ?`+notInPendingOutbox("ev"),
-		KindEvent, SyncSynced, OutboxPending)
+	return s.uids(sqlStubEvents, KindEvent, SyncSynced, OutboxPending)
 }
 
 // PrunableEntities lists the facility's synced tracked entities of a type whose last
@@ -759,7 +788,8 @@ func (s *Store) uids(query string, args ...any) ([]string, error) {
 
 // StubEnrollments rewrites these synced enrollments as stubs (tracker retention): stub
 // returns the new payload and slim JSON from the old payload. A thousand per
-// transaction, as DeleteObjects; a row that turned pending meanwhile stays.
+// transaction, as DeleteObjects; an enrollment that something pending refers to by
+// now stays (stubbable).
 func (s *Store) StubEnrollments(uids []string, stub func(payload []byte) ([]byte, []byte, error)) (int, error) {
 	n := 0
 	for start := 0; start < len(uids); start += 1000 {
@@ -767,7 +797,8 @@ func (s *Store) StubEnrollments(uids []string, stub func(payload []byte) ([]byte
 		err := s.Tx(context.Background(), func(tx *sql.Tx) error {
 			for _, u := range chunk {
 				var ct []byte
-				err := tx.QueryRow(`SELECT payload_enc FROM objects WHERE uid = ? AND sync_state = ?`, u, SyncSynced).Scan(&ct)
+				err := tx.QueryRow(`SELECT payload_enc FROM objects x WHERE uid = ? AND sync_state = ? AND stub = 0`+stubbable("x"),
+					u, SyncSynced).Scan(&ct)
 				if errors.Is(err, sql.ErrNoRows) {
 					continue
 				}
