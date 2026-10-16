@@ -382,8 +382,8 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"id": Program, "name": "TB program"})
 	case p == "/api/categoryOptionCombos":
 		writeJSON(w, 200, map[string]any{"categoryOptionCombos": []any{map[string]any{"id": DefaultAOC}}})
-	case p == "/api/organisationUnitLevels":
-		writeJSON(w, 200, map[string]any{"organisationUnitLevels": []any{map[string]any{"level": 4}}})
+	case p == "/api/organisationUnits" && r.URL.Query().Get("order") == "level:desc":
+		writeJSON(w, 200, map[string]any{"organisationUnits": []any{map[string]any{"level": 4}}})
 	case p == "/api/organisationUnits" && strings.Contains(r.URL.RawQuery, District):
 		// The facilities below the district (paths kept flat elsewhere in the fake).
 		var ous []any

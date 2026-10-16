@@ -239,19 +239,21 @@ func (u *UI) setupLogin(ctx context.Context, centralURL, username, password stri
 
 // facilityChoices lists facility-level (lowest level) org units under the user's org units.
 func (u *UI) facilityChoices(ctx context.Context, auth central.Auth, roots []orgUnit) ([]orgUnit, error) {
-	var levels struct {
-		OrganisationUnitLevels []struct {
+	// The deepest org unit: a server need not define organisationUnitLevels (a fresh
+	// one has none), but every org unit has its level.
+	var deepest struct {
+		OrganisationUnits []struct {
 			Level int `json:"level"`
-		} `json:"organisationUnitLevels"`
+		} `json:"organisationUnits"`
 	}
-	if err := u.H.Central.JSON(ctx, "GET", central.Q("/api/organisationUnitLevels", "fields", "level", "order", "level:desc",
-		"pageSize", "1"), nil, auth, &levels); err != nil {
+	if err := u.H.Central.JSON(ctx, "GET", central.Q("/api/organisationUnits", "fields", "level", "order", "level:desc",
+		"pageSize", "1"), nil, auth, &deepest); err != nil {
 		return nil, err
 	}
-	if len(levels.OrganisationUnitLevels) == 0 {
-		return nil, errors.New("no org unit levels on central")
+	if len(deepest.OrganisationUnits) == 0 {
+		return nil, errors.New("no org units on central")
 	}
-	maxLevel := levels.OrganisationUnitLevels[0].Level
+	maxLevel := deepest.OrganisationUnits[0].Level
 	var out []orgUnit
 	for _, root := range roots {
 		if root.Level == maxLevel {
