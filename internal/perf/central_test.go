@@ -130,6 +130,9 @@ func kind(c tk.Call) string {
 	p := c.URL.Path
 	switch {
 	case p == "/api/tracker/trackedEntities" && strings.HasPrefix(q.Get("fields"), "trackedEntity,updatedAt"):
+		if q.Get("enrollmentStatus") != "" {
+			return "list active enrollments (full)"
+		}
 		if q.Get("updatedAfter") != "" {
 			return "list changed since (incremental)"
 		}

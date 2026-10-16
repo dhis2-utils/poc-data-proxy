@@ -1,10 +1,12 @@
 package fakecentral
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/tracker"
@@ -27,9 +29,12 @@ type Scale struct {
 
 type generated struct {
 	Scale
-	start, span time.Duration // enrollment dates: now - start + j*span/Enrollments
-	updatedAt   string
-	byProgram   [][]int32 // program -> enrollment indexes, in order
+	start, span time.Duration // enrollment dates: base - start + j*span/Enrollments
+	base        time.Time     // when the data was generated: dates are fixed from it
+	updatedAt   string        // the newest update time: active enrollments and their people
+	byProgram   [][]int32     // program -> enrollment indexes, in order
+	mu          sync.Mutex
+	filtered    map[string][]int32 // listings with updatedAfter or enrollmentStatus, by query
 }
 
 func GenProgram(p int) string       { return fmt.Sprintf("GenPrg%05d", p) }
@@ -48,7 +53,8 @@ func (c *Central) Generate(s Scale) {
 	s.Programs, s.Years = max(s.Programs, 1), max(s.Years, 1)
 	s.TEs, s.Enrollments = max(s.TEs, 1), max(s.Enrollments, 1)
 	g := &generated{Scale: s, start: time.Duration(s.Years) * 365 * 24 * time.Hour,
-		updatedAt: c.now(), byProgram: make([][]int32, s.Programs)}
+		updatedAt: c.now(), byProgram: make([][]int32, s.Programs), filtered: map[string][]int32{}}
+	g.base, _ = time.Parse("2006-01-02T15:04:05.000", g.updatedAt)
 	g.span = g.start
 	for j := 0; j < s.Enrollments; j++ {
 		p := g.program(j)
@@ -83,9 +89,40 @@ func (g *generated) perMax() int { return g.Events/g.Enrollments + 1 }
 
 func (g *generated) date(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000") }
 
+// enrolled is enrollment j's date; an enrollment over a year old is completed, a
+// year after it began, and was last changed then (with its events). Active ones and
+// their people carry the generation time.
+func (g *generated) enrolled(j int) time.Time {
+	return g.base.Add(-g.start + time.Duration(int64(g.span)/int64(g.Enrollments)*int64(j)))
+}
+
+func (g *generated) status(j int) string {
+	if g.enrolled(j).Before(g.base.AddDate(-1, 0, 0)) {
+		return "COMPLETED"
+	}
+	return "ACTIVE"
+}
+
+func (g *generated) enrollmentUpdated(j int) string {
+	if g.status(j) == "COMPLETED" {
+		return g.date(g.enrolled(j).AddDate(1, 0, 0))
+	}
+	return g.updatedAt
+}
+
+// teUpdated is a person's last change: the newest of their enrollments'.
+func (g *generated) teUpdated(i int) string {
+	out := ""
+	for j := i; j < g.Enrollments; j += g.TEs {
+		out = max(out, g.enrollmentUpdated(j))
+	}
+	return cmp.Or(out, g.updatedAt)
+}
+
 func (g *generated) renderTE(i int) tracker.M {
+	upd := g.teUpdated(i)
 	return tracker.M{"trackedEntity": genTE(i), "trackedEntityType": TET, "orgUnit": Facility,
-		"createdAt": g.updatedAt, "updatedAt": g.updatedAt, "deleted": false, "inactive": false,
+		"createdAt": g.updatedAt, "updatedAt": upd, "deleted": false, "inactive": false,
 		"attributes": []any{
 			tracker.M{"attribute": AttrFirstName, "value": firstNames[i%len(firstNames)]},
 			tracker.M{"attribute": AttrLastName, "value": lastNames[(i/len(firstNames))%len(lastNames)]},
@@ -95,11 +132,7 @@ func (g *generated) renderTE(i int) tracker.M {
 
 func (g *generated) renderEnrollment(j int) tracker.M {
 	p, te := g.program(j), genTE(g.te(j))
-	enrolled := time.Now().Add(-g.start + time.Duration(int64(g.span)/int64(g.Enrollments)*int64(j)))
-	status := "ACTIVE"
-	if enrolled.Before(time.Now().AddDate(-1, 0, 0)) {
-		status = "COMPLETED"
-	}
+	enrolled, status, upd := g.enrolled(j), g.status(j), g.enrollmentUpdated(j)
 	var events []any
 	per := g.perMax()
 	for k := 0; k < g.eventsOf(j); k++ {
@@ -111,12 +144,43 @@ func (g *generated) renderEnrollment(j int) tracker.M {
 		}
 		events = append(events, tracker.M{"event": genEvent(j, k, per), "enrollment": genEnrollment(j), "trackedEntity": te,
 			"program": GenProgram(p), "programStage": GenStage(p, k%3), "orgUnit": Facility, "status": "COMPLETED",
-			"occurredAt": at, "createdAt": at, "updatedAt": g.updatedAt, "attributeOptionCombo": DefaultAOC,
+			"occurredAt": at, "createdAt": at, "updatedAt": upd, "attributeOptionCombo": DefaultAOC,
 			"deleted": false, "dataValues": dvs, "notes": []any{}, "relationships": []any{}})
 	}
 	return tracker.M{"enrollment": genEnrollment(j), "trackedEntity": te, "program": GenProgram(p), "orgUnit": Facility,
 		"status": status, "enrolledAt": g.date(enrolled), "occurredAt": g.date(enrolled), "createdAt": g.date(enrolled),
-		"updatedAt": g.updatedAt, "deleted": false, "events": orEmpty(events), "notes": []any{}, "relationships": []any{}}
+		"updatedAt": upd, "deleted": false, "events": orEmpty(events), "notes": []any{}, "relationships": []any{}}
+}
+
+// listing is what a listing returns, in order: enrollment indexes of a program, or
+// person indexes for the type (program < 0), kept to those whose person changed at or
+// after updatedAfter and, for a program, whose enrollment has enrollmentStatus.
+func (g *generated) listing(program int, after, status string) []int32 {
+	if program >= 0 && after == "" && status == "" {
+		return g.byProgram[program]
+	}
+	key := fmt.Sprint(program, "|", after, "|", status)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if l, ok := g.filtered[key]; ok {
+		return l
+	}
+	var out []int32
+	if program < 0 {
+		for i := 0; i < g.TEs; i++ {
+			if after == "" || g.teUpdated(i) >= after {
+				out = append(out, int32(i))
+			}
+		}
+	} else {
+		for _, j := range g.byProgram[program] {
+			if (after == "" || g.teUpdated(g.te(int(j))) >= after) && (status == "" || g.status(int(j)) == status) {
+				out = append(out, j)
+			}
+		}
+	}
+	g.filtered[key] = out
+	return out
 }
 
 // programMeta is the generated programs' metadata, with full access for u.
@@ -156,9 +220,11 @@ func (g *generated) listTEs(w http.ResponseWriter, r *http.Request) bool {
 	page, _ := strconv.Atoi(q.Get("page"))
 	size, _ := strconv.Atoi(q.Get("pageSize"))
 	page, size = max(page, 1), max(size, 1)
+	var list []int32 // nil for the type without a filter: every person, in order
 	total := g.TEs
-	if !byType {
-		total = len(g.byProgram[program])
+	if !byType || q.Get("updatedAfter") != "" {
+		list = g.listing(program, q.Get("updatedAfter"), q.Get("enrollmentStatus"))
+		total = len(list)
 	}
 	// Every generated object has the same update time, so "updated after" the newest
 	// one the hub has seen means nothing changed (DHIS2 returns the few at that exact
@@ -202,10 +268,14 @@ func (g *generated) listTEs(w http.ResponseWriter, r *http.Request) bool {
 	}
 	for n := (page - 1) * size; n < total && n < page*size; n++ {
 		if byType {
-			items = append(items, render(n, -1))
+			i := n
+			if list != nil {
+				i = int(list[n])
+			}
+			items = append(items, render(i, -1))
 			continue
 		}
-		j := int(g.byProgram[program][n])
+		j := int(list[n])
 		items = append(items, render(g.te(j), j))
 	}
 	pager := map[string]any{"page": page, "pageSize": size}

@@ -1,6 +1,6 @@
 # Retention for tracker programs and tracked entity types
 
-Status: design approved in conversation 2026-10-16; spec for review.
+Status: implemented 2026-10-16 (docs/superpowers/plans/2026-10-16-tracker-retention.md). What central does: docs/FINDINGS.md. Measured: docs/PERFORMANCE.md. The first fill did not get smaller on central where people had recent activity in other programs (see there).
 
 ## Goal
 

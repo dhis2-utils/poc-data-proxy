@@ -45,7 +45,7 @@ The 1 GB knee is between 30 k and 60 k people; the incremental syncs at 60 k ran
 - A smaller data file (about twice the in-memory design's) and a faster first fill on SD cards (a larger cache during pulls, fewer indexes).
 - The paced run: writes and reads at the per-hour rates below (peak 5 × average), with bytes written per day for SD card wear.
 - Calibration on a real Pi (`perf/pi.sh bench`).
-- Retention by programme (below), which also shrinks the data file and the first fill.
+- Tracker retention at the HC IV size and on `pi5` (measured in process at 100 k: "Retention for tracker programs" below).
 
 ## How the hub scales
 
@@ -153,15 +153,36 @@ An effective catchment of about 250 000 people, 250 working days a year, a 5-yea
 | `hc4-5y`: the same today, all five years kept | 300 000 | 1.2 M | 3.1 M |
 | `pessimistic` | 700 000 | 1.2 M | 3.1 M |
 
-## Retention by programme (planned)
+## Retention for tracker programs
 
-Keeping five years of everything locally is not needed. All people are kept, so search and deduplication work offline; each program keeps its enrollments and events for a window of its own.
+Built (docs/superpowers/specs/2026-10-16-tracker-retention-design.md, docs/FINDINGS.md "Retention for tracker programs"). People are kept, so search and duplicate checks work offline. For each program with a window (`facility-hub-config/retention`, the same table as event programs, `defaultMonths` included):
 
-- **The table.** Program → months (for example OPD 3, laboratory 6, maternal 24, HIV care and NCD "while active"), with a default, in central's dataStore next to the hub registry; the hub reads it at each sync. Built for event programs (`facility-hub-config/retention`, "Event programs" above); tracker programs are to read the same table.
-- **Pulls** ask for enrollments that are active (any age) or enrolled within the window. An active ART patient keeps their full history.
-- **Pruning.** A periodic job deletes synced enrollments, with their events, that fell out of their window: completed or cancelled, enrolled before the cut-off, nothing pending.
-- **Offline.** A returning patient is found; their old enrollment answers "needs connection"; a new episode can be enrolled. In a program that allows one enrollment ever, Capture cannot see the old one offline and central rejects a second on push, unless the hub keeps who was ever enrolled in such programs. To decide.
-- **Tests.** The oracle narrows central's answer to each program's window, as it narrows it to the facility's ownership.
+- active enrollments are kept in full, whatever their age;
+- a completed or cancelled enrollment is kept in full until its last change is older than the cut-off, then as a stub. A stub has no data or events, is never read, and is kept for the "enrol once" check (E1016).
+
+Tracked entity types can also have windows (`trackedEntityTypes`), with no default.
+
+`internal/perf.TestTrackerRetention`, in process (unconstrained development machine), at 100 000 people, 400 000 enrollments and 1 000 000 events, 6 programs, 20 users. The generator spreads enrollments over five years; one over a year old is completed a year after it began, which is when it last changed.
+
+| | Without retention | `{"defaultMonths": 12}` |
+|---|---|---|
+| First fill (set-up and the users' first pulls) | 8 min 56 s | 5 min 22 s |
+| Data file | 5.2 GB | 2.2 GB |
+| Held | 400 k enrollments, 1.0 M events | 160 k enrollments in full plus 240 k stubs, 0.32 M events |
+| Sent by central, first fill | 9 681 requests, 2.6 GB | 9 851 requests, 2.7 GB |
+| Sent by central, a full pull | 1 273 requests, 493 MB | 1 443 requests, 574 MB; no one fetched again |
+| Pruning a full hub to the window | | 7 min: 240 k enrollments stubbed, 680 k events deleted, in transactions of 1 000 rows |
+
+The table shows four things.
+
+- **The hub.** The data file shrinks by 58 % and the first fill by 40 %.
+- **Central sends as much as before.** In this data nearly every person had a recent enrollment in some program, so the listing "changed since the cut-off" returns nearly everyone. Fetching a person for a program returns all their enrollments there, and every event of the old ones, which the hub then keeps only as stubs.
+  - Central's first fill shrinks only by the people with no change anywhere within the window. On this data there are almost none; on real data it depends on how many patients are episodic.
+  - Asking central for less (for example no events of closed enrollments) is not possible in one tracker query.
+- **A full pull costs 16 % more** than without retention, because it lists twice (active, and changed since the cut-off).
+- **No re-fetch.** A full pull after pruning fetched no tracked entity again: what is listed under an unchanged stub counts as held.
+
+Still to measure: the HC IV size (`hc4-5y` to `hc4`), and the same on `pi5`.
 
 ## Security of the SQLite index
 
@@ -200,3 +221,4 @@ Each page read and sorted the program's events; `objects_events` (creation order
 - **2026-10-15, full downloads.** eRegisters downloads every person per program (Android stops at 500): one device's download grew with the square of the facility, 1 h 14 min at HC IV size in process. The hub now keeps, per user and query, the last row of the page it served for ten minutes, and the next page reads on from that row's creation key (`pagePositions`): 4 min 10 s at HC IV size, every page 17–36 ms. A first try kept the SQL row offset instead; SQLite still stepped through the skipped rows (3 min 35 s at 100 k instead of 1 min 2 s). `TestQueryPlansUseIndexes` checks that reading on keeps the index's order.
 - **2026-10-15, aggregate data.** The Aggregate Data Entry app offline: a store of forms per data set window, pulled per access group (the numbers above).
 - **2026-10-15, event programs.** Held offline with retention by program; two indexes for event lists (the numbers above).
+- **2026-10-16, tracker retention.** Old closed enrollments are kept as stubs, with windows by program and by tracked entity type. At 100 k people with a 12-month window, the data file went from 5.2 to 2.2 GB and the first fill from 9 to 5 minutes. Central's bytes did not shrink on this data, where nearly everyone had a recent enrollment somewhere.
