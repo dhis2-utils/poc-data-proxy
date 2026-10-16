@@ -14,6 +14,7 @@ This is a proposal built on what the POC showed (see [FINDINGS.md](FINDINGS.md))
 6. **No IT staff at facilities, no visits needed.** The people at a hub facility are the staff who enter data. Setting up, replacing and unlocking a hub are things they can do with an installation card; everything else is done from central.
 7. **A hub only where it is needed.** A hub is for sharing data between staff and devices inside a facility while the internet is down. Most small facilities do not need one (section 0).
 8. **Keep it simple.** No new national infrastructure: the software comes from GitHub releases, and the country's settings and decisions live on its central DHIS2.
+9. **One image for every country.** The image and the Windows installer are the same everywhere; nothing country-specific is flashed or built in. Central's address is given at set-up, from the country's installation card.
 
 ## 0. Roles, and which facilities get a hub
 
@@ -22,7 +23,7 @@ This is a proposal built on what the POC showed (see [FINDINGS.md](FINDINGS.md))
 | Who | What |
 |---|---|
 | **National DHIS2 team** | Plans the rollout and chooses hub facilities with the districts. On central DHIS2: installs the Facility Hub app, checks user accounts, protects the hub's dataStore namespaces, sets retention, chooses the hub version, watches every hub, follows up refused changes in bulk, checks the hubs before upgrading central or tightening metadata. Trains district officers and facility focal points. |
-| **MoH IT** | Buys and prepares Pi kits (flashing at a depot, spares), installs the Windows service on chosen PCs, sets central's address for hubs. |
+| **MoH IT** | Buys and prepares Pi kits (flashing the supplier's image at a depot, spares), installs the Windows service on chosen PCs. |
 | **District** | Proposes hub facilities, delivers kits, helps facilities by phone, follows up refused changes from the Facility Hub app, sends spares. Not needed on site. |
 | **Facility** | A facility focal point (anyone assigned to the facility) sets up the hub with the installation card; every staff member logs in once online and moves their devices to the hub; staff keep the hub powered and log in after a restart. |
 | **Software supplier** | Publishes signed releases on GitHub (binaries, the Pi image, the Windows installer) and the Facility Hub app, tested against the DHIS2 versions they support. |
@@ -50,11 +51,11 @@ Rough cost per kit: USD 150–220.
 
 ## 2. The hub image and releases
 
-One generic image per release, built by the software supplier's CI with Raspberry Pi's image tools (`pi-gen` or `rpi-image-gen`) and published, signed, as a GitHub release next to the hub binaries and the Windows installer **(to build)**. Nothing in it is country-specific: the one country setting, central's address, goes on the card's boot partition at the depot (or into the Windows installer). The image contains:
+One generic image per release, built by the software supplier's CI with Raspberry Pi's image tools (`pi-gen` or `rpi-image-gen`) and published, signed, as a GitHub release next to the hub binaries and the Windows installer **(to build)**. Nothing in it is country-specific, so no country maintains its own image across hub and DHIS2 releases. The image contains:
 
 - **Raspberry Pi OS Lite, 64-bit.** No desktop.
 - **The hub binary** at `/usr/local/bin/hub`, the systemd unit from [`deploy/hub.service`](deploy/hub.service), and a `hub` service user.
-- **The country setting**: `central_url`, written at the depot to the boot partition and read into `/etc/hub/hub.yaml`. It is fixed, so nobody at a facility can point a hub at another server. Today `hub.yaml` also names a setup user group, a release channel and its key; under this plan the group goes (section 3) and the channel and key are the supplier's, built in **(to build)**.
+- **No country settings.** Central's address is given at set-up (section 3), from a QR code on the country's installation card; the release source and key are the supplier's, built in. Today `hub.yaml` holds `central_url`, a setup user group, a release channel and its key; under this plan none of them is needed **(to build)**.
 - **Networking:** NetworkManager; `dnsmasq`, used only in "hub provides the network" mode (section 4); `avahi-daemon` for `hub.local`.
 - **Time:** `chrony` with the country's NTP servers, falling back to the RTC.
 - **Firewall** (`nftables`): inbound HTTPS from the LAN only. No SSH.
@@ -100,9 +101,9 @@ Ideas for hardware and the image, recorded with what they would imply for the hu
 
 ### At the depot (bulk)
 
-1. Flash the supplier's image onto the SSDs, for example with a USB duplicator or `rpi-imager --cli` in a loop, and write central's address to the boot partition.
+1. Flash the supplier's image, unchanged, onto the SSDs, for example with a USB duplicator or `rpi-imager --cli` in a loop.
 2. Assemble the kits and power each one on once on the depot network. This runs first boot, sets the clock, creates the hub ID and checks that it can reach central.
-3. Print and stick the label (hub ID and the QR code for connecting devices). The depot list of hub IDs becomes the inventory; it matches the `facility-hub-registry` namespace on central.
+3. Print and stick the label: hub ID, the QR code for connecting devices, and the setup code from `data_dir/setup-token`, so only someone holding the box can set it up. The depot list of hub IDs becomes the inventory; it matches the `facility-hub-registry` namespace on central.
 4. Pack it with a one-page installation card.
 
 No facility is assigned at the depot. Any box can go anywhere.
@@ -112,7 +113,7 @@ No facility is assigned at the depot. Any box can go anywhere.
 No one from the district needs to come. Kits arrive by courier or with a routine district visit; Windows PCs get the hub from MoH IT beforehand.
 
 1. Mount the hub near the router and plug in power and Ethernet, as on the installation card. The card covers the case with no router (section 4, case C).
-2. On any laptop or phone on the facility network, open the address on the label (on the Windows PC, the hub's page opens on the PC itself). The hub shows its setup page.
+2. On any laptop or phone on the facility network, open the address on the label (on the Windows PC, the hub's page opens on the PC itself, and set-up only opens there). The hub shows its setup page. Scan the QR code on the installation card to give it central's address, and enter the setup code from the label. The hub accepts only `https` with a publicly trusted certificate, and shows the server's name before anyone logs in **(to build)**.
 3. The facility focal point, or anyone assigned to the facility, logs in with their own DHIS2 account. The hub then:
    - takes the facility from the user's org units (today: only a member of the setup user group may do this; under this plan, anyone assigned to the facility **(to build)**);
    - reads the facility's programmes;
@@ -129,7 +130,7 @@ If something fails, the focal point calls the district, which sees on central (t
 ### Replacing or moving a hub
 
 - **First find out what broke.** If the disk is fine and only the board (Pi) or PC failed, move the disk or the data folder to the replacement: it starts as the same hub with all its unsent data, and needs no setup. A dead disk is restored from the USB mirror stick (RECOVERY.md, option C2, **to build**), losing at most a minute of saves. Only a lost hub is replaced by a new one.
-- **Replacement:** a spare arrives by courier; a staff member of the facility sets it up and confirms "replace the old hub". To keep this safe without a setup group, a new hub may replace one that has sent no heartbeat for 3 days; a hub that still reports is retired by the national team in the Facility Hub app **(to build)**. The old one is marked retired in the registry; if it is still running and online, it stops serving patient data and only sends what it has not pushed, refused changes included, so plug it into any connection before collecting it. Anything an old hub that is lost had not pushed is gone, apart from what the mirror stick holds.
+- **Replacement:** a spare arrives by courier, the same day if need be; a staff member assigned to the facility sets it up and confirms "replace the old hub". Allowed at any time: patient data is not at stake, since a new hub gets data only through each user's own login, and the retired one stops serving data. Central records who replaced which hub and when; the Facility Hub app shows it and the national team can undo a mistaken replacement there **(to build)**. The old one is marked retired in the registry; if it is still running and online, it stops serving patient data and only sends what it has not pushed, refused changes included, so plug it into any connection before collecting it. Anything an old hub that is lost had not pushed is gone, apart from what the mirror stick holds.
 - **Decommissioning:** use "Reset hub" in the admin page (today for setup group members; under this plan, for staff assigned to the facility). It pushes the outbox, wipes the store and returns to setup mode. Then revoke its PATs centrally.
 - **Theft:** the store is unreadable without a staff password, because the data key is only in memory. It is only as strong as the weakest password among the users with a key slot, though: whoever holds the SSD can test password guesses offline against each slot, and a cracked password is also that user's central DHIS2 password. Treat a stolen hub as a possible password leak: ask its users to change their passwords. Revoke the hub's and users' PATs on central **(to build: a "revoke all tokens of this hub" action)**.
 
@@ -330,7 +331,13 @@ A hub only serves its own facility. A community health worker's tablet that visi
 - **Passwords protect the disk.** Each key slot can be attacked offline by whoever holds the SSD (Argon2id slows this down; it does not stop weak passwords). Enforce central's password policy for hub users. The hub removes slots of users who have not logged in for `key_slot_max_age`.
 - **TPM (a requirement for a national rollout).** A TPM add-on board (about USD 25 for the Pi) could hold a device secret mixed into every key slot, so an SSD on its own is useless and the TPM limits how fast passwords can be guessed **(to build)**.
 - **What the encryption does not cover.** AES-XTS keeps the data file confidential but does not detect tampering outside the sealed rows; someone with write access to the disk can corrupt it. And once a staff member logs in, the whole facility's data is decrypted in the hub's memory: a running hub is a more valuable target than its disk.
-- **Central server address:** set `central_url` (and `central_hosts` for alternatives) at the depot or in the installer so nobody at a hub can choose another server. Domain migrations go through a signed release (`hub release -central-url`) today; with releases on GitHub shared by all countries, this needs another home (to decide).
+- **Central server address.** Given once at set-up (above). Afterwards it changes only when central moves, and a hub must never be stranded by that. One rule: **a hub switches only to a server that proves it is the same DHIS2**: it accepts this hub's own token and holds this hub's registry entry. Tokens are stored hashed in central's database, so only a copy of that database passes. Ways a hub learns the new address, each checked by that rule **(to build)**:
+  1. *Announced:* the national team enters it in the Facility Hub app before the move; hubs pick it up at their next sync and switch when the old address stops answering and the new one passes.
+  2. *Redirect:* the old name answers with a permanent redirect; the hub follows it and checks the server.
+  3. *Typed in:* for an unplanned move, a staff member enters the new address on the hub's page.
+
+  A hub that misses all three keeps working offline, with its data, waiting for an address. Today a move goes through a signed release manifest (`hub release -central-url`), which no longer fits once releases are shared by all countries.
+- **Signing.** Hub binaries and the release manifest are signed with the supplier's ed25519 release key, which hubs check before upgrading. The Windows installer and `hub.exe` are also Authenticode-signed with a code-signing certificate issued to the supplier's organisation; its key must sit in hardware, so CI signs through a cloud signing service (for example Azure Trusted Signing, about USD 10 a month, or DigiCert KeyLocker) with `signtool`, or `jsign` from Linux. SmartScreen warns until the certificate has built up download reputation.
 - **Host names:** if devices reach the hub by a name other than its host name, `hub.local` or its IP (for example a router DNS name), list it in `hub_hosts`; the hub refuses unknown `Host` headers.
 
 ## 7. Rollout plan
