@@ -360,9 +360,9 @@ A hub only serves its own facility. A community health worker's tablet that visi
 - [ ] Offline test: uplink unplugged, a registration on one device seen on another
 - [ ] Heartbeat visible in the Facility Hub app on central
 
-### Facilities with wards or departments as org units (open)
+### Possible future enhancement: wards or departments as org units
 
-Some countries put wards or departments below the facility org unit, with staff assigned to the facility or to a ward, and search scope usually the whole facility. The hub does not support this today: a user assigned only to a ward cannot log in through it (it accepts the facility or above), its pulls take only data owned by the facility org unit itself, and set-up offers the lowest-level org units, which would be the wards. Supporting it **(to specify)**: a facility level set by the country in the Facility Hub app; the hub serves the facility and everything below it; pulls with the facility's descendants, still per user, so central decides what each user sees; login for anyone assigned at or below the facility; data written offline readable by users whose capture or search scope covers its org unit, and writable only to org units in the user's capture scope; searches on the subtree, or the ward an app selects.
+Not planned for now. Some countries put wards or departments below the facility org unit, with staff assigned to the facility or to a ward, and search scope usually the whole facility. The hub does not support this today: a user assigned only to a ward cannot log in through it (it accepts the facility or above), its pulls take only data owned by the facility org unit itself, and set-up offers the lowest-level org units, which would be the wards. Supporting it would take: a facility level set by the country in the Facility Hub app; the hub serves the facility and everything below it; pulls with the facility's descendants, still per user, so central decides what each user sees; login for anyone assigned at or below the facility; data written offline readable by users whose capture or search scope covers its org unit, and writable only to org units in the user's capture scope; searches on the subtree, or the ward an app selects.
 
 ### Longer term
 
