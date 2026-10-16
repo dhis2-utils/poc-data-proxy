@@ -42,7 +42,7 @@ One kit per facility, assembled and flashed at a central depot.
 | Storage | 128 GB NVMe SSD on an M.2 HAT (Pi 5) or a USB 3 SSD (Pi 4). Not an SD card. | The store writes on every sync. SD cards wear out and corrupt on power loss. |
 | Power | Official power supply plus a small UPS (UPS HAT or a 12 V mini UPS) | Power cuts are common. A clean shutdown protects the store, and a UPS keeps the LAN up during short cuts. |
 | Clock | Required: the Pi 5's RTC with its battery; a Pi 4 has no RTC and needs an add-on RTC module | TLS and PAT expiry need the right time after a power cut with no internet, and offline the hub's clock decides which aggregate period is current and when a period expires: a board restarting at its last saved time would answer a new month's form as locked until it reaches a time server. (The hub's pulls follow central's clock, not its own.) |
-| Mirror | An industrial USB stick | Holds a copy of every offline save and a nightly snapshot (RECOVERY.md, option C2), so a dead disk loses at most a minute of saves **(to build)**. |
+| USB stick | An industrial USB stick, in the box | Two jobs, one stick **(to build)**: before set-up it carries the hub's setup code (below); after set-up it is the mirror, a copy of every offline save and a nightly snapshot (RECOVERY.md, option C2), so a dead disk loses at most a minute of saves. |
 | Case | Passive-cooled metal case, wall-mountable | Heat and dust. No fan to fail. |
 | Network | Ethernet cable; optional USB 4G modem for facilities with no uplink | See section 4. |
 | Label | Hub ID and a QR code for connecting devices (section 4, "Reaching the hub securely") | The label is what staff and support use to find the hub. A Pi has no screen to show the code on. |
@@ -103,7 +103,7 @@ Ideas for hardware and the image, recorded with what they would imply for the hu
 
 1. Flash the supplier's image, unchanged, onto the SSDs, for example with a USB duplicator or `rpi-imager --cli` in a loop.
 2. Assemble the kits and power each one on once on the depot network. This runs first boot, sets the clock, creates the hub ID and checks that it can reach central.
-3. Print and stick the label: hub ID, the QR code for connecting devices, and the setup code from `data_dir/setup-token`. With a generic image, a fresh hub does not know central yet, and the assignment check runs on whatever server it is pointed at: without the code, anyone on the facility Wi-Fi could open the set-up page first and point the hub at their own server. The code means only someone holding the box can set it up. (A Windows hub needs none: its set-up opens only on the PC itself.) The depot list of hub IDs becomes the inventory; it matches the `facility-hub-registry` namespace on central.
+3. Print and stick the label: hub ID and the QR code for connecting devices. The setup code is not printed: at first boot, while not set up, the hub writes `setup-code.txt` (the code and the hub ID) to the USB stick in the box **(to build)**. A disk flashed at a district therefore carries its code on the stick already in the kit, with no inventory record needed. Any stick plugged in while the hub is in set-up mode also gets the file, in case the kit's stick is missing; once set up, the hub never writes it again, and a used code no longer works. The code in plain text next to the encrypted backup weakens nothing: it only allows set-up of an unconfigured disk. (To settle when built: the hub keeps the same code across reboots before set-up, or rewrites the file at each boot.) With a generic image, a fresh hub does not know central yet, and the assignment check runs on whatever server it is pointed at: without the code, anyone on the facility Wi-Fi could open the set-up page first and point the hub at their own server. The code means only someone holding the box can set it up. (A Windows hub needs none: its set-up opens only on the PC itself.) The depot list of hub IDs becomes the inventory; it matches the `facility-hub-registry` namespace on central.
 4. Pack it with a one-page installation card.
 
 No facility is assigned at the depot. Any box can go anywhere.
@@ -113,7 +113,7 @@ No facility is assigned at the depot. Any box can go anywhere.
 No one from the district needs to come. Kits arrive by courier or with a routine district visit; Windows PCs get the hub from MoH IT beforehand.
 
 1. Mount the hub near the router and plug in power and Ethernet, as on the installation card. The card covers the case with no router (section 4, case C).
-2. On any laptop or phone on the facility network, open the address on the label (on the Windows PC, the hub's page opens on the PC itself, and set-up only opens there). The hub shows its setup page. Scan the QR code on the installation card to give it central's address, and enter the setup code from the label. The hub accepts only `https` with a publicly trusted certificate, and shows the server's name before anyone logs in **(to build)**.
+2. On any laptop or phone on the facility network, open the address on the label (on the Windows PC, the hub's page opens on the PC itself, and set-up only opens there). The hub shows its setup page. Scan the QR code on the installation card to give it central's address, and enter the setup code from `setup-code.txt` on the USB stick in the box (read on a laptop, or a phone with a USB adapter). The hub accepts only `https` with a publicly trusted certificate, and shows the server's name before anyone logs in **(to build)**.
 3. The facility focal point, or anyone assigned to the facility, logs in with their own DHIS2 account. The hub then:
    - takes the facility from the user's org units (today: only a member of the setup user group may do this; under this plan, anyone assigned to the facility **(to build)**);
    - reads the facility's programmes;
@@ -352,7 +352,7 @@ A hub only serves its own facility. A community health worker's tablet that visi
 ### Per-facility checklist
 
 - [ ] Facility chosen for a hub (section 0)
-- [ ] Power socket with UPS; hub mounted, cooled, labelled; mirror stick in
+- [ ] Power socket with UPS; hub mounted, cooled, labelled; USB stick in (setup code, then backup)
 - [ ] Network case identified (A/B/C/D); client isolation checked (and DNS rebinding, with option A)
 - [ ] Hub set up by a staff member assigned to the facility
 - [ ] Every staff member logged in once through the hub (this is when their data downloads)

@@ -57,6 +57,8 @@ Every outbox write is also written to a USB stick plugged into the hub, encrypte
 
 ### C2. Disk plus USB, restorable (extends C)
 
+Chosen for the kit (DEPLOYMENT.md, section 1; not built): one USB stick per box, which before set-up carries the hub's setup code and after set-up is this mirror. Its state (present, last copy, failing, full) shows on the hub's page and in the heartbeat, so central sees a hub without a working stick. The facility keeps the stick in the box, and keeps it when a disk is replaced.
+
 The hub keeps a copy on a USB stick in two parts, so the stick is not worn out by constant writes:
 
 - **Every minute, if anything is new:** the offline saves accepted since the last copy, plus changed key slots, tokens, the hub's identity and keys, and sync state. A few kilobytes per save; nothing is written when nobody saves. Copying runs on its own schedule, so a slow or failing stick never delays a client's save.
