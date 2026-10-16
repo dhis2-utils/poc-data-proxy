@@ -172,7 +172,7 @@ These small devices often have no Ethernet port and frequently isolate clients.
 ### Case D: managed networks (hospital IT, NGO-managed sites)
 
 - Static IP or reserved DHCP, a firewall exception for outbound HTTPS to central and to GitHub (releases), and inbound HTTPS from client subnets.
-- Proxy servers: the hub needs outbound HTTPS to central's URL and GitHub (releases). An `https_proxy` setting **(to build)** would cover sites that force a web proxy.
+- Proxy servers: the hub needs outbound HTTPS to central's URL and GitHub (releases). Every outbound connection of the hub already honours the standard `HTTPS_PROXY` environment variable (Go's default transport; loopback is never proxied). On an image without SSH that is set nowhere, so sites that force a web proxy need a proxy field on the hub's page **(to build)**.
 
 ### What the hub needs from any network
 
