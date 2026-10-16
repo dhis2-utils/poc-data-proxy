@@ -388,7 +388,7 @@ Event programs (without registration) work offline through the hub since 2026-10
 **What the hub does:**
 
 - The catalog holds the facility's event programs; the access refresh reads which category options of attribute category combinations each user may write.
-- The pull lists each event program's events per access group (per user where an attribute combination decides), whole, with deleted ones: an event deleted on central disappears offline at the next pull. Event programs are not part of the ownership check (they have no program owner).
+- The pull lists each event program's events per access group (per user where an attribute combination decides), whole, with deleted ones: an event deleted on central leaves lists offline at the next pull and stays as a tombstone for Android's download (see "Deletions on central"). Event programs are not part of the ownership check (they have no program owner).
 - Retention by program: central's dataStore `facility-hub-config/retention` (`{"defaultMonths": 0, "programs": {"<program>": 12}}`; 0 or no entry keeps everything). The pull asks only for events within it (`occurredAfter`), and each cycle prunes synced events that fell out of it; events with edits waiting are kept. Tracker programs will read the same table.
 - Offline, working lists, single events and Android's download answer for event programs; new and edited events are queued as their author's; deletes stay refused.
 - Offline writes with a non-default attribute option combination (events of any program, and 2.43 enrollments) are accepted when the user may write every option in it, refused with E1099 otherwise; before, all were refused offline.
@@ -400,3 +400,19 @@ Event programs (without registration) work offline through the hub since 2026-10
 - Users not assigned to the facility (district officers) get "needs connection" offline for event programs too, as for tracker programs.
 - Android's real download of event programs through the hub was not run (no emulator attached); the oracle covers its query parameters.
 
+
+## Deletions on central (tombstones)
+
+**What central does** (2.42, synthetic):
+
+- Deleting an event, enrollment or person is a soft delete. It moves `updatedAt` of the object and of what holds it (an event's enrollment and person), so `updatedAfter` finds it.
+- A program listing of tracked entities with `includeDeleted=true` returns deleted people, enrollments and events nested, each with `deleted: true`. A single read (`trackedEntities/<uid>`) leaves the deleted events out even with `includeDeleted=true`; a deleted event read alone is 404.
+- Bug: a listing by `trackedEntityType` with `includeDeleted=true` fails with 409 E7145, "Query failed because of a syntax error" (the SQL central builds has `…164ORDER`).
+- Changing a deleted object is refused: E1114 (person), E1113 (enrollment), E1082 (event).
+
+**What the hub does:**
+
+- The pulls of tracker and event programs ask for deletions (`includeDeleted=true`) and keep each deleted object as a tombstone: the row stays, marked `deleted`. The pull of people enrolled in nothing (by type) does not, because of the bug above; a person deleted there leaves the hub at the weekly full pull.
+- Offline, lists, a person's enrollments and events, and single reads leave tombstones out (a single read answers 404, as central). With `includeDeleted=true` (Android's download) they are returned with `deleted: true`, so a device drops what it downloaded before: before, an event deleted on central stayed on a tablet that synced only through the hub.
+- An offline edit of a tombstone is refused with central's code.
+- Event-program tombstones are pruned with retention like other events; tracker tombstones stay until tracker retention exists.

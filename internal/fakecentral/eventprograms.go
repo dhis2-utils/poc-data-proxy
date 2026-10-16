@@ -174,3 +174,23 @@ func (g *generated) listEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{"pager": map[string]any{"page": page, "pageSize": size}, "events": events})
 }
+
+// SoftDelete marks a tracker object deleted, as central's soft delete does: a tracked
+// entity with its enrollments and events, an enrollment with its events.
+func (c *Central) SoftDelete(uid string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ts := c.now()
+	mark := func(u string) {
+		if o := c.objects[u]; o != nil {
+			o["deleted"], o["updatedAt"] = true, ts
+		}
+	}
+	mark(uid)
+	for _, u := range c.order {
+		o := c.objects[u]
+		if o["trackedEntity"] == uid || o["enrollment"] == uid {
+			mark(u)
+		}
+	}
+}

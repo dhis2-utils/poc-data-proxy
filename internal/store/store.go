@@ -284,6 +284,12 @@ UPDATE objects SET occurred_at = coalesce(json_extract(slim, '$.occurredAt'), ''
 CREATE INDEX objects_events ON objects(kind, program, owner_org_unit, created_at, uid);
 CREATE INDEX objects_events_occurred ON objects(kind, program, owner_org_unit, occurred_at DESC, uid);
 `,
+	// Tombstones: what central deleted stays as a row marked deleted, for Android's
+	// download (includeDeleted=true); everything else leaves it out.
+	`
+ALTER TABLE objects ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;
+UPDATE objects SET deleted = 1 WHERE json_extract(slim, '$.deleted') = 1;
+`,
 }
 
 // SchemaVersion is the number of key file migrations this binary knows.

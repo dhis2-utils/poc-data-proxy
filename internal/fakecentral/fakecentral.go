@@ -159,6 +159,15 @@ func (c *Central) Seed(te, enr, firstName, nationalID string, events map[string]
 	}
 }
 
+// SeedPerson adds a tracked entity registered at the facility, enrolled in nothing.
+func (c *Central) SeedPerson(te, firstName string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ts := c.now()
+	c.put("trackedEntity", te, tracker.M{"trackedEntity": te, "trackedEntityType": TET, "orgUnit": Facility, "createdAt": ts, "updatedAt": ts,
+		"attributes": []any{tracker.M{"attribute": AttrFirstName, "value": firstName}}})
+}
+
 func (c *Central) put(kind, uid string, m tracker.M) {
 	if _, ok := c.objects[uid]; !ok {
 		c.order = append(c.order, uid)
@@ -519,6 +528,12 @@ func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 	size, _ := strconv.Atoi(q.Get("pageSize"))
 	page, size = max(page, 1), max(size, 1)
 	after := q.Get("updatedAfter")
+	withDeleted := q.Get("includeDeleted") == "true"
+	if withDeleted && q.Get("trackedEntityType") != "" {
+		// As 2.42: the query central builds for this is broken SQL.
+		webMessage(w, 409, "Query failed because of a syntax error (SqlState: 42601)", "E7145")
+		return
+	}
 	var only map[string]bool
 	if v := q.Get("trackedEntities"); v != "" {
 		only = map[string]bool{}
@@ -530,7 +545,7 @@ func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 	var tes []tracker.M
 	for _, uid := range c.order {
 		o := c.objects[uid]
-		if c.kinds[uid] != "trackedEntity" || (only != nil && !only[uid]) {
+		if c.kinds[uid] != "trackedEntity" || (only != nil && !only[uid]) || (o["deleted"] == true && !withDeleted) {
 			continue
 		}
 		if byType && o["orgUnit"] != q.Get("orgUnits") {
@@ -544,7 +559,7 @@ func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 		latest := tracker.Str(te, "updatedAt")
 		for _, eu := range c.order {
 			e := c.objects[eu]
-			if c.kinds[eu] != "enrollment" || e["trackedEntity"] != uid {
+			if c.kinds[eu] != "enrollment" || e["trackedEntity"] != uid || (e["deleted"] == true && !withDeleted) {
 				continue
 			}
 			en := deepCopy(e)
@@ -552,7 +567,7 @@ func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 			var evs []any
 			for _, vu := range c.order {
 				ev := c.objects[vu]
-				if c.kinds[vu] == "event" && ev["enrollment"] == eu && canSeeEvent(u, ev) {
+				if c.kinds[vu] == "event" && ev["enrollment"] == eu && canSeeEvent(u, ev) && (ev["deleted"] != true || withDeleted) {
 					evs = append(evs, deepCopy(ev))
 					latest = max(latest, tracker.Str(ev, "updatedAt"))
 				}

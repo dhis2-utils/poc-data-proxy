@@ -340,3 +340,114 @@ func TestEventRetentionPrunesPushedEdits(t *testing.T) {
 		t.Fatalf("an old event edited offline is still held after its push (%v)", err)
 	}
 }
+
+// Deletions on central are kept as tombstones: offline, lists and single reads leave
+// them out, and Android's download (includeDeleted=true) gets them, deleted, so a
+// device drops what it downloaded before. Editing one is refused with central's code.
+// For an event program's event and a tracker event, deleted on central.
+func TestTombstonesOffline(t *testing.T) {
+	e := tk.Start(t)
+	if e.Fake != nil {
+		e.Fake.SeedProgramEvent("FakeEvDel01", fc.EventProgram, fc.EventStage, "2026-10-01", fc.DefaultAOC)
+	}
+	e.Setup()
+	if len(e.M.EventPrograms) == 0 {
+		t.Skip("no event program at the facility")
+	}
+	nurse := e.Android(tk.RoleNurse)
+	nurse.Do("GET", "/api/me?fields=id", nil)
+	// One event of each kind the nurse sees, read online from central.
+	pick := func(program string) map[string]any {
+		t.Helper()
+		body := nurse.JSON("GET", eventPath(e, program, url.Values{"fields": {"event,programStage"},
+			"pageSize": {"1"}, "order": {"createdAt:asc"}}), nil, 200)
+		evs := body["events"].([]any)
+		if len(evs) == 0 {
+			t.Skipf("no event of %s at the facility", program)
+		}
+		return evs[0].(map[string]any)
+	}
+	evProgram, trProgram := e.M.EventPrograms[0], e.M.Programs[0]
+	single := pick(evProgram.ID)
+	var tracked map[string]any // a tracker event, with its person
+	tes := nurse.JSON("GET", "/api/tracker/trackedEntities?program="+trProgram.ID+"&orgUnits="+e.M.Facility.ID+
+		"&fields=trackedEntity,enrollments[events[event,programStage]]&pageSize=20", nil, 200)
+	for _, x := range tes["trackedEntities"].([]any) {
+		te := x.(map[string]any)
+		for _, en := range asList(te["enrollments"]) {
+			for _, ev := range asList(en.(map[string]any)["events"]) {
+				if tracked == nil {
+					tracked = ev.(map[string]any)
+					tracked["trackedEntity"] = te["trackedEntity"]
+				}
+			}
+		}
+	}
+	if tracked == nil {
+		t.Skipf("no event of %s at the facility", trProgram.ID)
+	}
+	e.Sync()
+	e.CentralDelete("events", single["event"].(string))
+	e.CentralDelete("events", tracked["event"].(string))
+	e.Sync()
+	e.Offline()
+	withDeleted := url.Values{"includeDeleted": {"true"}, "fields": {"event,deleted"}, "paging": {"false"}}
+	check := func(program, ev string) {
+		t.Helper()
+		if got := eventUIDs(nurse.JSON("GET", eventPath(e, program, url.Values{"paging": {"false"}}), nil, 200)); slices.Contains(got, ev) {
+			t.Errorf("%s: a deleted event in a list", program)
+		}
+		body := nurse.JSON("GET", eventPath(e, program, withDeleted), nil, 200)
+		found := false
+		for _, x := range body["events"].([]any) {
+			m := x.(map[string]any)
+			if m["event"] == ev {
+				found = m["deleted"] == true
+			}
+		}
+		if !found {
+			t.Errorf("%s: includeDeleted=true does not return %s as deleted", program, ev)
+		}
+		if st, _ := nurse.Do("GET", "/api/tracker/events/"+ev+"?fields=event", nil); st != 404 {
+			t.Errorf("%s: a deleted event read singly: %d", program, st)
+		}
+	}
+	check(evProgram.ID, single["event"].(string))
+	check(trProgram.ID, tracked["event"].(string))
+	te := nurse.JSON("GET", "/api/tracker/trackedEntities/"+tracked["trackedEntity"].(string)+"?program="+trProgram.ID+
+		"&fields=enrollments[events[event]]", nil, 200)
+	if b, _ := json.Marshal(te); strings.Contains(string(b), tracked["event"].(string)) {
+		t.Errorf("a deleted event among a person's events: %s", b)
+	}
+	// Editing what central deleted is refused with central's code.
+	ev := map[string]any{"event": single["event"], "program": evProgram.ID, "programStage": single["programStage"],
+		"orgUnit": e.M.Facility.ID, "occurredAt": "2026-10-02", "status": "ACTIVE", "dataValues": []any{}}
+	st, body := nurse.Do("POST", "/api/tracker?async=false", map[string]any{"events": []any{ev}})
+	if st != 409 || !strings.Contains(string(body), "E1082") {
+		t.Errorf("editing a deleted event offline: %d %s", st, body)
+	}
+}
+
+// The pull of people enrolled in nothing (by tracked entity type) leaves out
+// includeDeleted: on 2.42 central answers that combination with broken SQL (E7145), and
+// such people were missing offline.
+func TestTypePullWithoutIncludeDeleted(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	e.Fake.SeedPerson("FakeTeNoEnr", "Unenrolled")
+	e.Setup()
+	nurse := e.Android(tk.RoleNurse)
+	nurse.Do("GET", "/api/me?fields=id", nil)
+	e.Sync()
+	e.Offline()
+	body := nurse.JSON("GET", "/api/tracker/trackedEntities?trackedEntityType="+fc.TET+"&orgUnits="+e.M.Facility.ID+
+		"&fields=trackedEntity", nil, 200)
+	if b, _ := json.Marshal(body); !strings.Contains(string(b), "FakeTeNoEnr") {
+		t.Errorf("a person enrolled in nothing is missing offline: %s", b)
+	}
+}
+
+func asList(v any) []any {
+	l, _ := v.([]any)
+	return l
+}

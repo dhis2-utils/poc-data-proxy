@@ -47,8 +47,10 @@ type Object struct {
 	CreatedAt, Status string
 	RelFrom, RelTo    string
 	Slim              []byte
-	Attrs             []Attr // a tracked entity's attribute values
-	Payload           []byte
+	// Deleted: a tombstone, deleted on central (the slim JSON's deleted).
+	Deleted bool
+	Attrs   []Attr // a tracked entity's attribute values
+	Payload []byte
 }
 
 // Attr is one attribute value of a tracked entity, as queries search it.
@@ -59,16 +61,17 @@ type Attr struct{ Attr, Value string }
 // not wait for while other writers hold the rest of the pool waiting for its lock.
 const (
 	sqlPutObject = `INSERT INTO objects(uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at,
- origin, sync_state, payload_enc, slot, created_at, status, rel_from, rel_to, slim, te_created, occurred_at)
+ origin, sync_state, payload_enc, slot, created_at, status, rel_from, rel_to, slim, te_created, occurred_at, deleted)
  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
  CASE WHEN ?2 = 'enrollment' THEN coalesce((SELECT created_at FROM objects WHERE uid = ?3 AND kind = 'trackedEntity'), '') ELSE '' END,
- CASE WHEN ?2 = 'event' THEN coalesce(json_extract(?18, '$.occurredAt'), '') ELSE '' END)
+ CASE WHEN ?2 = 'event' THEN coalesce(json_extract(?18, '$.occurredAt'), '') ELSE '' END,
+ coalesce(json_extract(?18, '$.deleted'), 0))
 ON CONFLICT(uid) DO UPDATE SET kind=excluded.kind, te_uid=excluded.te_uid, enrollment_uid=excluded.enrollment_uid,
  program=excluded.program, stage=excluded.stage, tet=excluded.tet, owner_org_unit=excluded.owner_org_unit,
  updated_at=excluded.updated_at, origin=excluded.origin, sync_state=excluded.sync_state, payload_enc=excluded.payload_enc,
  slot=coalesce(objects.slot, excluded.slot), created_at=excluded.created_at, status=excluded.status,
  rel_from=excluded.rel_from, rel_to=excluded.rel_to, slim=excluded.slim, te_created=excluded.te_created,
- occurred_at=excluded.occurred_at`
+ occurred_at=excluded.occurred_at, deleted=excluded.deleted`
 	sqlTECreated     = `UPDATE objects INDEXED BY objects_te SET te_created = ? WHERE te_uid = ? AND kind = 'enrollment' AND te_created <> ?`
 	sqlDeleteAttrs   = `DELETE FROM te_attrs WHERE te_uid = ?`
 	sqlInsertAttr    = `INSERT OR REPLACE INTO te_attrs(te_uid, attr, value, value_lc) VALUES(?,?,?,?)`
@@ -192,7 +195,7 @@ func (s *Store) SealedPayloads(uids []string) (map[string][]byte, error) {
 
 // objectColumns are the columns ScanObject reads, without the payload.
 var objectColumns = []string{"uid", "kind", "te_uid", "enrollment_uid", "program", "stage", "tet", "owner_org_unit",
-	"updated_at", "origin", "sync_state", "slot", "created_at", "status", "rel_from", "rel_to", "slim"}
+	"updated_at", "origin", "sync_state", "slot", "created_at", "status", "rel_from", "rel_to", "deleted", "slim"}
 
 var objectCols = ObjectCols("")
 
@@ -216,7 +219,7 @@ func ScanObject(sc interface{ Scan(...any) error }, extra ...any) (*Object, erro
 	o := &Object{}
 	var slim string
 	err := sc.Scan(append([]any{&o.UID, &o.Kind, &o.TE, &o.Enrollment, &o.Program, &o.Stage, &o.TET, &o.OwnerOrgUnit,
-		&o.UpdatedAt, &o.Origin, &o.SyncState, &o.Slot, &o.CreatedAt, &o.Status, &o.RelFrom, &o.RelTo, &slim}, extra...)...)
+		&o.UpdatedAt, &o.Origin, &o.SyncState, &o.Slot, &o.CreatedAt, &o.Status, &o.RelFrom, &o.RelTo, &o.Deleted, &slim}, extra...)...)
 	o.Slim = []byte(slim)
 	return o, err
 }
@@ -255,7 +258,7 @@ func (s *Store) QueryObjectPairs(query string, args ...any) ([][2]*Object, error
 		b := &Object{}
 		var slim string
 		a, err := ScanObject(rows, &b.UID, &b.Kind, &b.TE, &b.Enrollment, &b.Program, &b.Stage, &b.TET, &b.OwnerOrgUnit,
-			&b.UpdatedAt, &b.Origin, &b.SyncState, &b.Slot, &b.CreatedAt, &b.Status, &b.RelFrom, &b.RelTo, &slim)
+			&b.UpdatedAt, &b.Origin, &b.SyncState, &b.Slot, &b.CreatedAt, &b.Status, &b.RelFrom, &b.RelTo, &b.Deleted, &slim)
 		if err != nil {
 			return nil, err
 		}

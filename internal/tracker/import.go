@@ -164,6 +164,11 @@ func (im *Importer) existing(it *Item) (*Obj, []ErrorReport) {
 		return nil, im.errf(it, "E1048", "Object: `%s`, uid: `%s`, is already used by another object", TrackerType(it.Kind), it.UID)
 	}
 	switch {
+	case old != nil && old.Deleted && im.pending[it.UID] == nil:
+		// A tombstone: central refuses to change what it deleted, with these codes.
+		code := map[string]string{store.KindTrackedEntity: "E1114", store.KindEnrollment: "E1113",
+			store.KindEvent: "E1082", store.KindRelationship: "E4017"}[it.Kind]
+		return nil, im.errf(it, code, "%s: `%s`, is already deleted and can't be modified.", TrackerType(it.Kind), it.UID)
 	case old != nil && !im.Ix.CanRead(im.V, old) && im.pending[it.UID] == nil:
 		return nil, im.errf(it, "E1000", "needs connection: %s `%s` is not available offline", it.Kind, it.UID)
 	case old != nil && im.Strategy == "CREATE":

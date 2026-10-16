@@ -265,7 +265,7 @@ func (ix *Index) row(r *store.Object, needData bool) *Obj {
 	}
 	return &Obj{UID: r.UID, Kind: r.Kind, TE: r.TE, Enrollment: r.Enrollment, Program: r.Program, Stage: r.Stage,
 		TET: r.TET, OwnerOrgUnit: r.OwnerOrgUnit, UpdatedAt: r.UpdatedAt, Origin: r.Origin, SyncState: r.SyncState,
-		Slot: uint32(r.Slot), slim: true, raw: r.Slim}
+		Slot: uint32(r.Slot), Deleted: r.Deleted, slim: true, raw: r.Slim}
 }
 
 // withData returns o with its slim data decoded: o itself, or a decoded copy (o may be
@@ -311,6 +311,7 @@ func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *A
 	if err := checkParams(collection, q); err != nil {
 		return nil, err
 	}
+	v.IncludeDeleted = q.Get("includeDeleted") == "true"
 	pg, size, paged, totals, perr := paging(q)
 	if perr != nil {
 		return nil, perr
@@ -447,6 +448,12 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *API
 		w.add("t.kind = 'trackedEntity'")
 	}
 	w.add("t.owner_org_unit = ?", v.Facility)
+	if !v.IncludeDeleted {
+		w.add("t.deleted = 0")
+		if p.pairs {
+			w.add("e.deleted = 0")
+		}
+	}
 	if tet != "" {
 		w.add("t.tet = ?", tet)
 	}
@@ -541,6 +548,9 @@ func (ix *Index) searchEnrollments(v *Viewer, q url.Values, program string) (*pl
 	enrolled := timeFilter{"enrolledAt", "enrolledAfter", "enrolledBefore"}
 	w := &where{}
 	w.add("e.kind = 'enrollment' AND e.owner_org_unit = ?", v.Facility)
+	if !v.IncludeDeleted {
+		w.add("e.deleted = 0")
+	}
 	w.in("e.uid", uids)
 	if te != "" {
 		w.add("e.te_uid = ?", te)
@@ -662,6 +672,9 @@ func (ix *Index) searchEvents(v *Viewer, q url.Values, program string) (*plan, *
 	tfs := []timeFilter{{"occurredAt", "occurredAfter", "occurredBefore"}, {"scheduledAt", "scheduledAfter", "scheduledBefore"}}
 	w := &where{}
 	w.add("ev.kind = 'event' AND ev.owner_org_unit = ?", v.Facility)
+	if !v.IncludeDeleted {
+		w.add("ev.deleted = 0")
+	}
 	w.in("ev.uid", uids)
 	w.in("ev.enrollment_uid", enrs)
 	if te != "" {

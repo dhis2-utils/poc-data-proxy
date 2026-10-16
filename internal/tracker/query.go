@@ -69,8 +69,8 @@ func checkParams(collection string, q url.Values) *APIError {
 			return unsupported(k)
 		}
 	}
-	// includeDeleted=true (Android's download) is accepted: deletes are refused offline,
-	// so the hub never holds a tombstone to return.
+	// includeDeleted=true (Android's download) also returns tombstones, what central
+	// deleted, marked deleted (Viewer.IncludeDeleted).
 	return nil
 }
 
@@ -328,7 +328,8 @@ func (ix *Index) visible(v *Viewer, objs []*Obj) []*Obj {
 // visibleWith is CanRead with the user's bitmap already in hand.
 func (ix *Index) visibleWith(v *Viewer, bm bitmap, o *Obj) bool {
 	if o.Origin == store.OriginCentral {
-		return v.Access != nil && o.OwnerOrgUnit == v.Facility && bm.has(o.Slot) && accessAllows(v, o)
+		return v.Access != nil && o.OwnerOrgUnit == v.Facility && (!o.Deleted || v.IncludeDeleted) &&
+			bm.has(o.Slot) && accessAllows(v, o)
 	}
 	return ix.CanRead(v, o)
 }
@@ -477,6 +478,16 @@ func (ix *Index) GetOne(v *Viewer, collection, uid string, q url.Values) (M, *AP
 	kind := map[string]string{"trackedEntities": store.KindTrackedEntity, "enrollments": store.KindEnrollment,
 		"events": store.KindEvent, "relationships": store.KindRelationship}[collection]
 	o := ix.Get(uid)
+	v.IncludeDeleted = q.Get("includeDeleted") == "true"
+	if o != nil && o.Kind == kind && o.Deleted && !v.IncludeDeleted {
+		// Deleted on central: not found, as central answers, for whoever could read it.
+		v.IncludeDeleted = true
+		readable := ix.CanRead(v, o)
+		v.IncludeDeleted = false
+		if readable {
+			return nil, &APIError{Status: 404, Message: strings.ToUpper(kind[:1]) + kind[1:] + " with id " + uid + " could not be found."}
+		}
+	}
 	if o == nil || o.Kind != kind || !ix.CanRead(v, o) {
 		// Same answer for "not here" and "not visible", so nothing leaks (spec 8.2).
 		return nil, NeedsConnection(strings.TrimSuffix(kind, "") + " " + uid + " is not available offline")

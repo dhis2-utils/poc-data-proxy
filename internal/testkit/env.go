@@ -374,6 +374,23 @@ func (e *Env) CentralImport(payload map[string]any) {
 	}
 }
 
+// CentralDelete deletes a tracker object on central directly as the superuser, as
+// someone elsewhere would: kind is trackedEntities, enrollments or events. Central
+// keeps it as deleted (soft delete), with what is under it.
+func (e *Env) CentralDelete(kind, uid string) {
+	e.T.Helper()
+	if e.Fake != nil {
+		e.Fake.SoftDelete(uid)
+		return
+	}
+	key := map[string]string{"trackedEntities": "trackedEntity", "enrollments": "enrollment", "events": "event"}[kind]
+	st, b, err := e.Central.Do("POST", "/api/tracker?async=false&importStrategy=DELETE",
+		map[string]any{kind: []any{map[string]any{key: uid}}})
+	if err != nil || st != 200 {
+		e.T.Fatalf("central delete %s %s: %d %v %.1500s", kind, uid, st, err, b)
+	}
+}
+
 // AndroidUser is an Android client for any user of the manifest (a matrix user).
 func (e *Env) AndroidUser(username string) *Client {
 	return &Client{e: e, Role: username, User: username, basic: true, HTTP: &http.Client{}}

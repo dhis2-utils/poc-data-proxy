@@ -9,8 +9,8 @@ import (
 
 // pullEvents pulls an event program for users with the same access (g), listing as the
 // first of them: whole events, a page at a time (events are small: no ID listing
-// first, as tracker needs). An event central lists as deleted is hidden from the
-// group at once, not at the weekly full pull. With retention set for the program,
+// first, as tracker needs). An event central lists as deleted is stored as a
+// tombstone, at once, not at the weekly full pull. With retention set for the program,
 // only events since its cutoff are listed. It returns the newest updatedAt listed.
 func (w *Worker) pullEvents(ctx context.Context, api compat.API, g []*puller, facility, program, after string,
 	seen map[uint32]bool) (string, int, error) {
@@ -26,15 +26,10 @@ func (w *Worker) pullEvents(ctx context.Context, api compat.API, g []*puller, fa
 			rep.auth, &res); err != nil {
 			return "", total, err
 		}
-		var keep []any
-		var gone []string
-		for _, ev := range res.Events {
+		keep := make([]any, len(res.Events))
+		for i, ev := range res.Events {
 			maxUpdated = max(maxUpdated, tracker.Str(ev, "updatedAt"))
-			if ev["deleted"] == true {
-				gone = append(gone, tracker.Str(ev, "event"))
-				continue
-			}
-			keep = append(keep, ev)
+			keep[i] = ev
 		}
 		if len(keep) > 0 {
 			uids, err := h.UpsertCentral(rep.u.ID, tracker.M{"events": keep}, true)
@@ -49,21 +44,6 @@ func (w *Worker) pullEvents(ctx context.Context, api compat.API, g []*puller, fa
 				seen[uint32(o.Slot)] = true
 			}
 			total += len(uids)
-		}
-		if len(gone) > 0 {
-			st, err := h.Store.ObjectStates(gone)
-			if err != nil {
-				return "", total, err
-			}
-			var slots []uint32
-			for _, o := range st {
-				slots = append(slots, uint32(o.Slot))
-			}
-			for _, m := range g {
-				if err := h.HideSlots(m.u.ID, slots); err != nil {
-					return "", total, err
-				}
-			}
 		}
 		if len(res.Events) < listPageSize {
 			break

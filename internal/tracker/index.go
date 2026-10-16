@@ -150,7 +150,7 @@ func (ix *Index) Clear() {
 func FromStore(o *store.Object) (*Obj, error) {
 	n := &Obj{UID: o.UID, Kind: o.Kind, TE: o.TE, Enrollment: o.Enrollment, Program: o.Program, Stage: o.Stage,
 		TET: o.TET, OwnerOrgUnit: o.OwnerOrgUnit, UpdatedAt: o.UpdatedAt, Origin: o.Origin, SyncState: o.SyncState,
-		Slot: uint32(o.Slot)}
+		Slot: uint32(o.Slot), Deleted: o.Deleted}
 	raw := o.Payload
 	if raw == nil {
 		raw, n.slim = o.Slim, true
@@ -356,6 +356,9 @@ type Viewer struct {
 	Access      *access.List
 	Facility    string
 	Catalog     *access.Catalog
+	// IncludeDeleted: the request asked for includeDeleted=true (Android's download),
+	// so tombstones are read too, marked deleted. Otherwise they are not there.
+	IncludeDeleted bool
 
 	payloads map[string]M      // full payloads loaded for this request (prefetch)
 	related  map[string][]*Obj // children looked up for this request (enrollmentsFor and the like)
@@ -393,7 +396,7 @@ func accessAllows(v *Viewer, o *Obj) bool {
 
 // CanRead applies spec 8.2.
 func (ix *Index) CanRead(v *Viewer, o *Obj) bool {
-	if o == nil || v.Access == nil || o.OwnerOrgUnit != v.Facility {
+	if o == nil || v.Access == nil || o.OwnerOrgUnit != v.Facility || (o.Deleted && !v.IncludeDeleted) {
 		return false
 	}
 	if o.Origin == store.OriginCentral {

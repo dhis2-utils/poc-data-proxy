@@ -190,6 +190,7 @@ func (v42) ListPath(facility, program, updatedAfter string, page, pageSize int) 
 
 func (v42) FetchPath(facility, program string, trackedEntities []string) string {
 	q := pullValues(facility, program, false)
+	withDeleted(q, program)
 	q.Set("trackedEntities", strings.Join(trackedEntities, ","))
 	q.Set("pageSize", strconv.Itoa(len(trackedEntities)))
 	return "/api/tracker/trackedEntities?" + q.Encode()
@@ -217,12 +218,23 @@ func (v42) OwnedPath(facility, program string, page, pageSize int) string {
 
 func pullQuery(facility, program, updatedAfter string, page, pageSize int, idsOnly bool) string {
 	q := pullValues(facility, program, idsOnly)
+	withDeleted(q, program)
 	if updatedAfter != "" {
 		q.Set("updatedAfter", updatedAfter)
 	}
 	q.Set("page", strconv.Itoa(page))
 	q.Set("pageSize", strconv.Itoa(pageSize))
 	return "/api/tracker/trackedEntities?" + q.Encode()
+}
+
+// withDeleted asks for deletions too, as tombstones (deleted: true) for Android's
+// download. Not for a type pull: 2.42 answers trackedEntityType with includeDeleted
+// with broken SQL (409 E7145); a person deleted on central leaves a type listing at the
+// weekly full pull instead.
+func withDeleted(q url.Values, program string) {
+	if !strings.HasPrefix(program, "tet:") {
+		q.Set("includeDeleted", "true")
+	}
 }
 
 func pullValues(facility, program string, idsOnly bool) url.Values {
