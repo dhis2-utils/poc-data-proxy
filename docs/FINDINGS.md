@@ -161,7 +161,11 @@ The POC uses a PAT of the setup user, as the spec allows. It is used for:
 - reading program metadata (`/api/programs`) and the default category option combo;
 - reserving values with `generateAndReserve`.
 
-This token dies when the setup user leaves or is disabled. Options:
+This token dies when the setup user is disabled: the hub then stops its heartbeat and issue reports, stops refreshing its programme list and retention settings, and, once its reserved pool runs out, refuses offline registrations that need a generated ID. It also renews itself with itself, so it cannot recover. Patient data is not affected: every pull and push uses the user's own token. If the setup user only moves to another facility, the hub keeps working with the credentials of someone who no longer works there.
+
+Interim measure (DEPLOYMENT.md, section 6; not built): any staff member assigned to the facility can take the hub over from its page (a token of theirs replaces the old one), and the heartbeat says whose token the hub uses and whether it works, so central sees a broken one before the pool runs out.
+
+Options for the lasting answer:
 
 1. **Dedicated "hub system" user per country.** Give it no data capture org units, metadata read on the tracker programs, and write sharing on the three data store namespaces. Reserving values only needs the attribute to be readable. This user cannot read tracker data, which is the property we want.
 2. **OAuth2 client credentials** (2.41+ has an OAuth2 authorization server). This gives the same scope with rotating secrets.

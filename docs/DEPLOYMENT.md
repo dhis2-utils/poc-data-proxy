@@ -11,6 +11,25 @@ This is a proposal built on what the POC showed (see [FINDINGS.md](FINDINGS.md))
 3. **Central stays the source of truth.** A hub can be wiped or replaced at any time without data loss once its outbox is pushed. Backups of hubs are not needed.
 4. **Devices keep reaching the hub when its address changes.** IP addresses change when a router is replaced, and tablets that point at a stale IP break silently. How, and how the connection is secured, is open (section 4, "Reaching the hub securely").
 5. **Fail closed.** If the hub cannot decide something, it says "needs connection" rather than guessing.
+6. **No IT staff at facilities, no visits needed.** The people at a hub facility are the staff who enter data. Setting up, replacing and unlocking a hub are things they can do with an installation card; everything else is done from central.
+7. **A hub only where it is needed.** A hub is for sharing data between staff and devices inside a facility while the internet is down. Most small facilities do not need one (section 0).
+8. **Keep it simple.** No new national infrastructure: the software comes from GitHub releases, and the country's settings and decisions live on its central DHIS2.
+
+## 0. Roles, and which facilities get a hub
+
+### Who does what
+
+| Who | What |
+|---|---|
+| **National DHIS2 team** | Plans the rollout and chooses hub facilities with the districts. On central DHIS2: installs the Facility Hub app, checks user accounts, protects the hub's dataStore namespaces, sets retention, chooses the hub version, watches every hub, follows up refused changes in bulk, checks the hubs before upgrading central or tightening metadata. Trains district officers and facility focal points. |
+| **MoH IT** | Buys and prepares Pi kits (flashing at a depot, spares), installs the Windows service on chosen PCs, sets central's address for hubs. |
+| **District** | Proposes hub facilities, delivers kits, helps facilities by phone, follows up refused changes from the Facility Hub app, sends spares. Not needed on site. |
+| **Facility** | A facility focal point (anyone assigned to the facility) sets up the hub with the installation card; every staff member logs in once online and moves their devices to the hub; staff keep the hub powered and log in after a restart. |
+| **Software supplier** | Publishes signed releases on GitHub (binaries, the Pi image, the Windows installer) and the Facility Hub app, tested against the DHIS2 versions they support. |
+
+### Which facilities get a hub
+
+Give a facility a hub when patients pass between staff on different devices during a visit (reception, lab, pharmacy, maternity), when staff work in the browser (Capture web, the Aggregate Data Entry app) and must keep working during outages, when outages are frequent or long, or when it is big enough that registering a patient twice is a risk. Leave it without one where one or two staff each capture their own patients on their own tablet: the Capture app works offline on its own and syncs when it can. The national team decides with the districts and revisits it yearly.
 
 ## 1. Hardware kit
 
@@ -22,25 +41,26 @@ One kit per facility, assembled and flashed at a central depot.
 | Storage | 128 GB NVMe SSD on an M.2 HAT (Pi 5) or a USB 3 SSD (Pi 4). Not an SD card. | The store writes on every sync. SD cards wear out and corrupt on power loss. |
 | Power | Official power supply plus a small UPS (UPS HAT or a 12 V mini UPS) | Power cuts are common. A clean shutdown protects the store, and a UPS keeps the LAN up during short cuts. |
 | Clock | Required: the Pi 5's RTC with its battery; a Pi 4 has no RTC and needs an add-on RTC module | TLS and PAT expiry need the right time after a power cut with no internet, and offline the hub's clock decides which aggregate period is current and when a period expires: a board restarting at its last saved time would answer a new month's form as locked until it reaches a time server. (The hub's pulls follow central's clock, not its own.) |
+| Mirror | An industrial USB stick | Holds a copy of every offline save and a nightly snapshot (RECOVERY.md, option C2), so a dead disk loses at most a minute of saves **(to build)**. |
 | Case | Passive-cooled metal case, wall-mountable | Heat and dust. No fan to fail. |
 | Network | Ethernet cable; optional USB 4G modem for facilities with no uplink | See section 4. |
 | Label | Hub ID and a QR code for connecting devices (section 4, "Reaching the hub securely") | The label is what staff and support use to find the hub. A Pi has no screen to show the code on. |
 
 Rough cost per kit: USD 150–220.
 
-## 2. The country image
+## 2. The hub image and releases
 
-Built once per release with Raspberry Pi's image tools (`pi-gen` or `rpi-image-gen`) in CI, so every image is reproducible. It contains:
+One generic image per release, built by the software supplier's CI with Raspberry Pi's image tools (`pi-gen` or `rpi-image-gen`) and published, signed, as a GitHub release next to the hub binaries and the Windows installer **(to build)**. Nothing in it is country-specific: the one country setting, central's address, goes on the card's boot partition at the depot (or into the Windows installer). The image contains:
 
 - **Raspberry Pi OS Lite, 64-bit.** No desktop.
 - **The hub binary** at `/usr/local/bin/hub`, the systemd unit from [`deploy/hub.service`](deploy/hub.service), and a `hub` service user.
-- **The country defaults file** `/etc/hub/hub.yaml`: central URL, setup user group, release channel and release public key (spec 6.1). This is the only country-specific part.
+- **The country setting**: `central_url`, written at the depot to the boot partition and read into `/etc/hub/hub.yaml`. It is fixed, so nobody at a facility can point a hub at another server. Today `hub.yaml` also names a setup user group, a release channel and its key; under this plan the group goes (section 3) and the channel and key are the supplier's, built in **(to build)**.
 - **Networking:** NetworkManager; `dnsmasq`, used only in "hub provides the network" mode (section 4); `avahi-daemon` for `hub.local`.
 - **Time:** `chrony` with the country's NTP servers, falling back to the RTC.
-- **Firewall** (`nftables`): inbound HTTPS from the LAN only. No SSH unless it comes in over the support VPN.
-- **Updates:** `unattended-upgrades` for OS security fixes. The hub binary upgrades itself from the release channel (spec 12a).
+- **Firewall** (`nftables`): inbound HTTPS from the LAN only. No SSH.
+- **Updates:** `unattended-upgrades` for OS security fixes. The hub binary upgrades itself from the supplier's GitHub releases, to the version the country chose on central (section 6, "Upgrades").
 - **Watchdog:** the hardware watchdog plus `Restart=always` in systemd.
-- **Support VPN (optional, to build):** an outbound-only WireGuard tunnel to a country support server, disabled until the setup flow enables it.
+- **No remote access.** A support VPN was considered and is out of scope for now: it needs a server, and it would add little, since the hub's data stays encrypted until a staff member logs in. Support works from central (section 6).
 - **First-boot service:** regenerates SSH host keys and the machine ID, so cloned images do not share identities.
 
 The image holds **no secrets**. Each hub gets its own data key, hub ID and signing key pair at first boot and setup. Patient data on the SSD is encrypted by the hub itself: everything except a small key file (hub ID, mode, central URL, and each user's username and key slot) is in a data file encrypted with AES-256-XTS under the data key, so full-disk encryption is optional. If it is used, it must unlock without a person present, for example with a key held in TPM-like storage, which the Pi does not have. This is why the POC relies on application-level encryption.
@@ -59,19 +79,19 @@ Ideas for hardware and the image, recorded with what they would imply for the hu
 - **A small UPS with a shutdown signal.** The hub stops cleanly on SIGTERM, so a UPS that triggers a normal shutdown is enough. Requirements: a power-fail signal (GPIO or I2C), automatic power-on when power returns (essential unattended), a chemistry that tolerates heat, and enough current for a Pi 5. Kinds to evaluate (availability not checked): supercapacitor modules (shutdown only, nothing to wear out or swell), LiFePO4 boards (for example LiFePO4wered/Pi+), 18650 Li-ion HATs (for example the Geekworm X728 and X1200 series, Waveshare's UPS HAT; ride through outages, but Li-ion ages in heat), integrated controllers (PiJuice, UPS PIco).
 - **Two system partitions (A/B).** Boots the previous system if an update fails, and is how a read-only OS gets updated. The hub's own upgrade (spec 12a) already migrates a copy of the store and keeps the old one. The catch: an older hub refuses a store migrated to a newer schema, so a rollback after the new version has written data must either switch back to the pre-upgrade store copy (losing what was written since) or schema changes must stay readable by the previous release. To settle before the first release.
 - **Locking the device against changes.** In layers, cheapest first:
-  - *Network:* beyond the firewall above (HTTPS from the LAN only), ship no SSH server, or one that accepts keys only and only over the support VPN; lock the root and default accounts. Hub settings change only through the hub UI, for the setup user group.
+  - *Network:* beyond the firewall above (HTTPS from the LAN only), ship no SSH server; lock the root and default accounts. Hub settings change only through the hub UI, for the setup user group.
   - *Console:* disable the login prompts on screen and serial console, and remove the serial console from the boot settings.
   - *Physical access to the card or disk* is the remaining gap: anyone can edit the system on another computer, for example to record passwords at the next login and so get the data key (patient data itself stays encrypted). Secure boot closes it: a public key burned into the board's one-time-programmable memory, after which only signed images boot, with a verified read-only system partition (dm-verity) checked by the signed image. Pi 4 and Pi 5 are believed to support this; to be checked against Raspberry Pi's current documentation. It fits with the read-only OS and A/B partitions above, which update through signed images anyway. Costs: burning the key is irreversible, the signing key becomes critical infrastructure (lost: no new images; leaked: no protection), and the boot order must be locked too.
   - *Out of reach:* theft, unplugging or wiping. With the above, a modified or foreign system does not boot and the data stays encrypted; what remains is continuity, covered in [RECOVERY.md](RECOVERY.md).
   - Likely more than a first deployment needs; recorded for later discussion.
 - **Operating system: gokrazy instead of Raspberry Pi OS.** gokrazy is a minimal Linux for Raspberry Pis in which every program on the device is a Go binary: no shell, no C programs, no package manager, a read-only root on A/B partitions, updated by writing a new image over the network. The hub is one static Go binary with pure-Go SQLite, so it would run unchanged, and Linux's drivers for USB and NVMe storage, Ethernet and the watchdog stay. It reaches most of "Locking the device against changes" above in one step. To check: Pi 5 support and the SSDs on both boards; how the hub's own self-upgrade fits gokrazy's image updates (one mechanism should own updates); the network set-ups that need more than a client (the hub's own access point in case C, mDNS, a UPS power-fail signal on GPIO), which would have to come from Go programs too; and how support staff look at a device without a shell. Considered and not preferred: unikernels (MirageOS, Unikraft, Nanos). They run on a hypervisor rather than directly on a Pi, so Linux stays underneath; MirageOS would mean rewriting the hub in OCaml; and the risks that matter most for the hub (a stolen disk, weak passwords, the hub's own access rules) are not in the operating system.
 - **No hardware: the hub as a Windows service on an existing facility PC.** The alternative to a kit. Same hub, same store, one PC.
-  - *Code:* the hub cross-compiles for Windows except in two places: free disk space for the status page (`statfs`) and the self-upgrade, which replaces the running process and hands it the data key (`internal/upgrade`). Windows cannot replace a running process or overwrite a running `.exe`, so the upgrade needs its own flow: the service starts the new binary, or the service manager restarts it, with the data key handed over so the hub does not stay locked. The rest is small: Windows paths (`C:\ProgramData\...`) instead of `/var/lib/hub` and `/etc/hub`, access rules on the data folder instead of `0600`, and answering stop and shutdown from the service manager. Not checked yet: the SQLite driver and the encrypted file layer on Windows (file locking, flushes), and the test suite on a Windows runner.
+  - *Code:* the hub cross-compiles for Windows except in two places: free disk space for the status page (`statfs`) and the self-upgrade, which replaces the running process and hands it the data key (`internal/upgrade`). Windows cannot replace a running process or overwrite a running `.exe`, so the upgrade needs its own flow: Windows restarts the hub service on the new version (through its Service Control Manager; no person involved), with the data key handed over so the hub does not stay locked. The rest is small: Windows paths (`C:\ProgramData\...`) instead of `/var/lib/hub` and `/etc/hub`, access rules on the data folder instead of `0600`, and answering stop and shutdown from the service manager. Not checked yet: the SQLite driver and the encrypted file layer on Windows (file locking, flushes), and the test suite on a Windows runner.
   - *The PC:* must not sleep or hibernate (power plan); Windows Update reboots it; antivirus must exclude the data folder, or it locks and scans the database and its write-ahead log; it is someone's working PC, with full disks, other software and people switching it off. A desktop has no battery, so a power cut is a hard stop. Resources are not a concern: an old i3 with 4 GB and an SSD is faster than a Pi 5, with no SD card wear.
   - *After a restart* the hub is locked until a user with a key slot logs in through it (RECOVERY.md, notes). With Windows Update this happens more often than on a Pi. Windows offers what option I in RECOVERY.md needs, a secret held by the machine for a service at boot (DPAPI, the TPM), so pushing after a reboot without a login is easier here than on a Pi.
   - *Network:* the installer adds a firewall rule for the hub's port; a network marked "Public" may still block it. There is no "hub provides the network" mode (section 4, case C): Windows' mobile hotspot takes about 8 devices and expects an uplink to share. A facility needs a working router. A laptop that leaves the building takes the hub with it, so a desktop that stays put is better.
   - *Confidentiality:* data at rest stays encrypted, but anyone with Windows admin rights on the PC, or malware, can read the running hub's memory, and users of the PC can open the hub UI. Run the service under its own restricted account, restrict the data folder to it, and prefer a PC not used for email and browsing.
-  - *Rollout:* an installer with admin rights (service, firewall rule, antivirus exclusion, power plan, data folder); a code-signing certificate, or SmartScreen and antivirus warn about the binary; support is harder, because every PC differs.
+  - *Rollout:* an installer with admin rights (service, firewall rule, antivirus exclusion, power plan, data folder), signed with the supplier's code-signing certificate and published on GitHub, or SmartScreen and antivirus warn about it. MoH IT installs it through the ministry's software deployment, or the PC's owner does with a USB stick and a one-page guide. Support is harder, because every PC differs.
   - Considered and not preferred:
     - *Docker on Windows.* It needs the WSL2 virtual machine: Docker Desktop starts only when a Windows user logs in (a reboot then stops everything until someone does), may need a paid licence for large organisations, needs virtualisation enabled in the BIOS and 1–2 GB of extra memory, and puts the container behind its own address translation. It keeps the Linux image and self-upgrade, but fixes none of the PC issues above and hides DPAPI and the TPM.
     - *Several PCs sharing the hub, one acting as master.* Electing a master safely needs at least three machines switched on; otherwise two can each believe they are master. Accepting writes on more than one machine needs conflict merging, which the single-writer design (one outbox, central decides access) does not have. Devices also need one address that follows the master. A standby that only receives copies of the encrypted data file, and is promoted by hand, gives most of the benefit (RECOVERY.md, option C).
@@ -80,31 +100,37 @@ Ideas for hardware and the image, recorded with what they would imply for the hu
 
 ### At the depot (bulk)
 
-1. Flash the image onto the SSDs, for example with a USB duplicator or `rpi-imager --cli` in a loop.
+1. Flash the supplier's image onto the SSDs, for example with a USB duplicator or `rpi-imager --cli` in a loop, and write central's address to the boot partition.
 2. Assemble the kits and power each one on once on the depot network. This runs first boot, sets the clock, creates the hub ID and checks that it can reach central.
-3. Print and stick the label (hub ID, the QR code for connecting devices, and the setup token from `data_dir/setup-token` if the image names no central server). The depot list of hub IDs becomes the inventory; it matches the `facility-hub-registry` namespace on central.
+3. Print and stick the label (hub ID and the QR code for connecting devices). The depot list of hub IDs becomes the inventory; it matches the `facility-hub-registry` namespace on central.
 4. Pack it with a one-page installation card.
 
 No facility is assigned at the depot. Any box can go anywhere.
 
-### At the facility (15 minutes)
+### At the facility (about an hour, by facility staff)
 
-1. Mount the hub near the router and plug in power and Ethernet. The installation card covers the case with no router (section 4, case C).
-2. On any laptop or phone on the facility network, open the address on the label. The hub shows its setup page.
-3. A member of the setup user group logs in with their DHIS2 account. That is typically the district HMIS officer, possibly remotely by phone with a facility staff member typing. The hub then:
-   - finds the facility from the user's org units, showing a picker if the user covers several;
-   - finds the tracker programs;
-   - registers itself on central, offering to retire an old hub for the same facility;
-   - creates its hub token;
-   - starts the first full pull.
-4. Every staff member logs in once through the hub while it is online. This is required for offline login later.
+No one from the district needs to come. Kits arrive by courier or with a routine district visit; Windows PCs get the hub from MoH IT beforehand.
+
+1. Mount the hub near the router and plug in power and Ethernet, as on the installation card. The card covers the case with no router (section 4, case C).
+2. On any laptop or phone on the facility network, open the address on the label (on the Windows PC, the hub's page opens on the PC itself). The hub shows its setup page.
+3. The facility focal point, or anyone assigned to the facility, logs in with their own DHIS2 account. The hub then:
+   - takes the facility from the user's org units (today: only a member of the setup user group may do this; under this plan, anyone assigned to the facility **(to build)**);
+   - reads the facility's programmes;
+   - registers itself on central, offering to retire an old hub for the same facility (section "Replacing or moving a hub");
+   - creates its hub token (section 6, "The hub's own account").
+
+   No patient data is downloaded at this point, unless the focal point's own account can see some: every pull runs with one user's own token.
+4. Every staff member logs in once through the hub while it is online. The hub then downloads what that person may see on central, with their access, and they can log in offline from then on. Data reaches the hub only through the people who use it.
 5. Point the client devices at the hub (section 5).
-6. Optional check: open the hub's status page on a phone, then unplug the uplink and confirm a tablet can still sync to the hub.
+6. The offline check: unplug the uplink, register a test patient on one tablet, sync, and find them on another.
+
+If something fails, the focal point calls the district, which sees on central (the Facility Hub app) whether the hub registered and what it last reported.
 
 ### Replacing or moving a hub
 
-- **Replacement:** set up a spare at the facility and confirm "replace the old hub". The old one is marked retired in the registry; if it is still running and online, it stops serving patient data and only sends what it has not pushed. Then collect it and reset it. Anything an old hub that is dead had not pushed is lost, which is why the UPS and SSD matter.
-- **Decommissioning:** use "Reset hub" in the admin page. It pushes the outbox, wipes the store and returns to setup mode. Then revoke its PATs centrally.
+- **First find out what broke.** If the disk is fine and only the board (Pi) or PC failed, move the disk or the data folder to the replacement: it starts as the same hub with all its unsent data, and needs no setup. A dead disk is restored from the USB mirror stick (RECOVERY.md, option C2, **to build**), losing at most a minute of saves. Only a lost hub is replaced by a new one.
+- **Replacement:** a spare arrives by courier; a staff member of the facility sets it up and confirms "replace the old hub". To keep this safe without a setup group, a new hub may replace one that has sent no heartbeat for 3 days; a hub that still reports is retired by the national team in the Facility Hub app **(to build)**. The old one is marked retired in the registry; if it is still running and online, it stops serving patient data and only sends what it has not pushed, refused changes included, so plug it into any connection before collecting it. Anything an old hub that is lost had not pushed is gone, apart from what the mirror stick holds.
+- **Decommissioning:** use "Reset hub" in the admin page (today for setup group members; under this plan, for staff assigned to the facility). It pushes the outbox, wipes the store and returns to setup mode. Then revoke its PATs centrally.
 - **Theft:** the store is unreadable without a staff password, because the data key is only in memory. It is only as strong as the weakest password among the users with a key slot, though: whoever holds the SSD can test password guesses offline against each slot, and a cracked password is also that user's central DHIS2 password. Treat a stolen hub as a possible password leak: ask its users to change their passwords. Revoke the hub's and users' PATs on central **(to build: a "revoke all tokens of this hub" action)**.
 
 ## 4. Network set-ups
@@ -144,17 +170,16 @@ These small devices often have no Ethernet port and frequently isolate clients.
 
 ### Case D: managed networks (hospital IT, NGO-managed sites)
 
-- Static IP or reserved DHCP, a firewall exception for outbound HTTPS to central and to the release channel, and inbound HTTPS from client subnets.
-- Proxy servers: the hub needs outbound HTTPS to central's URL and the release channel. An `https_proxy` setting **(to build)** would cover sites that force a web proxy.
+- Static IP or reserved DHCP, a firewall exception for outbound HTTPS to central and to GitHub (releases), and inbound HTTPS from client subnets.
+- Proxy servers: the hub needs outbound HTTPS to central's URL and GitHub (releases). An `https_proxy` setting **(to build)** would cover sites that force a web proxy.
 
 ### What the hub needs from any network
 
 | Direction | What | Why |
 |---|---|---|
 | Hub → central | HTTPS (443) to the central DHIS2 URL | Sync, login, metadata |
-| Hub → release channel | HTTPS (443) | Self-upgrade |
+| Hub → GitHub releases | HTTPS (443) to github.com and its download host | Self-upgrade |
 | Hub → NTP | UDP 123 to the country's or a public NTP pool | Correct time |
-| Hub → support VPN (optional) | UDP 51820 (WireGuard) | Remote support |
 | Clients → hub | HTTPS (443 or 8443) on the LAN | Capture apps |
 
 All connections to central are outgoing. Nothing on the internet needs to reach the hub, so it works behind NAT and carrier-grade NAT on 4G.
@@ -255,37 +280,48 @@ A hub only serves its own facility. A community health worker's tablet that visi
 ### Monitoring
 
 - Every hub writes a heartbeat to `facility-hub-status/<hub_id>` on central each sync. It holds version, uptime, last push and pull, pending count, issue count, free disk and last upgrade result.
-- **A small DHIS2 app (to build)** lists hubs from `facility-hub-registry` with their latest heartbeat. It flags:
+- **The Facility Hub app (to build)**, a DHIS2 app the national team installs on central in App Management. It lists hubs from `facility-hub-registry` with their latest heartbeat, and holds the country's hub settings (retention, the hub version, retries). It flags:
   - no heartbeat for more than 2 days;
   - pending data older than 1 day;
   - rejected objects (issues);
   - low disk;
   - failed upgrades;
-  - "hub needs upgrade" (central version not supported).
-- Issues (rejected data) land in `facility-hub-issues`. They can be followed up by district staff, or turned into a DHIS2 message to the user who entered the data **(to build)**.
+  - "hub needs upgrade" (central version not supported);
+  - a hub token that no longer works (section "The hub's own account").
+- **Refused changes** land in `facility-hub-issues`, one key per change, with central's error codes and its messages masked: every value the hub sent is replaced by `***`, so central staff see which data element or attribute caused it and nothing that was entered (spec 11.2). They exist only on the hub until resolved: the client was told they were saved. Districts follow up single ones.
+- **Refused in bulk** (for example hundreds of events after a metadata change):
+  - the heartbeat carries counts by programme and error code, so the app shows the pattern, not hundreds of rows **(to build)**;
+  - the national team fixes central (restores the option, relaxes the rule), then sets a retry instruction in the app for the affected hubs, error code and dates; hubs resend those changes as their original authors **(to build)**;
+  - repairing changes that can never pass as they are is open. Ideas considered and dropped: exporting them encrypted to a national key (a golden key), per-export codes sent by SMS (a person on site relays them), a remote repair session (needs remote access).
+- **Before tightening metadata** (a new compulsory field, a removed option, a closed stage), check what hubs and tablets have captured offline under the old rules: those changes will be refused.
+- **Heartbeat volume:** one key per hub, overwritten each sync, so the namespace does not grow; whether central audits every dataStore write (and so grows an audit table) is not measured yet.
 
 ### Upgrades
 
-- **Hub software:** publish a signed release to the country release channel. Stage it:
+- **Hub software:** the supplier publishes signed releases on GitHub; each country chooses in the Facility Hub app which version its hubs run, and stages it **(to build; today the stages are in the signed manifest of a release channel the country hosts)**:
   1. 5 pilot hubs, listed by hub ID;
   2. 10 %;
   3. 50 %;
   4. 100 %.
 
-  Each hub checks after its sync cycle, pushes its outbox, migrates a copy of its store, swaps, health-checks and rolls back on failure. Results show up in the heartbeat.
+  Each hub checks after its sync cycle, downloads the chosen version from GitHub and checks its signature, pushes its outbox, migrates a copy of its store, swaps, health-checks and rolls back on failure. Results show up in the heartbeat.
 - **Before a DHIS2 server upgrade:** run the live suite against the new version (docs/TESTING.md); if the hub needs changes, roll out that hub release first. A hub release only supports the DHIS2 versions it was tested against (spec 12a): new majors come about a year apart, with API changes nobody can plan for in advance. Hubs on an unsupported version stay usable online, as pass-through only, and show "hub needs upgrade".
 - **Operating system:** security updates install themselves (`unattended-upgrades`, with automatic reboot at night). Re-image only for major OS changes. That can be done by shipping a pre-flashed SSD, because the hub holds nothing that central does not.
 
 ### Support
 
-- First line: the status page (`/hub/status`) and the admin page (`/hub/ui`), opened by the district officer from the facility network.
-- Second line: the support VPN, if enabled. It is outbound only; the support server reaches the hub through the tunnel.
-- Most faults are fixed by replacing the hub with a spare and setting it up again. Keep a stock of spares at district level.
+- **From central.** The district and the national team read the Facility Hub app: last heartbeat, pending and refused changes, disk, token. The hub's own status page only opens on the facility network, so it is not the first line.
+- **On site, by the staff:** restart the hub, log in to unlock it after a restart, plug in a replacement.
+- **No remote access** to hubs for now (section 2).
+- Most faults are fixed by moving the disk to a new board or sending a spare (section 3). Keep a spare per district.
+- Faults in the hub software go from the national team to the supplier.
 
 ### Security operations
 
 - **Protect the data store namespaces** on central (`facility-hub-*`) before the first hub goes out. By default any user can write them (FINDINGS.md): a forged registry entry can retire a hub (it then stops serving offline, though it keeps its data) or block setup of a facility.
-- **Hub token:** use a dedicated low-privilege "hub system" user per country, not the setup user's personal token (FINDINGS.md).
+- **The hub's own account.** For its housekeeping (heartbeat, issue reports, registry, programme list, retention settings, reserving generated IDs, upgrade checks) the hub uses a personal access token of whoever set it up, renewed every `pat_expiry_days` with itself. If that person is disabled on central, the hub goes silent, and offline registrations that need generated IDs fail once its pool runs out; if they move elsewhere, the hub keeps their credentials unnoticed. Patient data is not affected: it goes with each user's own token.
+  - *Interim* **(to build)**: any staff member assigned to the facility can take the hub over by logging in on its page: the hub swaps to a token of theirs and deletes the old one. The heartbeat reports whose token the hub uses and whether it works, so the Facility Hub app flags a broken one before the pool runs out, and lists the hubs that depend on a user being disabled.
+  - *Goal:* a dedicated low-privilege "hub system" user (FINDINGS.md). Open: how a hub gets its credentials without a shared password in every image (a golden key). Options: one system user per hub with its token added at the depot or by the installer; OAuth2 client credentials, one client per hub.
 - **PAT hygiene:**
   - PATs expire after `pat_expiry_days` (default 90) and renew at online login.
   - Users who leave are disabled on central, so their PATs stop working.
@@ -294,26 +330,28 @@ A hub only serves its own facility. A community health worker's tablet that visi
 - **Passwords protect the disk.** Each key slot can be attacked offline by whoever holds the SSD (Argon2id slows this down; it does not stop weak passwords). Enforce central's password policy for hub users. The hub removes slots of users who have not logged in for `key_slot_max_age`.
 - **TPM (a requirement for a national rollout).** A TPM add-on board (about USD 25 for the Pi) could hold a device secret mixed into every key slot, so an SSD on its own is useless and the TPM limits how fast passwords can be guessed **(to build)**.
 - **What the encryption does not cover.** AES-XTS keeps the data file confidential but does not detect tampering outside the sealed rows; someone with write access to the disk can corrupt it. And once a staff member logs in, the whole facility's data is decrypted in the hub's memory: a running hub is a more valuable target than its disk.
-- **Central server address:** set `central_url` (and `central_hosts` for alternatives) in the image so nobody at a hub can choose another server. Domain migrations go through a signed release (`hub release -central-url`), not new images.
+- **Central server address:** set `central_url` (and `central_hosts` for alternatives) at the depot or in the installer so nobody at a hub can choose another server. Domain migrations go through a signed release (`hub release -central-url`) today; with releases on GitHub shared by all countries, this needs another home (to decide).
 - **Host names:** if devices reach the hub by a name other than its host name, `hub.local` or its IP (for example a router DNS name), list it in `hub_hosts`; the hub refuses unknown `Host` headers.
 
 ## 7. Rollout plan
 
 | Phase | Hubs | Goal |
 |---|---|---|
-| Pilot | 5–10 facilities in one district, chosen for poor connectivity | Validate network cases A–C, the installation card, staff training and the offline workflows with real patients. Measure sync volumes and power issues. |
-| Expansion | 50 facilities across 3–5 districts | Validate depot logistics, the chosen way of reaching the hub securely, the monitoring app and staged upgrades. |
-| National | Hundreds | Depot flashing in batches; district officers install and set up; central monitoring. |
+| National preparation | none, or one test facility | Central DHIS2 configured (Facility Hub app installed, user accounts checked, namespaces protected, retention set), kits and installer ready, trainers trained. A test hub reaches central and works offline. |
+| Pilot | 5–10 facilities in one district, chosen for poor connectivity | Facility staff set up hubs with the installation card alone. Validate network cases A–C, staff training and the offline workflows with real patients. Measure sync volumes and power issues; answer support questions from central. |
+| Expansion | 50 facilities across 3–5 districts | Validate depot logistics and delivery, the chosen way of reaching the hub securely, the Facility Hub app and staged upgrades; refused changes stay few. |
+| National | Hundreds | District by district: facilities chosen, kits flashed in batches and delivered, staff set up their hubs; the national team watches every hub from central. |
 
 ### Per-facility checklist
 
-- [ ] Power socket with UPS; hub mounted, cooled, labelled
+- [ ] Facility chosen for a hub (section 0)
+- [ ] Power socket with UPS; hub mounted, cooled, labelled; mirror stick in
 - [ ] Network case identified (A/B/C/D); client isolation checked (and DNS rebinding, with option A)
-- [ ] Hub set up by a setup-group user; first pull completed
-- [ ] Every staff member logged in once through the hub
+- [ ] Hub set up by a staff member assigned to the facility
+- [ ] Every staff member logged in once through the hub (this is when their data downloads)
 - [ ] Every tablet and browser switched to the hub address (synced first)
 - [ ] Offline test: uplink unplugged, a registration on one device seen on another
-- [ ] Heartbeat visible in the country monitoring app
+- [ ] Heartbeat visible in the Facility Hub app on central
 
 ### Longer term
 

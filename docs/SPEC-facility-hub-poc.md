@@ -123,6 +123,8 @@ release_channel: https://releases.example.org/hub/stable
 
 The hub must be online during setup.
 
+Planned change (DEPLOYMENT.md, section 3; not built): no `setup_user_group`. Anyone assigned to the facility may set up its hub, open the admin UI and reset it; a new hub may replace one that has sent no heartbeat for 3 days, and a hub that still reports is retired from central. Facilities have no IT staff, and districts should not need to visit.
+
 1. On first boot, the hub generates a hub ID and a signing key pair, and starts in setup mode. It is reachable at `https://hub.local` (mDNS) and at its LAN IP. Print both on the device label.
 2. The setup page asks for the central server URL (prefilled from the image if set), username and password.
 3. The hub logs in to central. The user must be a member of `setup_user_group`. Otherwise refuse setup.
@@ -348,6 +350,7 @@ Hubs must upgrade centrally and automatically. No one visits a facility to upgra
 - On each sync cycle, the hub checks `release_channel` for a newer release. A release is one binary plus a signature. The hub verifies the signature against a public key in the image.
 - Upgrade steps: push the outbox until empty (or until only rejected entries remain), download, verify, run SQLite migrations on a copy of the store, swap the binary, restart, run a health check (store opens, central reachable, `/hub/status` responds). If the health check fails, restore the previous binary and store copy.
 - Staged rollout: the release channel can list a percentage or a list of hub IDs. The hub decides from its hub ID whether it is in the current stage.
+- Planned change (DEPLOYMENT.md, section 6; not built): releases are published on GitHub by the software supplier, signed, and shared by all countries. Each country chooses on its central DHIS2 (the Facility Hub app) which version its hubs run and the stages; the hub upgrades only to that version. The country hosts no release channel, and its only setting is `central_url`.
 - The hub reports its version and last upgrade result in the heartbeat (section 11.4).
 - When central reports a DHIS2 version the hub does not support, the hub stops offline tracker handling, passes everything through while online, and shows "hub needs upgrade" in `/hub/status`.
 
