@@ -150,7 +150,7 @@ func (ix *Index) Clear() {
 func FromStore(o *store.Object) (*Obj, error) {
 	n := &Obj{UID: o.UID, Kind: o.Kind, TE: o.TE, Enrollment: o.Enrollment, Program: o.Program, Stage: o.Stage,
 		TET: o.TET, OwnerOrgUnit: o.OwnerOrgUnit, UpdatedAt: o.UpdatedAt, Origin: o.Origin, SyncState: o.SyncState,
-		Slot: uint32(o.Slot), Deleted: o.Deleted}
+		Slot: uint32(o.Slot), Deleted: o.Deleted, Stub: o.Stub}
 	raw := o.Payload
 	if raw == nil {
 		raw, n.slim = o.Slim, true
@@ -396,7 +396,7 @@ func accessAllows(v *Viewer, o *Obj) bool {
 
 // CanRead applies spec 8.2.
 func (ix *Index) CanRead(v *Viewer, o *Obj) bool {
-	if o == nil || v.Access == nil || o.OwnerOrgUnit != v.Facility || (o.Deleted && !v.IncludeDeleted) {
+	if o == nil || v.Access == nil || o.OwnerOrgUnit != v.Facility || (o.Deleted && !v.IncludeDeleted) || o.Stub {
 		return false
 	}
 	if o.Origin == store.OriginCentral {

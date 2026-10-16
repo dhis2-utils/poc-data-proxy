@@ -265,7 +265,7 @@ func (ix *Index) row(r *store.Object, needData bool) *Obj {
 	}
 	return &Obj{UID: r.UID, Kind: r.Kind, TE: r.TE, Enrollment: r.Enrollment, Program: r.Program, Stage: r.Stage,
 		TET: r.TET, OwnerOrgUnit: r.OwnerOrgUnit, UpdatedAt: r.UpdatedAt, Origin: r.Origin, SyncState: r.SyncState,
-		Slot: uint32(r.Slot), Deleted: r.Deleted, slim: true, raw: r.Slim}
+		Slot: uint32(r.Slot), Deleted: r.Deleted, Stub: r.Stub, slim: true, raw: r.Slim}
 }
 
 // withData returns o with its slim data decoded: o itself, or a decoded copy (o may be
@@ -454,6 +454,9 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *API
 			w.add("e.deleted = 0")
 		}
 	}
+	if p.pairs {
+		w.add("e.stub = 0") // stubs of pruned enrollments are never read
+	}
 	if tet != "" {
 		w.add("t.tet = ?", tet)
 	}
@@ -551,6 +554,7 @@ func (ix *Index) searchEnrollments(v *Viewer, q url.Values, program string) (*pl
 	if !v.IncludeDeleted {
 		w.add("e.deleted = 0")
 	}
+	w.add("e.stub = 0") // stubs of pruned enrollments are never read
 	w.in("e.uid", uids)
 	if te != "" {
 		w.add("e.te_uid = ?", te)

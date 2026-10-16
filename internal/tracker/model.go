@@ -26,6 +26,7 @@ type Obj struct {
 	Data                                                         M      // payload without nested children
 	Slot                                                         uint32 // in the visibility bitmaps (visibility.go)
 	Deleted                                                      bool   // a tombstone: deleted on central
+	Stub                                                         bool   // an enrollment pruned to a stub (tracker retention): never read
 	// slim: Data holds only what queries filter and sort on (slim.go); the full
 	// payload is in the store (Index.Full).
 	slim bool
@@ -429,4 +430,16 @@ func AssignUIDs(payload M) {
 	for _, r := range list(payload, "relationships") {
 		set(r, "relationship")
 	}
+}
+
+// StubOf is what the hub keeps of an enrollment pruned by retention: enough for the
+// enrol-once check (E1016), nothing a person entered.
+func StubOf(e M) M {
+	out := M{"hubStub": true}
+	for _, k := range []string{"enrollment", "trackedEntity", "program", "orgUnit", "status", "enrolledAt", "createdAt", "updatedAt"} {
+		if v, ok := e[k]; ok {
+			out[k] = v
+		}
+	}
+	return out
 }

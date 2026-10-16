@@ -328,7 +328,7 @@ func (ix *Index) visible(v *Viewer, objs []*Obj) []*Obj {
 // visibleWith is CanRead with the user's bitmap already in hand.
 func (ix *Index) visibleWith(v *Viewer, bm bitmap, o *Obj) bool {
 	if o.Origin == store.OriginCentral {
-		return v.Access != nil && o.OwnerOrgUnit == v.Facility && (!o.Deleted || v.IncludeDeleted) &&
+		return v.Access != nil && o.OwnerOrgUnit == v.Facility && (!o.Deleted || v.IncludeDeleted) && !o.Stub &&
 			bm.has(o.Slot) && accessAllows(v, o)
 	}
 	return ix.CanRead(v, o)
