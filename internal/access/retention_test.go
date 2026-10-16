@@ -21,3 +21,14 @@ func TestRetention(t *testing.T) {
 		t.Error("no table keeps everything")
 	}
 }
+
+func TestTypeCutoff(t *testing.T) {
+	now := time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC)
+	r := Retention{DefaultMonths: 24, TrackedEntityTypes: map[string]int{"Sample": 6}}
+	if c, ok := r.TypeCutoff("Sample", now); !ok || c != "2026-04-16" {
+		t.Fatalf("Sample: %q %v", c, ok)
+	}
+	if _, ok := r.TypeCutoff("Person", now); ok {
+		t.Fatal("types have no default: persons are kept")
+	}
+}

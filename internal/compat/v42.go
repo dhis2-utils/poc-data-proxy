@@ -300,7 +300,7 @@ func (v42) JobNotifications(jobID, status string, s tracker.Stats, at string) an
 
 // ProgramFields: categoryCombo decides whether events carry an attribute option combo.
 func (v42) ProgramFields(af string) string {
-	return "id,name,trackedEntityType[id,trackedEntityTypeAttributes[" + af + "]],programStages[id,sortOrder,repeatable]," +
+	return "id,name,onlyEnrollOnce,trackedEntityType[id,trackedEntityTypeAttributes[" + af + "]],programStages[id,sortOrder,repeatable]," +
 		"categoryCombo[id,isDefault],programTrackedEntityAttributes[" + af + "]"
 }
 

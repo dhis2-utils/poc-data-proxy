@@ -59,20 +59,22 @@ type User struct {
 
 type Central struct {
 	// TimeZone is the server's time zone (serverTimeZoneId); empty: UTC.
-	TimeZone  string
-	mu        sync.Mutex
-	Users     map[string]*User
-	tokens    map[string]string // PAT key -> username
-	tokenSeq  int
-	tokenIDs  map[string]string // token uid -> key
-	sessions  map[string]string // cookie -> username
-	objects   map[string]tracker.M
-	kinds     map[string]string
-	order     []string
-	DataStore map[string]map[string]json.RawMessage
-	reserved  int
-	down      atomic.Bool
-	Version   string
+	TimeZone string
+	// OnlyEnrollOnce: the TB program allows one enrollment ever (central's E1016).
+	OnlyEnrollOnce bool
+	mu             sync.Mutex
+	Users          map[string]*User
+	tokens         map[string]string // PAT key -> username
+	tokenSeq       int
+	tokenIDs       map[string]string // token uid -> key
+	sessions       map[string]string // cookie -> username
+	objects        map[string]tracker.M
+	kinds          map[string]string
+	order          []string
+	DataStore      map[string]map[string]json.RawMessage
+	reserved       int
+	down           atomic.Bool
+	Version        string
 	// Requests counts calls per "METHOD path" for assertions.
 	Requests map[string]int
 	gen      *generated // Generate: performance-test data
@@ -478,6 +480,7 @@ func (c *Central) programs(w http.ResponseWriter, r *http.Request, u *User) {
 		stages = append(stages, map[string]any{"id": s, "sortOrder": i + 1, "repeatable": true, "access": dataPerm(u.StageRead[s], u.StageWrite[s])})
 	}
 	prog := map[string]any{"id": Program, "name": "TB program", "programType": "WITH_REGISTRATION", "access": dataPerm(u.ProgramRead, u.ProgramWrite),
+		"onlyEnrollOnce": c.OnlyEnrollOnce,
 		"trackedEntityType": map[string]any{"id": TET, "access": dataPerm(true, true),
 			"trackedEntityTypeAttributes": []any{attr(AttrFirstName, false, false), attr(AttrLastName, false, false)}},
 		"programStages":                  stages,

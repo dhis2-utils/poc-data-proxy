@@ -188,6 +188,8 @@ type ProgramMeta struct {
 	// enrollments') category combination, when not the default.
 	CategoryCombo           string `json:"categoryCombo,omitempty"`
 	EnrollmentCategoryCombo string `json:"enrollmentCategoryCombo,omitempty"`
+	// OnlyEnrollOnce: one enrollment ever per tracked entity (central's E1016).
+	OnlyEnrollOnce bool `json:"onlyEnrollOnce,omitempty"`
 }
 
 // Catalog is the facility's program set plus tracked entity type attributes.

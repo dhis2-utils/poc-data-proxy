@@ -402,6 +402,7 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 		Programs []struct {
 			ID                string `json:"id"`
 			Name              string `json:"name"`
+			OnlyEnrollOnce    bool   `json:"onlyEnrollOnce"`
 			TrackedEntityType struct {
 				ID                          string `json:"id"`
 				TrackedEntityTypeAttributes []attr `json:"trackedEntityTypeAttributes"`
@@ -450,6 +451,7 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 	}
 	for _, p := range resp.Programs {
 		pm := &access.ProgramMeta{ID: p.ID, Name: p.Name, TET: p.TrackedEntityType.ID, Attributes: conv(p.ProgramTrackedEntityAttributes),
+			OnlyEnrollOnce:           p.OnlyEnrollOnce,
 			AttributeCombo:           p.CategoryCombo.IsDefault != nil && !*p.CategoryCombo.IsDefault,
 			EnrollmentAttributeCombo: p.EnrollmentCategoryCombo.IsDefault != nil && !*p.EnrollmentCategoryCombo.IsDefault}
 		if pm.AttributeCombo {
