@@ -4,6 +4,7 @@
 package sync
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1108,7 +1109,59 @@ func Status(h *core.Hub) map[string]any {
 		"stuckOutbox": h.StuckOutbox(), "retired": h.Retired(),
 		"issues": h.Store.CountIssues(), "diskFreeBytes": diskFree(h.Cfg.DataDir), "lastUpgrade": upgrade,
 		"needsUpgrade": h.API() == nil && h.ServerVersion() != "", "time": time.Now().UTC().Format(time.RFC3339),
+		// Whose token the hub's housekeeping uses, so the Facility Hub app can list the
+		// hubs that depend on a user who is being disabled.
+		"hubTokenOwner": h.Runtime().TokenOwner(), "hubTokenExpires": hubTokenExpires(h),
+		"refused": refusedCounts(h),
 	}
+}
+
+// refusedCounts counts the changes central refused that are not resolved, by kind,
+// program and error code: with hundreds stuck after a metadata change, central sees
+// the pattern without reading each issue. Codes only, no values.
+func refusedCounts(h *core.Hub) []map[string]any {
+	issues, err := h.Store.Issues(false, 100000)
+	if err != nil || len(issues) == 0 {
+		return nil
+	}
+	counts := map[[3]string]int{}
+	for _, is := range issues {
+		var e struct {
+			Reports []struct {
+				ErrorCode string `json:"errorCode"`
+			} `json:"errorReports"`
+		}
+		json.Unmarshal(is.Error, &e)
+		program := ""
+		if o := h.Index.Get(is.ObjectUID); o != nil {
+			program = o.Program
+		}
+		codes := map[string]bool{}
+		for _, r := range e.Reports {
+			codes[cmp.Or(r.ErrorCode, "none")] = true
+		}
+		if len(codes) == 0 {
+			codes["none"] = true // blocked by an earlier refusal, or no report
+		}
+		for c := range codes {
+			counts[[3]string{is.Kind, program, c}]++
+		}
+	}
+	keys := slices.SortedFunc(maps.Keys(counts), func(a, b [3]string) int {
+		return cmp.Or(cmp.Compare(a[0], b[0]), cmp.Compare(a[1], b[1]), cmp.Compare(a[2], b[2]))
+	})
+	var out []map[string]any
+	for _, k := range keys[:min(len(keys), 100)] {
+		out = append(out, map[string]any{"kind": k[0], "program": k[1], "code": k[2], "count": counts[k]})
+	}
+	return out
+}
+
+func hubTokenExpires(h *core.Hub) any {
+	if rt := h.Runtime(); rt != nil && rt.HubTokenExp != "" {
+		return rt.HubTokenExp
+	}
+	return nil
 }
 
 func diskFree(dir string) uint64 {

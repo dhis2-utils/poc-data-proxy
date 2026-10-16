@@ -79,7 +79,7 @@ The hub has no facility-specific configuration. It reads one small image-default
 | `central_url` | Central DHIS2 base URL. Without `central_hosts`, setup always uses it |
 | `central_hosts` | Hosts setup may point a hub at (`hmis.example.org, *.hmis.example.org`); setup then asks for an `https://` URL on them. With neither key, setup needs the token in `data_dir/setup-token` (printed on the label) |
 | `password_fallback` | Store a user's central password, sealed, when a PAT cannot be created (spec 7.1). Default `false` |
-| `setup_user_group` | UID of the user group whose members may set up, administer and reset a hub |
+| `setup_user_group` | No longer used (accepted so that older files load): staff assigned to the facility set up, administer and reset its hub |
 | `listen` | Listen address, e.g. `:8443` |
 | `data_dir` | Store (`hub.db` key file, `hub.db.data` encrypted data file), TLS certificate (`ca.crt` for devices, also served at `/hub/ca.crt`), request log, upgrade files |
 | `sync_interval`, `ping_interval`, `ping_timeout` | Sync cadence (default 15m, with ±10 % jitter) and connectivity probe (15s, 5s; spec 5.2) |
@@ -106,7 +106,7 @@ The hub has no facility-specific configuration. It reads one small image-default
 ```
 
 1. **First boot.** The hub creates a hub ID and starts in setup mode. Open `https://<hub>:8443/` and you are sent to `/hub/setup`.
-2. **Setup.** A member of `setup_user_group` logs in. The hub then:
+2. **Setup.** A staff member assigned to the facility logs in. The hub then:
    - picks the facility from the user's org units, with a picker if there are several;
    - checks that the DHIS2 version is supported;
    - finds the tracker programs assigned to the facility that the setup user can see. Each facility user's online login, and each sync, adds the programs that user can see, since a district officer may not see them all;
@@ -123,9 +123,10 @@ The hub has no facility-specific configuration. It reads one small image-default
 Hub endpoints:
 
 - `GET /hub/status`: no auth. `{mode, hubId, lastPush, lastPull, pending, rejected, version, locked, setup}`.
-- `/hub/ui`: admin page, for members of `setup_user_group` only (log in at `/hub/login`). It shows status, outbox, issues and users with their access refresh times, and has these actions:
+- `/hub/ui`: admin page, for staff assigned to the facility (log in at `/hub/login`). It shows status, outbox, issues and users with their access refresh times, and has these actions:
   - sync now;
   - **simulate uplink cut**, for demos;
+  - **use my account** for the hub's own housekeeping (heartbeat, issue reports, generated IDs), when the person whose token it uses leaves;
   - reset hub.
 - `/hub/ui/endpoints`: every endpoint and parameter clients called, and every parameter refused offline (spec 13.1).
 

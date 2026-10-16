@@ -44,7 +44,6 @@ scp hub-linux-arm64 pi@<pi>:/home/pi/hub
 
 ```yaml
 central_url: http://<mac>:8090
-setup_user_group: HubGrpSetup
 listen: ":8080"
 data_dir: /home/pi/hubdata    # on the storage under test
 tls: false

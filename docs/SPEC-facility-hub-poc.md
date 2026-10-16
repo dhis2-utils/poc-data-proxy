@@ -110,7 +110,6 @@ One small YAML file, the same for every hub in a country, baked into the image:
 
 ```yaml
 central_url: https://hmis.example.org   # optional; if empty, asked at setup
-setup_user_group: <userGroupUID>        # users allowed to set up a hub
 listen: ":8443"
 data_dir: /var/lib/hub
 sync_interval: 5m
@@ -123,11 +122,11 @@ release_channel: https://releases.example.org/hub/stable
 
 The hub must be online during setup.
 
-Planned change (DEPLOYMENT.md, section 3; not built): no `setup_user_group`. Anyone assigned to the facility may set up its hub, open the admin UI and reset it; a new hub may replace the facility's hub at any time, central records it and the national team can undo it. Central's address comes from the installation card at set-up, not the image, and a hub switches to a new address only when that server accepts its token and holds its registry entry. Facilities have no IT staff, and districts should not need to visit.
+Built 2026-10-17 (DEPLOYMENT.md, section 3): no setup user group. Anyone assigned to the facility (the facility in their capture scope) may set up its hub, open the admin UI and reset it; a new hub may replace the facility's hub at any time, and both registry entries record it. Planned: the national team can undo a replacement in the Facility Hub app. Central's address comes from the installation card at set-up, not the image, and a hub switches to a new address only when that server accepts its token and holds its registry entry. Facilities have no IT staff, and districts should not need to visit.
 
 1. On first boot, the hub generates a hub ID and a signing key pair, and starts in setup mode. It is reachable at `https://hub.local` (mDNS) and at its LAN IP. Print both on the device label.
 2. The setup page asks for the central server URL (prefilled from the image if set), username and password.
-3. The hub logs in to central. The user must be a member of `setup_user_group`. Otherwise refuse setup.
+3. The hub logs in to central. The facilities offered are those in the user's org units (or below them); a user with none is refused.
 4. The hub reads the user's org units from `/api/me`. If there is exactly one, use it as the facility. If there are several (for example a district officer), show a picker limited to facility-level org units within the user's scope.
 5. The hub reads the central server version from `/api/system/info`. If the hub release does not support it, stop with a clear message.
 6. The hub derives the programs to cache: tracker programs (`programType=WITH_REGISTRATION`) assigned to the facility org unit. No manual program selection.
@@ -136,7 +135,7 @@ Planned change (DEPLOYMENT.md, section 3; not built): no `setup_user_group`. Any
 9. The hub starts the first full pull and shows progress.
 10. The setup page ends with an instruction: every staff member must log in once through the hub while it is online. Offline login only works for users who have done this.
 
-A "reset hub" action in the admin UI pushes the outbox, then wipes all data and returns to setup mode. Only members of `setup_user_group` can use it.
+A "reset hub" action in the admin UI pushes the outbox, then wipes all data and returns to setup mode. Only staff assigned to the facility can use it.
 
 Open question: the hub-level token. A PAT created from the setup user's session dies when that user leaves or is disabled. Alternatives: a dedicated low-privilege "hub system" user per country, or an OAuth2 client. Record the options in `FINDINGS.md`; use the setup user's PAT in the POC.
 
@@ -338,7 +337,7 @@ Each cycle, write `facility-hub-status/{hub_id}` in the central data store: vers
 ## 12. Hub API and admin UI
 
 - `GET /hub/status` (no auth): `{ "mode": "online|offline", "hubId", "lastPush", "lastPull", "pending": n, "rejected": n }`. Clients will use this for a status indicator later.
-- `/hub/ui` (hub session required, user must be in `setup_user_group`): a simple server-rendered page with the status, outbox, issues list, users with access refresh times, and a "sync now" button. No patient data on this page beyond UIDs.
+- `/hub/ui` (hub session required, the facility must be in the user's capture scope): a simple server-rendered page with the status, outbox, issues list, users with access refresh times, and a "sync now" button. No patient data on this page beyond UIDs.
 
 TLS in the POC: a self-signed certificate generated at first boot. Production TLS is an open question.
 
@@ -388,7 +387,7 @@ Also run the Capture web app and the Android Capture app through the hub while o
 7. Rejection: create offline a tracked entity with a unique attribute value that already exists on central. On reconnect, it is rejected; its dependent events are marked blocked; other pending data still syncs; an issue appears in the central data store and the hub UI.
 8. Offline login: reboot the hub while offline. Data is unreadable until a known user logs in. Unknown users get "first login must be online".
 9. Encryption: with the hub stopped, the SQLite file contains no patient attribute values in plain text (grep test).
-10. Setup: a fresh hub is set up by a member of `setup_user_group` with only a login. It finds the facility and programs by itself and registers in the central data store. `nurse_a` cannot set up a hub.
+10. Setup: a fresh hub is set up by a staff member assigned to the facility with only a login. It finds the facility and programs by itself and registers in the central data store. A user of another facility cannot open its admin page.
 11. Upgrade: publish a new signed release to the local release channel. The hub pushes its outbox, upgrades and passes the health check. Publish a release that fails the health check; the hub rolls back and reports the failure in its heartbeat. An unsigned release is ignored.
 
 ## 14. Open questions (record findings, do not solve)

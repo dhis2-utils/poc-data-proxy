@@ -205,9 +205,6 @@ func (u *UI) setupLogin(ctx context.Context, centralURL, username, password stri
 		}
 		return nil, err
 	}
-	if h.Cfg.SetupUserGroup == "" || !slices.ContainsFunc(me.UserGroups, func(g idOnly) bool { return g.ID == h.Cfg.SetupUserGroup }) {
-		return nil, fmt.Errorf("user %s is not allowed to set up a hub (not in the setup user group)", username)
-	}
 	version, err := h.RefreshServerVersion(ctx, auth)
 	if err != nil {
 		return nil, fmt.Errorf("reading server version: %w", err)
@@ -336,10 +333,16 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (*core.Session,
 	}
 	h.Store.SetMeta(core.MetaPublicKey, base64.StdEncoding.EncodeToString(pub))
 
+	// A replacement is allowed at any time (docs/DEPLOYMENT.md): patient data is not at
+	// stake, since a new hub gets data only through each user's own login. It is
+	// recorded on both entries, so a mistaken one can be found and undone.
+	var replaces []string
 	for _, o := range p.Others {
 		o.Value["status"] = "retired"
 		o.Value["retiredAt"] = store.Now()
 		o.Value["retiredBy"] = h.HubID()
+		o.Value["retiredByUser"] = p.Username
+		replaces = append(replaces, o.Key)
 		if err := h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-registry/"+url.PathEscape(o.Key), o.Value, hubAuth, nil); err != nil {
 			return nil, fmt.Errorf("retiring hub %s: %w", o.Key, err)
 		}
@@ -347,6 +350,9 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (*core.Session,
 	reg := map[string]any{"hubId": h.HubID(), "facility": p.Facility.ID, "facilityName": p.Facility.Name,
 		"setupBy": p.Username, "setupAt": rt.SetupAt, "hubVersion": h.Version, "publicKey": base64.StdEncoding.EncodeToString(pub),
 		"status": "active"}
+	if len(replaces) > 0 {
+		reg["replaces"] = replaces
+	}
 	if err := h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-registry/"+h.HubID(), reg, hubAuth, nil); err != nil {
 		return nil, fmt.Errorf("registering hub: %w", err)
 	}

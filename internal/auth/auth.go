@@ -188,7 +188,7 @@ func (a *Auth) registerOnline(ctx context.Context, username, password string, wi
 		slog.Warn("login: /api/me failed", "user", username, "err", err)
 		return h.Sessions.New(0, username, with)
 	}
-	if path := h.FacilityPath(); path != "" && !me.Belongs(path, h.Cfg.SetupUserGroup) {
+	if path := h.FacilityPath(); path != "" && !me.Belongs(path) {
 		// Only facility staff and hub admins get a key slot and a stored token. Anyone
 		// else is passed through to central, as when the store is locked (REVIEW-2 F5).
 		slog.Info("login: user is not facility staff; pass-through only", "user", username)

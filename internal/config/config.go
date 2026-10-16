@@ -18,7 +18,6 @@ type Config struct {
 	// "*.hmis.example.org"). Empty: only CentralURL, or, without that, any https URL
 	// with the setup token from the label (REVIEW-2 F1).
 	CentralHosts     []string
-	SetupUserGroup   string        // user group UID allowed to set up a hub
 	Listen           string        // e.g. ":8443"
 	DataDir          string        // e.g. /var/lib/hub
 	SyncInterval     time.Duration // outbox push + pull cadence
@@ -122,7 +121,8 @@ func (c *Config) set(k, v string) error {
 	case "central_hosts":
 		c.CentralHosts = splitList(v)
 	case "setup_user_group":
-		c.SetupUserGroup = v
+		// No longer used: staff assigned to the facility set the hub up. Accepted so that
+		// existing hub.yaml files still load.
 	case "listen":
 		c.Listen = v
 	case "data_dir":

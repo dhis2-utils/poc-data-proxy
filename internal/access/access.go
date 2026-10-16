@@ -132,10 +132,6 @@ func (l *List) SearchesIn(path string) bool {
 	return false
 }
 
-func (l *List) InGroup(group string) bool {
-	return l != nil && group != "" && slices.Contains(l.UserGroups, group)
-}
-
 func (l *List) Program(id string) Perm {
 	if l == nil {
 		return Perm{}

@@ -61,8 +61,11 @@ type Runtime struct {
 	HubTokenUID  string          `json:"hubTokenUid"`
 	HubTokenExp  string          `json:"hubTokenExpires"` // RFC 3339; empty before this field existed
 	SetupBy      string          `json:"setupBy"`
-	SetupAt      string          `json:"setupAt"`
-	PrivateKey   []byte          `json:"hubPrivateKey"` // ed25519 hub signing key
+	// HubTokenOwner is whose token HubToken is: the setup user, until someone assigned
+	// to the facility takes the hub's housekeeping over (TakeOverHubToken).
+	HubTokenOwner string `json:"hubTokenOwner,omitempty"`
+	SetupAt       string `json:"setupAt"`
+	PrivateKey    []byte `json:"hubPrivateKey"` // ed25519 hub signing key
 }
 
 // Hub is shared by every package that serves requests or syncs.

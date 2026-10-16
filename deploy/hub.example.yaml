@@ -3,7 +3,6 @@
 central_url: https://hmis.example.org      # the server hubs set up against
 # central_hosts: hmis.example.org, *.hmis.example.org  # optional: setup may pick any https URL on these
 # With neither central_url nor central_hosts, setup needs the token in data_dir/setup-token (print it on the label).
-setup_user_group: AbCdEfGhIjK              # user group UID allowed to set up a hub
 listen: ":8443"
 data_dir: /var/lib/hub
 sync_interval: 15m

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -46,16 +47,11 @@ type Me struct {
 }
 
 // Belongs reports whether the user may register on the hub: the facility (with this
-// path) is in their capture scope, or they are in the setup user group.
-func (m *Me) Belongs(facilityPath, setupGroup string) bool {
+// path) is in their capture scope.
+func (m *Me) Belongs(facilityPath string) bool {
 	// The facility, or an org unit above it: capture scope includes what is below.
 	for _, o := range m.OrganisationUnits {
 		if strings.Contains(facilityPath+"/", "/"+o.ID+"/") {
-			return true
-		}
-	}
-	for _, g := range m.UserGroups {
-		if setupGroup != "" && g.ID == setupGroup {
 			return true
 		}
 	}
@@ -530,4 +526,55 @@ func programFields(api compat.API, af string) string {
 		api = compat.For("2.42")
 	}
 	return api.ProgramFields(af)
+}
+
+// TokenOwner is the user whose token the hub uses for its housekeeping.
+func (rt *Runtime) TokenOwner() string {
+	if rt == nil {
+		return ""
+	}
+	if rt.HubTokenOwner != "" {
+		return rt.HubTokenOwner
+	}
+	return rt.SetupBy
+}
+
+// TakeOverHubToken moves the hub's housekeeping (heartbeat, issue reports, registry,
+// program list, generated IDs, upgrade checks) to a token of this user, who must be
+// assigned to the facility, and deletes the old token: for when the person who set
+// the hub up leaves (docs/DEPLOYMENT.md, "The hub's own account").
+func (h *Hub) TakeOverHubToken(ctx context.Context, username, password string) error {
+	rt := h.Runtime()
+	if rt == nil {
+		return errors.New("the hub is not set up")
+	}
+	with := central.Auth{Username: username, Password: password}
+	me, err := h.FetchMe(ctx, with)
+	if central.Status(err) == http.StatusUnauthorized {
+		return errors.New("wrong password")
+	}
+	if err != nil {
+		return err
+	}
+	if !me.Belongs(h.FacilityPath()) {
+		return fmt.Errorf("%s is not assigned to this facility", username)
+	}
+	exp := time.Now().Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
+	uid, key, err := h.CreatePAT(ctx, with, exp)
+	if err != nil {
+		return fmt.Errorf("creating a token: %w", err)
+	}
+	oldUID, oldKey := rt.HubTokenUID, rt.HubToken
+	if err := h.UpdateRuntime(func(rt *Runtime) {
+		rt.HubToken, rt.HubTokenUID, rt.HubTokenExp = key, uid, exp.UTC().Format(time.RFC3339)
+		rt.HubTokenOwner = me.Username
+	}); err != nil {
+		return err
+	}
+	if oldUID != "" && oldUID != uid {
+		// Best effort, as its owner: the old token may already be dead with them.
+		h.Central.JSON(ctx, "DELETE", "/api/apiToken/"+url.PathEscape(oldUID), nil, central.Auth{PAT: oldKey}, nil)
+	}
+	slog.Info("hub token taken over", "by", me.Username, "from", rt.TokenOwner())
+	return nil
 }

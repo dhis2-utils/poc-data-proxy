@@ -16,7 +16,7 @@ What building the facility hub POC taught us about DHIS2, the Capture apps and t
 | 7 | Rejection: unique value conflict; dependents blocked; other data syncs; issue in central data store and hub UI | Pass | e2e test; live DHIS2 (E1064 on the tracked entity, E5000 on its enrollment, "blocked by" on its events, 4 issues in `facility-hub-issues`) |
 | 8 | Reboot offline: data unreadable until a known user logs in; unknown users get the same answer as a wrong password | Pass | e2e test; live (hub restart, then online and offline login) |
 | 9 | No patient data in plain text on disk | Pass (every file in the data directory grepped, for values and for UIDs, programs and dates) | e2e test; live hub database grepped for demo-data values |
-| 10 | Setup by a member of `setup_user_group` with only a login; nurse_a refused | Pass | e2e test; live DHIS2 (registry entry written, replace prompt for a second hub) |
+| 10 | Setup by a staff member assigned to the facility with only a login (originally: by a member of `setup_user_group`, nurse_a refused; the group was dropped 2026-10-17) | Pass | e2e test; live DHIS2 (registry entry written, replace prompt for a second hub) |
 | 11 | Upgrade: signed release installs; failing release rolls back and is reported; unsigned release ignored | Pass | `scripts/test-upgrade.sh` |
 
 `go test ./...` runs scenarios 1–10 end to end against `internal/fakecentral`. The fake is shaped after the recorded fixtures. To cut the uplink it drops connections, so the hub handles real network errors. The same tests cover a hub reset, a revoked PAT (401 on push), and offline serving of cached app files.
@@ -216,7 +216,7 @@ Either way, **protect the namespaces**. By default any user can read and write a
 29. **Spec 6.2 step 6 lists programs with the setup user's access.** The catalog came from the hub token, so the setup user's metadata access. A district officer often cannot see every program facility staff work in, and those programs were never cached or pulled. The catalog is now the union of what the hub token and every registered user can see, extended at each online login and rebuilt on sync.
 30. **Spec 12a: "push the outbox until empty" can block upgrades for good.** An entry whose author central no longer accepts may never push. Since the store copy carries the outbox over, the upgrade proceeds when only such entries remain; they are reported as `stuckOutbox`.
 31. **Spec 7.1's password fallback.** Storing a user's central password whenever PAT creation fails was never needed on 2.42 and is now off by default (`password_fallback`). Without a PAT, the user can work online and read offline, but offline changes are refused: they could never be sent.
-32. **Who registers on the hub.** Spec 7.1 registers any user who logs in online. The hub now registers only users with the facility in their capture org units or in the setup user group; others are passed through to central.
+32. **Who registers on the hub.** Spec 7.1 registers any user who logs in online. The hub now registers only users with the facility in their capture org units (the setup user group that could also register was dropped 2026-10-17); others are passed through to central.
 
 ## Found by the test framework (docs/TESTING.md)
 

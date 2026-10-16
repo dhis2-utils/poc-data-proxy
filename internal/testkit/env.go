@@ -93,7 +93,6 @@ func Start(t testing.TB) *Env {
 func (e *Env) Config() config.Config {
 	c := config.Default()
 	c.CentralURL = e.Net.URL()
-	c.SetupUserGroup = e.M.SetupGroup
 	c.DataDir = e.Dir
 	c.TLS = false
 	c.SyncInterval = time.Hour // tests run cycles by hand
@@ -219,7 +218,13 @@ func (e *Env) Sync() {
 // Setup sets the hub up as the admin role and runs the first sync.
 func (e *Env) Setup() {
 	e.T.Helper()
-	c := e.Web(RoleAdmin)
+	e.SetupAs(RoleAdmin)
+}
+
+// SetupAs sets the hub up as a user of this role, as staff at the facility would.
+func (e *Env) SetupAs(role string) {
+	e.T.Helper()
+	c := e.Web(role)
 	resp, err := c.PostForm("/hub/setup", url.Values{"step": {"login"}, "username": {c.User}, "password": {e.M.Password}})
 	if err != nil {
 		e.T.Fatal(err)

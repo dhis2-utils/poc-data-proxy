@@ -53,6 +53,7 @@ func (u *UI) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/hub/ui/sync", u.admin(u.handleSyncNow))
 	mux.HandleFunc("/hub/ui/uplink", u.admin(u.handleUplink))
 	mux.HandleFunc("/hub/ui/reset", u.admin(u.handleReset))
+	mux.HandleFunc("/hub/ui/takeover", u.admin(u.handleTakeOver))
 	mux.HandleFunc("/hub/ui/endpoints", u.admin(u.handleEndpoints))
 	// The hub's CA certificate, for installing on devices (public; no key behind it).
 	mux.HandleFunc("/hub/ca.crt", func(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +124,8 @@ func (u *UI) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 // --- admin auth --------------------------------------------------------------------
 
-// admin requires a hub session of a member of setup_user_group (spec 12).
+// admin requires a hub session of a user assigned to the facility (the facility in
+// their capture scope): the staff who use the hub run it, with no setup group.
 func (u *UI) admin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if u.H.Mode() == core.ModeSetup {
@@ -135,9 +137,9 @@ func (u *UI) admin(next http.HandlerFunc) http.HandlerFunc {
 			http.Redirect(w, r, "/hub/login", http.StatusFound)
 			return
 		}
-		if !u.H.Access(sess.UserID).InGroup(u.H.Cfg.SetupUserGroup) {
+		if !u.H.Access(sess.UserID).InFacility(u.H.FacilityPath()) {
 			w.WriteHeader(http.StatusForbidden)
-			u.render(w, "login", map[string]any{"Error": "Only members of the hub setup user group can open this page."})
+			u.render(w, "login", map[string]any{"Error": "Only staff assigned to this facility can open this page."})
 			return
 		}
 		if r.Method == http.MethodPost && !sameOrigin(r) {
@@ -309,6 +311,21 @@ func (u *UI) handleReset(w http.ResponseWriter, r *http.Request) {
 	}
 	core.ClearSessionCookie(w, u.H.Cfg.TLS)
 	http.Redirect(w, r, "/hub/setup", http.StatusFound)
+}
+
+// handleTakeOver moves the hub's housekeeping to a token of the logged-in staff member,
+// who confirms with their password (docs/DEPLOYMENT.md, "The hub's own account").
+func (u *UI) handleTakeOver(w http.ResponseWriter, r *http.Request) {
+	sess := u.H.Sessions.FromCookie(r)
+	if r.Method != http.MethodPost || sess == nil {
+		http.Redirect(w, r, "/hub/ui", http.StatusFound)
+		return
+	}
+	msg := "The hub now uses your account for its own housekeeping"
+	if err := u.H.TakeOverHubToken(r.Context(), sess.Username, r.FormValue("password")); err != nil {
+		msg = "Not taken over: " + err.Error()
+	}
+	http.Redirect(w, r, "/hub/ui?msg="+template.URLQueryEscaper(msg), http.StatusFound)
 }
 
 // handleEndpoints lists the endpoints and parameters clients called (spec 13.1).

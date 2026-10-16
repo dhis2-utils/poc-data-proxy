@@ -50,16 +50,7 @@ func TestScenarios(t *testing.T) {
 	// Names unique to this run, so a live instance can be reused and grepped.
 	runTag := "Zq" + strings.ToLower(tk.UID()[:6])
 
-	t.Run("setup: only the setup group may set up a hub", func(t *testing.T) {
-		c := e.Web(tk.RoleNurse)
-		resp, err := c.PostForm("/hub/setup", url.Values{"step": {"login"}, "username": {c.User}, "password": {m.Password}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
-		if e.App.Hub.Mode() != "setup" {
-			t.Fatal("a nurse set up the hub")
-		}
+	t.Run("setup: the hub serves the facility of the staff member who sets it up", func(t *testing.T) {
 		e.Setup()
 		if e.App.Hub.Facility() != m.Facility.ID {
 			t.Fatalf("facility %q", e.App.Hub.Facility())

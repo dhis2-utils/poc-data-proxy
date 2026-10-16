@@ -51,7 +51,6 @@ func newEnv(t *testing.T) *env {
 func (e *env) cfg() config.Config {
 	c := config.Default()
 	c.CentralURL = e.cSrv.URL
-	c.SetupUserGroup = fc.SetupGroup
 	c.DataDir = e.dir
 	c.TLS = false
 	c.SyncInterval = time.Hour // tests run cycles by hand
@@ -265,16 +264,7 @@ const postSync = "/api/tracker?async=false&importStrategy=CREATE_AND_UPDATE&atom
 
 func TestAcceptance(t *testing.T) {
 	e := newEnv(t)
-	t.Run("10 setup: nurse_a cannot set up a hub", func(t *testing.T) {
-		c := e.web("nurse_a")
-		resp, _ := c.postForm("/hub/setup", url.Values{"step": {"login"}, "central_url": {e.cSrv.URL},
-			"username": {"nurse_a"}, "password": {fc.Password}})
-		b, _ := io.ReadAll(resp.Body)
-		if !strings.Contains(string(b), "not allowed to set up a hub") {
-			t.Fatalf("expected refusal, got %s", b)
-		}
-	})
-	t.Run("10 setup: hub_admin sets up with only a login", func(t *testing.T) {
+	t.Run("10 setup: a staff member sets up with only a login", func(t *testing.T) {
 		e.setup()
 		h := e.app.Hub
 		if h.Facility() != fc.Facility || h.Catalog().Programs[fc.Program] == nil {
@@ -543,6 +533,12 @@ func TestAcceptance(t *testing.T) {
 		if !strings.Contains(byUID["DupTe000001"], "E1064") || !strings.Contains(byUID["DupEv000002"], "blocked by") {
 			t.Fatalf("issues: %v", byUID)
 		}
+		// The heartbeat counts them by kind, program and error code, so central sees the
+		// pattern of hundreds without reading each.
+		hb, _ := json.Marshal(e.central.DataStoreValue("facility-hub-status", e.app.Hub.HubID())["refused"])
+		if !bytes.Contains(hb, []byte(`"code":"E1064","count":1,"kind":"trackedEntity"`)) {
+			t.Fatalf("refused changes in the heartbeat: %s", hb)
+		}
 		keys := e.central.DataStoreKeys("facility-hub-issues")
 		if len(keys) != len(issues) {
 			t.Fatalf("central issues %v vs hub %d", keys, len(issues))
@@ -568,8 +564,12 @@ func TestAcceptance(t *testing.T) {
 		if st != 200 || !bytes.Contains(page, []byte("DupTe000001")) || !bytes.Contains(page, []byte("E1064")) || bytes.Contains(page, []byte("NAT-7777")) {
 			t.Fatalf("admin page: %d", st)
 		}
-		if st, _ := a.do("GET", "/hub/ui", nil); st != 403 {
+		// Staff assigned to the facility run the hub; no one else opens its page.
+		if st, _ := a.do("GET", "/hub/ui", nil); st != 200 {
 			t.Fatalf("nurse_a on admin page: %d", st)
+		}
+		if st, _ := e.web("outsider_d").do("GET", "/hub/ui", nil); st == 200 {
+			t.Fatal("a user of another facility opened the admin page")
 		}
 	})
 

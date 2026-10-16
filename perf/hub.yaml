@@ -1,7 +1,6 @@
 # Hub configuration for the performance container (perf/pi.sh). Central is the fake
 # central on dev-net; clients reach the hub as http://hub-pi:8080.
 central_url: http://perf-central:8090
-setup_user_group: HubGrpSetup
 listen: ":8080"
 data_dir: /data
 tls: false
