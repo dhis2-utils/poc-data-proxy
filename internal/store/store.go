@@ -290,6 +290,14 @@ CREATE INDEX objects_events_occurred ON objects(kind, program, owner_org_unit, o
 ALTER TABLE objects ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;
 UPDATE objects SET deleted = 1 WHERE json_extract(slim, '$.deleted') = 1;
 `,
+	// Stubs of pruned enrollments (tracker retention): hidden from reads, kept for the
+	// enrol-once check. The state index covers the stub flag, so a pull's stale check
+	// reads the index alone.
+	`
+ALTER TABLE objects ADD COLUMN stub INTEGER NOT NULL DEFAULT 0;
+DROP INDEX objects_state;
+CREATE INDEX objects_state ON objects(uid, updated_at, slot, stub);
+`,
 }
 
 // SchemaVersion is the number of key file migrations this binary knows.

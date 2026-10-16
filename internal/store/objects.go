@@ -49,6 +49,9 @@ type Object struct {
 	Slim              []byte
 	// Deleted: a tombstone, deleted on central (the slim JSON's deleted).
 	Deleted bool
+	// Stub: an enrollment kept as a stub after pruning (tracker retention; the slim
+	// JSON's hubStub).
+	Stub    bool
 	Attrs   []Attr // a tracked entity's attribute values
 	Payload []byte
 }
@@ -61,17 +64,17 @@ type Attr struct{ Attr, Value string }
 // not wait for while other writers hold the rest of the pool waiting for its lock.
 const (
 	sqlPutObject = `INSERT INTO objects(uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at,
- origin, sync_state, payload_enc, slot, created_at, status, rel_from, rel_to, slim, te_created, occurred_at, deleted)
+ origin, sync_state, payload_enc, slot, created_at, status, rel_from, rel_to, slim, te_created, occurred_at, deleted, stub)
  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
  CASE WHEN ?2 = 'enrollment' THEN coalesce((SELECT created_at FROM objects WHERE uid = ?3 AND kind = 'trackedEntity'), '') ELSE '' END,
  CASE WHEN ?2 = 'event' THEN coalesce(json_extract(?18, '$.occurredAt'), '') ELSE '' END,
- coalesce(json_extract(?18, '$.deleted'), 0))
+ coalesce(json_extract(?18, '$.deleted'), 0), coalesce(json_extract(?18, '$.hubStub'), 0))
 ON CONFLICT(uid) DO UPDATE SET kind=excluded.kind, te_uid=excluded.te_uid, enrollment_uid=excluded.enrollment_uid,
  program=excluded.program, stage=excluded.stage, tet=excluded.tet, owner_org_unit=excluded.owner_org_unit,
  updated_at=excluded.updated_at, origin=excluded.origin, sync_state=excluded.sync_state, payload_enc=excluded.payload_enc,
  slot=coalesce(objects.slot, excluded.slot), created_at=excluded.created_at, status=excluded.status,
  rel_from=excluded.rel_from, rel_to=excluded.rel_to, slim=excluded.slim, te_created=excluded.te_created,
- occurred_at=excluded.occurred_at, deleted=excluded.deleted`
+ occurred_at=excluded.occurred_at, deleted=excluded.deleted, stub=excluded.stub`
 	sqlTECreated     = `UPDATE objects INDEXED BY objects_te SET te_created = ? WHERE te_uid = ? AND kind = 'enrollment' AND te_created <> ?`
 	sqlDeleteAttrs   = `DELETE FROM te_attrs WHERE te_uid = ?`
 	sqlInsertAttr    = `INSERT OR REPLACE INTO te_attrs(te_uid, attr, value, value_lc) VALUES(?,?,?,?)`
@@ -142,8 +145,8 @@ func (s *Store) GetObject(uid string) (*Object, error) {
 	o := &Object{}
 	var ct []byte
 	err := s.DB().QueryRow(`SELECT uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at, origin,
- sync_state, payload_enc, slot FROM objects WHERE uid=?`, uid).Scan(&o.UID, &o.Kind, &o.TE, &o.Enrollment, &o.Program,
-		&o.Stage, &o.TET, &o.OwnerOrgUnit, &o.UpdatedAt, &o.Origin, &o.SyncState, &ct, &o.Slot)
+ sync_state, payload_enc, slot, stub FROM objects WHERE uid=?`, uid).Scan(&o.UID, &o.Kind, &o.TE, &o.Enrollment, &o.Program,
+		&o.Stage, &o.TET, &o.OwnerOrgUnit, &o.UpdatedAt, &o.Origin, &o.SyncState, &ct, &o.Slot, &o.Stub)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -195,7 +198,7 @@ func (s *Store) SealedPayloads(uids []string) (map[string][]byte, error) {
 
 // objectColumns are the columns ScanObject reads, without the payload.
 var objectColumns = []string{"uid", "kind", "te_uid", "enrollment_uid", "program", "stage", "tet", "owner_org_unit",
-	"updated_at", "origin", "sync_state", "slot", "created_at", "status", "rel_from", "rel_to", "deleted", "slim"}
+	"updated_at", "origin", "sync_state", "slot", "created_at", "status", "rel_from", "rel_to", "deleted", "stub", "slim"}
 
 var objectCols = ObjectCols("")
 
@@ -219,7 +222,7 @@ func ScanObject(sc interface{ Scan(...any) error }, extra ...any) (*Object, erro
 	o := &Object{}
 	var slim string
 	err := sc.Scan(append([]any{&o.UID, &o.Kind, &o.TE, &o.Enrollment, &o.Program, &o.Stage, &o.TET, &o.OwnerOrgUnit,
-		&o.UpdatedAt, &o.Origin, &o.SyncState, &o.Slot, &o.CreatedAt, &o.Status, &o.RelFrom, &o.RelTo, &o.Deleted, &slim}, extra...)...)
+		&o.UpdatedAt, &o.Origin, &o.SyncState, &o.Slot, &o.CreatedAt, &o.Status, &o.RelFrom, &o.RelTo, &o.Deleted, &o.Stub, &slim}, extra...)...)
 	o.Slim = []byte(slim)
 	return o, err
 }
@@ -258,7 +261,7 @@ func (s *Store) QueryObjectPairs(query string, args ...any) ([][2]*Object, error
 		b := &Object{}
 		var slim string
 		a, err := ScanObject(rows, &b.UID, &b.Kind, &b.TE, &b.Enrollment, &b.Program, &b.Stage, &b.TET, &b.OwnerOrgUnit,
-			&b.UpdatedAt, &b.Origin, &b.SyncState, &b.Slot, &b.CreatedAt, &b.Status, &b.RelFrom, &b.RelTo, &b.Deleted, &slim)
+			&b.UpdatedAt, &b.Origin, &b.SyncState, &b.Slot, &b.CreatedAt, &b.Status, &b.RelFrom, &b.RelTo, &b.Deleted, &b.Stub, &slim)
 		if err != nil {
 			return nil, err
 		}
@@ -313,10 +316,12 @@ func (s *Store) ObjectsByUID(uids []string) (map[string]*Object, error) {
 }
 
 // ObjectState is what a pull compares with central's list: the stored update time
-// and the visibility slot.
+// and the visibility slot; Stub marks an enrollment kept as a stub (tracker
+// retention), under which a pull counts what central lists as held.
 type ObjectState struct {
 	UpdatedAt string
 	Slot      int64
+	Stub      bool
 }
 
 // ObjectStates returns the state of these stored objects, by uid (missing ones are
@@ -329,11 +334,11 @@ func (s *Store) ObjectStates(uids []string) (map[string]ObjectState, error) {
 	sorted = slices.Compact(sorted)
 	out := make(map[string]ObjectState, len(sorted))
 	err := inBatches(sorted, func(args []any, marks string) error {
-		rows, err := s.query(`SELECT uid, updated_at, slot FROM objects INDEXED BY objects_state WHERE uid IN (`+marks+`)`, args...)
+		rows, err := s.query(`SELECT uid, updated_at, slot, stub FROM objects INDEXED BY objects_state WHERE uid IN (`+marks+`)`, args...)
 		return scanRows(rows, err, func(r *sql.Rows) error {
 			var uid string
 			var st ObjectState
-			err := r.Scan(&uid, &st.UpdatedAt, &st.Slot)
+			err := r.Scan(&uid, &st.UpdatedAt, &st.Slot, &st.Stub)
 			out[uid] = st
 			return err
 		})
@@ -684,4 +689,70 @@ func (s *Store) DeleteObjects(uids []string) (int, error) {
 		}
 	}
 	return n, nil
+}
+
+// notInPendingOutbox is the condition that no pending outbox entry names the row
+// aliased x; its one argument is OutboxPending.
+func notInPendingOutbox(x string) string {
+	return ` AND NOT EXISTS (SELECT 1 FROM outbox o JOIN outbox_objects oo ON oo.seq = o.seq WHERE o.state = ? AND oo.uid = ` + x + `.uid)`
+}
+
+// AgedEnrollments lists the facility's synced, closed (completed or cancelled)
+// enrollments of a program, not yet stubs, whose last change is before cutoff (a
+// date), that no pending outbox entry names and none of whose events is unsynced:
+// what tracker retention turns into stubs.
+func (s *Store) AgedEnrollments(program, owner, cutoff string) ([]string, error) {
+	return s.uids(`SELECT uid FROM objects e WHERE kind = ? AND program = ? AND owner_org_unit = ? AND sync_state = ?
+ AND stub = 0 AND status IN ('COMPLETED', 'CANCELLED') AND updated_at < ?`+notInPendingOutbox("e")+`
+ AND NOT EXISTS (SELECT 1 FROM objects ev WHERE ev.enrollment_uid = e.uid AND ev.sync_state <> ?)`,
+		KindEnrollment, program, owner, SyncSynced, cutoff, OutboxPending, SyncSynced)
+}
+
+// StubEnrollmentsEvents lists the synced events whose enrollment is a stub and that no
+// pending outbox entry names: they go once their enrollment is stubbed.
+func (s *Store) StubEnrollmentsEvents() ([]string, error) {
+	return s.uids(`SELECT ev.uid FROM objects ev JOIN objects e ON e.uid = ev.enrollment_uid
+ WHERE ev.kind = ? AND e.stub = 1 AND ev.sync_state = ?`+notInPendingOutbox("ev"),
+		KindEvent, SyncSynced, OutboxPending)
+}
+
+// PrunableEntities lists the facility's synced tracked entities of a type whose last
+// change is before cutoff, with no enrollment held in full, that no pending outbox
+// entry names and that no unsynced object refers to (as its tracked entity or as a
+// relationship's end).
+func (s *Store) PrunableEntities(tet, owner, cutoff string) ([]string, error) {
+	return s.uids(`SELECT uid FROM objects t WHERE kind = ? AND tet = ? AND owner_org_unit = ? AND sync_state = ?
+ AND updated_at < ?`+notInPendingOutbox("t")+`
+ AND NOT EXISTS (SELECT 1 FROM objects x WHERE x.te_uid = t.uid AND x.kind = ? AND x.stub = 0)
+ AND NOT EXISTS (SELECT 1 FROM objects x WHERE x.te_uid = t.uid AND x.sync_state <> ?)
+ AND NOT EXISTS (SELECT 1 FROM objects x WHERE x.rel_from = t.uid AND x.sync_state <> ?)
+ AND NOT EXISTS (SELECT 1 FROM objects x WHERE x.rel_to = t.uid AND x.sync_state <> ?)`,
+		KindTrackedEntity, tet, owner, SyncSynced, cutoff, OutboxPending, KindEnrollment, SyncSynced, SyncSynced, SyncSynced)
+}
+
+// EntityLeftovers lists what goes with these tracked entities when they are pruned:
+// their remaining rows (stubs, events under them) and relationships with them.
+func (s *Store) EntityLeftovers(tes []string) ([]string, error) {
+	var out []string
+	err := inBatches(tes, func(args []any, marks string) error {
+		got, err := s.uids(`SELECT uid FROM objects WHERE te_uid IN (`+marks+`)
+ UNION SELECT uid FROM objects WHERE rel_from IN (`+marks+`)
+ UNION SELECT uid FROM objects WHERE rel_to IN (`+marks+`)`, append(append(slices.Clone(args), args...), args...)...)
+		out = append(out, got...)
+		return err
+	})
+	return out, err
+}
+
+// uids runs a query of one uid column.
+func (s *Store) uids(query string, args ...any) ([]string, error) {
+	rows, err := s.DB().Query(query, args...)
+	var out []string
+	err = scanRows(rows, err, func(r *sql.Rows) error {
+		var u string
+		err := r.Scan(&u)
+		out = append(out, u)
+		return err
+	})
+	return out, err
 }
