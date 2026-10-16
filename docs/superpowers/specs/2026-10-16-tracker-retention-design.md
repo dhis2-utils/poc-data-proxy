@@ -84,7 +84,7 @@ Central's dataStore, `facility-hub-config/retention`, read at the catalog refres
 - **Live, 2.42 and 2.43:**
   - central accepts the listings' parameters with a program (`enrollmentStatus=ACTIVE`, `updatedAfter`), and the hub's full pull with a window set reads the same people as central lists; the active-enrollment listing's time on central is recorded (Sierra Leone);
   - the write oracle adds offline E1015 and E1016 cases, which must match central's refusals;
-  - the read oracle narrows central's answer to each program's window when a window is set. Data on central cannot be aged, so pruning itself is tested on the fake.
+  - with a window set, the people the hub lists offline for the program equal what central lists for the same user as active or changed since the cut-off (the read oracle itself runs without a window). Data on central cannot be aged, so pruning itself is tested on the fake.
 - **Performance** (`internal/perf`): the busy HC IV sizing, first fill with and without retention, and a pruning run; central's requests and bytes for a full pull with and without retention, and for a second full pull after pruning (which must fetch no tracked entity again); numbers in docs/PERFORMANCE.md, which replace its "Retention by programme (planned)" section.
 
 ## Out of scope
