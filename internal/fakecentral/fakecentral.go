@@ -699,6 +699,10 @@ func (c *Central) importTracker(w http.ResponseWriter, r *http.Request, u *User)
 				fail("E1068", "Could not find TrackedEntity")
 			} else if !u.ProgramWrite {
 				fail("E1091", "no data write access to Program")
+			} else if c.objects[it.UID] == nil {
+				if code, msg := c.enrollOnce(it, okItems); code != "" {
+					fail(code, msg)
+				}
 			}
 		case "event":
 			if prog := tracker.Str(it.Data, "program"); isEventProgram(prog) {

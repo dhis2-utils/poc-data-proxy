@@ -2,6 +2,7 @@ package live
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dhis2/facility-hub/internal/tracker"
@@ -77,4 +78,63 @@ func TestStubHiddenFromReads(t *testing.T) {
 	if st, body := nurse.Do("GET", "/api/tracker/enrollments/RetEn000001", nil); st != 503 {
 		t.Errorf("a stub read singly: %d %s", st, body)
 	}
+}
+
+// newEnrollment posts a new ACTIVE enrollment for te in the TB program.
+func newEnrollment(c *tk.Client, uid, te string) (int, string) {
+	st, b := c.Do("POST", "/api/tracker?async=false", map[string]any{"enrollments": []any{map[string]any{
+		"enrollment": uid, "trackedEntity": te, "program": fc.Program, "orgUnit": fc.Facility,
+		"status": "ACTIVE", "enrolledAt": "2026-10-16", "occurredAt": "2026-10-16"}}})
+	return st, string(b)
+}
+
+// Offline, a second active enrollment in a program is refused (E1015), and so is any
+// second enrollment in a program that allows one ever (E1016), even when the first is
+// held only as a stub.
+func TestEnrollmentRulesOffline(t *testing.T) {
+	setup := func(t *testing.T, once bool, status string) (*tk.Env, *tk.Client) {
+		e := tk.Start(t)
+		e.NeedFake()
+		e.Fake.OnlyEnrollOnce = once
+		e.Fake.Seed("RetTe000002", "RetEn000002", "Active", "NAT-9002", nil)
+		e.Fake.SetStatus("RetEn000002", status)
+		e.Setup()
+		nurse := e.Android(tk.RoleNurse)
+		nurse.Do("GET", "/api/me?fields=id", nil)
+		e.Sync()
+		e.Offline()
+		return e, nurse
+	}
+	t.Run("E1015", func(t *testing.T) {
+		e, nurse := setup(t, false, "ACTIVE")
+		if st, b := newEnrollment(nurse, "RetEn000003", "RetTe000002"); st != 409 || !strings.Contains(b, "E1015") {
+			t.Errorf("a second active enrollment offline: %d %s", st, b)
+		}
+		// Online, central refuses it with the same code.
+		e.Online()
+		if st, b := newEnrollment(nurse, "RetEn000004", "RetTe000002"); st != 409 || !strings.Contains(b, "E1015") {
+			t.Errorf("a second active enrollment online: %d %s", st, b)
+		}
+	})
+	t.Run("E1016", func(t *testing.T) {
+		e, nurse := setup(t, true, "COMPLETED")
+		if st, b := newEnrollment(nurse, "RetEn000003", "RetTe000002"); st != 409 || !strings.Contains(b, "E1016") {
+			t.Errorf("enrolling twice where once is allowed: %d %s", st, b)
+		}
+		stubEnrollment(t, e, "RetEn000002")
+		if st, b := newEnrollment(nurse, "RetEn000003", "RetTe000002"); st != 409 || !strings.Contains(b, "E1016") {
+			t.Errorf("enrolling twice where once is allowed, the first a stub: %d %s", st, b)
+		}
+	})
+	t.Run("completed then new", func(t *testing.T) {
+		e, nurse := setup(t, false, "COMPLETED")
+		if st, b := newEnrollment(nurse, "RetEn000003", "RetTe000002"); st != 200 {
+			t.Fatalf("a new enrollment after a completed one: %d %s", st, b)
+		}
+		e.Online()
+		e.Sync()
+		if e.CentralObject("enrollments", "RetEn000003") == nil {
+			t.Error("the new enrollment did not reach central")
+		}
+	})
 }

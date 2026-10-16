@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -338,6 +339,11 @@ func (im *Importer) validateEnrollment(it *Item, old *Obj) (*Obj, bool, []ErrorR
 	if !im.V.Access.TET(parent.TET).Read {
 		return nil, false, im.errf(it, "E1104", "User: `%s`, has no data read access to program: `%s`, TrackedEntityType: `%s`.", im.UserUID, program, parent.TET)
 	}
+	if old == nil {
+		if errs := im.enrollOnce(it, te, program, pm.OnlyEnrollOnce); errs != nil {
+			return nil, false, errs
+		}
+	}
 	o := im.newObj(it, old)
 	o.TE, o.Program = te, program
 	if Str(o.Data, "status") == "" {
@@ -345,6 +351,44 @@ func (im *Importer) validateEnrollment(it *Item, old *Obj) (*Obj, bool, []ErrorR
 	}
 	o.Data["trackedEntity"], o.Data["program"] = te, program
 	return o, old == nil, nil
+}
+
+// enrollOnce applies central's checks on a new enrollment against the person's others
+// in the program: a second active one (E1015) and, where the program allows one ever,
+// any second one (E1016; a cancelled enrollment counts for neither). Stubs of pruned
+// enrollments count: keeping them is what makes E1016 work offline.
+func (im *Importer) enrollOnce(it *Item, te, program string, once bool) []ErrorReport {
+	status := cmp.Or(Str(it.Data, "status"), "ACTIVE")
+	if status == "CANCELLED" {
+		return nil
+	}
+	for _, e := range im.enrollmentsIn(te, program) {
+		st := Str(withData(e).Data, "status")
+		if status == "ACTIVE" && st == "ACTIVE" {
+			return im.errf(it, "E1015", "TrackedEntity: `%s`, already has an active Enrollment in Program `%s`.", te, program)
+		}
+		if once && (st == "ACTIVE" || st == "COMPLETED") {
+			return im.errf(it, "E1016", "TrackedEntity: `%s`, already has an active enrollment in Program: `%s`, and this program only allows enrolling one time.", te, program)
+		}
+	}
+	return nil
+}
+
+// enrollmentsIn returns te's enrollments in program the hub holds (stubs included,
+// what central deleted left out) and those accepted earlier in this payload.
+func (im *Importer) enrollmentsIn(te, program string) []*Obj {
+	var out []*Obj
+	for _, e := range im.Ix.EnrollmentsOf(te) {
+		if e.Program == program && !e.Deleted && im.pending[e.UID] == nil {
+			out = append(out, e)
+		}
+	}
+	for _, e := range im.pending {
+		if e.Kind == store.KindEnrollment && e.TE == te && e.Program == program {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport) {
