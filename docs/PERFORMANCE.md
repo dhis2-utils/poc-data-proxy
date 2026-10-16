@@ -45,7 +45,7 @@ The 1 GB knee is between 30 k and 60 k people; the incremental syncs at 60 k ran
 - A smaller data file (about twice the in-memory design's) and a faster first fill on SD cards (a larger cache during pulls, fewer indexes).
 - The paced run: writes and reads at the per-hour rates below (peak 5 × average), with bytes written per day for SD card wear.
 - Calibration on a real Pi (`perf/pi.sh bench`).
-- Tracker retention at the HC IV size and on `pi5` (measured in process at 100 k: "Retention for tracker programs" below).
+- Tracker retention on `pi5` (measured in process at 100 k and at the HC IV size: "Retention for tracker programs" below).
 
 ## How the hub scales
 
@@ -173,16 +173,27 @@ Tracked entity types can also have windows (`trackedEntityTypes`), with no defau
 | Sent by central, a full pull | 1 273 requests, 493 MB | 1 443 requests, 574 MB; no one fetched again |
 | Pruning a full hub to the window | | 7 min: 240 k enrollments stubbed, 680 k events deleted, in transactions of 1 000 rows |
 
-The table shows four things.
+At the HC IV size kept for five years (`hc4-5y`: 300 000 people, 1.2 million enrollments, 3.1 million events), 60 users:
 
-- **The hub.** The data file shrinks by 58 % and the first fill by 40 %.
+| | Without retention | `{"defaultMonths": 12}` |
+|---|---|---|
+| First fill | 34 min 43 s | 19 min 52 s |
+| Data file | 16.2 GB | 6.5 GB |
+| Held | 1.2 M enrollments, 3.1 M events | 0.48 M enrollments in full plus 0.72 M stubs, 0.96 M events (about the `hc4` sizing) |
+| Sent by central, first fill | 28 829 requests, 8.0 GB | 29 311 requests, 8.3 GB |
+| Sent by central, a full pull | 3 747 requests, 1.5 GB, 5 min 22 s | 4 229 requests, 1.75 GB, 4 min 3 s; no one fetched again |
+| Pruning a full hub to the window | | 29 min: 719 k enrollments stubbed, 2.1 M events deleted, in transactions of 1 000 rows |
+
+The tables show four things, the same at both sizes.
+
+- **The hub.** The data file shrinks by 58–60 % and the first fill by 40–43 %. At the HC IV size this brings the file from 16 GB to 6.5 GB, within reach of a Pi 5 with the 8 GB the sizing above asks for.
 - **Central sends as much as before.** In this data nearly every person had a recent enrollment in some program, so the listing "changed since the cut-off" returns nearly everyone. Fetching a person for a program returns all their enrollments there, and every event of the old ones, which the hub then keeps only as stubs.
   - Central's first fill shrinks only by the people with no change anywhere within the window. On this data there are almost none; on real data it depends on how many patients are episodic.
   - Asking central for less (for example no events of closed enrollments) is not possible in one tracker query.
-- **A full pull costs 16 % more** than without retention, because it lists twice (active, and changed since the cut-off).
+- **A full pull sends 16 % more** than without retention, because it lists twice (active, and changed since the cut-off). It is still quicker on the hub, which holds less.
 - **No re-fetch.** A full pull after pruning fetched no tracked entity again: what is listed under an unchanged stub counts as held.
 
-Still to measure: the HC IV size (`hc4-5y` to `hc4`), and the same on `pi5`.
+Still to measure: the same on `pi5`. Pruning a hub that already holds five years is a one-off of about half an hour at the HC IV size. It runs at the first sync cycle after a window is set, and offline writes wait for one transaction of 1 000 rows at most.
 
 ## Security of the SQLite index
 
@@ -221,4 +232,4 @@ Each page read and sorted the program's events; `objects_events` (creation order
 - **2026-10-15, full downloads.** eRegisters downloads every person per program (Android stops at 500): one device's download grew with the square of the facility, 1 h 14 min at HC IV size in process. The hub now keeps, per user and query, the last row of the page it served for ten minutes, and the next page reads on from that row's creation key (`pagePositions`): 4 min 10 s at HC IV size, every page 17–36 ms. A first try kept the SQL row offset instead; SQLite still stepped through the skipped rows (3 min 35 s at 100 k instead of 1 min 2 s). `TestQueryPlansUseIndexes` checks that reading on keeps the index's order.
 - **2026-10-15, aggregate data.** The Aggregate Data Entry app offline: a store of forms per data set window, pulled per access group (the numbers above).
 - **2026-10-15, event programs.** Held offline with retention by program; two indexes for event lists (the numbers above).
-- **2026-10-16, tracker retention.** Old closed enrollments are kept as stubs, with windows by program and by tracked entity type. At 100 k people with a 12-month window, the data file went from 5.2 to 2.2 GB and the first fill from 9 to 5 minutes. Central's bytes did not shrink on this data, where nearly everyone had a recent enrollment somewhere.
+- **2026-10-16, tracker retention.** Old closed enrollments are kept as stubs, with windows by program and by tracked entity type. With a 12-month window, at the HC IV size kept for five years, the data file went from 16.2 to 6.5 GB and the first fill from 35 to 20 minutes. Central's bytes did not shrink on this data, where nearly everyone had a recent enrollment somewhere.
