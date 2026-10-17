@@ -447,6 +447,15 @@ Event programs (without registration) work offline through the hub since 2026-10
 
 - **Compression comes from the proxy.** DHIS2's Tomcat on its own (the test instances) answers uncompressed even when the client sends `Accept-Encoding: gzip`. In production it sits behind nginx or another reverse proxy that compresses; the hub's client asks for gzip, so ID listings cross the uplink 3–4 times smaller. Check that the proxy compresses `application/json` (nginx's `gzip_types` default is HTML only).
 - **Event updates** move the event's and the tracked entity's `updatedAt`, not the enrollment's.
+- **A large dataStore namespace (2.42, `facility-hub-issues` filled to 1 million entries of about 0.7 KB, 709 MB):**
+  - single-key read, write, update and delete: 0.1 s at 10 000, 100 000 and 1 million entries;
+  - listing all keys: 0.18 s and 18 MB at a million;
+  - the first page of 50 values: 0.1 s;
+  - a deep page: 1.7 s, growing with the page number;
+  - a filter on a value: 0.2–0.3 s when matches are common, 0.3–0.6 s when they are rare (it reads the whole namespace; only `(namespace, key)` is indexed);
+  - a filter on a field inside an array (an error report's code) matches nothing: the dataStore filter cannot reach into arrays.
+
+  Hubs only touch single keys, so they are not slowed; browsing in an app is. Resolved issues are therefore deleted (DEPLOYMENT.md, "Refused changes").
 - **dataStore writes are not audited.** 500 hubs writing heartbeats 11 times each (5 500 writes) left every audit table unchanged. `facility-hub-status` stays at one row per hub, about 1 KB each with Postgres overhead. The writes ran at about 40 per second from 8 clients; 500 hubs syncing every 15 minutes need 0.6 per second. All 500 heartbeats read in one request in about 0.1 s.
 
 ## Refused changes

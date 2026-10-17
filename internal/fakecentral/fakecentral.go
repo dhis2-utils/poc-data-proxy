@@ -851,5 +851,12 @@ func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
 	case "PUT":
 		c.DataStore[ns][key] = b
 		writeJSON(w, 200, map[string]any{"status": "OK"})
+	case "DELETE":
+		if _, ok := c.DataStore[ns][key]; !ok {
+			webMessage(w, 404, "Key not found", "")
+			return
+		}
+		delete(c.DataStore[ns], key)
+		writeJSON(w, 200, map[string]any{"status": "OK"})
 	}
 }

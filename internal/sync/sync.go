@@ -476,6 +476,31 @@ func (w *Worker) ReportIssues(ctx context.Context) error {
 		}
 		h.Store.MarkIssueReported(is.ID)
 	}
+	return w.clearResolvedIssues(ctx)
+}
+
+// clearResolvedIssues removes issues that are no longer open (sent again and accepted,
+// or replaced by central's newer version) from central's dataStore and from the hub:
+// facility-hub-issues then holds what is stuck now, not every refusal ever, and stays
+// usable (docs/FINDINGS.md, dataStore measured).
+func (w *Worker) clearResolvedIssues(ctx context.Context) error {
+	h := w.H
+	ids, reported, err := h.Store.ResolvedIssues()
+	if err != nil {
+		return err
+	}
+	for i, id := range ids {
+		if reported[i] {
+			key := fmt.Sprintf("%s-%d", h.HubID(), id)
+			err := h.Central.JSON(ctx, "DELETE", "/api/dataStore/facility-hub-issues/"+key, nil, h.HubAuth(), nil)
+			if err != nil && central.Status(err) != http.StatusNotFound {
+				return fmt.Errorf("clear resolved issue %d: %w", id, err)
+			}
+		}
+		if err := h.Store.DeleteIssue(id); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

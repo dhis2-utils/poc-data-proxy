@@ -153,9 +153,32 @@ func (s *Store) Issues(onlyUnreported bool, limit int) ([]*Issue, error) {
 // outbox entry is still refused.
 func (s *Store) UnresolvedIssues(limit int) ([]*Issue, error) {
 	return s.issues(`SELECT id, outbox_seq, object_uid, kind, user_id, error_enc, created_at, reported_central_at FROM issues i
- WHERE (i.kind = ? AND EXISTS (SELECT 1 FROM outbox o WHERE o.seq = i.outbox_seq AND o.state IN (?, ?)))
- OR EXISTS (SELECT 1 FROM objects ob WHERE ob.uid = i.object_uid AND ob.sync_state = ?)
- ORDER BY id DESC LIMIT ?`, OutboxAggregate, OutboxRejected, OutboxPartial, SyncRejected, limit)
+ WHERE `+sqlIssueOpen+` ORDER BY id DESC LIMIT ?`, OutboxAggregate, OutboxRejected, OutboxPartial, SyncRejected, limit)
+}
+
+// sqlIssueOpen is the condition that the issue aliased i is still open; its arguments
+// are OutboxAggregate, OutboxRejected, OutboxPartial, SyncRejected.
+const sqlIssueOpen = `((i.kind = ? AND EXISTS (SELECT 1 FROM outbox o WHERE o.seq = i.outbox_seq AND o.state IN (?, ?)))
+ OR EXISTS (SELECT 1 FROM objects ob WHERE ob.uid = i.object_uid AND ob.sync_state = ?))`
+
+// ResolvedIssues lists the issues no longer open, and whether each was reported to
+// central: they are removed there and here, so both hold what is stuck now.
+func (s *Store) ResolvedIssues() (ids []int64, reported []bool, err error) {
+	rows, err := s.DB().Query(`SELECT id, reported_central_at <> '' FROM issues i WHERE NOT `+sqlIssueOpen,
+		OutboxAggregate, OutboxRejected, OutboxPartial, SyncRejected)
+	err = scanRows(rows, err, func(r *sql.Rows) error {
+		var id int64
+		var rep bool
+		err := r.Scan(&id, &rep)
+		ids, reported = append(ids, id), append(reported, rep)
+		return err
+	})
+	return ids, reported, err
+}
+
+func (s *Store) DeleteIssue(id int64) error {
+	_, err := s.write(`DELETE FROM issues WHERE id = ?`, id)
+	return err
 }
 
 func (s *Store) issues(q string, args ...any) ([]*Issue, error) {

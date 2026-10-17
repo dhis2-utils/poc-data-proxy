@@ -736,6 +736,16 @@ func TestRefusedCountsClearWhenFixed(t *testing.T) {
 	if r := refused(); r != "null" {
 		t.Fatalf("refused after the fix: %s", r)
 	}
+	// Resolved issues leave central's dataStore, so it holds what is stuck now, not every
+	// refusal ever.
+	for _, k := range e.central.DataStoreKeys("facility-hub-issues") {
+		if strings.HasPrefix(k, e.app.Hub.HubID()+"-") {
+			t.Errorf("a resolved issue stays on central: %s", k)
+		}
+	}
+	if n := e.app.Hub.Store.CountIssues(); n != 0 {
+		t.Errorf("%d resolved issues stay on the hub", n)
+	}
 }
 
 // The hub serves the org unit the user sets it up for: their only one, or the one
