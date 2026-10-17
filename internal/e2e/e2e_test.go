@@ -764,6 +764,28 @@ func TestSetupChoosesAmongOwnOrgUnits(t *testing.T) {
 	}
 }
 
+// With the facility-hub namespaces protected for a "hub owners" group, a staff
+// member outside it cannot set the hub up: they are told to ask to be added, and the
+// hub is left as it was, so a member can set it up next.
+func TestSetupNeedsHubOwnersGroup(t *testing.T) {
+	e := newEnv(t)
+	e.central.HubWriters = map[string]bool{"hub_admin": true}
+	resp, err := e.web("nurse_a").postForm("/hub/setup", url.Values{"step": {"login"}, "central_url": {e.cSrv.URL},
+		"username": {"nurse_a"}, "password": {fc.Password}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if e.app.Hub.Mode() != "setup" || !strings.Contains(string(b), "hub owners") {
+		t.Fatalf("mode %s; page: %.300s", e.app.Hub.Mode(), b)
+	}
+	if n := e.central.TokensOf("nurse_a"); n != 0 {
+		t.Errorf("the refused setup left %d tokens", n)
+	}
+	e.setup() // a member of the group
+}
+
 // TestOfflineAppShellAndConditionalGets: on 2.42+ apps open at /apps/<app>, a page
 // without a file extension; offline it is served to any user, like other app files.
 // A browser that holds another user's copy asks conditionally: the hub must still

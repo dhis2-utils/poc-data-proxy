@@ -530,6 +530,10 @@ func programFields(api compat.API, af string) string {
 	return api.ProgramFields(af)
 }
 
+// ErrNotHubOwner: the user's account cannot write the facility-hub namespaces on
+// central, which countries share with a "hub owners" group (docs/DEPLOYMENT.md).
+var ErrNotHubOwner = errors.New("your account cannot write the hub's records on central: ask the national team or the district to add you to the hub owners group")
+
 // TokenOwner is the user whose token the hub uses for its housekeeping.
 func (rt *Runtime) TokenOwner() string {
 	if rt == nil {
@@ -580,7 +584,10 @@ func (h *Hub) TakeOverHubToken(ctx context.Context, username, password string) e
 	}
 	if err != nil {
 		h.Central.JSON(ctx, "DELETE", "/api/apiToken/"+url.PathEscape(uid), nil, newAuth, nil)
-		return fmt.Errorf("your account cannot write the hub's records on central (the facility-hub namespaces); ask the national team for access: %w", err)
+		if central.Status(err) == http.StatusForbidden {
+			return ErrNotHubOwner
+		}
+		return fmt.Errorf("writing the hub's registry entry: %w", err)
 	}
 	oldUID, oldKey := rt.HubTokenUID, rt.HubToken
 	if err := h.UpdateRuntime(func(rt *Runtime) {

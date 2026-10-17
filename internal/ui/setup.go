@@ -260,14 +260,6 @@ func (u *UI) checkRegistry(ctx context.Context, p *pendingSetup) error {
 func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (*core.Session, error) {
 	h := u.H
 	basic := central.Auth{Username: p.Username, Password: p.Password}
-	dk, err := hubcrypto.NewKey()
-	if err != nil {
-		return nil, err
-	}
-	if err := h.Store.SetDK(dk); err != nil {
-		return nil, err
-	}
-	h.Store.SetMeta(core.MetaCentralURL, p.CentralURL)
 
 	// Hub-level token (spec 6.2 step 8, 11.2). POC: the setup user's PAT.
 	tokExp := time.Now().Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
@@ -276,6 +268,33 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (*core.Session,
 		return nil, fmt.Errorf("creating hub token: %w", err)
 	}
 	hubAuth := central.Auth{PAT: tok}
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	setupAt := store.Now()
+	reg := map[string]any{"hubId": h.HubID(), "facility": p.Facility.ID, "facilityName": p.Facility.Name,
+		"setupBy": p.Username, "setupAt": setupAt, "hubVersion": h.Version, "publicKey": base64.StdEncoding.EncodeToString(pub),
+		"status": "active"}
+	// The registry entry first, before the hub commits anything: the hub's housekeeping
+	// writes the facility-hub namespaces with this token, and countries protect them for
+	// a "hub owners" group (docs/DEPLOYMENT.md). Someone outside it is told so, and the
+	// hub stays as it was.
+	if err := h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-registry/"+h.HubID(), reg, hubAuth, nil); err != nil {
+		h.Central.JSON(ctx, "DELETE", "/api/apiToken/"+url.PathEscape(tokUID), nil, hubAuth, nil)
+		if central.Status(err) == http.StatusForbidden {
+			return nil, core.ErrNotHubOwner
+		}
+		return nil, fmt.Errorf("registering hub: %w", err)
+	}
+	dk, err := hubcrypto.NewKey()
+	if err != nil {
+		return nil, err
+	}
+	if err := h.Store.SetDK(dk); err != nil {
+		return nil, err
+	}
+	h.Store.SetMeta(core.MetaCentralURL, p.CentralURL)
 	cat, err := h.FetchCatalog(ctx, hubAuth, p.Facility.ID)
 	if err != nil {
 		return nil, fmt.Errorf("reading programs: %w", err)
@@ -284,14 +303,10 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (*core.Session,
 		CategoryOptionCombos []idOnly `json:"categoryOptionCombos"`
 	}
 	h.Central.JSON(ctx, "GET", central.Q("/api/categoryOptionCombos", "filter", "name:eq:default", "fields", "id"), nil, hubAuth, &aoc)
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, err
-	}
 	rt := &core.Runtime{Facility: p.Facility.ID, FacilityName: p.Facility.Name, FacilityCode: p.Facility.Code,
 		FacilityPath: p.Facility.Path,
 		Catalog:      cat, HubToken: tok, HubTokenUID: tokUID,
-		HubTokenExp: tokExp.UTC().Format(time.RFC3339), SetupBy: p.Username, SetupAt: store.Now(), PrivateKey: priv}
+		HubTokenExp: tokExp.UTC().Format(time.RFC3339), SetupBy: p.Username, SetupAt: setupAt, PrivateKey: priv}
 	if len(aoc.CategoryOptionCombos) > 0 {
 		rt.DefaultAOC = aoc.CategoryOptionCombos[0].ID
 	}
@@ -314,9 +329,6 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (*core.Session,
 			return nil, fmt.Errorf("retiring hub %s: %w", o.Key, err)
 		}
 	}
-	reg := map[string]any{"hubId": h.HubID(), "facility": p.Facility.ID, "facilityName": p.Facility.Name,
-		"setupBy": p.Username, "setupAt": rt.SetupAt, "hubVersion": h.Version, "publicKey": base64.StdEncoding.EncodeToString(pub),
-		"status": "active"}
 	if len(replaces) > 0 {
 		reg["replaces"] = replaces
 	}
