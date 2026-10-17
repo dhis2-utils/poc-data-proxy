@@ -208,6 +208,8 @@ Events are 3.1 M of the 5.8 M listed entries, about 60 % of the bytes. The run o
 
 Estimate for the HC IV size with a 12-month window, from these figures and not measured as a whole: about 0.6 GB per access group per full pull uncompressed, about 0.15 GB compressed as production serves it.
 
+**Decision (2026-10-17):** full pulls stay as they are. With the proxy compressing, the estimate is about 0.15 GB per access group per week at the HC IV size (500 hubs: about 75 GB a week on central). If facility uplinks turn out tight, run full pulls less often (`full_pull_interval`, for example monthly). Listing without events was considered and set aside: the listing also tells the hub which events each user may see (central leaves out stages the user cannot read), so leaving events out would move that decision into the hub's guarded visibility logic.
+
 Changing an event moves its own and its tracked entity's `updatedAt`, not its enrollment's (2.42 and 2.43, `TestEventEditMovesUpdatedAtLive`). A listing without events would therefore have to fetch a person whenever their own `updatedAt` moved.
 
 **Upgrading a large hub.** Its data migrations run when the store unlocks, and sorts stay in memory (`temp_store=memory`, so no plaintext reaches the disk) inside SQLite's 4 GB. As first written, the retention migration rebuilt `objects_state` with the stub flag. That ran out of memory at 4.6 million objects (the `hc4-5y` size) and worked at 2.5 million (`internal/perf.TestRetentionMigration`). It now adds a partial index of stubs instead, which is empty at upgrade and took 5.8 s to build over 4.6 million objects (a 3.8 GB data file). Any migration that builds an index over existing rows has the same limit, so it needs this test at the largest size first.

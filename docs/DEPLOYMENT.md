@@ -311,6 +311,7 @@ A hub only serves its own facility. A community health worker's tablet that visi
   - With hundreds of hubs, a whole rollout stage could stall this way.
   - Rule for every release: a data migration that touches existing rows (a new index, a rewritten column) is timed with `internal/perf.TestRetentionMigration`-style tests at the `hc4-5y` size, 4.6 million objects, before the release (AGENTS.md). If it does not fit, it must be written differently, as the retention migration was: a partial index that is empty at upgrade.
   - The first stage of every rollout should include the largest hubs, found by the heartbeat's disk use, not only small pilots.
+  - These rules are interim, not a solution. **Open:** migrations that cannot run out of memory on a full hub, for example sorting through encrypted temporary files instead of memory, or building indexes in batches.
 - **Before a DHIS2 server upgrade:** run the live suite against the new version (docs/TESTING.md); if the hub needs changes, roll out that hub release first. A hub release only supports the DHIS2 versions it was tested against (spec 12a): new majors come about a year apart, with API changes nobody can plan for in advance. Hubs on an unsupported version stay usable online, as pass-through only, and show "hub needs upgrade".
 - **Operating system:** security updates install themselves (`unattended-upgrades`, with automatic reboot at night). Re-image only for major OS changes. That can be done by shipping a pre-flashed SSD, because the hub holds nothing that central does not.
 
