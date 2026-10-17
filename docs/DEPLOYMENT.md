@@ -115,7 +115,7 @@ No one from the district needs to come. Kits arrive by courier or with a routine
 1. Mount the hub near the router and plug in power and Ethernet, as on the installation card. The card covers the case with no router (section 4, case C).
 2. On any laptop or phone on the facility network, open the address on the label (on the Windows PC, the hub's page opens on the PC itself, and set-up only opens there). The hub shows its setup page. Scan the QR code on the installation card to give it central's address, and enter the setup code from `setup-code.txt` on the USB stick in the box (read on a laptop, or a phone with a USB adapter). The hub accepts only `https` with a publicly trusted certificate, and shows the server's name before anyone logs in **(to build)**.
 3. The facility focal point, or anyone assigned to the facility, logs in with their own DHIS2 account. The hub then:
-   - takes the facility from the user's org units: anyone assigned to the facility may do this (built);
+   - takes the facility from the user's org units, asking which one if they have several: anyone assigned to the facility may do this, and the hub serves the org unit chosen, at whatever level (built);
    - reads the facility's programmes;
    - registers itself on central, offering to retire an old hub for the same facility (section "Replacing or moving a hub");
    - creates its hub token (section 6, "The hub's own account").

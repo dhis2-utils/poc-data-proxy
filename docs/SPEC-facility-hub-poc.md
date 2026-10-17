@@ -126,7 +126,7 @@ Built 2026-10-17 (DEPLOYMENT.md, section 3): no setup user group. Anyone assigne
 
 1. On first boot, the hub generates a hub ID and a signing key pair, and starts in setup mode. It is reachable at `https://hub.local` (mDNS) and at its LAN IP. Print both on the device label.
 2. The setup page asks for the central server URL (prefilled from the image if set), username and password.
-3. The hub logs in to central. The facilities offered are those in the user's org units (or below them); a user with none is refused.
+3. The hub logs in to central. It serves the org unit it is set up for: the user's only one, or the one they choose among theirs, at whatever level (a ward or community that is a place of its own can have a hub); a user with none is refused.
 4. The hub reads the user's org units from `/api/me`. If there is exactly one, use it as the facility. If there are several (for example a district officer), show a picker limited to facility-level org units within the user's scope.
 5. The hub reads the central server version from `/api/system/info`. If the hub release does not support it, stop with a clear message.
 6. The hub derives the programs to cache: tracker programs (`programType=WITH_REGISTRATION`) assigned to the facility org unit. No manual program selection.
