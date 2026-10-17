@@ -1,6 +1,7 @@
 package live
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -348,8 +349,16 @@ func TestHubAccountLive(t *testing.T) {
 			}
 		}
 	}
+	keyPath := "/api/dataStore/facility-hub-keys/" + h.HubID()
+	nurse := tk.NewCentral(e.M.CentralURL, e.M.Users[tk.RoleNurse].Username, e.M.Password)
+	if e.Fake != nil {
+		nurse = tk.NewCentral(e.M.CentralURL, "nurse_a", fc.Password)
+	}
+	// A staff member creates the move key's entry first: approval must shut them out.
+	squatted, _, _ := nurse.Do("POST", keyPath, map[string]string{"moveKey": "c3F1YXR0ZWQ="})
 	done, err := hubaccount.Approve(context.Background(), hubaccount.Options{Central: e.M.CentralURL,
-		Username: e.M.AdminUser, Password: e.M.AdminPassword, Group: group, Role: role}, []string{h.HubID()})
+		Username: e.M.AdminUser, Password: e.M.AdminPassword, Group: group, Role: role},
+		[]hubaccount.Request{{HubID: h.HubID(), Code: h.AccountCode()}})
 	if err != nil || !slices.Contains(done, h.HubID()) {
 		t.Fatalf("approve: %v %v", done, err)
 	}
@@ -376,7 +385,7 @@ func TestHubAccountLive(t *testing.T) {
 	if rt.TokenOwner() != h.HubID() {
 		t.Fatalf("the hub did not take up its account: %q", rt.TokenOwner())
 	}
-	if h.Store.Meta(core.MetaAccountRotate) != "" || rt.HubPassword == handed.Password || rt.MoveSecret == handed.MoveSecret {
+	if h.Store.Meta(core.MetaAccountRotate) != "" || rt.HubPassword == handed.Password || !bytes.Equal(rt.MoveKey, handed.MoveKey) {
 		t.Fatalf("the handed-over credentials were not replaced (%q)", h.Store.Meta(core.MetaAccountRotate))
 	}
 	if st, _, _ := tk.NewCentral(e.M.CentralURL, h.HubID(), handed.Password).Do("GET", "/api/me?fields=id", nil); st == 200 {
@@ -408,26 +417,25 @@ func TestHubAccountLive(t *testing.T) {
 	if !slices.Equal(ous, []string{e.M.Facility.ID}) {
 		t.Fatalf("the account is not scoped to the facility: %v", ous)
 	}
-	// The move secret: readable with the hub's own token.
-	req, _ := http.NewRequest("GET", strings.TrimRight(e.M.CentralURL, "/")+"/api/dataStore/facility-hub-accounts/"+h.HubID(), nil)
+	// The move key: administrators only, not the hub's own token, not staff.
+	st, b, err = e.Central.Do("GET", keyPath, nil)
+	var mk struct {
+		MoveKey []byte `json:"moveKey"`
+	}
+	if err != nil || st != 200 || json.Unmarshal(b, &mk) != nil || !bytes.Equal(mk.MoveKey, rt.MoveKey) {
+		t.Fatalf("the move key on central: %d %v", st, err)
+	}
+	req, _ := http.NewRequest("GET", strings.TrimRight(e.M.CentralURL, "/")+keyPath, nil)
 	req.Header.Set("Authorization", "ApiToken "+rt.HubToken)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var sec struct {
-		MoveSecret string `json:"moveSecret"`
-	}
-	json.NewDecoder(res.Body).Decode(&sec)
 	res.Body.Close()
-	if res.StatusCode != 200 || sec.MoveSecret != rt.MoveSecret || sec.MoveSecret == "" {
-		t.Fatalf("the hub's token does not read its move secret: %d", res.StatusCode)
+	if res.StatusCode == 200 {
+		t.Error("the hub's own token reads its move key")
 	}
-	if e.Live() {
-		// Not readable by a staff member.
-		c := tk.NewCentral(e.M.CentralURL, e.M.Users[tk.RoleNurse].Username, e.M.Password)
-		if st, _, _ := c.Do("GET", "/api/dataStore/facility-hub-accounts/"+h.HubID(), nil); st == 200 {
-			t.Error("a staff member reads the hub's move secret")
-		}
+	if st, _, _ := nurse.Do("GET", keyPath, nil); st == 200 {
+		t.Errorf("a staff member reads the hub's move key (they created its entry first: %d)", squatted)
 	}
 }

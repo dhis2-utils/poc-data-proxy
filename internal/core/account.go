@@ -9,32 +9,44 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/central"
 	"github.com/dhis2/facility-hub/internal/hubaccount"
-	"github.com/dhis2/facility-hub/internal/hubcrypto"
 )
 
 // The hub's own account (docs/DEPLOYMENT.md, "The hub's own account"): at set-up the
-// hub asks for one in its registry entry; "hub approve", run by someone allowed to
-// create users, creates it and hands it over encrypted to the hub's box key; the hub
-// takes it up here, at a catalog refresh, and at once replaces its password, token
-// and move secret, so whoever saw them on the way is shut out. From then on its
-// housekeeping depends on no staff member, and its token can be sent, for the
-// typed-in check of a central move, without exposing anyone's data access.
+// hub asks for one in its registry entry and shows a code made from its key on its
+// admin page; the national team approves it in the Facility Hub app with that code,
+// which hands the account over encrypted to the hub's key; the hub takes it up here,
+// at a catalog refresh, and at once replaces its password and token, so whoever saw
+// them on the way is shut out. From then on its housekeeping depends on no staff
+// member. The approval also gives the hub a move key, for the code that comes with a
+// central address typed in after an unplanned move.
 
-// MetaAccountRotate, when set, says the hub's own account needs a new password, token
-// and move secret: they were just handed over, or the token went to a server that
-// failed the typed-in check. Typed-in moves wait for it.
+// MetaAccountRotate, when set, says the hub's own account needs a new password and
+// token: it was just handed over.
 const MetaAccountRotate = "account_rotate"
 
-// refreshAccount publishes the box key of a hub set up before accounts existed (or
-// whose key is not the one in its registry entry), takes up an account handed over,
-// and replaces the account's credentials when they need it.
+// AccountCode is the code a hub waiting for an account shows on its admin page, for
+// the national team to approve it with; "" when it is not waiting.
+func (h *Hub) AccountCode() string {
+	rt := h.Runtime()
+	if rt == nil || rt.BoxKey == nil || rt.TokenOwner() == h.HubID() {
+		return ""
+	}
+	pub, err := hubaccount.PublicKey(rt.BoxKey)
+	if err != nil {
+		return ""
+	}
+	return hubaccount.AccountCode(pub, h.HubID())
+}
+
+// refreshAccount asks for an account (publishing the hub's key) whenever the registry
+// entry does not show the hub's own request or an account for it, takes up an account
+// handed over, and finishes replacing the account's credentials.
 func (h *Hub) refreshAccount(ctx context.Context) {
 	rt := h.Runtime()
 	if rt == nil {
@@ -67,25 +79,35 @@ func (h *Hub) refreshAccount(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	// The registry must hold this hub's key: an entry whose key someone replaced would
-	// have the account handed to them.
-	if published, _ := base64.StdEncoding.DecodeString(fmt.Sprint(reg["boxKey"])); !bytes.Equal(published, pub) {
+	askAgain := func(why string) {
 		reg["boxKey"], reg["accountRequested"] = base64.StdEncoding.EncodeToString(pub), true
 		delete(reg, "account")
 		if err := h.Central.JSON(ctx, "PUT", path, reg, h.HubAuth(), nil); err != nil {
-			slog.Warn("the hub's key for its own account not published", "err", err)
+			slog.Warn("the hub's request for its own account not published", "err", err)
+			return
+		}
+		slog.Info("the hub asks for its own account", "why", why, "code", hubaccount.AccountCode(pub, h.HubID()))
+	}
+	acc, _ := reg["account"].(map[string]any)
+	published, _ := base64.StdEncoding.DecodeString(fmt.Sprint(reg["boxKey"]))
+	switch {
+	case !bytes.Equal(published, pub):
+		askAgain("the registry holds another key") // an entry someone changed, or none yet
+		return
+	case acc == nil:
+		if reg["accountRequested"] != true {
+			askAgain("no request in the registry")
 		}
 		return
 	}
-	acc, _ := reg["account"].(map[string]any)
 	box, err := base64.StdEncoding.DecodeString(fmt.Sprint(acc["box"]))
-	if acc == nil || err != nil {
-		return
+	var plain []byte
+	if err == nil {
+		plain, err = hubaccount.Open(rt.BoxKey, box, h.HubID())
 	}
-	plain, err := hubaccount.Open(rt.BoxKey, box, h.HubID())
 	var creds hubaccount.Credentials
 	if err != nil || json.Unmarshal(plain, &creds) != nil {
-		slog.Warn("the account handed to this hub does not open", "err", err)
+		askAgain("the account handed over does not open")
 		return
 	}
 	if err := h.adoptAccount(ctx, creds); err != nil {
@@ -96,7 +118,7 @@ func (h *Hub) refreshAccount(ctx context.Context) {
 // adoptAccount swaps the hub's token for one of its own account, after checking the
 // account is the hub's: named for it, assigned to its facility only (capture, data
 // view and search), with no authorities, and able to do the housekeeping. The old
-// token is deleted, the credentials leave the registry, and they are replaced.
+// token is deleted, and the credentials are replaced and leave the registry.
 func (h *Hub) adoptAccount(ctx context.Context, creds hubaccount.Credentials) error {
 	h.tokenMu.Lock()
 	if err := h.adoptLocked(ctx, creds); err != nil {
@@ -132,8 +154,9 @@ func (h *Hub) adoptLocked(ctx context.Context, creds hubaccount.Credentials) err
 	var reg map[string]any
 	err = h.Central.JSON(ctx, "GET", path, nil, newAuth, &reg)
 	if err == nil {
-		delete(reg, "account")
-		delete(reg, "accountRequested")
+		// The credentials stay in the entry until the hub has saved them: if this
+		// answer is lost, the next refresh takes them up again (rotateAccount removes
+		// them).
 		reg["hubTokenOwner"] = h.HubID()
 		err = h.Central.JSON(ctx, "PUT", path, reg, newAuth, nil)
 	}
@@ -146,8 +169,8 @@ func (h *Hub) adoptLocked(ctx context.Context, creds hubaccount.Credentials) err
 	h.Store.SetMeta(MetaAccountRotate, "taken up")
 	if err := h.UpdateRuntime(func(rt *Runtime) {
 		rt.HubToken, rt.HubTokenUID, rt.HubTokenExp = key, uid, exp.UTC().Format(time.RFC3339)
-		rt.HubTokenOwner, rt.HubPassword, rt.MoveSecret = h.HubID(), creds.Password, creds.MoveSecret
-		rt.BoxKey = nil
+		rt.HubTokenOwner, rt.HubPassword, rt.HubPasswordNext = h.HubID(), creds.Password, ""
+		rt.MoveKey, rt.BoxKey = creds.MoveKey, nil
 	}); err != nil {
 		return err
 	}
@@ -178,9 +201,9 @@ func (h *Hub) ownAccount(me *Me) error {
 	return nil
 }
 
-// rotateAccount gives the hub's own account a new password, a new token and a new
-// move secret, and deletes the account's other tokens. Each is saved as soon as
-// central has it, so a failure half-way loses nothing; the next refresh finishes.
+// rotateAccount gives the hub's own account a new password and a new token, and
+// deletes the account's other tokens. Each is saved as soon as central has it, so a
+// failure half-way loses nothing; the next refresh finishes.
 func (h *Hub) rotateAccount(ctx context.Context) error {
 	h.tokenMu.Lock()
 	defer h.tokenMu.Unlock()
@@ -188,12 +211,31 @@ func (h *Hub) rotateAccount(ctx context.Context) error {
 	if rt == nil || rt.TokenOwner() != h.HubID() || rt.HubPassword == "" {
 		return nil
 	}
+	if next := rt.HubPasswordNext; next != "" {
+		// An earlier change whose answer was lost: did central take it?
+		_, err := h.FetchMe(ctx, central.Auth{Username: h.HubID(), Password: next})
+		if central.IsNetwork(err) {
+			return err
+		}
+		if err := h.UpdateRuntime(func(rt *Runtime) {
+			if err == nil {
+				rt.HubPassword = next
+			}
+			rt.HubPasswordNext = ""
+		}); err != nil {
+			return err
+		}
+		rt = h.Runtime()
+	}
 	pw := hubaccount.NewPassword()
+	if err := h.UpdateRuntime(func(rt *Runtime) { rt.HubPasswordNext = pw }); err != nil {
+		return err
+	}
 	err := h.Central.JSON(ctx, "PUT", "/api/me/changePassword", map[string]string{"oldPassword": rt.HubPassword, "newPassword": pw}, h.HubAuth(), nil)
 	if err != nil {
 		return fmt.Errorf("changing the password: %w", err)
 	}
-	if err := h.UpdateRuntime(func(rt *Runtime) { rt.HubPassword = pw }); err != nil {
+	if err := h.UpdateRuntime(func(rt *Runtime) { rt.HubPassword, rt.HubPasswordNext = pw, "" }); err != nil {
 		return err
 	}
 	exp := time.Now().Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
@@ -204,14 +246,6 @@ func (h *Hub) rotateAccount(ctx context.Context) error {
 	if err := h.UpdateRuntime(func(rt *Runtime) {
 		rt.HubToken, rt.HubTokenUID, rt.HubTokenExp = key, uid, exp.UTC().Format(time.RFC3339)
 	}); err != nil {
-		return err
-	}
-	secret := hubaccount.NewSecret()
-	if err := h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-accounts/"+url.PathEscape(h.HubID()),
-		map[string]string{"moveSecret": secret}, h.HubAuth(), nil); err != nil {
-		return fmt.Errorf("replacing the move secret: %w", err)
-	}
-	if err := h.UpdateRuntime(func(rt *Runtime) { rt.MoveSecret = secret }); err != nil {
 		return err
 	}
 	var toks struct {
@@ -229,82 +263,56 @@ func (h *Hub) rotateAccount(ctx context.Context) error {
 			}
 		}
 	}
+	// The handed-over credentials leave the registry.
+	path := "/api/dataStore/facility-hub-registry/" + url.PathEscape(h.HubID())
+	var reg map[string]any
+	if err := h.Central.JSON(ctx, "GET", path, nil, h.HubAuth(), &reg); err != nil {
+		return err
+	}
+	if reg["account"] != nil || reg["accountRequested"] != nil {
+		delete(reg, "account")
+		delete(reg, "accountRequested")
+		if err := h.Central.JSON(ctx, "PUT", path, reg, h.HubAuth(), nil); err != nil {
+			return fmt.Errorf("removing the handed-over account from the registry: %w", err)
+		}
+	}
 	h.Store.SetMeta(MetaAccountRotate, "")
-	slog.Info("the hub's own account has a new password, token and move secret")
+	slog.Info("the hub's own account has a new password and token")
 	return nil
 }
 
-// ErrNoOwnAccount: a typed-in central move needs the hub's own account.
-var ErrNoOwnAccount = errors.New("only a hub with its own account on central can move to a typed-in address; ask the national team to approve this hub")
+// ErrNoMoveKey: a typed-in central move needs the move key an approval brings.
+var ErrNoMoveKey = errors.New("only a hub the national team approved can move to a typed-in address; ask them to approve this hub")
 
-// CheckPassword checks a staff member's password against their key slot on the hub,
-// without central.
-func (h *Hub) CheckPassword(username, password string) bool {
-	u, err := h.Store.UserByName(username)
-	if err != nil || u == nil {
-		return false
-	}
-	_, err = hubcrypto.UnwrapDK(u.WrappedDK, password, u.KEKSalt)
-	return err == nil
-}
+// ErrWrongCode: the code is not the one for this hub and this address.
+var ErrWrongCode = errors.New("the code is not the one for this hub and this address: check both with the national team")
 
 // TypedMove switches to a central address a staff member typed in after an unplanned
-// move (docs/DEPLOYMENT.md, section 6): only with the hub's own account, only while
-// the current address has not answered the probes for central_move_after (the demo
-// uplink switch does not count), only with the staff member's password, and only to a
-// server that returns this hub's move secret (facility-hub-accounts/<hub ID>, readable
-// by this account only). The check sends the hub's own token, which opens no one's
-// data; a server that receives it and fails the check could read the move secret
-// with it, so typed-in moves then wait until the hub has reached central again and
-// replaced its credentials.
-func (h *Hub) TypedMove(ctx context.Context, raw, username, password string) error {
+// move (docs/DEPLOYMENT.md, section 6), with the code the national team gave for this
+// hub and that address (hubaccount.MoveCode). The hub checks the code itself and sends
+// nothing for it; it moves only while its current address does not answer (the demo
+// uplink switch does not count), and never when hub.yaml pins the address.
+func (h *Hub) TypedMove(ctx context.Context, raw, code string) error {
 	rt := h.Runtime()
 	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
 	switch {
-	case rt == nil || rt.TokenOwner() != h.HubID() || rt.MoveSecret == "":
-		return ErrNoOwnAccount
-	case h.Store.Meta(MetaAccountRotate) != "":
-		return errors.New("an earlier address failed the check, or the hub's own account is new: the hub accepts a typed-in address again once it has reached central at its old address")
+	case rt == nil || rt.MoveKey == nil:
+		return ErrNoMoveKey
 	case h.Monitor.Reachable():
 		return errors.New("central still answers at its address: no move needed")
-	case !h.downLongEnough():
-		return fmt.Errorf("central has not answered for %s yet: wait, it may be a short outage", h.Cfg.CentralMoveAfter)
 	case h.SetupMode() == SetupPinned:
 		return errors.New("this hub's address is fixed in its configuration")
 	case raw == h.Central.BaseURL() || !h.movable(raw):
 		return errors.New("enter central's new https:// address")
-	case !h.CheckPassword(username, password):
-		return ErrWrongPassword
-	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", raw+"/api/dataStore/facility-hub-accounts/"+url.PathEscape(h.HubID()), nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Accept", "application/json")
-	h.HubAuth().Apply(req.Header)
-	resp, err := h.Central.HTTP.Do(req)
-	if err != nil {
-		// Nothing answered (a typo, most likely), or not with a trusted certificate:
-		// the token did not go out.
-		return fmt.Errorf("cannot reach %s: %w", raw, err)
-	}
-	defer resp.Body.Close()
-	var got struct {
-		MoveSecret string `json:"moveSecret"`
-	}
-	if resp.StatusCode != http.StatusOK || json.NewDecoder(resp.Body).Decode(&got) != nil ||
-		subtle.ConstantTimeCompare([]byte(got.MoveSecret), []byte(rt.MoveSecret)) != 1 {
-		h.Store.SetMeta(MetaAccountRotate, "typed-in check failed: "+raw)
-		slog.Warn("typed-in central address failed the check; typed-in moves wait until central is reached again", "address", raw, "by", username)
-		return errors.New("that server is not this country's central DHIS2; the hub accepts no other typed-in address until it has reached central again")
+	case subtle.ConstantTimeCompare([]byte(hubaccount.NormalizeCode(hubaccount.MoveCode(rt.MoveKey, raw))),
+		[]byte(hubaccount.NormalizeCode(code))) != 1:
+		return ErrWrongCode
 	}
 	old := h.Central.BaseURL()
 	h.Store.SetMeta(MetaCentralURL, raw)
 	h.Store.SetMeta(MetaCentralNext, "")
 	h.Central.SetBaseURL(raw)
 	h.Monitor.Probe(ctx, raw)
-	slog.Warn("central moved (typed in): the hub now uses the new address", "from", old, "to", raw, "by", username)
+	slog.Warn("central moved (typed in): the hub now uses the new address", "from", old, "to", raw)
 	return nil
 }

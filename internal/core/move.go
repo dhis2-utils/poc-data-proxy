@@ -70,8 +70,13 @@ func (h *Hub) movable(raw string) bool {
 	return u.Scheme == "https" || (cur != nil && cur.Scheme == "http" && u.Scheme == "http")
 }
 
-// downLongEnough reports whether central has not answered for central_move_after.
+// downLongEnough reports whether central has not answered for central_move_after. A
+// hub that started while central did not answer saw no switch to offline: the
+// outage counts from the first time it asks.
 func (h *Hub) downLongEnough() bool {
+	if h.Store.Meta(offlineSince) == "" && !h.Monitor.Reachable() {
+		h.Store.SetMeta(offlineSince, time.Now().UTC().Format(time.RFC3339Nano))
+	}
 	if h.Cfg.CentralMoveAfter <= 0 {
 		return true
 	}

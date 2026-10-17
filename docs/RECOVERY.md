@@ -61,7 +61,7 @@ Chosen for the kit (DEPLOYMENT.md, section 1; built 2026-10-17, `internal/stick`
 
 The stick holds only what a restore needs and central does not have; the cached data is left out, since central sends it again (decided 2026-10-17: a daily full snapshot, 6.5 GB at the HC IV size, only saved waiting for the first pulls after a restore):
 
-- **Every minute, if anything is new:** each offline save still pending, the key file (key slots, identity) when it changed, and the hub's state (the users with their tokens, settings, catalog, hub token, and the hub's own account's password and move secret) when it changed. A few kilobytes; nothing is written when nobody saves. Copying runs on its own schedule, so a slow or failing stick never delays a client's save.
+- **Every minute, if anything is new:** each offline save still pending, the key file (key slots, identity) when it changed, and the hub's state (the users with their tokens, settings, catalog, hub token, and the hub's own account's password and move key) when it changed. A few kilobytes; nothing is written when nobody saves. Copying runs on its own schedule, so a slow or failing stick never delays a client's save.
 
 Everything stays encrypted as on the disk: the stick is as safe as the disk, opened only with a user's password.
 

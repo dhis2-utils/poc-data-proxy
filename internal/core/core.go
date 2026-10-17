@@ -66,12 +66,15 @@ type Runtime struct {
 	HubTokenOwner string `json:"hubTokenOwner,omitempty"`
 	// BoxKey is the X25519 key the hub's own account reaches it with (hubaccount);
 	// HubPassword is that account's password, kept to make a token again if its token
-	// lapsed while offline; MoveSecret checks a central address typed in after a move.
-	BoxKey      []byte `json:"boxKey,omitempty"`
-	HubPassword string `json:"hubPassword,omitempty"`
-	MoveSecret  string `json:"moveSecret,omitempty"`
-	SetupAt     string `json:"setupAt"`
-	PrivateKey  []byte `json:"hubPrivateKey"` // ed25519 hub signing key
+	// lapsed while offline, and HubPasswordNext one being given to it, kept before
+	// central is asked, so a lost answer loses nothing. MoveKey checks the code that
+	// comes with a central address typed in after a move (hubaccount.MoveCode).
+	BoxKey          []byte `json:"boxKey,omitempty"`
+	HubPassword     string `json:"hubPassword,omitempty"`
+	HubPasswordNext string `json:"hubPasswordNext,omitempty"`
+	MoveKey         []byte `json:"moveKey,omitempty"`
+	SetupAt         string `json:"setupAt"`
+	PrivateKey      []byte `json:"hubPrivateKey"` // ed25519 hub signing key
 }
 
 // Hub is shared by every package that serves requests or syncs.

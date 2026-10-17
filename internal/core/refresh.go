@@ -254,6 +254,9 @@ func (h *Hub) RenewHubToken(ctx context.Context) error {
 		// The hub's own account, whose token lapsed while offline: a new one with its
 		// password.
 		uid, key, err = h.CreatePAT(ctx, central.Auth{Username: h.HubID(), Password: rt.HubPassword}, newExp)
+		if central.Status(err) == http.StatusUnauthorized && rt.HubPasswordNext != "" {
+			uid, key, err = h.CreatePAT(ctx, central.Auth{Username: h.HubID(), Password: rt.HubPasswordNext}, newExp)
+		}
 		owner = h.HubID()
 	}
 	if err != nil {
@@ -610,7 +613,7 @@ func (h *Hub) TakeOverHubToken(ctx context.Context, username, password string) e
 		rt.HubTokenOwner = me.Username
 		// The hub's own account, if it had one, is set aside: the hub asks for an
 		// account again at its next refresh.
-		rt.HubPassword, rt.MoveSecret = "", ""
+		rt.HubPassword, rt.HubPasswordNext = "", ""
 	}); err != nil {
 		return err
 	}

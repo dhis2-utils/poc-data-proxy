@@ -280,7 +280,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"Forced": h.Monitor.ForcedOffline(), "UplinkSwitch": h.Cfg.UplinkSwitch, "Upgrade": upgrade, "Central": h.Central.BaseURL(),
 		"ServerVersion": h.ServerVersion(), "Msg": r.URL.Query().Get("msg"),
 		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour), "Orphans": h.Store.PendingWithoutUser(),
-		"Offline": !h.Online(),
+		"Offline": !h.Online(), "AccountCode": h.AccountCode(),
 	})
 }
 
@@ -355,8 +355,7 @@ func (u *UI) handleTakeOver(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleMove switches the hub to central's new address after an unplanned move, typed
-// in by a staff member, who confirms with their password; the hub checks it with its
-// own account (core.TypedMove).
+// in by a staff member with the code the national team gave for it (core.TypedMove).
 func (u *UI) handleMove(w http.ResponseWriter, r *http.Request) {
 	sess := u.H.Sessions.FromCookie(r)
 	if r.Method != http.MethodPost || sess == nil {
@@ -364,13 +363,13 @@ func (u *UI) handleMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	msg := "The hub now uses central at its new address"
-	// Throttled like take-overs, and counted apart from logins.
+	// Wrong codes are throttled like logins, and counted apart from them.
 	src, key := auth.Source(r), "move:"+sess.Username
 	if f := u.Auth.Throttled(src, key); f != nil {
-		msg = "Not moved: too many wrong passwords; try again later"
+		msg = "Not moved: too many wrong codes; try again later"
 	} else {
-		err := u.H.TypedMove(r.Context(), r.FormValue("central_url"), sess.Username, r.FormValue("password"))
-		u.Auth.Count(src, key, errors.Is(err, core.ErrWrongPassword))
+		err := u.H.TypedMove(r.Context(), r.FormValue("central_url"), r.FormValue("code"))
+		u.Auth.Count(src, key, errors.Is(err, core.ErrWrongCode))
 		if err != nil {
 			msg = "Not moved: " + err.Error()
 		}

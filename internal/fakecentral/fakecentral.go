@@ -69,10 +69,13 @@ type Central struct {
 	OnTokenCreate func(username string)
 	// FailPaths makes a path answer this status (tests).
 	FailPaths map[string]int
-	passwords map[string]string          // users created through the API, with their own password
-	readers   map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (read)
-	writers   map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (write)
-	creators  map[string]string          // dataStore entry id -> username who created it
+	// LoseResponse ("PUT /api/...": n) carries out the next n such requests but answers
+	// them with 502, as when the answer is lost on the way back.
+	LoseResponse map[string]int
+	passwords    map[string]string          // users created through the API, with their own password
+	readers      map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (read)
+	writers      map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (write)
+	creators     map[string]string          // dataStore entry id -> username who created it
 	// HubWriters, when set, are the only users who may write the facility-hub-*
 	// dataStore namespaces (protected by sharing, as DEPLOYMENT.md advises).
 	HubWriters map[string]bool
@@ -300,6 +303,21 @@ func (c *Central) credentialUser(r *http.Request) *User {
 }
 
 func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	c.mu.Lock()
+	lose := c.LoseResponse[r.Method+" "+r.URL.Path] > 0
+	if lose {
+		c.LoseResponse[r.Method+" "+r.URL.Path]--
+	}
+	c.mu.Unlock()
+	if lose { // done on central, but the answer never reaches the hub
+		c.serve(httptest.NewRecorder(), r)
+		webMessage(w, http.StatusBadGateway, "the answer was lost", "")
+		return
+	}
+	c.serve(w, r)
+}
+
+func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 	if c.down.Load() {
 		if hj, ok := w.(http.Hijacker); ok {
 			conn, _, err := hj.Hijack()
@@ -898,11 +916,14 @@ func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
 			"createdBy": map[string]any{"username": c.creators[id]}})
 		return
 	}
-	if rs := c.readers[id]; rs != nil && !rs[u.UID] && u.Username != "hub_admin" {
-		webMessage(w, 403, "Access denied for key", "E1102") // shared with some users only
+	// Shared with some users only; the superuser and the entry's owner (its creator)
+	// always have access, as on DHIS2.
+	owner := u.Username == "hub_admin" || c.creators[id] == u.Username
+	if rs := c.readers[id]; rs != nil && !rs[u.UID] && !owner {
+		webMessage(w, 403, "Access denied for key", "E1102")
 		return
 	}
-	if ws := c.writers[id]; c.readers[id] != nil && r.Method != "GET" && !ws[u.UID] && u.Username != "hub_admin" {
+	if ws := c.writers[id]; c.readers[id] != nil && r.Method != "GET" && !ws[u.UID] && !owner {
 		webMessage(w, 403, "Access denied for key", "E1102")
 		return
 	}
@@ -938,6 +959,9 @@ func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
 			return
 		}
 		delete(c.DataStore[ns], key)
+		delete(c.creators, id)
+		delete(c.readers, id)
+		delete(c.writers, id)
 		writeJSON(w, 200, map[string]any{"status": "OK"})
 	}
 }

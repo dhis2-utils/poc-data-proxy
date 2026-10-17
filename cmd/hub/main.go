@@ -50,8 +50,6 @@ func main() {
 		err = keygen(args)
 	case "release":
 		err = release(args)
-	case "approve":
-		err = approve(args)
 	case "version":
 		fmt.Println(version)
 	default:

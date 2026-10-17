@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,100 +16,87 @@ import (
 	"time"
 )
 
+// The national team approves hubs in the Facility Hub app on central
+// (docs/FACILITY-HUB-APP.md); Approve is the reference the app must match, and what
+// the hub's tests approve with.
+
 // Credentials are what the box carries to the hub.
 type Credentials struct {
-	Username   string `json:"username"`
-	Password   string `json:"password"`
-	MoveSecret string `json:"moveSecret"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	MoveKey  []byte `json:"moveKey"` // base64 in JSON
 }
 
 // Options for Approve: central, an account allowed to create users, and the user
-// group (write access to the facility-hub namespaces, read on its own secret) and the
-// minimal user role the hub accounts get.
+// group (write access to the facility-hub namespaces) and the user role with no
+// authorities that hub accounts get.
 type Options struct {
 	Central, Username, Password string
 	Group, Role                 string
 	HTTP                        *http.Client
 }
 
-// PendingHub is a hub waiting for an account; Problem says why it may not have one.
-type PendingHub struct {
-	HubID, Facility, FacilityName, SetupBy, SetupAt, Problem string
+// Request is one hub to approve, with the code the facility read from the hub's page.
+type Request struct {
+	HubID, Code string
 }
 
-type entry struct {
-	Key   string         `json:"key"`
-	Value map[string]any `json:"value"`
-}
-
-// Pending lists the hubs waiting for an account. Anyone in the hub owners group can
-// write the registry, so an entry proves little by itself: each is checked as
-// Approve will check it, and the person approving confirms the rest (that the hub
-// exists, and that this person set it up) outside the hub.
-func Pending(ctx context.Context, o Options) ([]PendingHub, error) {
-	c := newClient(o)
-	entries, err := c.registry(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var out []PendingHub
-	for _, e := range entries {
-		v := e.Value
-		if v["accountRequested"] != true || v["account"] != nil {
-			continue
-		}
-		p := PendingHub{HubID: e.Key, Facility: str(v["facility"]), FacilityName: str(v["facilityName"]),
-			SetupBy: str(v["setupBy"]), SetupAt: str(v["setupAt"])}
-		if err := c.check(ctx, e); err != nil {
-			p.Problem = err.Error()
-		}
-		out = append(out, p)
-	}
-	return out, nil
-}
-
-// Approve gives each named hub an account of its own, and returns the IDs of those
+// Approve gives each requested hub an account of its own, and returns the IDs of those
 // done; the others are in the error, and do not stop the rest. For each, it:
-//   - checks the registry entry (check);
+//   - checks the code against the key in the hub's registry entry (AccountCode):
+//     anyone in the hub owners group can write the entry, but not the hub's screen;
 //   - creates the user <hub ID>, assigned to the hub's facility only (capture, data
 //     view and search), so anything public on central is still limited to it, or, for
 //     a hub approved before, gives that user a new password;
-//   - writes a new move secret to facility-hub-accounts/<hub ID>, shared with that
-//     account only (the typed-in check of a central move);
-//   - puts the credentials and the secret in the hub's registry entry, encrypted to
+//   - makes a new move key, kept on central in facility-hub-keys/<hub ID>, created
+//     afresh so that its owner is the approver, and shared with no one: only
+//     administrators read it (move codes, MoveCode);
+//   - puts the credentials and the move key in the hub's registry entry, encrypted to
 //     the hub's key.
 //
 // The hub takes the account up at its next catalog refresh, and replaces the
-// password, token and move secret at once.
-func Approve(ctx context.Context, o Options, hubIDs []string) ([]string, error) {
-	c := newClient(o)
+// password and token at once.
+func Approve(ctx context.Context, o Options, reqs []Request) ([]string, error) {
+	c := &client{o: o, http: o.HTTP}
+	if c.http == nil {
+		c.http = &http.Client{Timeout: time.Minute}
+	}
 	var done []string
 	var errs []error
-	for _, id := range hubIDs {
-		if err := c.approve(ctx, id); err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", id, err))
+	for _, r := range reqs {
+		if err := c.approve(ctx, r); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", r.HubID, err))
 			continue
 		}
-		done = append(done, id)
+		done = append(done, r.HubID)
 	}
 	return done, errors.Join(errs...)
 }
 
-func (c *client) approve(ctx context.Context, id string) error {
+func (c *client) approve(ctx context.Context, r Request) error {
+	id := r.HubID
 	regPath := "/api/dataStore/facility-hub-registry/" + url.PathEscape(id)
-	e := entry{Key: id}
-	if err := c.do(ctx, "GET", regPath, nil, &e.Value); err != nil {
+	var v map[string]any
+	if err := c.do(ctx, "GET", regPath, nil, &v); err != nil {
 		return fmt.Errorf("reading its registry entry: %w", err)
 	}
-	if e.Value["accountRequested"] != true || e.Value["account"] != nil {
+	pub, _ := base64.StdEncoding.DecodeString(str(v["boxKey"]))
+	facility := str(v["facility"])
+	switch {
+	case v["accountRequested"] != true || v["account"] != nil:
 		return errors.New("not waiting for an account")
+	case v["status"] != "active":
+		return errors.New("not active")
+	case facility == "":
+		return errors.New("no facility")
+	case len(pub) != 32:
+		return errors.New("no key to hand the account over with")
+	case subtle.ConstantTimeCompare([]byte(NormalizeCode(AccountCode(pub, id))), []byte(NormalizeCode(r.Code))) != 1:
+		return errors.New("the code is not the one for this hub's key: ask the facility to read it again from the hub's page")
 	}
-	if err := c.check(ctx, e); err != nil {
-		return err
-	}
-	pub, _ := base64.StdEncoding.DecodeString(str(e.Value["boxKey"]))
-	facility := str(e.Value["facility"])
-	creds := Credentials{Username: id, Password: NewPassword(), MoveSecret: NewSecret()}
+	moveKey := make([]byte, 32)
+	rand.Read(moveKey)
+	creds := Credentials{Username: id, Password: NewPassword(), MoveKey: moveKey}
 	uid, err := c.account(ctx, creds, facility)
 	if err != nil {
 		return err
@@ -116,21 +104,22 @@ func (c *client) approve(ctx context.Context, id string) error {
 	if err := c.do(ctx, "POST", "/api/userGroups/"+c.o.Group+"/users/"+uid, nil, nil); err != nil {
 		return fmt.Errorf("adding it to the hub accounts group: %w", err)
 	}
-	secretPath := "/api/dataStore/facility-hub-accounts/" + url.PathEscape(id)
-	if err := c.put(ctx, secretPath, map[string]string{"moveSecret": creds.MoveSecret}); err != nil {
-		return fmt.Errorf("writing its move secret: %w", err)
+	keyPath := "/api/dataStore/facility-hub-keys/" + url.PathEscape(id)
+	if err := c.do(ctx, "DELETE", keyPath, nil, nil); err != nil && !strings.Contains(err.Error(), ": 404 ") {
+		return fmt.Errorf("removing its old move key: %w", err)
+	}
+	if err := c.do(ctx, "POST", keyPath, map[string]string{"moveKey": base64.StdEncoding.EncodeToString(moveKey)}, nil); err != nil {
+		return fmt.Errorf("keeping its move key: %w", err)
 	}
 	var meta struct {
 		ID string `json:"id"`
 	}
-	if err := c.do(ctx, "GET", secretPath+"/metaData", nil, &meta); err != nil {
+	if err := c.do(ctx, "GET", keyPath+"/metaData", nil, &meta); err != nil {
 		return err
 	}
-	// Read and write for the account, which replaces the secret; no one else.
-	share := map[string]any{"object": map[string]any{"publicAccess": "--------",
-		"userAccesses": []map[string]string{{"id": uid, "access": "rw------"}}}}
+	share := map[string]any{"object": map[string]any{"publicAccess": "--------", "userAccesses": []any{}, "userGroupAccesses": []any{}}}
 	if err := c.do(ctx, "POST", "/api/sharing?type=dataStore&id="+meta.ID, share, nil); err != nil {
-		return fmt.Errorf("limiting its move secret to its account: %w", err)
+		return fmt.Errorf("limiting its move key to administrators: %w", err)
 	}
 	plain, _ := json.Marshal(creds)
 	box, err := Seal(pub, plain, id)
@@ -139,66 +128,18 @@ func (c *client) approve(ctx context.Context, id string) error {
 	}
 	// Read again just before writing, and change only the account: the hub writes its
 	// entry too.
-	var v map[string]any
-	if err := c.do(ctx, "GET", regPath, nil, &v); err != nil {
+	var now map[string]any
+	if err := c.do(ctx, "GET", regPath, nil, &now); err != nil {
 		return err
 	}
-	if str(v["boxKey"]) != str(e.Value["boxKey"]) {
-		return errors.New("its key changed meanwhile; list the hubs again")
+	if str(now["boxKey"]) != str(v["boxKey"]) {
+		return errors.New("its key changed meanwhile; ask the facility for the code again")
 	}
-	v["account"] = map[string]string{"username": id, "box": base64.StdEncoding.EncodeToString(box)}
-	if err := c.do(ctx, "PUT", regPath, v, nil); err != nil {
+	now["account"] = map[string]string{"username": id, "box": base64.StdEncoding.EncodeToString(box)}
+	if err := c.do(ctx, "PUT", regPath, now, nil); err != nil {
 		return fmt.Errorf("handing the account over: %w", err)
 	}
 	return nil
-}
-
-// check refuses an entry that is not plausibly a hub set up by a staff member of its
-// facility: an active entry with a facility and a key, created on central by the
-// staff member it names as having set it up, who is assigned to that facility.
-func (c *client) check(ctx context.Context, e entry) error {
-	v := e.Value
-	pub, _ := base64.StdEncoding.DecodeString(str(v["boxKey"]))
-	facility, setupBy := str(v["facility"]), str(v["setupBy"])
-	switch {
-	case v["status"] != "active":
-		return errors.New("not active")
-	case facility == "":
-		return errors.New("no facility")
-	case len(pub) != 32:
-		return errors.New("no key to hand the account over with")
-	case setupBy == "":
-		return errors.New("no one recorded as having set it up")
-	}
-	var meta struct {
-		CreatedBy struct {
-			Username string `json:"username"`
-		} `json:"createdBy"`
-	}
-	if err := c.do(ctx, "GET", "/api/dataStore/facility-hub-registry/"+url.PathEscape(e.Key)+"/metaData", nil, &meta); err != nil {
-		return err
-	}
-	if meta.CreatedBy.Username != setupBy {
-		return fmt.Errorf("the entry names %s as having set it up, but %s created it", setupBy, meta.CreatedBy.Username)
-	}
-	var us struct {
-		Users []struct {
-			OrganisationUnits []struct {
-				ID string `json:"id"`
-			} `json:"organisationUnits"`
-		} `json:"users"`
-	}
-	if err := c.do(ctx, "GET", "/api/users?filter=username:eq:"+url.QueryEscape(setupBy)+"&fields=organisationUnits[id]&paging=false", nil, &us); err != nil {
-		return err
-	}
-	for _, u := range us.Users {
-		for _, o := range u.OrganisationUnits {
-			if o.ID == facility {
-				return nil
-			}
-		}
-	}
-	return fmt.Errorf("%s, who set it up, is not assigned to its facility %s", setupBy, facility)
 }
 
 // account creates the hub's user, or gives the existing one (approved before) a new
@@ -238,29 +179,11 @@ func (c *client) account(ctx context.Context, creds Credentials, facility string
 	return uid, nil
 }
 
-func (c *client) registry(ctx context.Context) ([]entry, error) {
-	var reg struct {
-		Entries []entry `json:"entries"`
-	}
-	if err := c.do(ctx, "GET", "/api/dataStore/facility-hub-registry?fields=.&paging=false", nil, &reg); err != nil {
-		return nil, fmt.Errorf("reading the registry: %w", err)
-	}
-	return reg.Entries, nil
-}
-
 func str(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
 	return ""
-}
-
-func newClient(o Options) *client {
-	c := &client{o: o, http: o.HTTP}
-	if c.http == nil {
-		c.http = &http.Client{Timeout: time.Minute}
-	}
-	return c
 }
 
 type client struct {
@@ -302,15 +225,6 @@ func (c *client) doType(ctx context.Context, method, path string, body, out any,
 	return nil
 }
 
-// put writes a dataStore entry, creating it if it is missing.
-func (c *client) put(ctx context.Context, path string, v any) error {
-	err := c.do(ctx, "PUT", path, v, nil)
-	if err != nil && strings.Contains(err.Error(), ": 404 ") {
-		err = c.do(ctx, "POST", path, v, nil)
-	}
-	return err
-}
-
 const alnum = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 func token(n int) string {
@@ -325,6 +239,3 @@ func token(n int) string {
 // NewPassword meets DHIS2's rules: upper and lower case, a digit and a special
 // character.
 func NewPassword() string { return "Hub-" + token(28) + "9a!" }
-
-// NewSecret is a move secret.
-func NewSecret() string { return token(32) }
