@@ -17,6 +17,7 @@ import (
 
 	"github.com/dhis2/facility-hub/internal/config"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
+	"github.com/dhis2/facility-hub/internal/store"
 )
 
 // stickEnv is an e2e env whose hub has a USB stick (a folder here, with no mount
@@ -326,4 +327,50 @@ func TestStickKeepsCorrectedAggregateValue(t *testing.T) {
 		}
 		t.Fatalf("restored outbox: %v %v", got, err)
 	}
+}
+
+// Review minor: a restored save whose user is not on the copy (added in the last
+// minute before the disk died) cannot be pushed as them; the hub says so instead of
+// keeping it silently.
+func TestStickRestoreReportsUnknownUser(t *testing.T) {
+	e, usb, id := stickWithSaves(t)
+	h := e.app.Hub
+	rec := store.RawOutbox{Seq: 999, UserID: 999, PayloadEnc: []byte("x"), CreatedAt: store.Now(), State: store.OutboxPending, Kind: store.OutboxTracker}
+	b, _ := json.Marshal(rec)
+	sealed, err := h.Store.Seal("stick-outbox:999", b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(usb, "facility-hub", id, "outbox", "999.rec"), sealed, 0o600)
+	e.diskDies()
+	e.restoreFromStick(id, "nurse_a", fc.Password)
+	a := e.web("nurse_a")
+	a.login()
+	if st, page := a.do("GET", "/hub/ui", nil); st != 200 || !strings.Contains(string(page), "not on this hub") {
+		t.Fatalf("admin page does not report the save of an unknown user: %d", st)
+	}
+}
+
+// Review minor: a set-up that fails after registering removes its registry entry and
+// its token again.
+func TestFailedSetupCleansUp(t *testing.T) {
+	e := newEnv(t)
+	e.central.FailPaths = map[string]int{"/api/programs": 500}
+	resp, err := e.web("hub_admin").postForm("/hub/setup", url.Values{"step": {"login"}, "central_url": {e.cSrv.URL},
+		"username": {"hub_admin"}, "password": {fc.Password}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if e.app.Hub.Mode() != "setup" {
+		t.Fatal("set up although the programs could not be read")
+	}
+	if v := e.central.DataStoreValue("facility-hub-registry", e.app.Hub.HubID()); v != nil {
+		t.Errorf("registry entry left behind: %v", v)
+	}
+	if n := e.central.TokensOf("hub_admin"); n != 0 {
+		t.Errorf("%d tokens left behind", n)
+	}
+	e.central.FailPaths = nil
+	e.setup()
 }

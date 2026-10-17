@@ -319,4 +319,5 @@ func TestTakeOverThrottled(t *testing.T) {
 	if e.App.Hub.Runtime().HubToken != old {
 		t.Fatal("taken over right after six wrong passwords")
 	}
+	e.Web(tk.RoleNurse).Login() // the take-over's throttle does not lock the user's login
 }

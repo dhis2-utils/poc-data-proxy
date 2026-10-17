@@ -278,7 +278,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"Outbox": outbox, "Issues": irows, "Users": rows, "Names": names, "Objects": h.Index.Len(),
 		"Forced": h.Monitor.ForcedOffline(), "Upgrade": upgrade, "Central": h.Central.BaseURL(),
 		"ServerVersion": h.ServerVersion(), "Msg": r.URL.Query().Get("msg"),
-		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour),
+		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour), "Orphans": h.Store.PendingWithoutUser(),
 	})
 }
 
@@ -336,12 +336,13 @@ func (u *UI) handleTakeOver(w http.ResponseWriter, r *http.Request) {
 	msg := "The hub now uses your account for its own housekeeping"
 	// Throttled like logins: a session left open on a shared PC must not let anyone
 	// guess its user's central password here.
-	src := auth.Source(r)
-	if f := u.Auth.Throttled(src, sess.Username); f != nil {
+	// Counted apart from logins: wrong take-over passwords do not lock the user out.
+	src, key := auth.Source(r), "takeover:"+sess.Username
+	if f := u.Auth.Throttled(src, key); f != nil {
 		msg = "Not taken over: too many wrong passwords; try again later"
 	} else {
 		err := u.H.TakeOverHubToken(r.Context(), sess.Username, r.FormValue("password"))
-		u.Auth.Count(src, sess.Username, errors.Is(err, core.ErrWrongPassword))
+		u.Auth.Count(src, key, errors.Is(err, core.ErrWrongPassword))
 		if err != nil {
 			msg = "Not taken over: " + err.Error()
 		}

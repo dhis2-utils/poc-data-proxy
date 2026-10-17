@@ -41,6 +41,8 @@
 {{range .Issues}}<tr><td>{{.ID}}</td><td class="mono">{{.Object}}</td><td>{{.Kind}}</td><td>{{.User}}</td><td>{{.Message}}</td><td>{{short .CreatedAt}}</td><td>{{short .ReportedCentralAt}}</td></tr>{{else}}<tr><td colspan="7" class="muted">none</td></tr>{{end}}
 </table></div></div>
 
+{{with .Orphans}}<div class="card"><h2>Saves waiting for a user</h2><p><b>{{.}}</b> saves belong to users not on this hub (restored from a copy made before they first logged in). They cannot be sent as their author; ask central's administrator.</p></div>{{end}}
+
 {{with .Heartbeat.usb}}<div class="card"><h2>USB stick</h2>
 <p>{{if not .Present}}<b>No stick found.</b> Put the box's USB stick in: it holds the copy a new disk is restored from.{{else if not .Writable}}<b>The stick does not work</b>{{with .Error}}: {{.}}{{end}}. Replace it.{{else}}Working. Last copy {{or (short .LastCopy) "none yet"}}{{end}}</p></div>{{end}}
 

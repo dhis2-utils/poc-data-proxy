@@ -367,7 +367,7 @@ func (u *UI) checkRegistry(ctx context.Context, p *pendingSetup) error {
 }
 
 // completeSetup runs spec 6.2 steps 7-9.
-func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (*core.Session, error) {
+func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (_ *core.Session, err error) {
 	h := u.H
 	basic := central.Auth{Username: p.Username, Password: p.Password}
 
@@ -397,6 +397,12 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (*core.Session,
 		}
 		return nil, fmt.Errorf("registering hub: %w", err)
 	}
+	defer func() {
+		if err != nil { // a set-up that fails from here leaves nothing behind on central
+			h.Central.JSON(context.WithoutCancel(ctx), "DELETE", "/api/dataStore/facility-hub-registry/"+h.HubID(), nil, hubAuth, nil)
+			h.Central.JSON(context.WithoutCancel(ctx), "DELETE", "/api/apiToken/"+url.PathEscape(tokUID), nil, hubAuth, nil)
+		}
+	}()
 	dk, err := hubcrypto.NewKey()
 	if err != nil {
 		return nil, err

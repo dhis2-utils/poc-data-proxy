@@ -215,3 +215,12 @@ func (s *Store) ImportState(b []byte) error {
 		return nil
 	})
 }
+
+// PendingWithoutUser counts pending saves whose user has no row on this hub (a hub
+// restored from a copy older than that user): they cannot be pushed as their author.
+func (s *Store) PendingWithoutUser() int {
+	var n int
+	s.DB().QueryRow(`SELECT count(*) FROM outbox o WHERE o.state = ?
+ AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = o.user_id)`, OutboxPending).Scan(&n)
+	return n
+}

@@ -64,6 +64,8 @@ type Central struct {
 	// OnTokenCreate, when set, runs as a user's token is created, before central
 	// answers (tests of what happens meanwhile).
 	OnTokenCreate func(username string)
+	// FailPaths makes a path answer this status (tests).
+	FailPaths map[string]int
 	// HubWriters, when set, are the only users who may write the facility-hub-*
 	// dataStore namespaces (protected by sharing, as DEPLOYMENT.md advises).
 	HubWriters map[string]bool
@@ -299,8 +301,13 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	c.mu.Lock()
 	c.Requests[r.Method+" "+r.URL.Path]++
+	fail := c.FailPaths[r.URL.Path]
 	c.mu.Unlock()
 	p := r.URL.Path
+	if fail != 0 {
+		webMessage(w, fail, "failing as asked", "")
+		return
+	}
 	switch {
 	case p == "/api/system/ping":
 		w.Header().Set("Content-Type", "application/json")
