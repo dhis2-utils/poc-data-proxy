@@ -18,3 +18,4 @@ Where complexity already lives, and why, is in `docs/PERFORMANCE.md` ("How the h
 - `go vet ./...` and `go test ./...`; `go test -race` on `internal/e2e`, `internal/live`, `internal/tracker`, `internal/store`.
 - Behaviour that central decides is checked against DHIS2 with `go run ./cmd/hubtest run -profile <synthetic|sierra-leone|laos> -version 42` (docs/TESTING.md).
 - Performance claims come with numbers from `internal/perf` or `perf/pi.sh` (docs/PERFORMANCE.md).
+- A data migration that touches existing rows (a new index, a rewritten column) runs within SQLite's 4 GB, with sorts in memory: time it at the `hc4-5y` size (4.6 million objects; `internal/perf.TestRetentionMigration` shows how) before committing. A full index rebuild ran out of memory there; a hub that cannot migrate stays on its old release (docs/DEPLOYMENT.md, "Upgrades").

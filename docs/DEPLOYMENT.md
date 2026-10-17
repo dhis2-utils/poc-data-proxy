@@ -306,6 +306,11 @@ A hub only serves its own facility. A community health worker's tablet that visi
   4. 100 %.
 
   Each hub checks after its sync cycle, downloads the chosen version from GitHub and checks its signature, pushes its outbox, migrates a copy of its store, swaps, health-checks and rolls back on failure. Results show up in the heartbeat.
+- **Migrations on full hubs: a release can fail on the largest ones.** SQLite sorts in memory (`temp_store=memory`, so no plaintext reaches the disk), inside a 4 GB limit. A migration that builds an index over existing rows ran out of that memory at 4.6 million objects, the busy HC IV kept for five years (docs/PERFORMANCE.md, "Upgrading a large hub"); it worked at 2.5 million.
+  - The rollback keeps such a hub working on its old version, but it stays behind. Once central moves to a DHIS2 version only the new release supports, it serves as pass-through only.
+  - With hundreds of hubs, a whole rollout stage could stall this way.
+  - Rule for every release: a data migration that touches existing rows (a new index, a rewritten column) is timed with `internal/perf.TestRetentionMigration`-style tests at the `hc4-5y` size, 4.6 million objects, before the release (AGENTS.md). If it does not fit, it must be written differently, as the retention migration was: a partial index that is empty at upgrade.
+  - The first stage of every rollout should include the largest hubs, found by the heartbeat's disk use, not only small pilots.
 - **Before a DHIS2 server upgrade:** run the live suite against the new version (docs/TESTING.md); if the hub needs changes, roll out that hub release first. A hub release only supports the DHIS2 versions it was tested against (spec 12a): new majors come about a year apart, with API changes nobody can plan for in advance. Hubs on an unsupported version stay usable online, as pass-through only, and show "hub needs upgrade".
 - **Operating system:** security updates install themselves (`unattended-upgrades`, with automatic reboot at night). Re-image only for major OS changes. That can be done by shipping a pre-flashed SSD, because the hub holds nothing that central does not.
 

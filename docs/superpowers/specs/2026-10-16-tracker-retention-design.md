@@ -62,6 +62,7 @@ Central's dataStore, `facility-hub-config/retention`, read at the catalog refres
   - E1015: a new active enrollment for a tracked entity that already has an active enrollment in that program (held in full, so the hub knows) is refused with central's code and message.
   - E1016: a new enrollment in a program with `onlyEnrollOnce` for a tracked entity with any enrollment in it, stub included, is refused likewise. The catalog records `onlyEnrollOnce` per program.
   - An edit of something pruned (a device editing an old event it still holds) answers "needs connection"; it stays on the device until it syncs online through the hub.
+  - Known limitation (2026-10-17): a person registered elsewhere and transferred here before the window, with only old closed enrollments here and no change since, is not held (docs/FINDINGS.md).
   - Exception, by choice (2026-10-17): a tracked entity removed by a type window leaves no trace, so an offline edit of it is accepted as a new one and reaches central as an update (docs/FINDINGS.md, "Retention for tracker programs").
 - The 2.42 and 2.43 messages and codes are taken from central (checked live).
 

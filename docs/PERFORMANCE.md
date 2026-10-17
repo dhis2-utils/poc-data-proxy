@@ -204,9 +204,9 @@ Events are 3.1 M of the 5.8 M listed entries, about 60 % of the bytes. The run o
 
 - **Each listing ran twice.** The setup account and the 60 users are two access groups. A real hub lists once per distinct access group.
 - **The fake's entries are larger.** It writes 137 bytes per listed event (it repeats the enrollment and the person); DHIS2's listing takes 78–105 bytes per listed person, enrollment or event. A listing without events (`enrollments[enrollment,updatedAt]`) is about half the size.
-- **The bytes are uncompressed.** DHIS2 (Tomcat) answers uncompressed even when the hub asks for gzip, so a listing crosses the uplink as is unless a proxy in front of DHIS2 compresses it. gzip at level 1 (nginx's default) would make these listings 2.7–4.3 times smaller, the larger ones compressing best.
+- **The bytes are uncompressed.** DHIS2's Tomcat on its own answers uncompressed, and so did the test instances. In production DHIS2 sits behind nginx (or another reverse proxy) that compresses; the hub asks for gzip. gzip at level 1 makes these listings 2.7–4.3 times smaller, the larger ones compressing best.
 
-Estimate for the HC IV size with a 12-month window, from these figures and not measured as a whole: about 0.6 GB per access group per full pull uncompressed, about 0.15 GB with gzip.
+Estimate for the HC IV size with a 12-month window, from these figures and not measured as a whole: about 0.6 GB per access group per full pull uncompressed, about 0.15 GB compressed as production serves it.
 
 Changing an event moves its own and its tracked entity's `updatedAt`, not its enrollment's (2.42 and 2.43, `TestEventEditMovesUpdatedAtLive`). A listing without events would therefore have to fetch a person whenever their own `updatedAt` moved.
 
