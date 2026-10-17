@@ -738,23 +738,29 @@ func TestRefusedCountsClearWhenFixed(t *testing.T) {
 	}
 }
 
-// Review fix: a user with one org unit above facility level (a district officer) is
-// offered the facilities below it, rather than setting the hub up for the district.
-func TestSetupByDistrictUserOffersFacilities(t *testing.T) {
+// The hub serves the org unit the user sets it up for: their only one, or the one
+// they choose among theirs, at whatever level (a ward or a community can be a place of
+// its own). There is no facility level to configure.
+func TestSetupChoosesAmongOwnOrgUnits(t *testing.T) {
+	login := func(e *env, user string) string {
+		t.Helper()
+		resp, err := e.web(user).postForm("/hub/setup", url.Values{"step": {"login"}, "central_url": {e.cSrv.URL},
+			"username": {user}, "password": {fc.Password}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return string(b)
+	}
 	e := newEnv(t)
-	c := e.web("district_e")
-	resp, err := c.postForm("/hub/setup", url.Values{"step": {"login"}, "central_url": {e.cSrv.URL},
-		"username": {"district_e"}, "password": {fc.Password}})
-	if err != nil {
-		t.Fatal(err)
+	if b := login(e, "multi_g"); e.app.Hub.Mode() != "setup" || !strings.Contains(b, fc.Facility) || !strings.Contains(b, fc.OtherFacility) {
+		t.Fatalf("a user of two org units is not offered both: mode %s", e.app.Hub.Mode())
 	}
-	b, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if strings.Contains(string(b), "This hub now serves") || e.app.Hub.Mode() != "setup" {
-		t.Fatalf("set up for the district itself: facility %q", e.app.Hub.Facility())
-	}
-	if !strings.Contains(string(b), fc.Facility) || !strings.Contains(string(b), fc.OtherFacility) {
-		t.Fatalf("facilities not offered: %.1500s", b)
+	e = newEnv(t)
+	login(e, "district_e")
+	if e.app.Hub.Facility() != fc.District {
+		t.Fatalf("a user of one org unit: the hub serves %q, want %q", e.app.Hub.Facility(), fc.District)
 	}
 }
 

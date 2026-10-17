@@ -122,6 +122,7 @@ func New() *Central {
 			"nurse_a":    {UID: "HubUsrNursA", Username: "nurse_a", OrgUnits: []string{Facility}, ProgramRead: true, ProgramWrite: true, StageRead: all, StageWrite: all},
 			"nurse_b":    {UID: "HubUsrNursB", Username: "nurse_b", OrgUnits: []string{Facility}, ProgramRead: true, ProgramWrite: true, StageRead: no3, StageWrite: no3},
 			"clerk_c":    {UID: "HubUsrClrkC", Username: "clerk_c", OrgUnits: []string{Facility}, ProgramRead: true, StageRead: no3, StageWrite: map[string]bool{}},
+			"multi_g":    {UID: "HubUsrMultG", Username: "multi_g", OrgUnits: []string{Facility, OtherFacility}, ProgramRead: true, StageRead: no3, StageWrite: map[string]bool{}},
 			"district_e": {UID: "HubUsrDistE", Username: "district_e", OrgUnits: []string{District}, ProgramRead: true, StageRead: no3, StageWrite: map[string]bool{}},
 			"outsider_d": {UID: "HubUsrOutsD", Username: "outsider_d", OrgUnits: []string{OtherFacility}, ProgramRead: true, ProgramWrite: true, StageRead: no3, StageWrite: no3},
 		},
@@ -382,15 +383,6 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"id": Program, "name": "TB program"})
 	case p == "/api/categoryOptionCombos":
 		writeJSON(w, 200, map[string]any{"categoryOptionCombos": []any{map[string]any{"id": DefaultAOC}}})
-	case p == "/api/organisationUnits" && r.URL.Query().Get("order") == "level:desc":
-		writeJSON(w, 200, map[string]any{"organisationUnits": []any{map[string]any{"level": 4}}})
-	case p == "/api/organisationUnits" && strings.Contains(r.URL.RawQuery, District):
-		// The facilities below the district (paths kept flat elsewhere in the fake).
-		var ous []any
-		for _, ou := range []string{Facility, OtherFacility} {
-			ous = append(ous, map[string]any{"id": ou, "name": ou, "code": "OU_" + ou, "level": 4, "path": "/root/" + District + "/" + ou})
-		}
-		writeJSON(w, 200, map[string]any{"organisationUnits": ous})
 	case p == "/api/organisationUnits/"+Facility:
 		writeJSON(w, 200, map[string]any{"id": Facility, "name": "Ngelehun CHC", "code": "OU_559"})
 	case p == "/api/tracker/events" && isEventProgram(r.URL.Query().Get("program")):

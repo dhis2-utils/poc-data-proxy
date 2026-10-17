@@ -214,17 +214,17 @@ func (u *UI) setupLogin(ctx context.Context, centralURL, username, password stri
 	}
 	p = &pendingSetup{Nonce: core.NewUID(), CentralURL: centralURL, Username: username, Password: password, Me: me,
 		Version: version, Expires: time.Now().Add(5 * time.Minute)} // holds the password
-	// The facility-level org units in the user's scope: one is taken as it is; several
-	// are offered. A single org unit above that level (a district officer's) is not a
-	// facility: its facilities are offered.
-	if p.Facilities, err = u.facilityChoices(ctx, auth, me.OrganisationUnits); err != nil {
-		return nil, err
-	}
-	switch len(p.Facilities) {
+	// The hub serves the org unit it is set up for: the user's only one, or the one
+	// they choose among theirs, at whatever level. A ward or a community can be a place
+	// of its own; there is no facility level to configure.
+	switch len(me.OrganisationUnits) {
 	case 0:
-		return nil, errors.New("no facility-level org units in your scope")
+		return nil, errors.New("you are not assigned to any org unit")
 	case 1:
-		p.Facility, p.Facilities = &p.Facilities[0], nil
+		p.Facility = &me.OrganisationUnits[0]
+	default:
+		p.Facilities = slices.Clone(me.OrganisationUnits)
+		slices.SortFunc(p.Facilities, func(a, b orgUnit) int { return strings.Compare(a.Name, b.Name) })
 	}
 	u.setup.mu.Lock()
 	u.setup.pending = p
@@ -235,42 +235,6 @@ func (u *UI) setupLogin(ctx context.Context, centralURL, username, password stri
 		}
 	}
 	return p, nil
-}
-
-// facilityChoices lists facility-level (lowest level) org units under the user's org units.
-func (u *UI) facilityChoices(ctx context.Context, auth central.Auth, roots []orgUnit) ([]orgUnit, error) {
-	// The deepest org unit: a server need not define organisationUnitLevels (a fresh
-	// one has none), but every org unit has its level.
-	var deepest struct {
-		OrganisationUnits []struct {
-			Level int `json:"level"`
-		} `json:"organisationUnits"`
-	}
-	if err := u.H.Central.JSON(ctx, "GET", central.Q("/api/organisationUnits", "fields", "level", "order", "level:desc",
-		"pageSize", "1"), nil, auth, &deepest); err != nil {
-		return nil, err
-	}
-	if len(deepest.OrganisationUnits) == 0 {
-		return nil, errors.New("no org units on central")
-	}
-	maxLevel := deepest.OrganisationUnits[0].Level
-	var out []orgUnit
-	for _, root := range roots {
-		if root.Level == maxLevel {
-			out = append(out, root)
-			continue
-		}
-		var resp struct {
-			OrganisationUnits []orgUnit `json:"organisationUnits"`
-		}
-		if err := u.H.Central.JSON(ctx, "GET", central.Q("/api/organisationUnits", "filter", "path:like:"+root.ID,
-			"filter", fmt.Sprintf("level:eq:%d", maxLevel), "fields", "id,name,code,level,path", "order", "name:asc",
-			"paging", "false"), nil, auth, &resp); err != nil {
-			return nil, err
-		}
-		out = append(out, resp.OrganisationUnits...)
-	}
-	return out, nil
 }
 
 // checkRegistry finds other active hubs for the facility (spec 6.2 step 7).
