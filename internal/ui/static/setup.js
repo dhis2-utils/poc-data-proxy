@@ -13,8 +13,11 @@
       video.srcObject = stream;
       video.hidden = false;
       video.play();
-      var stop = function () { stream.getTracks().forEach(function (t) { t.stop(); }); video.hidden = true; };
+      var stopped = false;
+      var stop = function () { stopped = true; stream.getTracks().forEach(function (t) { t.stop(); }); video.hidden = true; };
+      setTimeout(stop, 120000); // the camera does not stay on
       var look = function () {
+        if (stopped) return;
         detector.detect(video).then(function (codes) {
           var hit = codes.map(function (c) { return c.rawValue.trim(); }).filter(function (v) { return v.indexOf('https://') === 0; })[0];
           if (hit) { field.value = hit; stop(); return; }

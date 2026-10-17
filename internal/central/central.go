@@ -210,9 +210,11 @@ type Monitor struct {
 	// Client probes central (nil: one that follows no redirects; tests give one that
 	// trusts their test certificate).
 	Client *http.Client
-	// movedTo is where the current address last answered with a permanent redirect to
-	// another host: a candidate new address for central (core.TryCentralMove).
+	// movedTo is where the current https address redirected permanently, to another
+	// host, at movedN probes in a row: a candidate new address for central from three
+	// (core.TryCentralMove). A probe that reaches central clears it.
 	movedTo  string
+	movedN   int
 	Interval time.Duration
 	lastWhy  time.Time // last "still unreachable" log
 	Timeout  time.Duration
@@ -343,7 +345,7 @@ func (m *Monitor) Probe(ctx context.Context, baseURL string) bool {
 		}
 		if resp, err := pc.Do(req); err == nil {
 			ok = isCentral(baseURL, resp)
-			m.noteMove(baseURL, resp)
+			m.noteMove(baseURL, resp, ok)
 			resp.Body.Close()
 			why = fmt.Sprintf("status %d after %s", resp.StatusCode, time.Since(start).Round(time.Millisecond))
 		} else {
@@ -376,26 +378,33 @@ func (m *Monitor) Probe(ctx context.Context, baseURL string) bool {
 	return ok
 }
 
-// noteMove records a permanent redirect of the ping to another host.
-func (m *Monitor) noteMove(baseURL string, resp *http.Response) {
-	if resp.StatusCode != http.StatusMovedPermanently && resp.StatusCode != http.StatusPermanentRedirect {
-		return
-	}
-	loc, err := resp.Request.URL.Parse(resp.Header.Get("Location"))
+// noteMove records a permanent redirect of the ping to another host, from an https
+// address only (verified TLS: not a captive portal on plain http); ok clears it.
+func (m *Monitor) noteMove(baseURL string, resp *http.Response, ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	base, berr := url.Parse(baseURL)
-	if err != nil || berr != nil || strings.EqualFold(loc.Host, base.Host) {
+	loc, err := resp.Request.URL.Parse(resp.Header.Get("Location"))
+	if ok || berr != nil || base.Scheme != "https" || err != nil || strings.EqualFold(loc.Host, base.Host) ||
+		(resp.StatusCode != http.StatusMovedPermanently && resp.StatusCode != http.StatusPermanentRedirect) {
+		m.movedTo, m.movedN = "", 0
 		return
 	}
 	next := strings.TrimSuffix(loc.String(), "/api/system/ping")
-	m.mu.Lock()
-	m.movedTo = next
-	m.mu.Unlock()
+	if next != m.movedTo {
+		m.movedTo, m.movedN = next, 0
+	}
+	m.movedN++
 }
 
-// MovedTo is the address the current one last redirected to permanently ("" if none).
+// MovedTo is where the current address redirects permanently, after three probes in a
+// row ("" otherwise).
 func (m *Monitor) MovedTo() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.movedN < 3 {
+		return ""
+	}
 	return m.movedTo
 }
 

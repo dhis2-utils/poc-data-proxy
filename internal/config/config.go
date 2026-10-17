@@ -66,6 +66,10 @@ type Config struct {
 	USBDir              string
 	USBRequireMount     bool
 	USBSnapshotInterval time.Duration
+	// CentralMoveAfter is how long central's address must have stopped answering
+	// before the hub moves to an announced or redirected new one (docs/DEPLOYMENT.md,
+	// section 6): a brief outage during a planned move must not move it early.
+	CentralMoveAfter time.Duration
 }
 
 func Default() Config {
@@ -80,6 +84,7 @@ func Default() Config {
 		ReservedPoolSize:       150,
 		FullPullInterval:       7 * 24 * time.Hour,
 		USBRequireMount:        true,
+		CentralMoveAfter:       time.Hour,
 		USBSnapshotInterval:    24 * time.Hour,
 		OwnershipCheckInterval: time.Hour,
 		AccessRefreshInterval:  time.Hour,
@@ -142,6 +147,8 @@ func (c *Config) set(k, v string) error {
 		c.PingInterval, err = time.ParseDuration(v)
 	case "ping_timeout":
 		c.PingTimeout, err = time.ParseDuration(v)
+	case "central_move_after":
+		c.CentralMoveAfter, err = time.ParseDuration(v)
 	case "usb_dir":
 		c.USBDir = v
 	case "usb_snapshot_interval":

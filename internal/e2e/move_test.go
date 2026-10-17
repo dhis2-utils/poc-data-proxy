@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dhis2/facility-hub/internal/config"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
@@ -37,10 +38,16 @@ func moveEnv(t *testing.T) (e *env, newURL string, down, redirect *atomic.Bool) 
 		}
 	}))
 	t.Cleanup(e.cSrv.Close)
-	e.cfgHook = func(c *config.Config) { c.CentralURL = e.cSrv.URL }
+	e.cfgHook = func(c *config.Config) { c.CentralURL = e.cSrv.URL; c.CentralMoveAfter = 0 }
 	e.start()
 	e.setup()
+	e.app.Hub.Cfg.CentralURL = "" // the generic image: no address pinned in hub.yaml
 	return e, newSrv.URL, down, redirect
+}
+
+func announce(e *env, url string) {
+	e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"central-move": json.RawMessage(`{"url":"` + url + `"}`)}
+	e.app.Hub.RefreshCatalog(context.Background())
 }
 
 func (e *env) cycleOffline() {
@@ -56,10 +63,7 @@ func (e *env) cycleOffline() {
 // but the hub's own token, which the current central vouched for by announcing it.
 func TestCentralMoveAnnounced(t *testing.T) {
 	e, newURL, down, _ := moveEnv(t)
-	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{"central-move": json.RawMessage(`{"url":"` + newURL + `"}`)}
-	if err := e.app.Hub.RefreshCatalog(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	announce(e, newURL)
 	if got := e.app.Hub.Central.BaseURL(); got != e.cSrv.URL {
 		t.Fatalf("switched while the old address still answers: %s", got)
 	}
@@ -80,8 +84,7 @@ func TestCentralMoveRefusesAnotherServer(t *testing.T) {
 	e, _, down, _ := moveEnv(t)
 	other := httptest.NewServer(fc.New())
 	t.Cleanup(other.Close)
-	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{"central-move": json.RawMessage(`{"url":"` + other.URL + `"}`)}
-	e.app.Hub.RefreshCatalog(context.Background())
+	announce(e, other.URL)
 	down.Store(true)
 	e.cycleOffline()
 	if got := e.app.Hub.Central.BaseURL(); got != e.cSrv.URL || e.app.Hub.Online() {
@@ -89,13 +92,95 @@ func TestCentralMoveRefusesAnotherServer(t *testing.T) {
 	}
 }
 
-// The old address answers with a permanent redirect to the new one: the hub checks the
-// new one and switches.
+// Review fixes: no move for a hub pinned to its address in hub.yaml; none while the old
+// address has been down only briefly; an announcement in a namespace hub owners can
+// write is not taken.
+func TestCentralMoveGuards(t *testing.T) {
+	t.Run("pinned", func(t *testing.T) {
+		e, newURL, down, _ := moveEnv(t)
+		e.app.Hub.Cfg.CentralURL = e.cSrv.URL
+		announce(e, newURL)
+		down.Store(true)
+		e.cycleOffline()
+		if got := e.app.Hub.Central.BaseURL(); got != e.cSrv.URL {
+			t.Fatalf("a pinned hub moved to %s", got)
+		}
+	})
+	t.Run("brief outage", func(t *testing.T) {
+		e, newURL, down, _ := moveEnv(t)
+		e.app.Hub.Cfg.CentralMoveAfter = time.Hour
+		announce(e, newURL)
+		down.Store(true)
+		e.cycleOffline()
+		if got := e.app.Hub.Central.BaseURL(); got != e.cSrv.URL {
+			t.Fatalf("moved after a brief outage: %s", got)
+		}
+	})
+	t.Run("hub owners' namespace", func(t *testing.T) {
+		e, newURL, down, _ := moveEnv(t)
+		e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{"central-move": json.RawMessage(`{"url":"` + newURL + `"}`)}
+		e.app.Hub.RefreshCatalog(context.Background())
+		down.Store(true)
+		e.cycleOffline()
+		if got := e.app.Hub.Central.BaseURL(); got != e.cSrv.URL {
+			t.Fatalf("moved on an announcement any hub owner can write: %s", got)
+		}
+	})
+	t.Run("not yet", func(t *testing.T) {
+		e, newURL, down, _ := moveEnv(t)
+		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"central-move": json.RawMessage(`{"url":"` + newURL + `","from":"` + time.Now().Add(24*time.Hour).UTC().Format(time.RFC3339) + `"}`)}
+		e.app.Hub.RefreshCatalog(context.Background())
+		down.Store(true)
+		e.cycleOffline()
+		if got := e.app.Hub.Central.BaseURL(); got != e.cSrv.URL {
+			t.Fatalf("moved before the announced time: %s", got)
+		}
+	})
+}
+
+// A permanent redirect counts only from an https address (a captive portal on plain
+// http must not move a hub), after several in a row; the hub checks the new address
+// and switches.
 func TestCentralMoveRedirect(t *testing.T) {
+	e := &env{t: t, central: fc.New(), dir: t.TempDir()}
+	redirect := &atomic.Bool{}
+	newSrv := httptest.NewTLSServer(e.central)
+	t.Cleanup(newSrv.Close)
+	e.cSrv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if redirect.Load() {
+			http.Redirect(w, r, newSrv.URL+r.URL.RequestURI(), http.StatusPermanentRedirect)
+			return
+		}
+		e.central.ServeHTTP(w, r)
+	}))
+	t.Cleanup(e.cSrv.Close)
+	e.cfgHook = func(c *config.Config) { c.CentralURL = e.cSrv.URL; c.CentralMoveAfter = 0 }
+	e.start()
+	tlsCfg := e.cSrv.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+	e.app.Hub.Central.HTTP.Transport.(*http.Transport).TLSClientConfig = tlsCfg
+	probe := e.cSrv.Client()
+	probe.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	e.app.Hub.Monitor.Client = probe
+	e.app.Hub.Monitor.Probe(context.Background(), e.cSrv.URL)
+	e.setup()
+	e.app.Hub.Cfg.CentralURL = ""
+	redirect.Store(true)
+	for i := 0; i < 3; i++ {
+		e.cycleOffline()
+	}
+	if got := e.app.Hub.Central.BaseURL(); got != newSrv.URL || !e.app.Hub.Online() {
+		t.Fatalf("after permanent redirects: %s, online %v", got, e.app.Hub.Online())
+	}
+}
+
+// A plain-http address that redirects (a captive portal, say) is not a move.
+func TestCentralMoveIgnoresHTTPRedirect(t *testing.T) {
 	e, newURL, _, redirect := moveEnv(t)
 	redirect.Store(true)
-	e.cycleOffline()
-	if got := e.app.Hub.Central.BaseURL(); got != newURL || !e.app.Hub.Online() {
-		t.Fatalf("after a permanent redirect: %s, online %v", got, e.app.Hub.Online())
+	for i := 0; i < 3; i++ {
+		e.cycleOffline()
+	}
+	if got := e.app.Hub.Central.BaseURL(); got == newURL {
+		t.Fatal("a plain-http redirect moved the hub")
 	}
 }

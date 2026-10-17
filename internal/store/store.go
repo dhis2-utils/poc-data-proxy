@@ -312,7 +312,7 @@ func Open(path string) (*Store, error) {
 	// SQLite's temporary files (sorts that spill, as migrations do) go next to the
 	// store, on its disk: the system's temp directory may be in RAM. They are
 	// encrypted by the xts VFS. An operator's SQLITE_TMPDIR wins.
-	if os.Getenv("SQLITE_TMPDIR") == "" {
+	if d := os.Getenv("SQLITE_TMPDIR"); d == "" || !dirExists(d) {
 		tmp := filepath.Join(filepath.Dir(path), "tmp")
 		if err := os.MkdirAll(tmp, 0o700); err != nil {
 			return nil, err
@@ -737,4 +737,9 @@ func (s *Store) Tx(ctx context.Context, fn func(*sql.Tx) error) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+func dirExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
 }
