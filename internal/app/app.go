@@ -19,6 +19,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/config"
 	"github.com/dhis2/facility-hub/internal/core"
 	"github.com/dhis2/facility-hub/internal/proxy"
+	"github.com/dhis2/facility-hub/internal/stick"
 	"github.com/dhis2/facility-hub/internal/store"
 	hubsync "github.com/dhis2/facility-hub/internal/sync"
 	"github.com/dhis2/facility-hub/internal/trackerapi"
@@ -31,6 +32,7 @@ type App struct {
 	Handler   http.Handler
 	Worker    *hubsync.Worker
 	Upgrader  *upgrade.Upgrader
+	Stick     *stick.Stick
 	StorePath string
 }
 
@@ -51,6 +53,10 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 		return nil, err
 	}
 	storePath := filepath.Join(cfg.DataDir, "hub.db")
+	// A new disk: start from the USB stick's copy, as the same hub (docs/RECOVERY.md, C2).
+	if _, err := stick.Restore(cfg.USBDir, storePath); err != nil {
+		slog.Error("restoring from the USB stick", "err", err)
+	}
 	st, err := store.Open(storePath)
 	if err != nil {
 		return nil, err
@@ -129,13 +135,15 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 			px.ServeHTTP(w, r)
 		}
 	})
-	return &App{Hub: h, Handler: logRequests(cfg, recoverer(root)), Worker: worker, Upgrader: up, StorePath: storePath}, nil
+	return &App{Hub: h, Handler: logRequests(cfg, recoverer(root)), Worker: worker, Upgrader: up, Stick: stick.New(h),
+		StorePath: storePath}, nil
 }
 
 // Start runs the connectivity monitor and sync worker until ctx ends.
 func (a *App) Start(ctx context.Context) {
 	go a.Hub.Monitor.Run(ctx, a.Hub.Central.BaseURL)
 	go a.Worker.Run(ctx)
+	go a.Stick.Run(ctx)
 }
 
 func (a *App) Close() error { return a.Hub.Store.Close() }

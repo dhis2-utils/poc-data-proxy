@@ -91,6 +91,7 @@ The hub has no facility-specific configuration. It reads one small image-default
 | `release_channel`, `release_public_key` | Where to look for upgrades, and the ed25519 key releases must be signed with |
 | `tls` | `true` (default): at first boot the hub creates a CA limited to its own names and private addresses, issues its server certificate and discards the CA key. `false`: plain HTTP for development |
 | `reserved_pool_size` | Reserved values kept per generated attribute (default 150) |
+| `usb_dir`, `usb_snapshot_interval` | Where the box's USB stick is mounted (none by default; the image uses `/media/hub-usb`), and how often a whole snapshot is written to it (default 24h). Before set-up the hub writes its setup code there; after, a copy of every pending save each minute and the snapshot, from which a new disk is restored (docs/RECOVERY.md, C2). Used only when it is a mount point |
 | `full_pull_interval` | How often a full, non-incremental pull runs per access group (default 168h, a week). A changed access list gives a full pull at the next sync anyway |
 | `ownership_check_interval` | How often the hub checks which of its people the facility still owns, to catch transfers out (default 1h) |
 | `offline_search_facility` | Answer offline searches with `orgUnitMode=ACCESSIBLE` from the facility's data instead of refusing them (default `true`; FINDINGS.md) |

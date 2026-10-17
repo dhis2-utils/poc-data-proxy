@@ -59,6 +59,13 @@ type Config struct {
 	PasswordFallback bool
 	// KeySlotMaxAge removes the key slot of a user who has not logged in for this long.
 	KeySlotMaxAge time.Duration
+	// USBDir is where the box's USB stick is mounted ("" for none): the setup code
+	// before set-up, then a copy of the store (docs/RECOVERY.md, C2). USBRequireMount
+	// uses it only when it is a mount point, so a missing stick never fills the hub's
+	// own disk. USBSnapshotInterval is how often a whole snapshot is written.
+	USBDir              string
+	USBRequireMount     bool
+	USBSnapshotInterval time.Duration
 }
 
 func Default() Config {
@@ -72,6 +79,8 @@ func Default() Config {
 		TLS:                    true,
 		ReservedPoolSize:       150,
 		FullPullInterval:       7 * 24 * time.Hour,
+		USBRequireMount:        true,
+		USBSnapshotInterval:    24 * time.Hour,
 		OwnershipCheckInterval: time.Hour,
 		AccessRefreshInterval:  time.Hour,
 		ReconnectDelay:         5 * time.Minute,
@@ -133,6 +142,10 @@ func (c *Config) set(k, v string) error {
 		c.PingInterval, err = time.ParseDuration(v)
 	case "ping_timeout":
 		c.PingTimeout, err = time.ParseDuration(v)
+	case "usb_dir":
+		c.USBDir = v
+	case "usb_snapshot_interval":
+		c.USBSnapshotInterval, err = time.ParseDuration(v)
 	case "full_pull_interval":
 		c.FullPullInterval, err = time.ParseDuration(v)
 	case "ownership_check_interval":

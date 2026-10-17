@@ -1146,6 +1146,8 @@ func Status(h *core.Hub) map[string]any {
 		// hubs that depend on a user who is being disabled.
 		"hubTokenOwner": h.Runtime().TokenOwner(), "hubTokenExpires": hubTokenExpires(h),
 		"refused": refused, "refusedGroups": refusedGroups,
+		// The USB stick (docs/RECOVERY.md, C2): central sees a hub without a working one.
+		"usb": usbStatus(h),
 		// How the hub has lived, a summary per day for 90 days (history.go).
 		"history": h.History(),
 	}
@@ -1192,6 +1194,13 @@ func refusedCounts(h *core.Hub) ([]map[string]any, int) {
 		out = append(out, map[string]any{"kind": k[0], "program": k[1], "code": k[2], "count": counts[k]})
 	}
 	return out, len(keys)
+}
+
+func usbStatus(h *core.Hub) any {
+	if h.USBStatus == nil {
+		return nil
+	}
+	return h.USBStatus()
 }
 
 func hubTokenExpires(h *core.Hub) any {

@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -103,3 +104,6 @@ func ownHosts() map[string]bool {
 	}
 	return m
 }
+
+// SetupCodePath is the file holding the setup code until set-up uses it.
+func (h *Hub) SetupCodePath() string { return filepath.Join(h.Cfg.DataDir, "setup-token") }

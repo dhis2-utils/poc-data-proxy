@@ -35,6 +35,7 @@ type env struct {
 	dir     string
 	app     *app.App
 	srv     *httptest.Server
+	cfgHook func(*config.Config) // changes the hub's configuration (before start)
 }
 
 func newEnv(t *testing.T) *env {
@@ -57,6 +58,9 @@ func (e *env) cfg() config.Config {
 	c.PingTimeout = time.Second
 	c.ReservedPoolSize = 5
 	c.LogRequests = true
+	if e.cfgHook != nil {
+		e.cfgHook(&c)
+	}
 	return c
 }
 

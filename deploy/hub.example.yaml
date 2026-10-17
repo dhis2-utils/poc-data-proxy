@@ -26,3 +26,4 @@ release_public_key: ""                     # base64 ed25519 key from `hub keygen
 # key_slot_max_age: 2160h   # remove the key slot of a user who has not logged in for 90 days
 # hub_hosts: hub.clinic.example  # extra names clients may use for the hub; the hub refuses other Host headers
 # password_fallback: false  # store a sealed central password when a PAT cannot be created (spec 7.1)
+usb_dir: /media/hub-usb                 # the box's USB stick: setup code, then the copy a new disk restores from

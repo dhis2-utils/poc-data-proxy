@@ -57,7 +57,7 @@ Every outbox write is also written to a USB stick plugged into the hub, encrypte
 
 ### C2. Disk plus USB, restorable (extends C)
 
-Chosen for the kit (DEPLOYMENT.md, section 1; not built): one USB stick per box, which before set-up carries the hub's setup code and after set-up is this mirror. Its state (present, last copy, failing, full) shows on the hub's page and in the heartbeat, so central sees a hub without a working stick. The facility keeps the stick in the box, and keeps it when a disk is replaced.
+Chosen for the kit (DEPLOYMENT.md, section 1; built 2026-10-17, `internal/stick`, tested in `internal/e2e/stick_test.go`): one USB stick per box, which before set-up carries the hub's setup code and after set-up is this mirror. Its state (present, last copy, failing, full) shows on the hub's page and in the heartbeat, so central sees a hub without a working stick. The facility keeps the stick in the box, and keeps it when a disk is replaced.
 
 The hub keeps a copy on a USB stick in two parts, so the stick is not worn out by constant writes:
 
@@ -73,6 +73,12 @@ Both stay encrypted as on the disk: the stick is as safe as the disk, opened onl
 | Stick | The hub keeps working and shows a warning on the dashboard and in the heartbeat, so central and the district see it. | Nothing while the disk lives. |
 
 - Health checks: stick missing, unwritable or full, a periodic write-and-read-back failing, or the snapshot older than its schedule.
+- As built:
+  - **Pending saves only.** The per-minute copy holds the saves still pending; one that is pushed (or refused and reported) leaves the stick. A restore therefore never resends a save central already has, which could overwrite edits made there since.
+  - **The key file** is copied whenever it changes.
+  - **The snapshot** is written beside the previous one, then swapped in, so the stick needs room for two.
+  - **Mount check:** the hub uses `usb_dir` only when it is a mount point, so a missing stick never fills the hub's own disk.
+  - **Restore** runs when the hub starts with no store and the stick holds a snapshot. The first staff login puts back the newer saves as pending, and they are pushed.
 - The stick: an industrial USB stick or a pSLC card in a USB reader, formatted ext4 (journaled), not exFAT.
 - Interactions: keys bound to the board (option I) would not move with the disk, so a moved disk would need a login before pushing; the central registry's replaced-hub check must accept a restored hub with the same ID.
 - Tests (conditions phase): remove the stick during copying, fail the disk, restore on a fresh store, and check nothing is missing or duplicated against central.

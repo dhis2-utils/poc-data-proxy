@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/dhis2/facility-hub/internal/core"
@@ -18,7 +17,7 @@ import (
 
 const tokenChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // no 0/O, 1/I
 
-func setupTokenPath(h *core.Hub) string { return filepath.Join(h.Cfg.DataDir, "setup-token") }
+func setupTokenPath(h *core.Hub) string { return h.SetupCodePath() }
 
 // EnsureSetupToken creates the setup token if setup needs one and none exists.
 func EnsureSetupToken(h *core.Hub) error {

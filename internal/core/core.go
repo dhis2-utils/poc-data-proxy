@@ -72,19 +72,23 @@ type Runtime struct {
 type Hub struct {
 	// tokenMu serialises changes of the hub token (renewal, take-over): each creates a
 	// token over the network before saving it, and one must not overwrite the other.
-	tokenMu  sync.Mutex
-	histMu   sync.Mutex // the daily history (history.go)
-	zoneMu   sync.Mutex
-	zone     *time.Location // central's, loaded from MetaServerTimeZone
-	Cfg      config.Config
-	Version  string
-	Store    *store.Store
-	Index    *tracker.Index
-	Monitor  *central.Monitor
-	Central  *central.Client
-	Sessions *Sessions
-	ReqLog   *RequestLog
-	Started  time.Time
+	tokenMu sync.Mutex
+	histMu  sync.Mutex // the daily history (history.go)
+	// afterUnlock run after each unlock (the USB stick puts back restored saves).
+	afterUnlock []func()
+	// USBStatus reports the USB stick's health (nil without a stick configured).
+	USBStatus func() any
+	zoneMu    sync.Mutex
+	zone      *time.Location // central's, loaded from MetaServerTimeZone
+	Cfg       config.Config
+	Version   string
+	Store     *store.Store
+	Index     *tracker.Index
+	Monitor   *central.Monitor
+	Central   *central.Client
+	Sessions  *Sessions
+	ReqLog    *RequestLog
+	Started   time.Time
 
 	mu     sync.RWMutex
 	rt     *Runtime
@@ -371,9 +375,15 @@ func (h *Hub) Unlock(dk hubcrypto.Key) error {
 		return fmt.Errorf("build index: %w", err)
 	}
 	slog.Info("store unlocked", "objects", h.Index.Len(), "index_ms", time.Since(t).Milliseconds())
+	for _, fn := range h.afterUnlock {
+		fn()
+	}
 	h.TriggerSync()
 	return nil
 }
+
+// AfterUnlock registers a function run after each unlock, before the first sync.
+func (h *Hub) AfterUnlock(fn func()) { h.afterUnlock = append(h.afterUnlock, fn) }
 
 // Lock forgets the data key and all decrypted state.
 func (h *Hub) Lock() {
