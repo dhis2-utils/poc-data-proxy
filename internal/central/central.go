@@ -209,7 +209,10 @@ type Monitor struct {
 	notifyMu sync.Mutex
 	// Client probes central (nil: one that follows no redirects; tests give one that
 	// trusts their test certificate).
-	Client   *http.Client
+	Client *http.Client
+	// movedTo is where the current address last answered with a permanent redirect to
+	// another host: a candidate new address for central (core.TryCentralMove).
+	movedTo  string
 	Interval time.Duration
 	lastWhy  time.Time // last "still unreachable" log
 	Timeout  time.Duration
@@ -340,6 +343,7 @@ func (m *Monitor) Probe(ctx context.Context, baseURL string) bool {
 		}
 		if resp, err := pc.Do(req); err == nil {
 			ok = isCentral(baseURL, resp)
+			m.noteMove(baseURL, resp)
 			resp.Body.Close()
 			why = fmt.Sprintf("status %d after %s", resp.StatusCode, time.Since(start).Round(time.Millisecond))
 		} else {
@@ -370,6 +374,29 @@ func (m *Monitor) Probe(ctx context.Context, baseURL string) bool {
 		m.set(false)
 	}
 	return ok
+}
+
+// noteMove records a permanent redirect of the ping to another host.
+func (m *Monitor) noteMove(baseURL string, resp *http.Response) {
+	if resp.StatusCode != http.StatusMovedPermanently && resp.StatusCode != http.StatusPermanentRedirect {
+		return
+	}
+	loc, err := resp.Request.URL.Parse(resp.Header.Get("Location"))
+	base, berr := url.Parse(baseURL)
+	if err != nil || berr != nil || strings.EqualFold(loc.Host, base.Host) {
+		return
+	}
+	next := strings.TrimSuffix(loc.String(), "/api/system/ping")
+	m.mu.Lock()
+	m.movedTo = next
+	m.mu.Unlock()
+}
+
+// MovedTo is the address the current one last redirected to permanently ("" if none).
+func (m *Monitor) MovedTo() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.movedTo
 }
 
 // Run probes every Interval until ctx ends.

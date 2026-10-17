@@ -311,6 +311,7 @@ func (h *Hub) RefreshCatalog(ctx context.Context) error {
 	if central.IsNetwork(err) {
 		return err
 	}
+	h.refreshCentralMove(ctx)
 	complete := err == nil
 	if cat == nil {
 		cat = &access.Catalog{Programs: map[string]*access.ProgramMeta{}, TETAttributes: map[string][]access.AttrMeta{}}

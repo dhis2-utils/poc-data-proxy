@@ -118,6 +118,9 @@ func (w *Worker) refreshAccess(ctx context.Context, errs *[]error) error {
 // Cycle runs one full sync if the hub is online, unlocked and set up.
 func (w *Worker) Cycle(ctx context.Context) error {
 	h := w.H
+	if !h.Online() && h.Store.Unlocked() && h.Mode() == core.ModeActive {
+		h.TryCentralMove(ctx) // central may have moved (docs/DEPLOYMENT.md, section 6)
+	}
 	if !h.Online() || !h.Store.Unlocked() || h.Mode() != core.ModeActive || h.Runtime() == nil {
 		return nil
 	}
