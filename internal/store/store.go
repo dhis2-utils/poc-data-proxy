@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -308,6 +309,16 @@ func DataPath(path string) string { return path + ".data" }
 
 // Open opens (and migrates) the key file at path. The store starts locked.
 func Open(path string) (*Store, error) {
+	// SQLite's temporary files (sorts that spill, as migrations do) go next to the
+	// store, on its disk: the system's temp directory may be in RAM. They are
+	// encrypted by the xts VFS. An operator's SQLITE_TMPDIR wins.
+	if os.Getenv("SQLITE_TMPDIR") == "" {
+		tmp := filepath.Join(filepath.Dir(path), "tmp")
+		if err := os.MkdirAll(tmp, 0o700); err != nil {
+			return nil, err
+		}
+		os.Setenv("SQLITE_TMPDIR", tmp)
+	}
 	keys, err := sql.Open("sqlite3", "file:"+(&url.URL{Path: path}).EscapedPath()+
 		"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_pragma=synchronous(FULL)&_pragma=secure_delete(1)&_txlock=immediate")
 	if err != nil {
@@ -315,7 +326,7 @@ func Open(path string) (*Store, error) {
 	}
 	keys.SetMaxOpenConns(4)
 	s := &Store{Keys: keys, Path: path}
-	if err := migrate(keys, keyMigrations); err != nil {
+	if err := migrate(keys, keyMigrations, false); err != nil {
 		keys.Close()
 		return nil, err
 	}
@@ -335,7 +346,7 @@ func emptyData() (*sql.DB, error) {
 	}
 	db.SetMaxOpenConns(1)
 	db.SetConnMaxIdleTime(0)
-	if err := migrate(db, dataMigrations); err != nil {
+	if err := migrate(db, dataMigrations, true); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -363,16 +374,37 @@ func (s *Store) DB() *sql.DB {
 }
 
 // migrate applies pending migrations in one transaction each.
-func migrate(db *sql.DB, migrations []string) error {
+// migrate runs the migrations not yet applied, on one connection. With spill (the
+// data file), that connection sorts through temporary files instead of memory while it
+// migrates: a migration over millions of existing rows (a new index) needs more than
+// SQLite's 4 GB of memory otherwise, and a hub that cannot migrate cannot upgrade
+// (docs/PERFORMANCE.md, "Upgrading a large hub"). The xts VFS encrypts temporary files
+// with a random key, so no plaintext reaches the disk either way.
+func migrate(db *sql.DB, migrations []string, spill bool) error {
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
 	var v int
-	if err := db.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
+	if err := conn.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&v); err != nil {
 		return err
 	}
 	if v > len(migrations) {
 		return fmt.Errorf("store schema %d is newer than this binary (%d)", v, len(migrations))
 	}
+	if v == len(migrations) {
+		return nil
+	}
+	if spill {
+		if _, err := conn.ExecContext(ctx, `PRAGMA temp_store=file`); err != nil {
+			return err
+		}
+		defer conn.ExecContext(ctx, `PRAGMA temp_store=memory`)
+	}
 	for i := v; i < len(migrations); i++ {
-		tx, err := db.Begin()
+		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
 			return err
 		}
@@ -420,7 +452,7 @@ PRAGMA synchronous=FULL; PRAGMA temp_store=memory; PRAGMA cache_size=-16384`)
 		return nil, err
 	}
 	db.SetMaxOpenConns(4)
-	if err := migrate(db, dataMigrations); err != nil {
+	if err := migrate(db, dataMigrations, true); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("data file: %w", err)
 	}

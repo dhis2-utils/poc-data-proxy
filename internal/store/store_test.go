@@ -48,7 +48,7 @@ func TestLegacyStoreMovesToDataFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := migrate(db, keyMigrations[:1]); err != nil {
+	if err := migrate(db, keyMigrations[:1], false); err != nil {
 		t.Fatal(err)
 	}
 	salt, _ := hubcrypto.RandomBytes(16)
