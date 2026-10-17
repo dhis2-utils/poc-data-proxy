@@ -74,11 +74,12 @@ Both stay encrypted as on the disk: the stick is as safe as the disk, opened onl
 
 - Health checks: stick missing, unwritable or full, a periodic write-and-read-back failing, or the snapshot older than its schedule.
 - As built:
-  - **Pending saves only.** The per-minute copy holds the saves still pending; one that is pushed (or refused and reported) leaves the stick. A restore therefore never resends a save central already has, which could overwrite edits made there since.
-  - **The key file** is copied whenever it changes.
-  - **The snapshot** is written beside the previous one, then swapped in, so the stick needs room for two.
+  - **What the stick holds.** The per-minute copy holds the saves still pending, each sealed whole with the data key, so who saved it, its flags and its order cannot be changed on the stick. A save is rewritten when it changes (a corrected aggregate value). It leaves the stick once pushed, or refused and reported.
+  - **Key file and snapshot.** The key file is copied whenever it changes, with the highest save number the stick has seen. The snapshot is written beside the previous one and swapped in; after a power cut between the two renames, the previous one (`snapshot.old`) is offered.
+  - **A full stick.** A snapshot that does not fit, or fails, leaves nothing behind and is tried again an hour later; the per-minute copies go on.
   - **Mount check:** the hub uses `usb_dir` only when it is a mount point, so a missing stick never fills the hub's own disk.
-  - **Restore** runs when the hub starts with no store and the stick holds a snapshot. The first staff login puts back the newer saves as pending, and they are pushed.
+  - **Restore is explicit.** A new disk starts as a new hub. Its setup page offers each hub copy on the stick, and a staff member of that hub restores it with their own password, checked offline against the copy's key slots. A stick from another box, or a crafted one, therefore does nothing on its own, and a new box never clones a hub that is still running.
+  - **What a restore does.** Everything it needs is first copied to the disk, so pulling the stick out does not matter. The hub restarts as the same hub, locked. The first staff login puts back the saves made after the snapshot and marks as sent the ones the stick saw pushed since, so nothing central already has is sent again. Copying to the stick resumes after that.
 - The stick: an industrial USB stick or a pSLC card in a USB reader, formatted ext4 (journaled), not exFAT.
 - Interactions: keys bound to the board (option I) would not move with the disk, so a moved disk would need a login before pushing; the central registry's replaced-hub check must accept a restored hub with the same ID.
 - Tests (conditions phase): remove the stick during copying, fail the disk, restore on a fresh store, and check nothing is missing or duplicated against central.

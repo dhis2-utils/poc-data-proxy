@@ -28,26 +28,33 @@ type Status struct {
 
 // Stick runs on its own timer, so a slow or failing stick never delays a save.
 type Stick struct {
-	H      *core.Hub
-	mu     sync.Mutex
-	st     Status
-	dir    string
-	keysAt int64      // the key file's last change copied
-	tickMu sync.Mutex // one tick at a time
+	H          *core.Hub
+	mu         sync.Mutex
+	st         Status
+	keysAt     int64              // the key file's last change copied
+	sums       map[int64][32]byte // what each save on the stick holds
+	snapFailed time.Time          // the last failed snapshot, to retry later
+	tickMu     sync.Mutex         // one tick at a time
 }
 
 func New(h *core.Hub) *Stick {
-	s := &Stick{H: h, dir: h.Cfg.USBDir}
-	if s.dir != "" {
-		h.AfterUnlock(s.replay)
-		h.USBStatus = func() any { return s.Status() }
+	s := &Stick{H: h}
+	h.AfterUnlock(s.replay)
+	h.USBStatus = func() any {
+		if st := s.Status(); st != nil {
+			return st
+		}
+		return nil
 	}
 	return s
 }
 
+// dir is where the stick is mounted ("" for none).
+func (s *Stick) dir() string { return s.H.Cfg.USBDir }
+
 // Run ticks every minute until ctx ends.
 func (s *Stick) Run(ctx context.Context) {
-	if s.dir == "" {
+	if s.dir() == "" {
 		return
 	}
 	t := time.NewTicker(time.Minute)
@@ -64,7 +71,7 @@ func (s *Stick) Run(ctx context.Context) {
 
 // Status returns the last health check (nil without a stick configured).
 func (s *Stick) Status() *Status {
-	if s == nil || s.dir == "" {
+	if s == nil || s.dir() == "" {
 		return nil
 	}
 	s.mu.Lock()
@@ -74,41 +81,42 @@ func (s *Stick) Status() *Status {
 }
 
 // root is the hub's folder on the stick.
-func (s *Stick) root() string { return filepath.Join(s.dir, "facility-hub") }
+func (s *Stick) root() string { return filepath.Join(s.dir(), "facility-hub") }
 
 // Tick checks the stick and does what is due.
 func (s *Stick) Tick(ctx context.Context) {
-	if s.dir == "" {
+	if s.dir() == "" {
 		return
 	}
 	s.tickMu.Lock()
 	defer s.tickMu.Unlock()
 	st := s.check()
-	if st.Present && st.Writable {
-		var err error
-		if s.H.Mode() == core.ModeSetup {
-			err = s.writeSetupCode()
-		} else {
-			os.Remove(filepath.Join(s.root(), "setup-code.txt")) // used: it no longer works
-			err = s.mirror()
-		}
-		if err != nil {
-			st.Error = err.Error()
-		}
+	s.setStatus(func(cur *Status) {
+		cur.Present, cur.Writable, cur.FreeBytes, cur.Error = st.Present, st.Writable, st.FreeBytes, st.Error
+	})
+	if !st.Present || !st.Writable {
+		return
 	}
-	s.mu.Lock()
-	s.st.Present, s.st.Writable, s.st.FreeBytes, s.st.Error = st.Present, st.Writable, st.FreeBytes, st.Error
-	s.mu.Unlock()
+	var err error
+	if s.H.Mode() == core.ModeSetup {
+		err = s.writeSetupCode()
+	} else {
+		os.Remove(filepath.Join(s.root(), "setup-code.txt")) // used: it no longer works
+		err = s.mirror()
+	}
+	if err != nil {
+		s.setStatus(func(cur *Status) { cur.Error = err.Error() })
+	}
 }
 
 // check finds the stick and writes and reads back a small file.
 func (s *Stick) check() Status {
 	var st Status
-	fi, err := os.Stat(s.dir)
+	fi, err := os.Stat(s.dir())
 	if err != nil || !fi.IsDir() {
 		return st
 	}
-	if s.H.Cfg.USBRequireMount && !mountPoint(s.dir) {
+	if s.H.Cfg.USBRequireMount && !mountPoint(s.dir()) {
 		return st // the folder, not a stick: never fill the hub's own disk
 	}
 	st.Present = true
@@ -127,8 +135,9 @@ func (s *Stick) check() Status {
 		return st
 	}
 	st.Writable = true
+	os.RemoveAll(filepath.Join(s.root(), s.H.HubID(), "snapshot.tmp")) // a snapshot cut short (one tick at a time)
 	var fs syscall.Statfs_t
-	if syscall.Statfs(s.dir, &fs) == nil {
+	if syscall.Statfs(s.dir(), &fs) == nil {
 		st.FreeBytes = uint64(fs.Bavail) * uint64(fs.Bsize)
 	}
 	return st

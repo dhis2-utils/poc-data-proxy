@@ -45,7 +45,9 @@ type UI struct {
 	Worker *hubsync.Worker
 	// Reset wipes the store and returns to setup mode (set by main).
 	Reset func(by string, discard bool) error
-	setup setupFlow
+	// Restart restarts the hub process (nil where nothing restarts it, as in tests).
+	Restart func()
+	setup   setupFlow
 }
 
 func (u *UI) Register(mux *http.ServeMux) {

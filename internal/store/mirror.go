@@ -3,7 +3,11 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"net/url"
 	"os"
+
+	"github.com/dhis2/facility-hub/internal/hubcrypto"
 )
 
 // The USB stick's copy of the store (docs/RECOVERY.md, C2; internal/stick): sealed
@@ -51,8 +55,9 @@ func (s *Store) PendingRaw() ([]*RawOutbox, error) {
 	return out, nil
 }
 
-// RestoreOutbox puts back entries copied to the stick, as pending, unless the store
-// already holds their seq (the snapshot had them).
+// RestoreOutbox puts back entries copied to the stick, as pending. One the store
+// already holds (the snapshot had it) takes the stick's version when that is newer: a
+// coalesced aggregate edit rewrites its entry in place.
 func (s *Store) RestoreOutbox(entries []*RawOutbox) (int, error) {
 	n := 0
 	err := s.Tx(context.Background(), func(tx *sql.Tx) error {
@@ -61,8 +66,11 @@ func (s *Store) RestoreOutbox(entries []*RawOutbox) (int, error) {
 			if e.DependsOnSeq > 0 {
 				dep = e.DependsOnSeq
 			}
-			res, err := tx.Exec(`INSERT OR IGNORE INTO outbox(seq, user_id, payload_enc, created_at, state, depends_on_seq, params, kind)
- VALUES(?,?,?,?,?,?,?,?)`, e.Seq, e.UserID, e.PayloadEnc, e.CreatedAt, OutboxPending, dep, e.Params, e.Kind)
+			res, err := tx.Exec(`INSERT INTO outbox(seq, user_id, payload_enc, created_at, state, depends_on_seq, params, kind)
+ VALUES(?,?,?,?,?,?,?,?)
+ ON CONFLICT(seq) DO UPDATE SET payload_enc = excluded.payload_enc, created_at = excluded.created_at
+ WHERE outbox.state = ? AND excluded.created_at > outbox.created_at`,
+				e.Seq, e.UserID, e.PayloadEnc, e.CreatedAt, OutboxPending, dep, e.Params, e.Kind, OutboxPending)
 			if err != nil {
 				return err
 			}
@@ -99,4 +107,62 @@ func (s *Store) KeysChanged() int64 {
 		}
 	}
 	return t
+}
+
+// UnwrapFromKeyFile checks a user's password against a key file that is not open (a
+// copy on the USB stick) and returns the data key it unwraps.
+func UnwrapFromKeyFile(path, username, password string) (hubcrypto.Key, error) {
+	db, err := sql.Open("sqlite3", "file:"+(&url.URL{Path: path}).EscapedPath()+"?mode=ro")
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	var salt, wrapped []byte
+	if err := db.QueryRow(`SELECT kek_salt, wrapped_dk FROM key_slots WHERE username = ?`, username).Scan(&salt, &wrapped); err != nil {
+		return nil, errors.New("wrong username or password")
+	}
+	dk, err := hubcrypto.UnwrapDK(wrapped, password, salt)
+	if err != nil {
+		return nil, errors.New("wrong username or password")
+	}
+	return dk, nil
+}
+
+// MarkSentSince marks as synced the pending entries the USB stick saw leave the
+// outbox after its snapshot: seq at most upTo and not among those still pending then.
+func (s *Store) MarkSentSince(upTo int64, stillPending map[int64]bool) (int, error) {
+	rows, err := s.DB().Query(`SELECT seq FROM outbox WHERE state = ? AND seq <= ?`, OutboxPending, upTo)
+	var seqs []int64
+	err = scanRows(rows, err, func(r *sql.Rows) error {
+		var q int64
+		err := r.Scan(&q)
+		seqs = append(seqs, q)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, q := range seqs {
+		if stillPending[q] {
+			continue
+		}
+		if _, err := s.DB().Exec(`UPDATE outbox SET state = ? WHERE seq = ?`, OutboxSynced, q); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
+// Size is the store's size on disk (key file and data file), for checking a snapshot
+// fits.
+func (s *Store) Size() int64 {
+	var n int64
+	for _, p := range []string{s.Path, DataPath(s.Path)} {
+		if fi, err := os.Stat(p); err == nil {
+			n += fi.Size()
+		}
+	}
+	return n
 }

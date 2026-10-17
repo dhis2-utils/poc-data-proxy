@@ -24,6 +24,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/compat"
 	"github.com/dhis2/facility-hub/internal/core"
 	"github.com/dhis2/facility-hub/internal/hubcrypto"
+	"github.com/dhis2/facility-hub/internal/stick"
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
@@ -117,6 +118,25 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 	var p *pendingSetup
 	var err error
 	switch r.FormValue("step") {
+	case "restore":
+		// A new disk restored from the USB stick (docs/RECOVERY.md, C2): only with the
+		// password of a staff member of that hub, checked against the copy's key slots.
+		src, user, id := auth.Source(r), r.FormValue("username"), r.FormValue("hub")
+		if f := u.Auth.Throttled(src, user); f != nil {
+			err = errors.New("too many failed logins; try again later")
+			break
+		}
+		err = stick.Stage(h.Cfg.USBDir, h.Cfg.DataDir, id, user, r.FormValue("password"))
+		u.Auth.Count(src, user, err != nil)
+		if err != nil {
+			break
+		}
+		slog.Warn("restore from the USB stick staged; restarting", "hub", id, "by", user)
+		if u.Restart != nil {
+			go func() { time.Sleep(time.Second); u.Restart() }()
+		}
+		u.render(w, "setup", map[string]any{"Step": "restarting", "RestoredID": id, "HubID": h.HubID()})
+		return
 	case "server":
 		// Central's address and the setup code, checked before anyone logs in.
 		src := auth.Source(r)
@@ -249,9 +269,13 @@ func (u *UI) checkServer(ctx context.Context, raw string) (*checkedServer, error
 // image, never from an earlier submission, which a cross-site post could have made.
 func (u *UI) setupForm(p *pendingSetup) map[string]any {
 	h := u.H
+	var restores []stick.Candidate
+	if h.Cfg.USBDir != "" {
+		restores = stick.Candidates(h.Cfg.USBDir)
+	}
 	return map[string]any{"CentralURL": h.Cfg.CentralURL, "Pinned": h.SetupMode() == core.SetupPinned,
 		"NeedToken": h.SetupMode() == core.SetupToken, "Hosts": strings.Join(h.Cfg.CentralHosts, ", "),
-		"HubID": h.HubID(), "Pending": p, "Step": ""}
+		"HubID": h.HubID(), "Pending": p, "Step": "", "Restores": restores}
 }
 
 // setupLogin runs spec 6.2 steps 2-5.

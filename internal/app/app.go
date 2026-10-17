@@ -53,8 +53,9 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 		return nil, err
 	}
 	storePath := filepath.Join(cfg.DataDir, "hub.db")
-	// A new disk: start from the USB stick's copy, as the same hub (docs/RECOVERY.md, C2).
-	if _, err := stick.Restore(cfg.USBDir, storePath); err != nil {
+	// A restore from the USB stick chosen on the setup page goes in place now
+	// (docs/RECOVERY.md, C2).
+	if err := stick.Finish(cfg.DataDir, storePath); err != nil {
 		slog.Error("restoring from the USB stick", "err", err)
 	}
 	st, err := store.Open(storePath)
@@ -89,6 +90,7 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 		return nil, fmt.Errorf("setup token: %w", err)
 	}
 	u.Reset = func(by string, discard bool) error { return Reset(h, worker, by, discard) }
+	u.Restart = shutdown
 
 	// The hub's own pages use a ServeMux. Everything else is dispatched by hand: a
 	// ServeMux answers 301/307 for slash or path-cleaning mismatches, and the Android
