@@ -13,7 +13,7 @@ A hub waiting for an account has, in `facility-hub-registry/<hub ID>`: `accountR
    - one assigned to `facility` only: replace its password (`PATCH /api/users/{id}`, JSON patch on `/password`);
    - anything else: refuse.
 4. Add it to the hub accounts group.
-5. Make a move key (32 random bytes). Delete `facility-hub-keys/<hub ID>` if it exists, create it as `{"moveKey": "<base64>"}`, and share it with no one (`POST /api/sharing?type=dataStore&id=<its metaData id>`, `publicAccess "--------"`, no user or group accesses). Creating it afresh makes the approver its owner: whoever created it before would keep access as owner.
+5. Make a move key (32 random bytes). Delete `facility-hub-keys/<hub ID>` if it exists, create it empty (`{}`), share it with no one (`POST /api/sharing?type=dataStore&id=<its metaData id>`, `publicAccess "--------"`, no user or group accesses), and only then write `{"moveKey": "<base64>"}`: a new entry is public until its sharing is set. Creating it afresh makes the approver its owner: whoever created it before would keep access as owner.
 6. Seal `{"username": "<hub ID>", "password": "...", "moveKey": "<base64>"}` to `boxKey` (`hubaccount.Seal`: an ephemeral X25519 key, HKDF-SHA256 bound to the hub ID, AES-256-GCM; see `internal/hubaccount/box.go`).
 7. Read the entry again; refuse if `boxKey` or `facility` changed meanwhile, or it has an `account` (another approval); set `account: {"username": "<hub ID>", "box": "<base64>"}` and write it back, changing nothing else.
 
