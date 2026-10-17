@@ -207,6 +207,9 @@ type Monitor struct {
 	// records that need them in order, such as the hub's history of outages.
 	inOrder  []func(online bool)
 	notifyMu sync.Mutex
+	// Client probes central (nil: one that follows no redirects; tests give one that
+	// trusts their test certificate).
+	Client   *http.Client
 	Interval time.Duration
 	lastWhy  time.Time // last "still unreachable" log
 	Timeout  time.Duration
@@ -331,7 +334,11 @@ func (m *Monitor) Probe(ctx context.Context, baseURL string) bool {
 		defer cancel()
 		start := time.Now()
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/system/ping", nil)
-		if resp, err := probeClient.Do(req); err == nil {
+		pc := m.Client
+		if pc == nil {
+			pc = probeClient
+		}
+		if resp, err := pc.Do(req); err == nil {
 			ok = isCentral(baseURL, resp)
 			resp.Body.Close()
 			why = fmt.Sprintf("status %d after %s", resp.StatusCode, time.Since(start).Round(time.Millisecond))

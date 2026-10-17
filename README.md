@@ -76,7 +76,7 @@ The hub has no facility-specific configuration. It reads one small image-default
 
 | Key | Meaning |
 |---|---|
-| `central_url` | Central DHIS2 base URL. Without `central_hosts`, setup always uses it |
+| `central_url` | Central DHIS2 base URL; optional. Without it (the generic image), set-up asks for central's address and the setup code first (`setup-code.txt` on the USB stick, or `data_dir/setup-token`), checks the server (https, a trusted certificate) and shows its name before anyone logs in. With it and without `central_hosts`, set-up always uses it |
 | `central_hosts` | Hosts setup may point a hub at (`hmis.example.org, *.hmis.example.org`); setup then asks for an `https://` URL on them. With neither key, setup needs the token in `data_dir/setup-token` (printed on the label) |
 | `password_fallback` | Store a user's central password, sealed, when a PAT cannot be created (spec 7.1). Default `false` |
 | `setup_user_group` | No longer used (accepted so that older files load): staff assigned to the facility set up, administer and reset its hub |

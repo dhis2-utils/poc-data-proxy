@@ -14,16 +14,32 @@
 <form method="post" action="/hub/setup"><input type="hidden" name="step" value="confirm"><input type="hidden" name="nonce" value="{{.Pending.Nonce}}">
 <label><input type="checkbox" name="replace" value="yes"> Replace it (the old hub is marked retired)</label>
 <p><button type="submit">Set up this hub</button></p></form>
-{{else}}
-<h2>Set up this hub</h2>
-<p>The hub must be online. Log in with a DHIS2 account that is allowed to set up hubs. The hub finds the facility and its tracker programs by itself.</p>
-<form method="post" action="/hub/setup"><input type="hidden" name="step" value="login">
-{{if .Pinned}}<p>Central server: <strong>{{.CentralURL}}</strong></p>
-{{else}}<label for="c">Central server URL (https{{if .Hosts}} on {{.Hosts}}{{end}})</label><input id="c" type="url" name="central_url" value="{{.CentralURL}}" required>{{end}}
-{{if .NeedToken}}<label for="t">Setup token (on the hub's label)</label><input id="t" type="text" name="setup_token" autocomplete="off" required>{{end}}
+{{else if eq .Step "login"}}
+<h2>Log in to set up this hub</h2>
+<p>Central server: <strong>{{.Server.Title}}</strong> at <span class="mono">{{.Server.Host}}</span>. If this is not your country's DHIS2, <a href="/hub/setup">start again</a>.</p>
+<p>Log in with your own DHIS2 account. The hub finds the facility and its programmes by itself.</p>
+<form method="post" action="/hub/setup"><input type="hidden" name="step" value="login"><input type="hidden" name="server" value="{{.Server.Nonce}}">
 <label for="u">Username</label><input id="u" type="text" name="username" autocomplete="username" required>
 <label for="p">Password</label><input id="p" type="password" name="password" autocomplete="current-password" required>
 <p><button type="submit">Set up</button></p></form>
+{{else if .Pinned}}
+<h2>Set up this hub</h2>
+<p>The hub must be online. Log in with your own DHIS2 account. The hub finds the facility and its programmes by itself.</p>
+<form method="post" action="/hub/setup"><input type="hidden" name="step" value="login">
+<p>Central server: <strong>{{.CentralURL}}</strong></p>
+<label for="u">Username</label><input id="u" type="text" name="username" autocomplete="username" required>
+<label for="p">Password</label><input id="p" type="password" name="password" autocomplete="current-password" required>
+<p><button type="submit">Set up</button></p></form>
+{{else}}
+<h2>Set up this hub</h2>
+<p>The hub must be online. Give it central's address, from the QR code on the installation card, and the setup code{{if .NeedToken}} from <span class="mono">setup-code.txt</span> on the USB stick in the box{{end}}.</p>
+<form method="post" action="/hub/setup"><input type="hidden" name="step" value="server">
+<label for="c">Central server (https{{if .Hosts}} on {{.Hosts}}{{end}})</label><input id="c" type="url" name="central_url" required>
+<p id="scan-row" hidden><button type="button" id="scan" class="secondary">Scan the QR code</button></p>
+<video id="scan-video" hidden playsinline style="max-width:100%"></video>
+{{if .NeedToken}}<label for="t">Setup code</label><input id="t" type="text" name="setup_token" autocomplete="off" required>{{end}}
+<p><button type="submit">Continue</button></p></form>
+<script src="/hub/setup.js"></script>
 {{end}}
 </div></main>
 {{template "foot"}}

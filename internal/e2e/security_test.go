@@ -183,7 +183,9 @@ func TestSetupCentralURL(t *testing.T) {
 	e := newEnv(t)
 	h := e.app.Hub
 	post := func(origin string, form url.Values) (int, string) {
-		form.Set("step", "login")
+		if form.Get("step") == "" {
+			form.Set("step", "login")
+		}
 		form.Set("username", "hub_admin")
 		form.Set("password", fc.Password)
 		req, _ := http.NewRequest("POST", e.srv.URL+"/hub/setup", strings.NewReader(form.Encode()))
@@ -209,16 +211,22 @@ func TestSetupCentralURL(t *testing.T) {
 	if err := ui.EnsureSetupToken(h); err != nil {
 		t.Fatal(err)
 	}
-	if _, page := post(e.srv.URL, url.Values{"central_url": {"https://attacker.example"}}); !strings.Contains(page, "wrong setup token") {
+	server := url.Values{"step": {"server"}, "central_url": {"https://attacker.example"}}
+	if _, page := post(e.srv.URL, server); !strings.Contains(page, "wrong setup token") {
 		t.Fatalf("setup without token: %s", page)
 	}
+	// A login posted straight away, with an address of its choosing, is refused: only
+	// an address the server step checked (with the code) is used.
+	if _, page := post(e.srv.URL, url.Values{"central_url": {"https://attacker.example"}}); !strings.Contains(page, "start with central") {
+		t.Fatalf("login without the server step: %s", page)
+	}
 	tok, _ := os.ReadFile(filepath.Join(e.dir, "setup-token"))
-	if _, page := post(e.srv.URL, url.Values{"central_url": {"http://attacker.example"}, "setup_token": {string(tok)}}); !strings.Contains(page, "https://") {
+	if _, page := post(e.srv.URL, url.Values{"step": {"server"}, "central_url": {"http://attacker.example"}, "setup_token": {string(tok)}}); !strings.Contains(page, "https://") {
 		t.Fatalf("plain http central URL accepted: %s", page)
 	}
 
 	h.Cfg.CentralURL, h.Cfg.CentralHosts = e.cSrv.URL, []string{"*.hmis.example"}
-	if _, page := post(e.srv.URL, url.Values{"central_url": {"https://attacker.example"}}); !strings.Contains(page, "must be an https URL on") {
+	if _, page := post(e.srv.URL, url.Values{"step": {"server"}, "central_url": {"https://attacker.example"}}); !strings.Contains(page, "must be an https URL on") {
 		t.Fatalf("URL outside central_hosts accepted: %s", page)
 	}
 	if got := h.Central.BaseURL(); got != before {

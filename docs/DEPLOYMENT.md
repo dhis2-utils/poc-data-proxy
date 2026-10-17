@@ -55,7 +55,7 @@ One generic image per release, built by the software supplier's CI with Raspberr
 
 - **Raspberry Pi OS Lite, 64-bit.** No desktop.
 - **The hub binary** at `/usr/local/bin/hub`, the systemd unit from [`deploy/hub.service`](deploy/hub.service), and a `hub` service user.
-- **No country settings.** Central's address is given at set-up (section 3), from a QR code on the country's installation card; the release source and key are the supplier's, built in. Today `hub.yaml` holds `central_url`, a release channel and its key; under this plan none of them is needed **(to build)**. The setup user group is gone (built 2026-10-17).
+- **No country settings.** Central's address is given at set-up (section 3), from a QR code on the country's installation card; the release source and key are the supplier's, built in. `hub.yaml` needs no `central_url` (built: without it, set-up asks for the address and the setup code); a release channel and its key remain until releases move to GitHub **(to build)**. The setup user group is gone (built 2026-10-17).
 - **Networking:** NetworkManager; `dnsmasq`, used only in "hub provides the network" mode (section 4); `avahi-daemon` for `hub.local`.
 - **Time:** `chrony` with the country's NTP servers, falling back to the RTC.
 - **Firewall** (`nftables`): inbound HTTPS from the LAN only. No SSH.
@@ -113,7 +113,7 @@ No facility is assigned at the depot. Any box can go anywhere.
 No one from the district needs to come. Kits arrive by courier or with a routine district visit; Windows PCs get the hub from MoH IT beforehand.
 
 1. Mount the hub near the router and plug in power and Ethernet, as on the installation card. The card covers the case with no router (section 4, case C).
-2. On any laptop or phone on the facility network, open the address on the label (on the Windows PC, the hub's page opens on the PC itself, and set-up only opens there). The hub shows its setup page. Scan the QR code on the installation card to give it central's address, and enter the setup code from `setup-code.txt` on the USB stick in the box (read on a laptop, or a phone with a USB adapter). The hub accepts only `https` with a publicly trusted certificate, and shows the server's name before anyone logs in **(to build)**.
+2. On any laptop or phone on the facility network, open the address on the label (on the Windows PC, the hub's page opens on the PC itself, and set-up only opens there). The hub shows its setup page. Scan the QR code on the installation card to give it central's address, and enter the setup code from `setup-code.txt` on the USB stick in the box (read on a laptop, or a phone with a USB adapter). The hub accepts only `https` with a publicly trusted certificate, and shows the server's name before anyone logs in (built). Scanning works in browsers with the BarcodeDetector API on a secure page (Chrome on Android); elsewhere the address is typed.
 3. The facility focal point, or anyone assigned to the facility, logs in with their own DHIS2 account. The hub then:
    - takes the facility from the user's org units, asking which one if they have several: anyone assigned to the facility may do this, and the hub serves the org unit chosen, at whatever level (built);
    - reads the facility's programmes;

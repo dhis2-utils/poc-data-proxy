@@ -309,6 +309,9 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case p == "/api/auth/login":
 		c.login(w, r)
 		return
+	case p == "/api/loginConfig": // public, as on 2.41+
+		writeJSON(w, 200, map[string]any{"applicationTitle": "Fake central", "apiVersion": c.Version})
+		return
 	case strings.HasPrefix(p, "/apps/"):
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(`<html><meta name="dhis2-base-url" content="http://` + r.Host + `">global shell ` + p + "</html>"))

@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"cmp"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -65,6 +68,24 @@ type registryEntry struct {
 type setupFlow struct {
 	mu      sync.Mutex
 	pending *pendingSetup
+	server  *checkedServer
+}
+
+// checkedServer is central's address as the set-up's first step checked it: https
+// with a trusted certificate, the right setup code, and the server's own name shown.
+// The login step uses this address, never one posted with the login.
+type checkedServer struct {
+	Nonce, URL, Title, Host string
+	Expires                 time.Time
+}
+
+func (s *setupFlow) checked(nonce string) *checkedServer {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.server == nil || s.server.Nonce != nonce || time.Now().After(s.server.Expires) {
+		return nil
+	}
+	return s.server
 }
 
 func (s *setupFlow) get(nonce string) *pendingSetup {
@@ -96,19 +117,44 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 	var p *pendingSetup
 	var err error
 	switch r.FormValue("step") {
+	case "server":
+		// Central's address and the setup code, checked before anyone logs in.
+		src := auth.Source(r)
+		if f := u.Auth.Throttled(src, "setup-code"); f != nil {
+			err = errors.New("too many wrong setup codes; try again later")
+		} else if h.SetupMode() == core.SetupToken {
+			err = checkSetupToken(h, r.FormValue("setup_token"))
+			u.Auth.Count(src, "setup-code", err != nil)
+		}
+		var sv *checkedServer
+		if err == nil {
+			sv, err = u.checkServer(ctx, r.FormValue("central_url"))
+		}
+		if err != nil {
+			data := u.setupForm(nil)
+			data["Error"] = err.Error()
+			u.render(w, "setup", data)
+			return
+		}
+		u.render(w, "setup", map[string]any{"Step": "login", "Server": sv, "HubID": h.HubID()})
+		return
 	case "login":
 		src, user := auth.Source(r), r.FormValue("username")
 		if f := u.Auth.Throttled(src, user); f != nil {
 			err = errors.New("too many failed logins; try again later")
 			break
 		}
-		if h.SetupMode() == core.SetupToken {
-			if err = checkSetupToken(h, r.FormValue("setup_token")); err != nil {
-				u.Auth.Count(src, user, true)
+		centralURL := r.FormValue("central_url")
+		if h.SetupMode() != core.SetupPinned {
+			// Only an address the server step checked, with its setup code.
+			sv := u.setup.checked(r.FormValue("server"))
+			if sv == nil {
+				err = errors.New("start with central's address and the setup code")
 				break
 			}
+			centralURL = sv.URL
 		}
-		p, err = u.setupLogin(ctx, r.FormValue("central_url"), user, r.FormValue("password"))
+		p, err = u.setupLogin(ctx, centralURL, user, r.FormValue("password"))
 		u.Auth.Count(src, user, err != nil)
 	case "facility":
 		if p = u.setup.get(r.FormValue("nonce")); p == nil {
@@ -131,6 +177,8 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 		if len(p.Others) > 0 && r.FormValue("replace") != "yes" {
 			err = errors.New("another hub is registered for this facility; tick the box to replace it")
 		}
+	default:
+		err = errors.New("start again")
 	}
 	if err != nil {
 		data := u.setupForm(p)
@@ -157,6 +205,44 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 		core.SetSessionCookie(w, sess, h.Cfg.TLS, h.Sessions.Max)
 		u.render(w, "setup_done", map[string]any{"Facility": p.Facility, "HubID": h.HubID()})
 	}
+}
+
+// checkServer checks central's address before anyone logs in: https with a certificate
+// the system trusts (the hub's client verifies it), reachable, and its own name
+// (loginConfig needs no login), shown with its host so staff can tell their server.
+func (u *UI) checkServer(ctx context.Context, raw string) (*checkedServer, error) {
+	h := u.H
+	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
+	pu, err := url.Parse(raw)
+	if err != nil || pu.Scheme != "https" || pu.Host == "" || !h.CentralAllowed(raw) {
+		if len(h.Cfg.CentralHosts) > 0 {
+			return nil, fmt.Errorf("the central server must be an https URL on %s", strings.Join(h.Cfg.CentralHosts, ", "))
+		}
+		return nil, errors.New("enter central's https:// address (from the installation card)")
+	}
+	req, _ := http.NewRequestWithContext(ctx, "GET", raw+"/api/loginConfig", nil)
+	req.Header.Set("Accept", "application/json")
+	resp, err := h.Central.HTTP.Do(req)
+	if err != nil {
+		var cerr *tls.CertificateVerificationError
+		if errors.As(err, &cerr) {
+			return nil, fmt.Errorf("%s does not have a certificate this hub trusts; check the address", pu.Host)
+		}
+		return nil, fmt.Errorf("cannot reach %s; the hub must be online to be set up", pu.Host)
+	}
+	defer resp.Body.Close()
+	var lc struct {
+		ApplicationTitle string `json:"applicationTitle"`
+	}
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(resp.Body).Decode(&lc) != nil {
+		return nil, fmt.Errorf("%s does not answer as a DHIS2 server", pu.Host)
+	}
+	sv := &checkedServer{Nonce: core.NewUID(), URL: raw, Title: cmp.Or(lc.ApplicationTitle, "DHIS2"), Host: pu.Host,
+		Expires: time.Now().Add(10 * time.Minute)}
+	u.setup.mu.Lock()
+	u.setup.server = sv
+	u.setup.mu.Unlock()
+	return sv, nil
 }
 
 // setupForm is the data for the first setup page. The URL shown comes only from the

@@ -3,9 +3,13 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -130,5 +134,60 @@ func TestStickMustBeMounted(t *testing.T) {
 	}
 	if st := e.app.Stick.Status(); st.Present {
 		t.Fatalf("status: %+v", st)
+	}
+}
+
+// Set-up with a generic image (DEPLOYMENT.md section 3): central's address and the
+// setup code first; the hub accepts only https with a certificate the system trusts,
+// and shows the server's own name and host before anyone logs in.
+func TestSetupShowsServerBeforeLogin(t *testing.T) {
+	e := &env{t: t, central: fc.New(), dir: t.TempDir()}
+	e.cSrv = httptest.NewTLSServer(e.central)
+	t.Cleanup(e.cSrv.Close)
+	e.cfgHook = func(c *config.Config) { c.CentralURL = "" }
+	e.start()
+	trust := func() {
+		tlsCfg := e.cSrv.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+		e.app.Hub.Central.HTTP.Transport.(*http.Transport).TLSClientConfig = tlsCfg
+		e.app.Hub.Monitor.Client = e.cSrv.Client()
+	}
+	code, _ := os.ReadFile(filepath.Join(e.dir, "setup-token"))
+	c := e.web("hub_admin")
+	post := func(form url.Values) string {
+		t.Helper()
+		resp, err := c.postForm("/hub/setup", form)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return string(b)
+	}
+	server := func(u, code string) string {
+		return post(url.Values{"step": {"server"}, "central_url": {u}, "setup_token": {code}})
+	}
+	if b := server(e.cSrv.URL, "WRONG-CODE"); !strings.Contains(b, "wrong setup") {
+		t.Fatalf("wrong code accepted: %.300s", b)
+	}
+	if b := server(strings.Replace(e.cSrv.URL, "https:", "http:", 1), string(code)); !strings.Contains(b, "https") || strings.Contains(b, "Fake central") {
+		t.Fatalf("plain http accepted: %.300s", b)
+	}
+	if b := server(e.cSrv.URL, string(code)); strings.Contains(b, "Fake central") {
+		t.Fatalf("an untrusted certificate accepted: %.300s", b)
+	}
+	trust()
+	b := server(e.cSrv.URL, string(code))
+	host := strings.TrimPrefix(e.cSrv.URL, "https://")
+	if !strings.Contains(b, "Fake central") || !strings.Contains(b, host) || !strings.Contains(b, `name="password"`) {
+		t.Fatalf("the server is not shown before the login: %.600s", b)
+	}
+	m := regexp.MustCompile(`name="server" value="([^"]+)"`).FindStringSubmatch(b)
+	if m == nil {
+		t.Fatal("no server step to log in with")
+	}
+	b = post(url.Values{"step": {"login"}, "server": {m[1]}, "central_url": {"https://elsewhere.example"},
+		"username": {"hub_admin"}, "password": {fc.Password}})
+	if !strings.Contains(b, "This hub now serves") || e.app.Hub.Central.BaseURL() != e.cSrv.URL {
+		t.Fatalf("set-up with the confirmed server: %s; %.300s", e.app.Hub.Central.BaseURL(), b)
 	}
 }

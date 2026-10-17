@@ -26,6 +26,9 @@ import (
 //go:embed templates/*.html
 var templateFS embed.FS
 
+//go:embed static/setup.js
+var setupJS []byte
+
 var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
 	"short": func(s string) string {
 		if len(s) > 19 {
@@ -48,6 +51,10 @@ type UI struct {
 func (u *UI) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/hub/status", u.handleStatus)
 	mux.HandleFunc("/hub/setup", u.handleSetup)
+	mux.HandleFunc("/hub/setup.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Write(setupJS)
+	})
 	mux.HandleFunc("/hub/login", u.handleLogin)
 	mux.HandleFunc("/hub/logout", u.handleLogout)
 	mux.HandleFunc("/hub/ui", u.admin(u.handleAdmin))
