@@ -2,8 +2,13 @@ package fakecentral
 
 import (
 	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/dhis2/facility-hub/internal/tracker"
 )
@@ -100,4 +105,77 @@ func (c *Central) TokenOwner(key string) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.tokens[key]
+}
+
+// entryID is a dataStore entry's identifier (its metaData id).
+func entryID(ns, key string) string {
+	sum := sha256.Sum256([]byte(ns + "/" + key))
+	return "Ds" + hex.EncodeToString(sum[:])[:9]
+}
+
+// createUser creates a user as POST /api/users does (the fields hub accounts use).
+func (c *Central) createUser(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		ID, Username, Password string
+		OrganisationUnits      []struct{ ID string } `json:"organisationUnits"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Username == "" {
+		webMessage(w, 400, "bad user", "")
+		return
+	}
+	var ous []string
+	for _, o := range in.OrganisationUnits {
+		ous = append(ous, o.ID)
+	}
+	c.mu.Lock()
+	if c.passwords == nil {
+		c.passwords = map[string]string{}
+	}
+	c.Users[in.Username] = &User{UID: in.ID, Username: in.Username, OrgUnits: ous, StageRead: map[string]bool{}, StageWrite: map[string]bool{}}
+	c.passwords[in.Username] = in.Password
+	c.mu.Unlock()
+	writeJSON(w, 201, map[string]any{"httpStatus": "Created", "httpStatusCode": 201, "status": "OK", "response": map[string]any{"uid": in.ID}})
+}
+
+// addToGroup handles POST /api/userGroups/{group}/users/{user}.
+func (c *Central) addToGroup(w http.ResponseWriter, p string) {
+	parts := strings.Split(strings.TrimPrefix(p, "/api/userGroups/"), "/")
+	if len(parts) != 3 || parts[1] != "users" {
+		webMessage(w, 404, "not found", "")
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, u := range c.Users {
+		if u.UID == parts[2] {
+			u.Groups = append(u.Groups, parts[0])
+			writeJSON(w, 200, map[string]any{"status": "OK"})
+			return
+		}
+	}
+	webMessage(w, 404, "no such user", "")
+}
+
+// shareEntry handles POST /api/sharing?type=dataStore&id=...: the entry becomes
+// readable by the listed users only (and the superuser).
+func (c *Central) shareEntry(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Object struct {
+			UserAccesses []struct{ ID, Access string } `json:"userAccesses"`
+		} `json:"object"`
+	}
+	json.NewDecoder(r.Body).Decode(&in)
+	rs := map[string]bool{}
+	for _, a := range in.Object.UserAccesses {
+		if strings.HasPrefix(a.Access, "r") {
+			rs[a.ID] = true
+		}
+	}
+	c.mu.Lock()
+	if c.readers == nil {
+		c.readers = map[string]map[string]bool{}
+	}
+	c.readers[r.URL.Query().Get("id")] = rs
+	c.mu.Unlock()
+	writeJSON(w, 200, map[string]any{"status": "OK"})
 }

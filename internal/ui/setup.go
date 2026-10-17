@@ -23,6 +23,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/central"
 	"github.com/dhis2/facility-hub/internal/compat"
 	"github.com/dhis2/facility-hub/internal/core"
+	"github.com/dhis2/facility-hub/internal/hubaccount"
 	"github.com/dhis2/facility-hub/internal/hubcrypto"
 	"github.com/dhis2/facility-hub/internal/stick"
 	"github.com/dhis2/facility-hub/internal/store"
@@ -383,9 +384,15 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (_ *core.Sessio
 		return nil, err
 	}
 	setupAt := store.Now()
+	boxPub, boxPriv, err := hubaccount.NewBoxKey()
+	if err != nil {
+		return nil, err
+	}
+	// accountRequested: the national team's "hub approve" gives the hub an account of
+	// its own, sent encrypted to boxKey (docs/DEPLOYMENT.md, "The hub's own account").
 	reg := map[string]any{"hubId": h.HubID(), "facility": p.Facility.ID, "facilityName": p.Facility.Name,
 		"setupBy": p.Username, "setupAt": setupAt, "hubVersion": h.Version, "publicKey": base64.StdEncoding.EncodeToString(pub),
-		"status": "active"}
+		"status": "active", "accountRequested": true, "boxKey": base64.StdEncoding.EncodeToString(boxPub)}
 	// The registry entry first, before the hub commits anything: the hub's housekeeping
 	// writes the facility-hub namespaces with this token, and countries protect them for
 	// a "hub owners" group (docs/DEPLOYMENT.md). Someone outside it is told so, and the
@@ -422,7 +429,7 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (_ *core.Sessio
 	rt := &core.Runtime{Facility: p.Facility.ID, FacilityName: p.Facility.Name, FacilityCode: p.Facility.Code,
 		FacilityPath: p.Facility.Path,
 		Catalog:      cat, HubToken: tok, HubTokenUID: tokUID,
-		HubTokenExp: tokExp.UTC().Format(time.RFC3339), SetupBy: p.Username, SetupAt: setupAt, PrivateKey: priv}
+		HubTokenExp: tokExp.UTC().Format(time.RFC3339), SetupBy: p.Username, SetupAt: setupAt, PrivateKey: priv, BoxKey: boxPriv}
 	if len(aoc.CategoryOptionCombos) > 0 {
 		rt.DefaultAOC = aoc.CategoryOptionCombos[0].ID
 	}

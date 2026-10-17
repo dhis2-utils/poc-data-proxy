@@ -64,6 +64,7 @@ func (u *UI) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/hub/ui/uplink", u.admin(u.handleUplink))
 	mux.HandleFunc("/hub/ui/reset", u.admin(u.handleReset))
 	mux.HandleFunc("/hub/ui/takeover", u.admin(u.handleTakeOver))
+	mux.HandleFunc("/hub/ui/move", u.admin(u.handleMove))
 	mux.HandleFunc("/hub/ui/endpoints", u.admin(u.handleEndpoints))
 	// The hub's CA certificate, for installing on devices (public; no key behind it).
 	mux.HandleFunc("/hub/ca.crt", func(w http.ResponseWriter, r *http.Request) {
@@ -279,6 +280,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"Forced": h.Monitor.ForcedOffline(), "Upgrade": upgrade, "Central": h.Central.BaseURL(),
 		"ServerVersion": h.ServerVersion(), "Msg": r.URL.Query().Get("msg"),
 		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour), "Orphans": h.Store.PendingWithoutUser(),
+		"Offline": !h.Online(),
 	})
 }
 
@@ -346,6 +348,20 @@ func (u *UI) handleTakeOver(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			msg = "Not taken over: " + err.Error()
 		}
+	}
+	http.Redirect(w, r, "/hub/ui?msg="+template.URLQueryEscaper(msg), http.StatusFound)
+}
+
+// handleMove switches the hub to central's new address after an unplanned move, typed
+// in by a staff member; the hub checks it with its own account (core.TypedMove).
+func (u *UI) handleMove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Redirect(w, r, "/hub/ui", http.StatusFound)
+		return
+	}
+	msg := "The hub now uses central at its new address"
+	if err := u.H.TypedMove(r.Context(), r.FormValue("central_url")); err != nil {
+		msg = "Not moved: " + err.Error()
 	}
 	http.Redirect(w, r, "/hub/ui?msg="+template.URLQueryEscaper(msg), http.StatusFound)
 }

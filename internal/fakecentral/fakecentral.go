@@ -66,6 +66,8 @@ type Central struct {
 	OnTokenCreate func(username string)
 	// FailPaths makes a path answer this status (tests).
 	FailPaths map[string]int
+	passwords map[string]string          // users created through the API, with their own password
+	readers   map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (read)
 	// HubWriters, when set, are the only users who may write the facility-hub-*
 	// dataStore namespaces (protected by sharing, as DEPLOYMENT.md advises).
 	HubWriters map[string]bool
@@ -277,7 +279,11 @@ func (c *Central) credentialUser(r *http.Request) *User {
 	case strings.HasPrefix(h, "Basic "):
 		b, _ := base64.StdEncoding.DecodeString(strings.TrimPrefix(h, "Basic "))
 		u, p, _ := strings.Cut(string(b), ":")
-		if p == Password {
+		if own, ok := c.passwords[u]; ok {
+			if p == own {
+				return c.Users[u]
+			}
+		} else if p == Password {
 			return c.Users[u]
 		}
 		return nil
@@ -440,6 +446,12 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		c.mu.Unlock()
 		writeJSON(w, 200, out)
+	case p == "/api/users" && r.Method == "POST":
+		c.createUser(w, r)
+	case strings.HasPrefix(p, "/api/userGroups/") && r.Method == "POST":
+		c.addToGroup(w, p)
+	case p == "/api/sharing" && r.URL.Query().Get("type") == "dataStore":
+		c.shareEntry(w, r)
 	case strings.HasPrefix(p, "/api/dataStore/"):
 		c.dataStore(w, r, u)
 	default:
@@ -848,6 +860,14 @@ func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
 		return
 	}
 	key, _ := url.PathUnescape(parts[1])
+	if len(parts) == 3 && parts[2] == "metaData" {
+		writeJSON(w, 200, map[string]any{"id": entryID(ns, key), "namespace": ns, "key": key})
+		return
+	}
+	if rs := c.readers[entryID(ns, key)]; rs != nil && !rs[u.UID] && u.Username != "hub_admin" {
+		webMessage(w, 403, "Access denied for key", "E1102") // shared with some users only
+		return
+	}
 	b, _ := io.ReadAll(r.Body)
 	switch r.Method {
 	case "GET":

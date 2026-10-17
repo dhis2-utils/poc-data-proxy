@@ -46,6 +46,10 @@
 {{with .Heartbeat.usb}}<div class="card"><h2>USB stick</h2>
 <p>{{if not .Present}}<b>No stick found.</b> Put the box's USB stick in: it holds the copy a new disk is restored from.{{else if not .Writable}}<b>The stick does not work</b>{{with .Error}}: {{.}}{{end}}. Replace it.{{else}}Working. Last copy {{or (short .LastCopy) "none yet"}}{{end}}</p></div>{{end}}
 
+{{if .Offline}}<div class="card"><h2>Central has moved?</h2>
+<p>If central DHIS2 now has a new address (the national team will tell you), enter it here. The hub checks it with its own account before using it.</p>
+<form method="post" action="/hub/ui/move"><label for="mv">Central's new address</label><input id="mv" type="url" name="central_url" required><p><button class="secondary">Use this address</button></p></form></div>{{end}}
+
 <div class="card"><h2>The hub's own account</h2>
 <p>For its housekeeping (heartbeat, reports of refused changes, programme list, generated IDs, upgrades) the hub uses a token of <b>{{with .Runtime}}{{.TokenOwner}}{{end}}</b>{{with .Runtime}}{{with .HubTokenExp}}, renewed by itself (expires {{short .}}){{end}}{{end}}. If that person leaves, take it over: the hub then uses a token of yours and deletes theirs. Patient data always goes with each user's own account.</p>
 <form method="post" action="/hub/ui/takeover"><label for="tp">Your password</label><input id="tp" type="password" name="password"><p><button class="secondary">Use my account</button></p></form></div>

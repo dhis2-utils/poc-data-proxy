@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/dhis2/facility-hub/internal/core"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
+	"github.com/dhis2/facility-hub/internal/hubaccount"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
 
@@ -320,4 +322,86 @@ func TestTakeOverThrottled(t *testing.T) {
 		t.Fatal("taken over right after six wrong passwords")
 	}
 	e.Web(tk.RoleNurse).Login() // the take-over's throttle does not lock the user's login
+}
+
+// The hub's own account against central: "hub approve" (as the superuser) creates it
+// scoped to the facility and shares its move secret with it alone; the hub takes it up,
+// and its token reads its move secret (what a typed-in move checks).
+func TestHubAccountLive(t *testing.T) {
+	e := tk.Start(t)
+	e.Setup()
+	h := e.App.Hub
+	group, role := "HubGrpAccts", "HubRoleAcct"
+	if e.Live() {
+		role = tk.UID()
+		group = tk.UID()
+		for _, p := range []struct {
+			path string
+			body map[string]any
+		}{
+			{"/api/userRoles", map[string]any{"id": role, "name": "Facility hub account " + role, "authorities": []string{}}},
+			{"/api/userGroups", map[string]any{"id": group, "name": "Facility hub accounts " + group}},
+		} {
+			if st, b, err := e.Central.Do("POST", p.path, p.body); err != nil || st >= 300 {
+				t.Fatalf("%s: %d %v %.300s", p.path, st, err, b)
+			}
+		}
+	}
+	done, err := hubaccount.Approve(context.Background(), hubaccount.Options{Central: e.M.CentralURL,
+		Username: e.M.AdminUser, Password: e.M.AdminPassword, Group: group, Role: role})
+	if err != nil || !slices.Contains(done, h.HubID()) {
+		t.Fatalf("approve: %v %v", done, err)
+	}
+	if err := h.RefreshCatalog(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rt := h.Runtime()
+	if rt.TokenOwner() != h.HubID() {
+		t.Fatalf("the hub did not take up its account: %q", rt.TokenOwner())
+	}
+	var ous []string
+	if e.Fake != nil {
+		ous = e.Fake.Users[h.HubID()].OrgUnits
+	} else {
+		st, b, err := e.Central.Do("GET", "/api/users?filter=username:eq:"+h.HubID()+"&fields=organisationUnits[id]", nil)
+		if err != nil || st != 200 {
+			t.Fatalf("reading the account: %d %v", st, err)
+		}
+		var us struct {
+			Users []struct {
+				OrganisationUnits []struct{ ID string } `json:"organisationUnits"`
+			} `json:"users"`
+		}
+		json.Unmarshal(b, &us)
+		for _, u := range us.Users {
+			for _, o := range u.OrganisationUnits {
+				ous = append(ous, o.ID)
+			}
+		}
+	}
+	if !slices.Equal(ous, []string{e.M.Facility.ID}) {
+		t.Fatalf("the account is not scoped to the facility: %v", ous)
+	}
+	// The move secret: readable with the hub's own token.
+	req, _ := http.NewRequest("GET", strings.TrimRight(e.M.CentralURL, "/")+"/api/dataStore/facility-hub-accounts/"+h.HubID(), nil)
+	req.Header.Set("Authorization", "ApiToken "+rt.HubToken)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sec struct {
+		MoveSecret string `json:"moveSecret"`
+	}
+	json.NewDecoder(res.Body).Decode(&sec)
+	res.Body.Close()
+	if res.StatusCode != 200 || sec.MoveSecret != rt.MoveSecret || sec.MoveSecret == "" {
+		t.Fatalf("the hub's token does not read its move secret: %d", res.StatusCode)
+	}
+	if e.Live() {
+		// Not readable by a staff member.
+		c := tk.NewCentral(e.M.CentralURL, e.M.Users[tk.RoleNurse].Username, e.M.Password)
+		if st, _, _ := c.Do("GET", "/api/dataStore/facility-hub-accounts/"+h.HubID(), nil); st == 200 {
+			t.Error("a staff member reads the hub's move secret")
+		}
+	}
 }

@@ -22,6 +22,6 @@ Revised: the documented "registry secret" check cannot run before sending anythi
 
 1. **Announced:** `facility-hub-config/central-move` = `{"url": "https://new.example.org"}`, set by the national team. Hubs read it from the current central with their token, so the current central vouches for it. A hub switches when the current central stops answering and the new one answers with this hub's registry entry.
 2. **Redirect:** the current address, reached over verified TLS, answers with a permanent redirect (301 or 308) to another host. The hub checks the new host as above, then switches.
-3. **Typed in** (unplanned moves): waiting for the user's decision.
+3. **Typed in** (unplanned moves): checked with the hub's own account (`hub approve`), which reads the hub's move secret from the typed address; built 2026-10-17.
 
 A hub that misses all of them keeps working offline, with its data.

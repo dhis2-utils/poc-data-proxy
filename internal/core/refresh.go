@@ -248,6 +248,11 @@ func (h *Hub) RenewHubToken(ctx context.Context) error {
 	}
 	newExp := time.Now().Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
 	uid, key, err := h.CreatePAT(ctx, h.HubAuth(), newExp)
+	if central.Status(err) == http.StatusUnauthorized && rt.HubPassword != "" {
+		// The hub's own account, whose token lapsed while offline: a new one with its
+		// password.
+		uid, key, err = h.CreatePAT(ctx, central.Auth{Username: h.HubID(), Password: rt.HubPassword}, newExp)
+	}
 	if err != nil {
 		return fmt.Errorf("renewing hub token: %w", err)
 	}
@@ -312,6 +317,7 @@ func (h *Hub) RefreshCatalog(ctx context.Context) error {
 		return err
 	}
 	h.refreshCentralMove(ctx)
+	h.refreshAccount(ctx)
 	complete := err == nil
 	if cat == nil {
 		cat = &access.Catalog{Programs: map[string]*access.ProgramMeta{}, TETAttributes: map[string][]access.AttrMeta{}}
