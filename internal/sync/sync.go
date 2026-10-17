@@ -1129,6 +1129,7 @@ func (w *Worker) heartbeat(ctx context.Context) {
 
 // Status is the heartbeat payload. It holds no patient data.
 func Status(h *core.Hub) map[string]any {
+	refused, refusedGroups := refusedCounts(h)
 	_, _, lastSync, lastErr := h.Stats.Get()
 	lastPush, lastPull := h.LastPushPull()
 	var upgrade any
@@ -1144,7 +1145,7 @@ func Status(h *core.Hub) map[string]any {
 		// Whose token the hub's housekeeping uses, so the Facility Hub app can list the
 		// hubs that depend on a user who is being disabled.
 		"hubTokenOwner": h.Runtime().TokenOwner(), "hubTokenExpires": hubTokenExpires(h),
-		"refused": refusedCounts(h),
+		"refused": refused, "refusedGroups": refusedGroups,
 		// How the hub has lived, a summary per day for 90 days (history.go).
 		"history": h.History(),
 	}
@@ -1154,10 +1155,11 @@ func Status(h *core.Hub) map[string]any {
 // program and error code: with hundreds stuck after a metadata change, central sees
 // the pattern without reading each issue. Codes only, no values. Only open issues are
 // read (and decrypted), so the cost follows what is stuck, not the hub's history.
-func refusedCounts(h *core.Hub) []map[string]any {
+// It returns at most 100 groups, and how many there are.
+func refusedCounts(h *core.Hub) ([]map[string]any, int) {
 	issues, err := h.Store.UnresolvedIssues(100000)
 	if err != nil || len(issues) == 0 {
-		return nil
+		return nil, 0
 	}
 	counts := map[[3]string]int{}
 	for _, is := range issues {
@@ -1189,7 +1191,7 @@ func refusedCounts(h *core.Hub) []map[string]any {
 	for _, k := range keys[:min(len(keys), 100)] {
 		out = append(out, map[string]any{"kind": k[0], "program": k[1], "code": k[2], "count": counts[k]})
 	}
-	return out
+	return out, len(keys)
 }
 
 func hubTokenExpires(h *core.Hub) any {

@@ -61,6 +61,9 @@ type User struct {
 type Central struct {
 	// TimeZone is the server's time zone (serverTimeZoneId); empty: UTC.
 	TimeZone string
+	// OnTokenCreate, when set, runs as a user's token is created, before central
+	// answers (tests of what happens meanwhile).
+	OnTokenCreate func(username string)
 	// HubWriters, when set, are the only users who may write the facility-hub-*
 	// dataStore namespaces (protected by sharing, as DEPLOYMENT.md advises).
 	HubWriters map[string]bool
@@ -363,7 +366,11 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		key := "d2p_" + strings.Repeat("x", 10) + strconv.Itoa(c.tokenSeq) + u.Username
 		id := fmt.Sprintf("Tok%08d", c.tokenSeq)
 		c.tokens[key], c.tokenIDs[id] = u.Username, key
+		hook := c.OnTokenCreate
 		c.mu.Unlock()
+		if hook != nil {
+			hook(u.Username)
+		}
 		writeJSON(w, 201, map[string]any{"httpStatus": "Created", "httpStatusCode": 201, "status": "OK",
 			"response": map[string]any{"key": key, "uid": id, "responseType": "ObjectReport"}})
 	case strings.HasPrefix(p, "/api/apiToken/") && r.Method == "DELETE":

@@ -11,6 +11,7 @@ import (
 
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
+	"github.com/dhis2/facility-hub/internal/tracker"
 )
 
 // The retention table is read from central's dataStore at the catalog refresh.
@@ -450,4 +451,32 @@ func TestTypePullWithoutIncludeDeleted(t *testing.T) {
 func asList(v any) []any {
 	l, _ := v.([]any)
 	return l
+}
+
+// Review minor: a relationship with an event-program event that retention prunes goes
+// with it.
+func TestEventRetentionRemovesRelationships(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	old := e.App.Hub.CentralNow().AddDate(-2, 0, 0).Format(time.DateOnly)
+	e.Fake.SeedProgramEvent("FakeEvOld04", fc.EventProgram, fc.EventStage, old, fc.DefaultAOC)
+	e.Setup()
+	ev := e.App.Hub.Index.Get("FakeEvOld04")
+	if ev == nil {
+		t.Fatal("the old event is not held")
+	}
+	rel := &tracker.Obj{UID: "FakeRel0004", Kind: "relationship", OwnerOrgUnit: ev.OwnerOrgUnit, Origin: ev.Origin,
+		SyncState: ev.SyncState, Slot: ev.Slot + 100000, UpdatedAt: ev.UpdatedAt, Data: tracker.M{"relationship": "FakeRel0004",
+			"from": tracker.M{"event": tracker.M{"event": "FakeEvOld04"}}, "to": tracker.M{"trackedEntity": tracker.M{"trackedEntity": "SeedTe00001"}}}}
+	if err := e.App.Hub.Store.PutObject(e.App.Hub.Store.DB(), rel.ToStore()); err != nil {
+		t.Fatal(err)
+	}
+	e.App.Hub.Store.SetState("retention", []byte(`{"programs": {"`+fc.EventProgram+`": 12}}`))
+	if _, err := e.App.Hub.PruneEvents(); err != nil {
+		t.Fatal(err)
+	}
+	e.App.Hub.Index.Forget()
+	if e.App.Hub.Index.Get("FakeEvOld04") != nil || e.App.Hub.Index.Get("FakeRel0004") != nil {
+		t.Fatal("the pruned event or its relationship stays")
+	}
 }

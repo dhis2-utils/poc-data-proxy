@@ -534,6 +534,10 @@ func programFields(api compat.API, af string) string {
 // central, which countries share with a "hub owners" group (docs/DEPLOYMENT.md).
 var ErrNotHubOwner = errors.New("your account cannot write the hub's records on central: ask the national team or the district to add you to the hub owners group")
 
+// ErrWrongPassword: central refused the password. An account with two-factor login
+// gets this too: central refuses its password alone.
+var ErrWrongPassword = errors.New("wrong password (an account with two-factor login cannot take the hub over)")
+
 // TokenOwner is the user whose token the hub uses for its housekeeping.
 func (rt *Runtime) TokenOwner() string {
 	if rt == nil {
@@ -559,7 +563,7 @@ func (h *Hub) TakeOverHubToken(ctx context.Context, username, password string) e
 	with := central.Auth{Username: username, Password: password}
 	me, err := h.FetchMe(ctx, with)
 	if central.Status(err) == http.StatusUnauthorized {
-		return errors.New("wrong password")
+		return ErrWrongPassword
 	}
 	if err != nil {
 		return err

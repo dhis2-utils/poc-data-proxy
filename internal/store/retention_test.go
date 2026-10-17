@@ -155,7 +155,7 @@ func TestRetentionQueryPlans(t *testing.T) {
 		{"events under stubs", sqlStubEvents, []any{KindEvent, SyncSynced, OutboxPending}},
 		{"prunable entities", sqlPrunableEntities, []any{KindTrackedEntity, "t", "o", SyncSynced, "2025-01-01", OutboxPending, KindEnrollment, SyncSynced, SyncSynced, SyncSynced}},
 		{"entity leftovers", sqlEntityLeftovers("?"), []any{"a", "a", "a"}},
-		{"relationships with", sqlRelationshipsWith("?"), []any{"a", "a"}},
+		{"orphan relationships", sqlOrphanRelationships("?"), []any{"a", "a"}},
 		{"object states", sqlObjectStates("?,?"), []any{"a", "b"}},
 	} {
 		rows, err := s.DB().Query("EXPLAIN QUERY PLAN "+q.sql, q.args...)
@@ -173,5 +173,39 @@ func TestRetentionQueryPlans(t *testing.T) {
 		if p := strings.Join(plan, " | "); scan.MatchString(p) {
 			t.Errorf("%s scans a table: %s", q.name, p)
 		}
+	}
+}
+
+// Review minors: after pruning deletes events, only relationships whose end is really
+// gone go with them; an event that turned pending meanwhile stayed, and so does its
+// relationship.
+func TestOrphanRelationships(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	k, _ := hubcrypto.NewKey()
+	if err := s.SetDK(k); err != nil {
+		t.Fatal(err)
+	}
+	slot := int64(0)
+	put := func(o *Object) {
+		t.Helper()
+		slot++
+		o.Slot, o.OwnerOrgUnit, o.Origin, o.Slim, o.Payload = slot, "OuAbcdefghi", OriginCentral, []byte(`{}`), []byte(`{}`)
+		if o.SyncState == "" {
+			o.SyncState = SyncSynced
+		}
+		if err := s.PutObject(s.DB(), o); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(&Object{UID: "EvKept00001", Kind: KindEvent, SyncState: SyncPending}) // turned pending: not deleted
+	put(&Object{UID: "RelGone0001", Kind: KindRelationship, RelFrom: "EvGone00001", RelTo: "TeAbcdefgh1"})
+	put(&Object{UID: "RelKept0001", Kind: KindRelationship, RelFrom: "EvKept00001", RelTo: "TeAbcdefgh1"})
+	got, err := s.OrphanRelationships([]string{"EvGone00001", "EvKept00001"})
+	if err != nil || !slices.Equal(got, []string{"RelGone0001"}) {
+		t.Fatalf("orphans: %v %v", got, err)
 	}
 }

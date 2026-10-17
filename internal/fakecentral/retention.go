@@ -94,3 +94,10 @@ func (c *Central) TokensOf(username string) int {
 	}
 	return n
 }
+
+// TokenOwner is the user a token belongs to ("" if it is not valid).
+func (c *Central) TokenOwner(key string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.tokens[key]
+}

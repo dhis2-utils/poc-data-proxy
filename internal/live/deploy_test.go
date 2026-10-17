@@ -1,14 +1,18 @@
 package live
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/core"
+	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
 
@@ -208,5 +212,111 @@ func TestHeartbeatHistory(t *testing.T) {
 	}
 	if hb.History[d].Outages < 2 || hb.History[d].Syncs < 1 || hb.History[d].DiskFreeMin == 0 {
 		t.Errorf("today: %+v", hb.History[d])
+	}
+}
+
+// Review gap: a staff member moved to another facility loses the hub's admin page
+// at the next access refresh, though their hub session goes on.
+func TestAdminPageLostWhenMovedAway(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	e.Setup()
+	nurse := e.Web(tk.RoleNurse)
+	nurse.Login()
+	if st, _ := nurse.Do("GET", "/hub/ui", nil); st != 200 {
+		t.Fatalf("admin page before the move: %d", st)
+	}
+	e.Fake.Users[e.M.Users[tk.RoleNurse].Username].OrgUnits = []string{fc.OtherFacility}
+	e.Sync() // refreshes access
+	if st, _ := nurse.Do("GET", "/hub/ui", nil); st != 403 {
+		t.Errorf("admin page after moving away: %d, want 403", st)
+	}
+}
+
+// Review gap: the admin page's actions refuse posts from another site, as a browser
+// on a malicious page would send them with the staff member's cookie.
+func TestAdminActionsRefuseCrossOrigin(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	e.Setup()
+	nurse := e.Web(tk.RoleNurse)
+	nurse.Login()
+	old := e.App.Hub.Runtime().HubToken
+	for _, path := range []string{"/hub/ui/reset", "/hub/ui/takeover", "/hub/ui/sync"} {
+		req, _ := http.NewRequest("POST", e.Srv.URL+path, strings.NewReader("confirm=RESET+AND+DISCARD&password="+url.QueryEscape(e.M.Password)))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "https://evil.example")
+		res, err := nurse.HTTP.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != 403 {
+			t.Errorf("%s from another origin: %d, want 403", path, res.StatusCode)
+		}
+	}
+	if e.App.Hub.Mode() != "active" || e.App.Hub.Runtime().HubToken != old {
+		t.Fatal("a cross-origin post reset the hub or took it over")
+	}
+}
+
+// Review gap: a take-over while the hub token is being renewed ends with the token of
+// the one who took over, and the heartbeat's owner is that token's owner (one lock
+// serialises the two; without it the renewal overwrote the take-over).
+func TestTakeOverDuringRenewal(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	e.Setup()
+	h := e.App.Hub
+	admin, nurse := e.M.Users[tk.RoleAdmin].Username, e.M.Users[tk.RoleNurse].Username
+	if err := h.UpdateRuntime(func(rt *core.Runtime) {
+		rt.HubTokenExp = time.Now().Add(time.Hour).UTC().Format(time.RFC3339) // due for renewal
+	}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	e.Fake.OnTokenCreate = func(user string) {
+		if user != admin {
+			return
+		}
+		e.Fake.OnTokenCreate = nil
+		go func() { done <- h.TakeOverHubToken(context.Background(), nurse, e.M.Password) }()
+		time.Sleep(300 * time.Millisecond) // the take-over runs now, if nothing holds it back
+	}
+	if err := h.RenewHubToken(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	rt := h.Runtime()
+	if owner := e.Fake.TokenOwner(rt.HubToken); owner != nurse || rt.TokenOwner() != nurse {
+		t.Fatalf("the hub uses a token of %q, says it is %q's", owner, rt.TokenOwner())
+	}
+}
+
+// Review minor: take-over attempts are throttled like logins, so a session left open
+// on a shared PC cannot be used to guess its user's central password.
+func TestTakeOverThrottled(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	e.Setup()
+	old := e.App.Hub.Runtime().HubToken
+	nurse := e.Web(tk.RoleNurse)
+	nurse.Login()
+	for i := 0; i < 6; i++ {
+		resp, err := nurse.PostForm("/hub/ui/takeover", url.Values{"password": {"guess" + strconv.Itoa(i)}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+	}
+	resp, err := nurse.PostForm("/hub/ui/takeover", url.Values{"password": {e.M.Password}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if e.App.Hub.Runtime().HubToken != old {
+		t.Fatal("taken over right after six wrong passwords")
 	}
 }

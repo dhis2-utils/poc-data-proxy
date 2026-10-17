@@ -325,9 +325,10 @@ type ObjectState struct {
 }
 
 // ObjectStates returns the state of these stored objects, by uid (missing ones are
-// left out). It reads the objects_state index alone, in uid order: a pull asks this
-// for everything central lists, and reading table rows in central's order was one
-// random page read per object, which an SD card answers slowly.
+// left out). It reads indexes only, in uid order (objects_state, and objects_stubs for
+// the stub flag): a pull asks this for everything central lists, and reading table rows
+// in central's order was one random page read per object, which an SD card answers
+// slowly.
 func (s *Store) ObjectStates(uids []string) (map[string]ObjectState, error) {
 	sorted := slices.Clone(uids)
 	slices.Sort(sorted)
@@ -780,12 +781,13 @@ func (s *Store) EntityLeftovers(tes []string) ([]string, error) {
 	return out, err
 }
 
-// RelationshipsWith lists the synced relationships with any of these objects as an
-// end: they go when pruning removes that end.
-func (s *Store) RelationshipsWith(uids []string) ([]string, error) {
+// OrphanRelationships lists, after pruning deleted these objects, the synced
+// relationships with one of them as an end that is really gone: an object that turned
+// pending meanwhile was kept, and so is its relationship.
+func (s *Store) OrphanRelationships(uids []string) ([]string, error) {
 	var out []string
 	err := inBatches(uids, func(args []any, marks string) error {
-		got, err := s.uids(sqlRelationshipsWith(marks), append(slices.Clone(args), args...)...)
+		got, err := s.uids(sqlOrphanRelationships(marks), append(slices.Clone(args), args...)...)
 		out = append(out, got...)
 		return err
 	})
@@ -798,9 +800,11 @@ func sqlEntityLeftovers(marks string) string {
  UNION SELECT uid FROM objects WHERE rel_to IN (` + marks + `)`
 }
 
-func sqlRelationshipsWith(marks string) string {
-	return `SELECT uid FROM objects WHERE rel_from IN (` + marks + `) AND sync_state = '` + SyncSynced + `'
- UNION SELECT uid FROM objects WHERE rel_to IN (` + marks + `) AND sync_state = '` + SyncSynced + `'`
+func sqlOrphanRelationships(marks string) string {
+	return `SELECT uid FROM objects r WHERE rel_from IN (` + marks + `) AND sync_state = '` + SyncSynced + `'
+ AND NOT EXISTS (SELECT 1 FROM objects o WHERE o.uid = r.rel_from)
+ UNION SELECT uid FROM objects r WHERE rel_to IN (` + marks + `) AND sync_state = '` + SyncSynced + `'
+ AND NOT EXISTS (SELECT 1 FROM objects o WHERE o.uid = r.rel_to)`
 }
 
 // uids runs a query of one uid column.

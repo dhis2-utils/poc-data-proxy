@@ -30,6 +30,11 @@ func (h *Hub) PruneEvents() (int, error) {
 		if err != nil {
 			return n, err
 		}
+		d, err = h.pruneOrphanRelationships(uids)
+		n += d
+		if err != nil {
+			return n, err
+		}
 	}
 	if n > 0 {
 		h.Index.Forget()
@@ -74,16 +79,15 @@ func (h *Hub) PruneTracker() (stubbed, deleted int, err error) {
 	if err != nil {
 		return stubbed, deleted, err
 	}
-	rels, err := h.Store.RelationshipsWith(events) // read before the events go
+	n, err := h.Store.DeleteObjects(events)
+	deleted += n
 	if err != nil {
 		return stubbed, deleted, err
 	}
-	for _, uids := range [][]string{events, rels} {
-		n, err := h.Store.DeleteObjects(uids)
-		deleted += n
-		if err != nil {
-			return stubbed, deleted, err
-		}
+	n, err = h.pruneOrphanRelationships(events)
+	deleted += n
+	if err != nil {
+		return stubbed, deleted, err
 	}
 	for _, tet := range slices.Sorted(maps.Keys(ret.TrackedEntityTypes)) {
 		cutoff, ok := ret.TypeCutoff(tet, now)
@@ -121,4 +125,14 @@ func stubPayload(payload []byte) ([]byte, []byte, error) {
 	}
 	b, err := json.Marshal(tracker.StubOf(e))
 	return b, b, err
+}
+
+// pruneOrphanRelationships deletes the synced relationships whose end pruning just
+// removed (an end kept because it turned pending keeps its relationship).
+func (h *Hub) pruneOrphanRelationships(ends []string) (int, error) {
+	rels, err := h.Store.OrphanRelationships(ends)
+	if err != nil {
+		return 0, err
+	}
+	return h.Store.DeleteObjects(rels)
 }

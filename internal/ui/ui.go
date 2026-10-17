@@ -5,6 +5,7 @@ package ui
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -324,8 +325,17 @@ func (u *UI) handleTakeOver(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	msg := "The hub now uses your account for its own housekeeping"
-	if err := u.H.TakeOverHubToken(r.Context(), sess.Username, r.FormValue("password")); err != nil {
-		msg = "Not taken over: " + err.Error()
+	// Throttled like logins: a session left open on a shared PC must not let anyone
+	// guess its user's central password here.
+	src := auth.Source(r)
+	if f := u.Auth.Throttled(src, sess.Username); f != nil {
+		msg = "Not taken over: too many wrong passwords; try again later"
+	} else {
+		err := u.H.TakeOverHubToken(r.Context(), sess.Username, r.FormValue("password"))
+		u.Auth.Count(src, sess.Username, errors.Is(err, core.ErrWrongPassword))
+		if err != nil {
+			msg = "Not taken over: " + err.Error()
+		}
 	}
 	http.Redirect(w, r, "/hub/ui?msg="+template.URLQueryEscaper(msg), http.StatusFound)
 }
