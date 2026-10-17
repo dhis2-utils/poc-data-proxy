@@ -301,13 +301,15 @@ func (w *Worker) setState(uid, state string) {
 	w.H.Store.SetSyncState(w.H.Store.DB(), uid, state)
 }
 
-func (w *Worker) reject(e *store.OutboxEntry, it *tracker.Item, errorReports []tracker.ErrorReport, message string) {
+// reject marks a refused object and records the issue; at is when central refused it
+// (its answer's Date; "" for an object blocked before sending).
+func (w *Worker) reject(e *store.OutboxEntry, it *tracker.Item, errorReports []tracker.ErrorReport, message, at string) {
 	w.setState(it.UID, store.SyncRejected)
 	if errorReports == nil {
 		errorReports = []tracker.ErrorReport{}
 	}
 	b, _ := json.Marshal(map[string]any{"message": message, "errorReports": errorReports})
-	if err := w.H.Store.AddIssue(e.Seq, it.UID, it.Kind, e.UserID, b); err != nil {
+	if err := w.H.Store.AddIssue(e.Seq, it.UID, it.Kind, e.UserID, b, at); err != nil {
 		slog.Error("add issue", "err", err)
 	}
 	slog.Warn("object rejected", "uid", it.UID, "kind", it.Kind, "seq", e.Seq, "reason", tracker.OutgoingMessage(message, errorReports))
@@ -349,7 +351,7 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 		}
 		if by != "" {
 			blocked[it.UID] = true
-			w.reject(e, it, nil, "blocked by "+by)
+			w.reject(e, it, nil, "blocked by "+by, "")
 			continue
 		}
 		send = append(send, it)
@@ -375,6 +377,10 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 	}
 	rb, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
+	refusedAt := "" // central's clock, for telling a later change on central apart
+	if d, err := http.ParseTime(resp.Header.Get("Date")); err == nil {
+		refusedAt = d.UTC().Format(time.RFC3339Nano)
+	}
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized:
 		// Expired or revoked PAT: keep the entry, the user must log in online again.
@@ -390,7 +396,7 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 	if perr != nil {
 		// A non-report answer (e.g. 400 parse error) rejects the whole entry.
 		for _, it := range send {
-			w.reject(e, it, nil, (&central.HTTPError{Status: resp.StatusCode, Body: rb}).Error())
+			w.reject(e, it, nil, (&central.HTTPError{Status: resp.StatusCode, Body: rb}).Error(), refusedAt)
 		}
 		return pushResult{}, h.Store.FinishOutbox(e.Seq, store.OutboxRejected, perr.Error())
 	}
@@ -415,7 +421,7 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 				}
 			}
 		}
-		w.reject(e, it, errsByUID[it.UID], msg)
+		w.reject(e, it, errsByUID[it.UID], msg, refusedAt)
 	}
 	state := store.OutboxSynced
 	switch {

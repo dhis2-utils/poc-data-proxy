@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"slices"
+	"time"
 
 	"github.com/dhis2/facility-hub/internal/store"
 	"github.com/dhis2/facility-hub/internal/tracker"
@@ -124,14 +125,16 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 			}
 		}
 		if old != nil {
-			if old.SyncState == store.SyncPending || old.SyncState == store.SyncRejected {
+			if old.SyncState == store.SyncPending || (old.SyncState == store.SyncRejected && !h.changedSinceRefused(old.UID, it.Data)) {
 				// Local version wins until pushed; only record that central showed it.
 				objs = append(objs, &tracker.Obj{UID: old.UID, Kind: "visibility-only", Slot: old.Slot})
 				batch[it.UID] = old
 				continue
 			}
-			if old.Stub || it.Data["hubStub"] == true {
+			if old.Stub || it.Data["hubStub"] == true || old.SyncState == store.SyncRejected {
 				// A stub never merges: merging would keep the old fields or the stub mark.
+				// Nor does central's version of a refused object: the local data is what
+				// central refused.
 				o.Data = it.Data
 			} else {
 				full := fulls[old.UID]
@@ -432,4 +435,23 @@ func (h *Hub) referenced(uid string, get func(string) *tracker.Obj) bool {
 		}
 	}
 	return false
+}
+
+// changedSinceRefused reports whether central's version of an object the hub holds as
+// refused changed after central refused the hub's: someone fixed or changed it on
+// central, and central's version wins, which resolves the issue. One second of margin:
+// the refusal time comes from central's Date header, in whole seconds. If an
+// unrelated change on central comes after the refusal, the refused values disappear
+// from offline reads too; they stay in the refused outbox entry and the issue
+// (docs/FINDINGS.md, "Refused changes").
+func (h *Hub) changedSinceRefused(uid string, data tracker.M) bool {
+	at, err := time.Parse(time.RFC3339Nano, h.Store.RefusedAt(uid))
+	if err != nil {
+		return false
+	}
+	upd, err := time.ParseInLocation("2006-01-02T15:04:05.000", tracker.Str(data, "updatedAt"), h.centralZone())
+	if err != nil {
+		return false
+	}
+	return upd.After(at.Add(time.Second))
 }

@@ -448,3 +448,20 @@ Event programs (without registration) work offline through the hub since 2026-10
 - **Compression comes from the proxy.** DHIS2's Tomcat on its own (the test instances) answers uncompressed even when the client sends `Accept-Encoding: gzip`. In production it sits behind nginx or another reverse proxy that compresses; the hub's client asks for gzip, so ID listings cross the uplink 3–4 times smaller. Check that the proxy compresses `application/json` (nginx's `gzip_types` default is HTML only).
 - **Event updates** move the event's and the tracked entity's `updatedAt`, not the enrollment's.
 - **dataStore writes are not audited.** 500 hubs writing heartbeats 11 times each (5 500 writes) left every audit table unchanged. `facility-hub-status` stays at one row per hub, about 1 KB each with Postgres overhead. The writes ran at about 40 per second from 8 clients; 500 hubs syncing every 15 minutes need 0.6 per second. All 500 heartbeats read in one request in about 0.1 s.
+
+## Refused changes
+
+What the hub does with a change central refuses (tested in `internal/e2e`: `TestRefusedCountsClearWhenFixed`, `TestCentralNewerReplacesRefused`, `TestCentralOlderKeepsRefused`):
+
+- The object stays on the hub as refused, with the hub's data: the client was told it was saved, so offline reads keep showing it. The change stays in the outbox entry, and central gets the issue with its values masked.
+- **Resolved by sending it again:** a fixed version entered through the hub (offline or online) and accepted by central marks the object synced and closes the issue.
+- **Resolved by central:** if central's version changes after the refusal, central's version replaces the hub's and the issue is closed. Typical case: someone fixes the record online. This covers tracked entities, enrollments, events and relationships.
+  - The hub records when central refused, by central's clock (its answer's `Date` header, in whole seconds). Central's version wins when its `updatedAt` is more than a second after that.
+  - Objects blocked by a refused parent were never sent; their time is the hub's own clock.
+- **Edge cases, accepted:**
+  - An unrelated change on central after the refusal also replaces the hub's copy. An example is another user editing a different field of the same event. The refused values then disappear from offline reads; they remain in the refused outbox entry, and in the issue on central with values masked.
+  - A change on central within a second of the refusal does not count, so the hub keeps its copy until central's next change.
+  - Wrong clocks on the hub do not matter: the comparison uses only central's times.
+- **Still open:**
+  - a refused change that can never pass as it is (repair);
+  - the retry instruction for refusals in bulk after central is fixed (docs/DEPLOYMENT.md, "Refused in bulk").

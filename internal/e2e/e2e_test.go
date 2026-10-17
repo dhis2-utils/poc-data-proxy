@@ -786,6 +786,55 @@ func TestSetupNeedsHubOwnersGroup(t *testing.T) {
 	e.setup() // a member of the group
 }
 
+// A refused object that changes on central afterwards takes central's version, and
+// the issue is then resolved; one central has not changed since keeps the hub's
+// refused copy (docs/FINDINGS.md, "Refused changes").
+func TestCentralNewerReplacesRefused(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.offline()
+	e.central.Seed("CentralTe81", "CentralEn81", "Other", "NAT-8181", nil)
+	a.json("POST", postSync, newPatient("DupTe000081", "DupEn000081", "Dup", "NAT-8181", nil), 200)
+	e.online()
+	e.sync()
+	if o := e.app.Hub.Index.Get("DupTe000081"); o == nil || o.SyncState != store.SyncRejected {
+		t.Fatal("not refused")
+	}
+	time.Sleep(1100 * time.Millisecond) // a change after the refusal, in central's whole seconds
+	e.central.Seed("DupTe000081", "DupEn000081", "Fixed", "NAT-8282", nil) // fixed on central
+	e.sync()
+	o := e.app.Hub.Index.Get("DupTe000081")
+	if o == nil || o.SyncState != store.SyncSynced || !strings.Contains(fmt.Sprint(e.app.Hub.Index.Full(o)), "Fixed") {
+		t.Fatalf("central's newer version did not replace the refused copy: %+v", o)
+	}
+	if r, _ := json.Marshal(e.central.DataStoreValue("facility-hub-status", e.app.Hub.HubID())["refused"]); string(r) != "null" {
+		t.Errorf("still counted as refused: %s", r)
+	}
+}
+
+func TestCentralOlderKeepsRefused(t *testing.T) {
+	e := newEnv(t)
+	e.central.Seed("CentralTe83", "CentralEn83", "Kept", "NAT-8383", nil)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.sync()
+	e.offline()
+	e.central.Seed("CentralTe84", "CentralEn84", "Other", "NAT-8484", nil) // the hub cannot know
+	te := newPatient("CentralTe83", "CentralEn83", "Kept", "NAT-8484", nil)["trackedEntities"].([]any)[0].(map[string]any)
+	delete(te, "enrollments")
+	a.json("POST", postSync, map[string]any{"trackedEntities": []any{te}}, 200) // a duplicate: refused
+	e.online()
+	e.sync()
+	a.do("GET", "/api/tracker/trackedEntities/CentralTe83?program="+fc.Program+"&fields=*", nil) // central's older version
+	o := e.app.Hub.Index.Get("CentralTe83")
+	if o == nil || o.SyncState != store.SyncRejected || !strings.Contains(fmt.Sprint(e.app.Hub.Index.Full(o)), "NAT-8484") {
+		t.Fatalf("central's older version replaced the refused copy: %+v", o)
+	}
+}
+
 // TestOfflineAppShellAndConditionalGets: on 2.42+ apps open at /apps/<app>, a page
 // without a file extension; offline it is served to any user, like other app files.
 // A browser that holds another user's copy asks conditionally: the hub must still

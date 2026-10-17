@@ -112,14 +112,20 @@ type Issue struct {
 	ReportedCentralAt string
 }
 
-func (s *Store) AddIssue(seq int64, uid, kind string, userID int64, errJSON []byte) error {
+// AddIssue records a refused change. at is when central refused it, by central's clock
+// (its answer's Date), so that a later change on central can be told apart (RefusedAt);
+// "" is now, by the hub's.
+func (s *Store) AddIssue(seq int64, uid, kind string, userID int64, errJSON []byte, at string) error {
+	if at == "" {
+		at = Now()
+	}
 	tx, err := s.DB().Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	res, err := tx.Exec(`INSERT INTO issues(outbox_seq, object_uid, kind, user_id, error_enc, created_at) VALUES(?,?,?,?,?,?)`,
-		seq, uid, kind, userID, []byte{}, Now())
+		seq, uid, kind, userID, []byte{}, at)
 	if err != nil {
 		return err
 	}
@@ -174,6 +180,13 @@ func (s *Store) issues(q string, args ...any) ([]*Issue, error) {
 		out = append(out, is)
 	}
 	return out, rows.Err()
+}
+
+// RefusedAt is when central last refused a change of this object ("" if never).
+func (s *Store) RefusedAt(uid string) string {
+	var at sql.NullString
+	s.DB().QueryRow(`SELECT max(created_at) FROM issues WHERE object_uid = ?`, uid).Scan(&at)
+	return at.String
 }
 
 func (s *Store) MarkIssueReported(id int64) error {

@@ -350,7 +350,7 @@ func (w *Worker) pushAggregate(ctx context.Context, e *store.OutboxEntry) (pushR
 	}
 	issue, _ := json.Marshal(map[string]any{"message": msg.Message,
 		"errorReports": []map[string]string{{"errorCode": msg.ErrorCode, "message": msg.Message}}, "edit": ed})
-	if err := h.Store.AddIssue(e.Seq, ed.CellKey(), store.OutboxAggregate, e.UserID, issue); err != nil {
+	if err := h.Store.AddIssue(e.Seq, ed.CellKey(), store.OutboxAggregate, e.UserID, issue, ""); err != nil {
 		slog.Error("add issue", "err", err)
 	}
 	slog.Warn("aggregate edit refused", "seq", e.Seq, "cell", ed.CellKey(), "code", msg.ErrorCode)
