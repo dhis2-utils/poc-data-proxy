@@ -233,12 +233,13 @@ func Finish(dataDir, storePath string) error {
 }
 
 // replay runs right after the first unlock of a restored hub, in its new data file:
-// the users and state go back, then the saves, as pending.
-func (s *Stick) replay() {
+// the users and state go back, then the saves, as pending. If they cannot, the unlock
+// fails: a hub without its settings must not start; the next unlock tries again.
+func (s *Stick) replay() error {
 	marker := filepath.Join(s.H.Cfg.DataDir, restoreReplay)
 	b, err := os.ReadFile(marker)
 	if err != nil {
-		return
+		return nil
 	}
 	staging := strings.TrimSpace(string(b))
 	sealed, err := os.ReadFile(filepath.Join(staging, "state.rec"))
@@ -250,7 +251,7 @@ func (s *Stick) replay() {
 	}
 	if err != nil {
 		slog.Error("restoring the hub's state from the USB stick", "err", err)
-		return
+		return fmt.Errorf("restoring the hub's state from the USB stick: %w", err)
 	}
 	files, _ := filepath.Glob(filepath.Join(staging, "outbox", "*.rec"))
 	var entries []*store.RawOutbox
@@ -272,12 +273,13 @@ func (s *Stick) replay() {
 	n, err := s.H.Store.RestoreOutbox(entries)
 	if err != nil {
 		slog.Error("restoring saves from the USB stick", "err", err)
-		return
+		return fmt.Errorf("restoring saves from the USB stick: %w", err)
 	}
 	os.Remove(marker)
 	os.RemoveAll(staging)
 	s.H.Store.NewDataFile = false
 	slog.Info("hub state and saves restored from the USB stick", "saves", n)
+	return nil
 }
 
 func modTime(p string) time.Time {

@@ -69,6 +69,9 @@ type Config struct {
 	// before the hub moves to an announced or redirected new one (docs/DEPLOYMENT.md,
 	// section 6): a brief outage during a planned move must not move it early.
 	CentralMoveAfter time.Duration
+	// UplinkSwitch shows "Simulate uplink cut" on the admin page, for demonstrations.
+	// Off in the field: a hub that looks offline lets staff type in a new central.
+	UplinkSwitch bool
 }
 
 func Default() Config {
@@ -187,6 +190,8 @@ func (c *Config) set(k, v string) error {
 		}
 	case "log_requests":
 		c.LogRequests, err = strconv.ParseBool(v)
+	case "uplink_switch":
+		c.UplinkSwitch, err = strconv.ParseBool(v)
 	default:
 		return fmt.Errorf("unknown key %q", k)
 	}

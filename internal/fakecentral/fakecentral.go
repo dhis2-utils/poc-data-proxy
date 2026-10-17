@@ -56,6 +56,9 @@ type User struct {
 	SearchOrgUnits []string // defaults to OrgUnits
 	NoProgramMeta  bool     // the program's metadata is not shared with this user
 	NoPAT          bool     // this user may not create personal access tokens
+	// Authorities, when not nil, are the user's (default: Capture's).
+	Authorities      []string
+	DataViewOrgUnits []string // defaults to OrgUnits
 }
 
 type Central struct {
@@ -68,6 +71,8 @@ type Central struct {
 	FailPaths map[string]int
 	passwords map[string]string          // users created through the API, with their own password
 	readers   map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (read)
+	writers   map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (write)
+	creators  map[string]string          // dataStore entry id -> username who created it
 	// HubWriters, when set, are the only users who may write the facility-hub-*
 	// dataStore namespaces (protected by sharing, as DEPLOYMENT.md advises).
 	HubWriters map[string]bool
@@ -372,8 +377,31 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				search = append(search, map[string]any{"id": ou, "path": "/root/" + ou})
 			}
 		}
+		view := ous
+		if u.DataViewOrgUnits != nil {
+			view = []any{}
+			for _, ou := range u.DataViewOrgUnits {
+				view = append(view, map[string]any{"id": ou})
+			}
+		}
+		auths := []string{"M_dhis-web-capture"}
+		if u.Authorities != nil {
+			auths = u.Authorities
+		}
 		writeJSON(w, 200, map[string]any{"id": u.UID, "username": u.Username, "organisationUnits": ous,
-			"teiSearchOrganisationUnits": search, "authorities": []string{"M_dhis-web-capture"}, "userGroups": groups})
+			"teiSearchOrganisationUnits": search, "dataViewOrganisationUnits": view, "authorities": auths, "userGroups": groups})
+	case p == "/api/me/changePassword" && r.Method == "PUT":
+		c.changePassword(w, r, u)
+	case p == "/api/apiToken" && r.Method == "GET":
+		c.mu.Lock()
+		toks := []any{}
+		for id, key := range c.tokenIDs {
+			if c.tokens[key] == u.Username {
+				toks = append(toks, map[string]any{"id": id})
+			}
+		}
+		c.mu.Unlock()
+		writeJSON(w, 200, map[string]any{"apiToken": toks})
 	case p == "/api/apiToken" && r.Method == "POST" && u.NoPAT:
 		webMessage(w, 403, "Access is denied", "")
 	case p == "/api/apiToken" && r.Method == "POST":
@@ -448,6 +476,10 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, out)
 	case p == "/api/users" && r.Method == "POST":
 		c.createUser(w, r)
+	case p == "/api/users" && r.Method == "GET":
+		c.findUser(w, r)
+	case strings.HasPrefix(p, "/api/users/") && r.Method == "PATCH":
+		c.patchUser(w, r, strings.TrimPrefix(p, "/api/users/"))
 	case strings.HasPrefix(p, "/api/userGroups/") && r.Method == "POST":
 		c.addToGroup(w, p)
 	case p == "/api/sharing" && r.URL.Query().Get("type") == "dataStore":
@@ -860,13 +892,25 @@ func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
 		return
 	}
 	key, _ := url.PathUnescape(parts[1])
+	id := entryID(ns, key)
 	if len(parts) == 3 && parts[2] == "metaData" {
-		writeJSON(w, 200, map[string]any{"id": entryID(ns, key), "namespace": ns, "key": key})
+		writeJSON(w, 200, map[string]any{"id": id, "namespace": ns, "key": key,
+			"createdBy": map[string]any{"username": c.creators[id]}})
 		return
 	}
-	if rs := c.readers[entryID(ns, key)]; rs != nil && !rs[u.UID] && u.Username != "hub_admin" {
+	if rs := c.readers[id]; rs != nil && !rs[u.UID] && u.Username != "hub_admin" {
 		webMessage(w, 403, "Access denied for key", "E1102") // shared with some users only
 		return
+	}
+	if ws := c.writers[id]; c.readers[id] != nil && r.Method != "GET" && !ws[u.UID] && u.Username != "hub_admin" {
+		webMessage(w, 403, "Access denied for key", "E1102")
+		return
+	}
+	if _, ok := c.DataStore[ns][key]; !ok && (r.Method == "POST" || r.Method == "PUT") {
+		if c.creators == nil {
+			c.creators = map[string]string{}
+		}
+		c.creators[id] = u.Username
 	}
 	b, _ := io.ReadAll(r.Body)
 	switch r.Method {

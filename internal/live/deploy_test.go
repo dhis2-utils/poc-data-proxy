@@ -2,6 +2,7 @@ package live
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -348,9 +349,25 @@ func TestHubAccountLive(t *testing.T) {
 		}
 	}
 	done, err := hubaccount.Approve(context.Background(), hubaccount.Options{Central: e.M.CentralURL,
-		Username: e.M.AdminUser, Password: e.M.AdminPassword, Group: group, Role: role})
+		Username: e.M.AdminUser, Password: e.M.AdminPassword, Group: group, Role: role}, []string{h.HubID()})
 	if err != nil || !slices.Contains(done, h.HubID()) {
 		t.Fatalf("approve: %v %v", done, err)
+	}
+	// What the box carries, to check the hub replaces it.
+	st, b, err := e.Central.Do("GET", "/api/dataStore/facility-hub-registry/"+h.HubID(), nil)
+	var reg struct {
+		Account struct {
+			Box string `json:"box"`
+		} `json:"account"`
+	}
+	if err != nil || st != 200 || json.Unmarshal(b, &reg) != nil {
+		t.Fatalf("reading the registry entry: %d %v", st, err)
+	}
+	box, _ := base64.StdEncoding.DecodeString(reg.Account.Box)
+	plain, err := hubaccount.Open(h.Runtime().BoxKey, box, h.HubID())
+	var handed hubaccount.Credentials
+	if err != nil || json.Unmarshal(plain, &handed) != nil {
+		t.Fatalf("the box does not open: %v", err)
 	}
 	if err := h.RefreshCatalog(context.Background()); err != nil {
 		t.Fatal(err)
@@ -358,6 +375,15 @@ func TestHubAccountLive(t *testing.T) {
 	rt := h.Runtime()
 	if rt.TokenOwner() != h.HubID() {
 		t.Fatalf("the hub did not take up its account: %q", rt.TokenOwner())
+	}
+	if h.Store.Meta(core.MetaAccountRotate) != "" || rt.HubPassword == handed.Password || rt.MoveSecret == handed.MoveSecret {
+		t.Fatalf("the handed-over credentials were not replaced (%q)", h.Store.Meta(core.MetaAccountRotate))
+	}
+	if st, _, _ := tk.NewCentral(e.M.CentralURL, h.HubID(), handed.Password).Do("GET", "/api/me?fields=id", nil); st == 200 {
+		t.Error("the handed-over password still works")
+	}
+	if st, _, _ := tk.NewCentral(e.M.CentralURL, h.HubID(), rt.HubPassword).Do("GET", "/api/me?fields=id", nil); st != 200 && e.Live() {
+		t.Errorf("the hub's new password does not work: %d", st)
 	}
 	var ous []string
 	if e.Fake != nil {

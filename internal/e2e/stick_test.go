@@ -374,3 +374,70 @@ func TestFailedSetupCleansUp(t *testing.T) {
 	e.central.FailPaths = nil
 	e.setup()
 }
+
+// Review I3: once the hub has gone active, a later failure (here the set-up user's
+// login on the hub) must not remove its registry entry or its token; and a hub it
+// replaces that cannot be marked retired does not undo the set-up.
+func TestSetupFailingAfterActivationKeepsTheHub(t *testing.T) {
+	e := newEnv(t)
+	old, _ := json.Marshal(map[string]any{"hubId": "hub-old", "facility": fc.Facility, "status": "active"})
+	e.central.DataStore["facility-hub-registry"] = map[string]json.RawMessage{"hub-old": old}
+	e.central.OnTokenCreate = func(string) {
+		// After the hub's token: retiring the old hub and the set-up user's login fail.
+		e.central.FailPaths = map[string]int{"/api/me": 500, "/api/dataStore/facility-hub-registry/hub-old": 500}
+	}
+	c := e.web("hub_admin")
+	resp, err := c.postForm("/hub/setup", url.Values{"step": {"login"}, "central_url": {e.cSrv.URL}, "username": {"hub_admin"}, "password": {fc.Password}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	m := regexp.MustCompile(`name="nonce" value="([^"]+)"`).FindSubmatch(page)
+	if m == nil {
+		t.Fatalf("no confirm step: %s", page)
+	}
+	resp, err = c.postForm("/hub/setup", url.Values{"step": {"confirm"}, "nonce": {string(m[1])}, "replace": {"yes"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(page), "This hub now serves") {
+		t.Errorf("the set-up page does not say the hub is set up: %.300s", page)
+	}
+	e.central.FailPaths = nil
+	if e.app.Hub.Mode() != "active" {
+		t.Fatalf("mode %s", e.app.Hub.Mode())
+	}
+	if v := e.central.DataStoreValue("facility-hub-registry", e.app.Hub.HubID()); v == nil {
+		t.Error("the active hub's registry entry was removed")
+	}
+	if !e.central.TokenValid(e.app.Hub.Runtime().HubToken) {
+		t.Error("the active hub's token was deleted")
+	}
+}
+
+// Review I6: when the hub's state on the stick does not open, the restored hub does
+// not unlock without its settings: the login fails, and the hub stays locked with the
+// restore still to do.
+func TestStickStateNotOpeningKeepsTheHubLocked(t *testing.T) {
+	e, usb, id := stickWithSaves(t)
+	f := filepath.Join(usb, "facility-hub", id, "state.rec")
+	b, err := os.ReadFile(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b[len(b)/2] ^= 0xff
+	os.WriteFile(f, b, 0o600)
+	e.diskDies()
+	e.restoreFromStick(id, "nurse_a", fc.Password)
+	// Online, the login itself passes through to central.
+	e.web("nurse_a").do("POST", "/api/auth/login", map[string]string{"username": "nurse_a", "password": fc.Password})
+	if e.app.Hub.Store.Unlocked() {
+		t.Fatal("unlocked without the hub's state")
+	}
+	if e.app.Hub.Runtime() != nil {
+		t.Error("a runtime without the restored state")
+	}
+}

@@ -42,6 +42,7 @@ type Me struct {
 	Username                   string   `json:"username"`
 	OrganisationUnits          []idRef  `json:"organisationUnits"`
 	TeiSearchOrganisationUnits []idRef  `json:"teiSearchOrganisationUnits"`
+	DataViewOrganisationUnits  []idRef  `json:"dataViewOrganisationUnits"`
 	Authorities                []string `json:"authorities"`
 	UserGroups                 []idRef  `json:"userGroups"`
 }
@@ -58,7 +59,7 @@ func (m *Me) Belongs(facilityPath string) bool {
 	return false
 }
 
-const meFields = "id,username,organisationUnits[id],teiSearchOrganisationUnits[id],authorities,userGroups[id]"
+const meFields = "id,username,organisationUnits[id],teiSearchOrganisationUnits[id],dataViewOrganisationUnits[id],authorities,userGroups[id]"
 
 func (h *Hub) FetchMe(ctx context.Context, auth central.Auth) (*Me, error) {
 	me := &Me{}
@@ -248,10 +249,12 @@ func (h *Hub) RenewHubToken(ctx context.Context) error {
 	}
 	newExp := time.Now().Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
 	uid, key, err := h.CreatePAT(ctx, h.HubAuth(), newExp)
+	owner := rt.HubTokenOwner
 	if central.Status(err) == http.StatusUnauthorized && rt.HubPassword != "" {
 		// The hub's own account, whose token lapsed while offline: a new one with its
 		// password.
 		uid, key, err = h.CreatePAT(ctx, central.Auth{Username: h.HubID(), Password: rt.HubPassword}, newExp)
+		owner = h.HubID()
 	}
 	if err != nil {
 		return fmt.Errorf("renewing hub token: %w", err)
@@ -259,6 +262,7 @@ func (h *Hub) RenewHubToken(ctx context.Context) error {
 	oldUID := rt.HubTokenUID
 	if err := h.UpdateRuntime(func(rt *Runtime) {
 		rt.HubToken, rt.HubTokenUID, rt.HubTokenExp = key, uid, newExp.UTC().Format(time.RFC3339)
+		rt.HubTokenOwner = owner
 	}); err != nil {
 		return err
 	}
@@ -604,6 +608,9 @@ func (h *Hub) TakeOverHubToken(ctx context.Context, username, password string) e
 	if err := h.UpdateRuntime(func(rt *Runtime) {
 		rt.HubToken, rt.HubTokenUID, rt.HubTokenExp = key, uid, exp.UTC().Format(time.RFC3339)
 		rt.HubTokenOwner = me.Username
+		// The hub's own account, if it had one, is set aside: the hub asks for an
+		// account again at its next refresh.
+		rt.HubPassword, rt.MoveSecret = "", ""
 	}); err != nil {
 		return err
 	}

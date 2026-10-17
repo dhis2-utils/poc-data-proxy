@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/dhis2/facility-hub/internal/tracker"
@@ -118,20 +119,33 @@ func (c *Central) createUser(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		ID, Username, Password string
 		OrganisationUnits      []struct{ ID string } `json:"organisationUnits"`
+		DataView               []struct{ ID string } `json:"dataViewOrganisationUnits"`
+		Search                 []struct{ ID string } `json:"teiSearchOrganisationUnits"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Username == "" {
 		webMessage(w, 400, "bad user", "")
 		return
 	}
-	var ous []string
-	for _, o := range in.OrganisationUnits {
-		ous = append(ous, o.ID)
+	ids := func(refs []struct{ ID string }) []string {
+		out := []string{}
+		for _, o := range refs {
+			out = append(out, o.ID)
+		}
+		return out
 	}
+	ous := ids(in.OrganisationUnits)
 	c.mu.Lock()
 	if c.passwords == nil {
 		c.passwords = map[string]string{}
 	}
-	c.Users[in.Username] = &User{UID: in.ID, Username: in.Username, OrgUnits: ous, StageRead: map[string]bool{}, StageWrite: map[string]bool{}}
+	if c.Users[in.Username] != nil {
+		c.mu.Unlock()
+		webMessage(w, 409, "username already taken", "E4054")
+		return
+	}
+	// Created with a role without authorities, as hub accounts are.
+	c.Users[in.Username] = &User{UID: in.ID, Username: in.Username, OrgUnits: ous, DataViewOrgUnits: ids(in.DataView),
+		SearchOrgUnits: ids(in.Search), Authorities: []string{}, StageRead: map[string]bool{}, StageWrite: map[string]bool{}}
 	c.passwords[in.Username] = in.Password
 	c.mu.Unlock()
 	writeJSON(w, 201, map[string]any{"httpStatus": "Created", "httpStatusCode": 201, "status": "OK", "response": map[string]any{"uid": in.ID}})
@@ -165,17 +179,88 @@ func (c *Central) shareEntry(w http.ResponseWriter, r *http.Request) {
 		} `json:"object"`
 	}
 	json.NewDecoder(r.Body).Decode(&in)
-	rs := map[string]bool{}
+	rs, ws := map[string]bool{}, map[string]bool{}
 	for _, a := range in.Object.UserAccesses {
-		if strings.HasPrefix(a.Access, "r") {
-			rs[a.ID] = true
-		}
+		rs[a.ID] = strings.HasPrefix(a.Access, "r")
+		ws[a.ID] = strings.HasPrefix(a.Access, "rw")
 	}
 	c.mu.Lock()
 	if c.readers == nil {
-		c.readers = map[string]map[string]bool{}
+		c.readers, c.writers = map[string]map[string]bool{}, map[string]map[string]bool{}
 	}
 	c.readers[r.URL.Query().Get("id")] = rs
+	c.writers[r.URL.Query().Get("id")] = ws
 	c.mu.Unlock()
 	writeJSON(w, 200, map[string]any{"status": "OK"})
+}
+
+// changePassword handles PUT /api/me/changePassword (users created through the API).
+func (c *Central) changePassword(w http.ResponseWriter, r *http.Request, u *User) {
+	var in struct{ OldPassword, NewPassword string }
+	json.NewDecoder(r.Body).Decode(&in)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if old, ok := c.passwords[u.Username]; !ok || old != in.OldPassword || in.NewPassword == "" {
+		webMessage(w, 400, "wrong old password", "")
+		return
+	}
+	c.passwords[u.Username] = in.NewPassword
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// findUser handles GET /api/users?filter=username:eq:X.
+func (c *Central) findUser(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Query().Get("filter"), "username:eq:")
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	users := []any{}
+	if u := c.Users[name]; u != nil {
+		ous := []any{}
+		for _, o := range u.OrgUnits {
+			ous = append(ous, map[string]any{"id": o})
+		}
+		users = append(users, map[string]any{"id": u.UID, "username": u.Username, "organisationUnits": ous})
+	}
+	writeJSON(w, 200, map[string]any{"users": users})
+}
+
+// patchUser handles PATCH /api/users/{id} replacing the password (JSON patch).
+func (c *Central) patchUser(w http.ResponseWriter, r *http.Request, id string) {
+	var ops []struct{ Op, Path, Value string }
+	json.NewDecoder(r.Body).Decode(&ops)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, u := range c.Users {
+		if u.UID != id {
+			continue
+		}
+		for _, op := range ops {
+			if op.Op == "replace" && op.Path == "/password" {
+				if c.passwords == nil {
+					c.passwords = map[string]string{}
+				}
+				c.passwords[u.Username] = op.Value
+			}
+		}
+		writeJSON(w, 200, map[string]any{"status": "OK"})
+		return
+	}
+	webMessage(w, 404, "no such user", "E1005")
+}
+
+// PasswordOf is the password of a user created through the API.
+func (c *Central) PasswordOf(username string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.passwords[username]
+}
+
+// CreateToken makes a personal access token for a user, as they could themselves.
+func (c *Central) CreateToken(username string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tokenSeq++
+	key := "d2p_" + strings.Repeat("y", 10) + strconv.Itoa(c.tokenSeq) + username
+	c.tokens[key], c.tokenIDs[fmt.Sprintf("Tok%08d", c.tokenSeq)] = username, key
+	return key
 }

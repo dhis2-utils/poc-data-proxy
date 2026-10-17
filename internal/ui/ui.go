@@ -277,7 +277,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	u.render(w, "admin", map[string]any{
 		"Status": StatusBody(h), "Heartbeat": hubsync.Status(h), "Runtime": rt, "Programs": programs,
 		"Outbox": outbox, "Issues": irows, "Users": rows, "Names": names, "Objects": h.Index.Len(),
-		"Forced": h.Monitor.ForcedOffline(), "Upgrade": upgrade, "Central": h.Central.BaseURL(),
+		"Forced": h.Monitor.ForcedOffline(), "UplinkSwitch": h.Cfg.UplinkSwitch, "Upgrade": upgrade, "Central": h.Central.BaseURL(),
 		"ServerVersion": h.ServerVersion(), "Msg": r.URL.Query().Get("msg"),
 		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour), "Orphans": h.Store.PendingWithoutUser(),
 		"Offline": !h.Online(),
@@ -296,8 +296,10 @@ func (u *UI) handleSyncNow(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleUplink lets a demo or test "cut the uplink" without touching the network.
+// Off unless hub.yaml has uplink_switch: a hub that looks offline lets staff type in a
+// new central address.
 func (u *UI) handleUplink(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	if r.Method != http.MethodPost || !u.H.Cfg.UplinkSwitch {
 		http.Redirect(w, r, "/hub/ui", http.StatusFound)
 		return
 	}
@@ -353,15 +355,25 @@ func (u *UI) handleTakeOver(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleMove switches the hub to central's new address after an unplanned move, typed
-// in by a staff member; the hub checks it with its own account (core.TypedMove).
+// in by a staff member, who confirms with their password; the hub checks it with its
+// own account (core.TypedMove).
 func (u *UI) handleMove(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	sess := u.H.Sessions.FromCookie(r)
+	if r.Method != http.MethodPost || sess == nil {
 		http.Redirect(w, r, "/hub/ui", http.StatusFound)
 		return
 	}
 	msg := "The hub now uses central at its new address"
-	if err := u.H.TypedMove(r.Context(), r.FormValue("central_url")); err != nil {
-		msg = "Not moved: " + err.Error()
+	// Throttled like take-overs, and counted apart from logins.
+	src, key := auth.Source(r), "move:"+sess.Username
+	if f := u.Auth.Throttled(src, key); f != nil {
+		msg = "Not moved: too many wrong passwords; try again later"
+	} else {
+		err := u.H.TypedMove(r.Context(), r.FormValue("central_url"), sess.Username, r.FormValue("password"))
+		u.Auth.Count(src, key, errors.Is(err, core.ErrWrongPassword))
+		if err != nil {
+			msg = "Not moved: " + err.Error()
+		}
 	}
 	http.Redirect(w, r, "/hub/ui?msg="+template.URLQueryEscaper(msg), http.StatusFound)
 }

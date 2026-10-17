@@ -302,6 +302,13 @@ func (m *Monitor) Force(online *bool) {
 	}
 }
 
+// Reachable is what the probes found, whatever the "cut the uplink" switch says.
+func (m *Monitor) Reachable() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.online
+}
+
 func (m *Monitor) ForcedOffline() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()

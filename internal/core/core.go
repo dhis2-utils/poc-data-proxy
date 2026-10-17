@@ -81,7 +81,7 @@ type Hub struct {
 	tokenMu sync.Mutex
 	histMu  sync.Mutex // the daily history (history.go)
 	// afterUnlock run after each unlock (the USB stick puts back restored saves).
-	afterUnlock []func()
+	afterUnlock []func() error
 	// USBStatus reports the USB stick's health (nil without a stick configured).
 	USBStatus func() any
 	zoneMu    sync.Mutex
@@ -362,7 +362,10 @@ func (h *Hub) Unlock(dk hubcrypto.Key) error {
 	// Before the runtime is read: a hub restored from its USB stick puts its state
 	// back first.
 	for _, fn := range h.afterUnlock {
-		fn()
+		if err := fn(); err != nil {
+			h.Store.SetDK(nil)
+			return err
+		}
 	}
 	b, err := h.Store.State("runtime")
 	if err != nil {
@@ -391,8 +394,8 @@ func (h *Hub) Unlock(dk hubcrypto.Key) error {
 }
 
 // AfterUnlock registers a function run at each unlock, once the data key is set and
-// before the runtime and the index are loaded.
-func (h *Hub) AfterUnlock(fn func()) { h.afterUnlock = append(h.afterUnlock, fn) }
+// before the runtime and the index are loaded. An error fails the unlock.
+func (h *Hub) AfterUnlock(fn func() error) { h.afterUnlock = append(h.afterUnlock, fn) }
 
 // Lock forgets the data key and all decrypted state.
 func (h *Hub) Lock() {

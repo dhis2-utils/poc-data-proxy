@@ -22,6 +22,15 @@ func NewBoxKey() (pub, priv []byte, err error) {
 	return k.PublicKey().Bytes(), k.Bytes(), nil
 }
 
+// PublicKey is the public half of a box key.
+func PublicKey(priv []byte) ([]byte, error) {
+	k, err := ecdh.X25519().NewPrivateKey(priv)
+	if err != nil {
+		return nil, err
+	}
+	return k.PublicKey().Bytes(), nil
+}
+
 // Seal encrypts plaintext to the hub with this public key, bound to its ID: an
 // ephemeral X25519 key, a key derived from the shared secret, AES-GCM.
 func Seal(pub, plaintext []byte, hubID string) ([]byte, error) {
