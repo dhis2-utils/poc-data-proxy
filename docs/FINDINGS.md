@@ -163,7 +163,7 @@ The POC uses a PAT of the setup user, as the spec allows. It is used for:
 
 This token dies when the setup user is disabled: the hub then stops its heartbeat and issue reports, stops refreshing its programme list and retention settings, and, once its reserved pool runs out, refuses offline registrations that need a generated ID. It also renews itself with itself, so it cannot recover. Patient data is not affected: every pull and push uses the user's own token. If the setup user only moves to another facility, the hub keeps working with the credentials of someone who no longer works there.
 
-Interim measure (DEPLOYMENT.md, section 6; not built): any staff member assigned to the facility can take the hub over from its page (a token of theirs replaces the old one), and the heartbeat says whose token the hub uses and whether it works, so central sees a broken one before the pool runs out.
+Interim measure (DEPLOYMENT.md, section 6; built 2026-10-17, for members of the hub owners group): any staff member assigned to the facility can take the hub over from its page (a token of theirs replaces the old one), and the heartbeat says whose token the hub uses and whether it works, so central sees a broken one before the pool runs out.
 
 Options for the lasting answer:
 
