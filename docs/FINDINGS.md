@@ -438,6 +438,7 @@ Event programs (without registration) work offline through the hub since 2026-10
 - What a listing shows under a stub with the same `updatedAt` counts as held, so a full pull does not fetch those people again.
 - Pruning runs after each sync cycle: aged enrollments become stubs and their events go; then tracked entities of types with a window that have nothing left in full go, with their stubs and relationships. Nothing with a pending or rejected change is pruned, and nothing a pending change refers to.
 - Offline, E1015 and E1016 are refused with central's codes and messages, E1016 also against a stub. A cancelled new enrollment is checked by neither rule.
+- **Known limitation (by choice):** a tracked entity removed by a type window leaves no trace on the hub. A device that still holds it and edits it offline is therefore answered as for a new tracked entity (accepted), not "needs connection" as the spec intends for pruned objects. Central applies the push as an ordinary update, so nothing is lost or duplicated; the hub holds the person again from then on. Answering "needs connection" would mean keeping a record of every pruned tracked entity, which is what pruning is meant to remove. Pruned enrollments and events are not affected: their stubs, or their enrollment's stub, are still known.
 
 ## Listings, compression and the dataStore (measured)
 
