@@ -57,6 +57,7 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 	}
 	EnsureIdentity(st)
 	h := core.New(cfg, version, st)
+	h.Monitor.OnChangeInOrder(h.NoteConnectivity)
 	if cfg.LogRequests {
 		h.ReqLog.Open(cfg.DataDir)
 	}

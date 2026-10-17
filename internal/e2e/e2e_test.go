@@ -812,7 +812,7 @@ func TestCentralNewerReplacesRefused(t *testing.T) {
 	if o := e.app.Hub.Index.Get("DupTe000081"); o == nil || o.SyncState != store.SyncRejected {
 		t.Fatal("not refused")
 	}
-	time.Sleep(1100 * time.Millisecond) // a change after the refusal, in central's whole seconds
+	time.Sleep(1100 * time.Millisecond)                                    // a change after the refusal, in central's whole seconds
 	e.central.Seed("DupTe000081", "DupEn000081", "Fixed", "NAT-8282", nil) // fixed on central
 	e.sync()
 	o := e.app.Hub.Index.Get("DupTe000081")

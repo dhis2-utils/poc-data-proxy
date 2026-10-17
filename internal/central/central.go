@@ -203,9 +203,13 @@ type Monitor struct {
 	online    bool
 	failures  int
 	listeners []func(online bool)
-	Interval  time.Duration
-	lastWhy   time.Time // last "still unreachable" log
-	Timeout   time.Duration
+	// inOrder are called synchronously, in the order of the switches (notifyMu): for
+	// records that need them in order, such as the hub's history of outages.
+	inOrder  []func(online bool)
+	notifyMu sync.Mutex
+	Interval time.Duration
+	lastWhy  time.Time // last "still unreachable" log
+	Timeout  time.Duration
 	// Forced, when set, pins the state (tests and the "cut the uplink" demo switch).
 	forced *bool
 }
@@ -230,15 +234,28 @@ func (m *Monitor) OnChange(fn func(online bool)) {
 	m.mu.Unlock()
 }
 
+// OnChangeInOrder registers a callback called synchronously, in order, on each switch.
+func (m *Monitor) OnChangeInOrder(fn func(online bool)) {
+	m.mu.Lock()
+	m.inOrder = append(m.inOrder, fn)
+	m.mu.Unlock()
+}
+
 func (m *Monitor) set(online bool) {
+	m.notifyMu.Lock()
+	defer m.notifyMu.Unlock()
 	m.mu.Lock()
 	changed := m.online != online
 	m.online = online
 	ls := append([]func(bool){}, m.listeners...)
+	ordered := append([]func(bool){}, m.inOrder...)
 	forced := m.forced != nil
 	m.mu.Unlock()
 	if changed && !forced {
 		slog.Info("connectivity", "online", online)
+		for _, fn := range ordered {
+			fn(online)
+		}
 		for _, fn := range ls {
 			go fn(online)
 		}

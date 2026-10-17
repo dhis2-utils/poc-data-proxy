@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
@@ -164,5 +165,48 @@ func TestTakeOverNeedsWriteAccess(t *testing.T) {
 	nurseName := e.M.Users[tk.RoleNurse].Username
 	if n := e.Fake.TokensOf(nurseName); n > 1 { // the nurse's own login token only
 		t.Errorf("the refused take-over left %d tokens of the nurse", n)
+	}
+}
+
+// The heartbeat keeps a daily history for 90 days next to the latest status: syncs,
+// outages and offline minutes (split at midnight), the peak of pending changes and the
+// lowest free disk, so central sees how a hub lives, not only how it is now.
+func TestHeartbeatHistory(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	e.Setup()
+	h := e.App.Hub
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	h.NoteOffline(today.Add(-30*time.Minute), today.Add(90*time.Minute)) // 23:30 to 01:30
+	e.Offline()
+	e.Online()
+	e.Sync()
+	var hb struct {
+		Version string `json:"version"`
+		History []struct {
+			Date           string `json:"date"`
+			Syncs          int    `json:"syncs"`
+			Outages        int    `json:"outages"`
+			OfflineMinutes int    `json:"offlineMinutes"`
+			LongestOffline int    `json:"longestOfflineMinutes"`
+			DiskFreeMin    uint64 `json:"diskFreeMinBytes"`
+		} `json:"history"`
+	}
+	b, _ := json.Marshal(e.Fake.DataStoreValue("facility-hub-status", h.HubID()))
+	json.Unmarshal(b, &hb)
+	days := map[string]int{}
+	for i, d := range hb.History {
+		days[d.Date] = i
+	}
+	y, ok1 := days[today.Add(-time.Hour).Format(time.DateOnly)]
+	d, ok2 := days[today.Format(time.DateOnly)]
+	if hb.Version == "" || !ok1 || !ok2 {
+		t.Fatalf("heartbeat: %s", b)
+	}
+	if hb.History[y].OfflineMinutes != 30 || hb.History[d].OfflineMinutes < 90 || hb.History[d].LongestOffline < 120 {
+		t.Errorf("offline minutes not split at midnight: %+v", hb.History)
+	}
+	if hb.History[d].Outages < 2 || hb.History[d].Syncs < 1 || hb.History[d].DiskFreeMin == 0 {
+		t.Errorf("today: %+v", hb.History[d])
 	}
 }

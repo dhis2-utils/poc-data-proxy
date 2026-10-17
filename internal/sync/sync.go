@@ -1121,6 +1121,7 @@ func (w *Worker) RefillPool(ctx context.Context) error {
 
 func (w *Worker) heartbeat(ctx context.Context) {
 	h := w.H
+	h.NoteCycle(h.Store.CountObjects(store.SyncPending), diskFree(h.Cfg.DataDir))
 	if err := h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-status/"+h.HubID(), Status(h), h.HubAuth(), nil); err != nil {
 		slog.Warn("heartbeat", "err", err)
 	}
@@ -1144,6 +1145,8 @@ func Status(h *core.Hub) map[string]any {
 		// hubs that depend on a user who is being disabled.
 		"hubTokenOwner": h.Runtime().TokenOwner(), "hubTokenExpires": hubTokenExpires(h),
 		"refused": refusedCounts(h),
+		// How the hub has lived, a summary per day for 90 days (history.go).
+		"history": h.History(),
 	}
 }
 
