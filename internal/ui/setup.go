@@ -393,8 +393,9 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (_ *core.Sessio
 	if err != nil {
 		return nil, err
 	}
-	// accountRequested: the national team's "hub approve" gives the hub an account of
-	// its own, sent encrypted to boxKey (docs/DEPLOYMENT.md, "The hub's own account").
+	// accountRequested: the national team approves the hub in the Facility Hub app, which
+	// gives it an account of its own, sent encrypted to boxKey (docs/DEPLOYMENT.md, "The
+	// hub's own account").
 	reg := map[string]any{"hubId": h.HubID(), "facility": p.Facility.ID, "facilityName": p.Facility.Name,
 		"setupBy": p.Username, "setupAt": setupAt, "hubVersion": h.Version, "publicKey": base64.StdEncoding.EncodeToString(pub),
 		"status": "active", "accountRequested": true, "boxKey": base64.StdEncoding.EncodeToString(boxPub)}

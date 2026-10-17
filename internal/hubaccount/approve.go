@@ -91,8 +91,8 @@ func (c *client) approve(ctx context.Context, r Request) error {
 		return errors.New("no facility")
 	case len(pub) != 32:
 		return errors.New("no key to hand the account over with")
-	case subtle.ConstantTimeCompare([]byte(NormalizeCode(AccountCode(pub, id))), []byte(NormalizeCode(r.Code))) != 1:
-		return errors.New("the code is not the one for this hub's key: ask the facility to read it again from the hub's page")
+	case subtle.ConstantTimeCompare([]byte(NormalizeCode(AccountCode(pub, id, facility))), []byte(NormalizeCode(r.Code))) != 1:
+		return errors.New("the code is not the one for this hub's key and facility: ask the facility to read it again from the hub's page")
 	}
 	moveKey := make([]byte, 32)
 	rand.Read(moveKey)
@@ -108,8 +108,10 @@ func (c *client) approve(ctx context.Context, r Request) error {
 	if err := c.do(ctx, "DELETE", keyPath, nil, nil); err != nil && !strings.Contains(err.Error(), ": 404 ") {
 		return fmt.Errorf("removing its old move key: %w", err)
 	}
-	if err := c.do(ctx, "POST", keyPath, map[string]string{"moveKey": base64.StdEncoding.EncodeToString(moveKey)}, nil); err != nil {
-		return fmt.Errorf("keeping its move key: %w", err)
+	// A new entry is public (read and write) until its sharing is set: the key goes in
+	// only after.
+	if err := c.do(ctx, "POST", keyPath, map[string]string{}, nil); err != nil {
+		return fmt.Errorf("making the entry for its move key: %w", err)
 	}
 	var meta struct {
 		ID string `json:"id"`
@@ -120,6 +122,9 @@ func (c *client) approve(ctx context.Context, r Request) error {
 	share := map[string]any{"object": map[string]any{"publicAccess": "--------", "userAccesses": []any{}, "userGroupAccesses": []any{}}}
 	if err := c.do(ctx, "POST", "/api/sharing?type=dataStore&id="+meta.ID, share, nil); err != nil {
 		return fmt.Errorf("limiting its move key to administrators: %w", err)
+	}
+	if err := c.do(ctx, "PUT", keyPath, map[string]string{"moveKey": base64.StdEncoding.EncodeToString(moveKey)}, nil); err != nil {
+		return fmt.Errorf("keeping its move key: %w", err)
 	}
 	plain, _ := json.Marshal(creds)
 	box, err := Seal(pub, plain, id)
@@ -132,8 +137,8 @@ func (c *client) approve(ctx context.Context, r Request) error {
 	if err := c.do(ctx, "GET", regPath, nil, &now); err != nil {
 		return err
 	}
-	if str(now["boxKey"]) != str(v["boxKey"]) {
-		return errors.New("its key changed meanwhile; ask the facility for the code again")
+	if str(now["boxKey"]) != str(v["boxKey"]) || str(now["facility"]) != facility || now["account"] != nil {
+		return errors.New("its entry changed meanwhile (another approval?); ask the facility for the code again")
 	}
 	now["account"] = map[string]string{"username": id, "box": base64.StdEncoding.EncodeToString(box)}
 	if err := c.do(ctx, "PUT", regPath, now, nil); err != nil {

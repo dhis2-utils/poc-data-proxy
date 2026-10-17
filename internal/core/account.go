@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -41,7 +42,7 @@ func (h *Hub) AccountCode() string {
 	if err != nil {
 		return ""
 	}
-	return hubaccount.AccountCode(pub, h.HubID())
+	return hubaccount.AccountCode(pub, h.HubID(), h.Facility())
 }
 
 // refreshAccount asks for an account (publishing the hub's key) whenever the registry
@@ -86,7 +87,7 @@ func (h *Hub) refreshAccount(ctx context.Context) {
 			slog.Warn("the hub's request for its own account not published", "err", err)
 			return
 		}
-		slog.Info("the hub asks for its own account", "why", why, "code", hubaccount.AccountCode(pub, h.HubID()))
+		slog.Info("the hub asks for its own account", "why", why, "code", hubaccount.AccountCode(pub, h.HubID(), h.Facility()))
 	}
 	acc, _ := reg["account"].(map[string]any)
 	published, _ := base64.StdEncoding.DecodeString(fmt.Sprint(reg["boxKey"]))
@@ -110,7 +111,9 @@ func (h *Hub) refreshAccount(ctx context.Context) {
 		askAgain("the account handed over does not open")
 		return
 	}
-	if err := h.adoptAccount(ctx, creds); err != nil {
+	if err := h.adoptAccount(ctx, creds); errors.Is(err, errNotFit) {
+		askAgain(err.Error()) // the national team sees it waiting, and approves again
+	} else if err != nil {
 		slog.Warn("the hub's own account not taken up", "err", err)
 	}
 }
@@ -119,8 +122,15 @@ func (h *Hub) refreshAccount(ctx context.Context) {
 // account is the hub's: named for it, assigned to its facility only (capture, data
 // view and search), with no authorities, and able to do the housekeeping. The old
 // token is deleted, and the credentials are replaced and leave the registry.
+// errNotFit: the account handed over is not one the hub may use; it asks again.
+var errNotFit = errors.New("the account handed over is not fit for this hub")
+
 func (h *Hub) adoptAccount(ctx context.Context, creds hubaccount.Credentials) error {
 	h.tokenMu.Lock()
+	if h.Runtime().TokenOwner() == h.HubID() { // taken up meanwhile
+		h.tokenMu.Unlock()
+		return nil
+	}
 	if err := h.adoptLocked(ctx, creds); err != nil {
 		h.tokenMu.Unlock()
 		return err
@@ -134,15 +144,18 @@ func (h *Hub) adoptAccount(ctx context.Context, creds hubaccount.Credentials) er
 
 func (h *Hub) adoptLocked(ctx context.Context, creds hubaccount.Credentials) error {
 	if creds.Username != h.HubID() {
-		return fmt.Errorf("an account named %q is not this hub's", creds.Username)
+		return fmt.Errorf("%w: it is named %q", errNotFit, creds.Username)
 	}
 	basic := central.Auth{Username: creds.Username, Password: creds.Password}
 	me, err := h.FetchMe(ctx, basic)
+	if central.Status(err) == http.StatusUnauthorized {
+		return fmt.Errorf("%w: central refuses its password (disabled, or approved again since)", errNotFit)
+	}
 	if err != nil {
 		return err
 	}
 	if err := h.ownAccount(me); err != nil {
-		return err
+		return fmt.Errorf("%w: %v", errNotFit, err)
 	}
 	exp := time.Now().Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
 	uid, key, err := h.CreatePAT(ctx, basic, exp)
@@ -214,8 +227,8 @@ func (h *Hub) rotateAccount(ctx context.Context) error {
 	if next := rt.HubPasswordNext; next != "" {
 		// An earlier change whose answer was lost: did central take it?
 		_, err := h.FetchMe(ctx, central.Auth{Username: h.HubID(), Password: next})
-		if central.IsNetwork(err) {
-			return err
+		if err != nil && central.Status(err) != http.StatusUnauthorized {
+			return err // no answer either way: ask again next time
 		}
 		if err := h.UpdateRuntime(func(rt *Runtime) {
 			if err == nil {
@@ -302,6 +315,8 @@ func (h *Hub) TypedMove(ctx context.Context, raw, code string) error {
 		return errors.New("central still answers at its address: no move needed")
 	case h.SetupMode() == SetupPinned:
 		return errors.New("this hub's address is fixed in its configuration")
+	case hubaccount.CheckAddress(raw) != nil:
+		return fmt.Errorf("enter central's new address exactly as the national team gave it: %v", hubaccount.CheckAddress(raw))
 	case raw == h.Central.BaseURL() || !h.movable(raw):
 		return errors.New("enter central's new https:// address")
 	case subtle.ConstantTimeCompare([]byte(hubaccount.NormalizeCode(hubaccount.MoveCode(rt.MoveKey, raw))),

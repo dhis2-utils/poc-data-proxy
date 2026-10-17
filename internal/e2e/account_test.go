@@ -451,3 +451,68 @@ func TestTakeUpSurvivesALostAnswer(t *testing.T) {
 		t.Fatal("the account was lost with the answer")
 	}
 }
+
+// Review 4, I1: the code covers the facility too. Someone who changes the facility in
+// the registry entry cannot get the account created for another facility.
+func TestApproveCodeCoversTheFacility(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	h := e.app.Hub
+	reg := e.central.DataStoreValue("facility-hub-registry", h.HubID())
+	reg["facility"] = fc.OtherFacility
+	b, _ := json.Marshal(reg)
+	e.central.DataStore["facility-hub-registry"][h.HubID()] = b
+	if _, err := e.approveWith(h.AccountCode()); err == nil || e.central.Users[h.HubID()] != nil {
+		t.Fatalf("approved for another facility: %v", err)
+	}
+}
+
+// Review 4, I1: an account the hub refuses (here one with authorities) does not leave
+// it stuck: it asks again, so the national team sees it waiting.
+func TestHubAsksAgainWhenTheAccountIsRefused(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	h := e.app.Hub
+	e.approve()
+	e.central.Users[h.HubID()].Authorities = []string{"ALL"}
+	h.RefreshCatalog(context.Background())
+	if reg := e.central.DataStoreValue("facility-hub-registry", h.HubID()); reg["account"] != nil || reg["accountRequested"] != true {
+		t.Fatalf("the hub did not ask again: %v", reg)
+	}
+}
+
+// Review 4, I2: after a lost answer to a password change, an error while finding out
+// whether central took it (here 503) is not read as "not taken".
+func TestPasswordCheckSurvivesAnError(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	h := e.app.Hub
+	e.approve()
+	e.central.LoseResponse = map[string]int{"PUT /api/me/changePassword": 1}
+	h.RefreshCatalog(context.Background())
+	if h.Runtime().HubPasswordNext == "" {
+		t.Fatal("no password waiting to be confirmed")
+	}
+	e.central.FailPaths = map[string]int{"/api/me": 503}
+	h.RefreshCatalog(context.Background())
+	e.central.FailPaths = nil
+	h.RefreshCatalog(context.Background())
+	rt := h.Runtime()
+	if rt.HubPassword != e.central.PasswordOf(h.HubID()) || h.Store.Meta("account_rotate") != "" {
+		t.Fatalf("password matches %v, rotate %q", rt.HubPassword == e.central.PasswordOf(h.HubID()), h.Store.Meta("account_rotate"))
+	}
+}
+
+// Review 4, I3: a new dataStore entry is public until its sharing is set, so the move
+// key is written only once the entry is restricted.
+func TestMoveKeyNeverPublic(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.central.FailPaths = map[string]int{"/api/sharing": 500}
+	if _, err := e.approveWith(e.app.Hub.AccountCode()); err == nil {
+		t.Fatal("approved without restricting the move key")
+	}
+	if v := e.central.DataStoreValue("facility-hub-keys", e.app.Hub.HubID()); v["moveKey"] != nil {
+		t.Fatalf("the move key was written before its entry was restricted: %v", v)
+	}
+}

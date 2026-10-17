@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base32"
+	"fmt"
 	"net/url"
 	"strings"
 )
@@ -17,10 +18,11 @@ var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 // national team asks the facility for it before approving, and the app checks it
 // against the key in the hub's registry entry: anyone in the hub owners group can
 // write that entry, but no one can put a key there that matches the code on the hub's
-// screen. 16 characters (80 bits): the key in the entry is public, so a matching one
-// must be out of reach of an offline search.
-func AccountCode(pub []byte, hubID string) string {
-	sum := sha256.Sum256(append([]byte("facility-hub account code\x00"+hubID+"\x00"), pub...))
+// screen. It covers the facility too, which the account is created for. 16
+// characters (80 bits): the key in the entry is public, so a matching one must be out
+// of reach of an offline search.
+func AccountCode(pub []byte, hubID, facility string) string {
+	sum := sha256.Sum256(append([]byte("facility-hub account code\x00"+hubID+"\x00"+facility+"\x00"), pub...))
 	return group(b32.EncodeToString(sum[:])[:16])
 }
 
@@ -34,16 +36,38 @@ func MoveCode(moveKey []byte, address string) string {
 	return group(b32.EncodeToString(m.Sum(nil))[:10])
 }
 
-// NormalizeAddress is the form of an address a move code is made for: no surrounding
-// spaces or trailing slash, scheme and host in lower case, the path as typed.
+// CheckAddress refuses an address a move code is never made for: anything but
+// http(s)://host[:port][/path] in plain ASCII, without spaces, user, query or fragment.
+// The hub and the app must agree on an address's form, and these have more than one.
+func CheckAddress(raw string) error {
+	raw = strings.TrimSpace(raw)
+	for i := 0; i < len(raw); i++ {
+		if c := raw[i]; c <= ' ' || c >= 0x7f || c == '?' || c == '#' || c == '%' {
+			return fmt.Errorf("an address of letters, digits and punctuation only, without spaces, ? or #")
+		}
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return err
+	}
+	if s := strings.ToLower(u.Scheme); (s != "https" && s != "http") || u.Host == "" || u.User != nil || u.Opaque != "" {
+		return fmt.Errorf("an address like https://central.example.org/dhis")
+	}
+	return nil
+}
+
+// NormalizeAddress is the form of an address a move code is made for (it must pass
+// CheckAddress): no surrounding spaces or trailing slash, scheme and host in lower
+// case, no default port (443 for https, 80 for http), the path as typed.
 func NormalizeAddress(raw string) string {
 	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
 	u, err := url.Parse(raw)
 	if err != nil {
 		return raw
 	}
-	u.Scheme, u.Host = strings.ToLower(u.Scheme), strings.ToLower(u.Host)
-	return u.String()
+	scheme, host := strings.ToLower(u.Scheme), strings.ToLower(u.Host)
+	host = strings.TrimSuffix(host, map[string]string{"https": ":443", "http": ":80"}[scheme])
+	return scheme + "://" + host + u.EscapedPath()
 }
 
 // NormalizeCode is a code as typed, without spaces or dashes, in upper case.

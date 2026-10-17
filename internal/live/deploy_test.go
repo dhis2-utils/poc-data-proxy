@@ -326,9 +326,10 @@ func TestTakeOverThrottled(t *testing.T) {
 	e.Web(tk.RoleNurse).Login() // the take-over's throttle does not lock the user's login
 }
 
-// The hub's own account against central: "hub approve" (as the superuser) creates it
-// scoped to the facility and shares its move secret with it alone; the hub takes it up,
-// and its token reads its move secret (what a typed-in move checks).
+// The hub's own account against central: an approval (as the superuser, what the
+// Facility Hub app does) creates it scoped to the facility, and keeps the hub's move
+// key for administrators only, even from a staff member who created its entry first;
+// the hub takes the account up and replaces the password it was handed.
 func TestHubAccountLive(t *testing.T) {
 	e := tk.Start(t)
 	e.Setup()
