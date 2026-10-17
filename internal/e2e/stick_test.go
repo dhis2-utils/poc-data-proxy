@@ -14,7 +14,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/dhis2/facility-hub/internal/config"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
@@ -27,6 +26,7 @@ func stickEnv(t *testing.T, codeMode bool) (*env, string) {
 	t.Helper()
 	usb := t.TempDir()
 	e := &env{t: t, central: fc.New(), dir: t.TempDir()}
+	e.central.Seed("SeedTe00001", "SeedEn00001", "Seeded", "NAT-0001", map[string]string{"SeedEv00001": fc.Stage1})
 	e.cSrv = httptest.NewServer(e.central)
 	t.Cleanup(e.cSrv.Close)
 	e.cfgHook = func(c *config.Config) {
@@ -90,8 +90,8 @@ func stickWithSaves(t *testing.T) (*env, string, string) {
 	e.setup()
 	a := e.web("nurse_a")
 	a.login()
-	e.app.Stick.Tick(context.Background()) // the first snapshot
-	if st := e.app.Stick.Status(); st == nil || !st.Present || !st.Writable || st.LastSnapshot == "" {
+	e.app.Stick.Tick(context.Background()) // the first copy: key file and state
+	if st := e.app.Stick.Status(); st == nil || !st.Present || !st.Writable || st.LastCopy == "" {
 		t.Fatalf("stick status after the first tick: %+v", st)
 	}
 	e.offline()
@@ -103,12 +103,13 @@ func stickWithSaves(t *testing.T) (*env, string, string) {
 	return e, usb, e.app.Hub.HubID()
 }
 
-// RECOVERY.md C2: the stick keeps a daily snapshot and every offline save since. A
-// disk that dies is replaced by an empty one, which starts as a new hub; on its setup
-// page a staff member of the old hub restores it from the stick with their own
-// password (checked offline against the copy's key slots), and it restarts as the
-// same hub. At the first staff login it puts back the saves made after the snapshot
-// and pushes them.
+// RECOVERY.md C2: the stick keeps the hub's key file, its state (users, settings) and
+// every pending save; the cached data is not copied, since central has it. A disk that
+// dies is replaced by an empty one, which starts as a new hub; on its setup page a
+// staff member of the old hub restores it from the stick with their own password
+// (checked offline against the copy's key slots), and it restarts as the same hub. At
+// the first staff login it puts back the saves and pushes them, and pulls the rest
+// again.
 func TestStickMirrorAndRestore(t *testing.T) {
 	e, _, id := stickWithSaves(t)
 	e.diskDies()
@@ -127,10 +128,13 @@ func TestStickMirrorAndRestore(t *testing.T) {
 		t.Fatalf("after restore: id %s (want %s), mode %s, unlocked %v", h.HubID(), id, h.Mode(), h.Store.Unlocked())
 	}
 	a := e.web("nurse_a")
-	a.login() // unlocks, and puts back the saves made after the snapshot
+	a.login() // unlocks, and puts back the saves
 	e.sync()
 	if e.central.Object("StickTe0001") == nil {
-		t.Fatal("the save made after the snapshot did not reach central")
+		t.Fatal("the save on the stick did not reach central")
+	}
+	if h.Facility() == "" || h.Index.Get("SeedTe00001") == nil {
+		t.Fatalf("the restored hub did not take up its work: facility %q", h.Facility())
 	}
 }
 
@@ -149,16 +153,10 @@ func TestStickRestoreSurvivesPulledStick(t *testing.T) {
 	}
 }
 
-// Review important: a save pushed after the snapshot is not sent again by a restore
-// (it would overwrite a change made on central since).
+// A save pushed before the disk died is not on the stick, so a restore never sends it
+// again (it would overwrite a change made on central since).
 func TestStickRestoreDoesNotResend(t *testing.T) {
 	e, _, id := stickWithSaves(t)
-	e.app.Stick.Tick(context.Background())
-	// The snapshot (taken before the save) does not hold it; take one that does, with it
-	// pending, then push it and copy again: the stick now knows it was sent.
-	e.app.Hub.Cfg.USBSnapshotInterval = 0
-	e.app.Stick.Tick(context.Background())
-	e.app.Hub.Cfg.USBSnapshotInterval = time.Hour
 	e.online()
 	e.sync()
 	e.app.Stick.Tick(context.Background())
@@ -172,21 +170,6 @@ func TestStickRestoreDoesNotResend(t *testing.T) {
 	e.sync()
 	if !strings.Contains(fmt.Sprint(e.central.Object("StickTe0001")), "ChangedOnCentral") {
 		t.Fatal("the restore sent a save central already had, over a newer change")
-	}
-}
-
-// Review important: power lost between the snapshot's two renames leaves the previous
-// snapshot as snapshot.old; it is still offered.
-func TestStickRestoreFromPreviousSnapshot(t *testing.T) {
-	e, usb, id := stickWithSaves(t)
-	dir := filepath.Join(usb, "facility-hub", id)
-	if err := os.Rename(filepath.Join(dir, "snapshot"), filepath.Join(dir, "snapshot.old")); err != nil {
-		t.Fatal(err)
-	}
-	e.diskDies()
-	e.restoreFromStick(id, "nurse_a", fc.Password)
-	if e.app.Hub.HubID() != id {
-		t.Fatal("the previous snapshot was not used")
 	}
 }
 
@@ -231,7 +214,7 @@ func TestStickDropsPushedSaves(t *testing.T) {
 		t.Fatalf("a pushed save stays on the stick: %d files", len(files))
 	}
 	hb, _ := json.Marshal(e.central.DataStoreValue("facility-hub-status", e.app.Hub.HubID())["usb"])
-	if !strings.Contains(string(hb), `"present":true`) || !strings.Contains(string(hb), `"lastSnapshot"`) {
+	if !strings.Contains(string(hb), `"present":true`) || !strings.Contains(string(hb), `"lastCopy"`) {
 		t.Fatalf("heartbeat usb: %s", hb)
 	}
 	if st, page := a.do("GET", "/hub/ui", nil); st != 200 || !strings.Contains(string(page), "USB stick") || !strings.Contains(string(page), "Working") {
@@ -315,7 +298,7 @@ func TestStickKeepsCorrectedAggregateValue(t *testing.T) {
 	e.setup()
 	e.web("nurse_a").login()
 	h := e.app.Hub
-	e.app.Stick.Tick(context.Background()) // the snapshot, before the edits
+	e.app.Stick.Tick(context.Background()) // the first copy, before the edits
 	u, _ := h.Store.UserByName("nurse_a")
 	edit := func(value string) {
 		t.Helper()

@@ -6,14 +6,9 @@ Status: building 2026-10-17. The decisions are in docs/DEPLOYMENT.md (sections 1
 
 - **Where:** `usb_dir` in `hub.yaml`, default `/media/hub-usb`. The image mounts the box's stick there (ext4). The hub uses it only when it is a mount point (another device than its parent), so a missing stick never fills the hub's own disk. Tests turn the mount check off.
 - **Before set-up:** while the hub is in set-up mode, it writes `facility-hub/setup-code.txt` (the code and the hub ID) to any stick present, checking every minute. The code stays the same across reboots until set-up uses it.
-- **Every minute, if anything is new:**
-  - a copy of the key file (key slots, identity, settings: small), written to a temporary file and renamed;
-  - each offline save not yet copied: its outbox entry, still sealed with the data key, one file per entry.
-
-  Copying runs on its own timer, never in a client's save.
-- **Daily** (`usb_snapshot_interval`, default 24 h): a snapshot of the whole store (the encrypted copy the hub already writes before upgrades), written to a temporary folder and renamed. Saves it contains are then dropped from the per-minute copies. The stick needs room for two snapshots while one is being written.
-- **Restore:** a hub that starts with no store, and finds a snapshot on the stick, takes it with the newer key file copy. It starts as the same hub (same ID, same key slots), locked. At the first staff login it puts back the saves copied after the snapshot, as pending changes, and pushes them. Records central changed since come back with the next pull.
-- **Health,** on the admin page and in the heartbeat (`usb`): present, writable (a write-and-read-back each minute), last copy, last snapshot, free space, last error.
+- **Every minute, if anything is new:** the key file, the hub's state (users and their tokens, settings, catalog, hub token; sealed) and each pending save (sealed), each when it changed. No snapshot of the cached data: central sends it again (decided 2026-10-17).
+- **Restore:** explicit, on the new disk's setup page, with a staff member's password checked against the copy; the hub restarts as the same hub with a new data file, puts back state and saves at the first unlock, and pulls the rest.
+- **Health,** on the admin page and in the heartbeat (`usb`): present, writable (a write-and-read-back each minute), last copy, free space, last error.
 
 ## Setup code and central's address (DEPLOYMENT.md section 3)
 

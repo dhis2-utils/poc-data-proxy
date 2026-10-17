@@ -50,6 +50,9 @@ type Store struct {
 	// writeMu serialises write transactions (Tx).
 	writeMu sync.Mutex
 	empty   *sql.DB // stands in for the data file while locked: empty and read-only
+	// NewDataFile lets an unlock create a data file although key slots exist: a hub
+	// restored from its USB stick, whose cached data central sends again.
+	NewDataFile bool
 }
 
 // keyMigrations are applied to the key file in order; PRAGMA user_version records
@@ -497,7 +500,7 @@ func (s *Store) SetDK(k hubcrypto.Key) error {
 		return nil
 	}
 	path := DataPath(s.Path)
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) && s.hasSlots() && !s.hasLegacy() {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) && s.hasSlots() && !s.hasLegacy() && !s.NewDataFile {
 		return fmt.Errorf("data file %s is missing", path)
 	}
 	db, err := openData(path, k)

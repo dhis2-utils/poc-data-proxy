@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"os"
@@ -128,33 +129,6 @@ func UnwrapFromKeyFile(path, username, password string) (hubcrypto.Key, error) {
 	return dk, nil
 }
 
-// MarkSentSince marks as synced the pending entries the USB stick saw leave the
-// outbox after its snapshot: seq at most upTo and not among those still pending then.
-func (s *Store) MarkSentSince(upTo int64, stillPending map[int64]bool) (int, error) {
-	rows, err := s.DB().Query(`SELECT seq FROM outbox WHERE state = ? AND seq <= ?`, OutboxPending, upTo)
-	var seqs []int64
-	err = scanRows(rows, err, func(r *sql.Rows) error {
-		var q int64
-		err := r.Scan(&q)
-		seqs = append(seqs, q)
-		return err
-	})
-	if err != nil {
-		return 0, err
-	}
-	n := 0
-	for _, q := range seqs {
-		if stillPending[q] {
-			continue
-		}
-		if _, err := s.DB().Exec(`UPDATE outbox SET state = ? WHERE seq = ?`, OutboxSynced, q); err != nil {
-			return n, err
-		}
-		n++
-	}
-	return n, nil
-}
-
 // Size is the store's size on disk (key file and data file), for checking a snapshot
 // fits.
 func (s *Store) Size() int64 {
@@ -165,4 +139,79 @@ func (s *Store) Size() int64 {
 		}
 	}
 	return n
+}
+
+// usersCols are the data file's users columns a restore needs: tokens and passwords
+// stay sealed as stored.
+var usersCols = "id, username, user_uid, pat_enc, pat_uid, pat_expires, pw_enc, access_json_enc, access_refreshed_at, last_login_at"
+
+type userRow struct {
+	ID                             int64
+	Username, UserUID              string
+	PATEnc                         []byte
+	PATUID, PATExpires             string
+	PwEnc, AccessEnc               []byte
+	AccessRefreshedAt, LastLoginAt string
+}
+
+type stateRow struct {
+	Key      string
+	ValueEnc []byte
+}
+
+// ExportState is what a restore needs of the data file besides the pending saves:
+// the users (their tokens, still sealed) and the hub's state (settings, catalog, hub
+// token), as JSON. The cached data is left out: central has it.
+func (s *Store) ExportState() ([]byte, error) {
+	var out struct {
+		Users []userRow
+		State []stateRow
+	}
+	rows, err := s.DB().Query(`SELECT ` + usersCols + ` FROM users ORDER BY id`)
+	err = scanRows(rows, err, func(r *sql.Rows) error {
+		var u userRow
+		err := r.Scan(&u.ID, &u.Username, &u.UserUID, &u.PATEnc, &u.PATUID, &u.PATExpires, &u.PwEnc, &u.AccessEnc,
+			&u.AccessRefreshedAt, &u.LastLoginAt)
+		out.Users = append(out.Users, u)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	rows, err = s.DB().Query(`SELECT key, value_enc FROM state ORDER BY key`)
+	err = scanRows(rows, err, func(r *sql.Rows) error {
+		var st stateRow
+		err := r.Scan(&st.Key, &st.ValueEnc)
+		out.State = append(out.State, st)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(out)
+}
+
+// ImportState puts back what ExportState wrote, into a restored hub's new data file.
+func (s *Store) ImportState(b []byte) error {
+	var in struct {
+		Users []userRow
+		State []stateRow
+	}
+	if err := json.Unmarshal(b, &in); err != nil {
+		return err
+	}
+	return s.Tx(context.Background(), func(tx *sql.Tx) error {
+		for _, u := range in.Users {
+			if _, err := tx.Exec(`INSERT OR REPLACE INTO users(`+usersCols+`) VALUES(?,?,?,?,?,?,?,?,?,?)`, u.ID, u.Username,
+				u.UserUID, u.PATEnc, u.PATUID, u.PATExpires, u.PwEnc, u.AccessEnc, u.AccessRefreshedAt, u.LastLoginAt); err != nil {
+				return err
+			}
+		}
+		for _, st := range in.State {
+			if _, err := tx.Exec(`INSERT OR REPLACE INTO state(key, value_enc) VALUES(?,?)`, st.Key, st.ValueEnc); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

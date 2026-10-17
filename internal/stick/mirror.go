@@ -17,27 +17,34 @@ import (
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
-// The copy on the stick, under facility-hub/<hub ID>/:
-//   - keys.db: the key file (key slots, identity, settings), whenever it changed;
+// The copy on the stick, under facility-hub/<hub ID>/, is what a restore needs and
+// central does not have; the cached data is left out, since central sends it again:
+//   - keys.db: the key file (key slots, identity), whenever it changed;
+//   - state.rec: the users (their tokens, still sealed) and the hub's state (settings,
+//     catalog, hub token), sealed with the data key, whenever it changed;
 //   - outbox/<seq>.rec: each offline save still pending, sealed whole with the data key
 //     (who saved it, its flags and order cannot be changed on the stick), rewritten
 //     when it changes (a corrected aggregate value); a save leaves the stick once
-//     pushed or refused;
-//   - maxseq: the highest save the stick ever copied, so a restore knows which saves
-//     the snapshot holds as pending were sent since (they are not sent again: that
-//     could overwrite newer edits on central);
-//   - snapshot/ (snapshot.old while a new one is swapped in): the whole store.
+//     pushed or refused, so a restore never sends it again.
 //
 // Restoring is explicit (the setup page of a new disk, with the password of a staff
-// member of that hub): Stage checks the password against the copy and copies what is
-// needed to the disk; at the next start Finish puts it in place; after the first
-// unlock, replay puts the saves back. The copying pauses until then.
+// member of that hub): Stage checks the password against the copy and copies it to
+// the disk; at the next start Finish puts the key file in place; at the first unlock
+// replay puts back the state and the saves, in a new data file, and the hub pulls the
+// rest. Copying pauses until then.
 
 const (
 	restoreReady  = "restore-ready"       // in the data folder: staged, put in place at the next start
-	restoreReplay = "restored-from-stick" // in the data folder: saves to put back after the first unlock
-	snapshotRetry = time.Hour             // after a failed snapshot
+	restoreReplay = "restored-from-stick" // in the data folder: state and saves to put back at unlock
+	stateAAD      = "stick-state"
 )
+
+// RestorePending reports whether a restore waits for its first unlock: the store may
+// then create a new data file (store.NewDataFile).
+func RestorePending(dataDir string) bool {
+	_, err := os.Stat(filepath.Join(dataDir, restoreReplay))
+	return err == nil
+}
 
 func (s *Stick) hubDir() string { return filepath.Join(s.root(), s.H.HubID()) }
 
@@ -66,8 +73,10 @@ func (s *Stick) mirror() error {
 	if s.sums == nil {
 		s.sums = map[int64][32]byte{}
 	}
+	if err := s.copyState(filepath.Join(dir, "state.rec")); err != nil {
+		return fmt.Errorf("state: %w", err)
+	}
 	keep := map[string]bool{}
-	maxSeq := readSeq(filepath.Join(dir, "maxseq"))
 	for _, e := range pending {
 		name := strconv.FormatInt(e.Seq, 10) + ".rec"
 		keep[name] = true
@@ -86,12 +95,6 @@ func (s *Stick) mirror() error {
 		}
 		s.sums[e.Seq] = sum
 	}
-	for _, e := range pending {
-		maxSeq = max(maxSeq, e.Seq)
-	}
-	if err := writeFileSync(filepath.Join(dir, "maxseq"), []byte(strconv.FormatInt(maxSeq, 10))); err != nil {
-		return err
-	}
 	files, _ := os.ReadDir(filepath.Join(dir, "outbox"))
 	for _, f := range files {
 		if !keep[f.Name()] {
@@ -99,22 +102,31 @@ func (s *Stick) mirror() error {
 		}
 	}
 	s.setStatus(func(st *Status) { st.LastCopy = store.Now() })
-	if time.Since(s.lastSnapshot()) >= s.H.Cfg.USBSnapshotInterval && time.Since(s.snapFailed) >= snapshotRetry {
-		if err := s.snapshot(); err != nil {
-			s.snapFailed = time.Now()
-			return fmt.Errorf("snapshot: %w", err)
-		}
+	return nil
+}
+
+// copyState writes the users and the hub's state, sealed, when they changed.
+func (s *Stick) copyState(path string) error {
+	b, err := s.H.Store.ExportState()
+	if err != nil {
+		return err
 	}
+	sum := sha256.Sum256(b)
+	if _, err := os.Stat(path); err == nil && sum == s.stateSum {
+		return nil
+	}
+	sealed, err := s.H.Store.Seal(stateAAD, b)
+	if err != nil {
+		return err
+	}
+	if err := writeFileSync(path, sealed); err != nil {
+		return err
+	}
+	s.stateSum = sum
 	return nil
 }
 
 func recordAAD(seq int64) string { return "stick-outbox:" + strconv.FormatInt(seq, 10) }
-
-func readSeq(path string) int64 {
-	b, _ := os.ReadFile(path)
-	n, _ := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
-	return n
-}
 
 func (s *Stick) copyKeys(dst string) error {
 	tmp := dst + ".tmp"
@@ -127,55 +139,6 @@ func (s *Stick) copyKeys(dst string) error {
 	return os.Rename(tmp, dst)
 }
 
-// snapshot writes the whole store (still encrypted) beside the last one, then swaps. A
-// failure leaves no half snapshot behind.
-func (s *Stick) snapshot() error {
-	dir := s.hubDir()
-	tmp, cur, old := filepath.Join(dir, "snapshot.tmp"), filepath.Join(dir, "snapshot"), filepath.Join(dir, "snapshot.old")
-	if need := s.H.Store.Size(); s.Status().FreeBytes < uint64(need)+uint64(need)/10 {
-		return fmt.Errorf("the stick is too full for a snapshot (%d MB free, %d MB needed)", s.Status().FreeBytes>>20, need>>20)
-	}
-	os.RemoveAll(tmp)
-	err := func() error {
-		if err := os.MkdirAll(tmp, 0o700); err != nil {
-			return err
-		}
-		dst := filepath.Join(tmp, "hub.db")
-		if err := s.H.Store.BackupTo(dst); err != nil {
-			return err
-		}
-		for _, p := range []string{dst, store.DataPath(dst)} {
-			if err := syncFile(p); err != nil {
-				return err
-			}
-		}
-		return writeFileSync(filepath.Join(tmp, "taken-at"), []byte(store.Now()))
-	}()
-	if err != nil {
-		os.RemoveAll(tmp)
-		return err
-	}
-	os.RemoveAll(old)
-	os.Rename(cur, old) // a power cut from here leaves snapshot.old, which a restore takes
-	if err := os.Rename(tmp, cur); err != nil {
-		return err
-	}
-	syncDir(dir)
-	os.RemoveAll(old)
-	syncDir(dir)
-	s.setStatus(func(st *Status) { st.LastSnapshot = store.Now() })
-	slog.Info("store snapshot written to the USB stick")
-	return nil
-}
-
-func (s *Stick) lastSnapshot() time.Time {
-	b, err := os.ReadFile(filepath.Join(s.hubDir(), "snapshot", "taken-at"))
-	if err != nil {
-		return time.Time{}
-	}
-	return store.ParseTime(strings.TrimSpace(string(b)))
-}
-
 func (s *Stick) setStatus(fn func(*Status)) {
 	s.mu.Lock()
 	fn(&s.st)
@@ -184,28 +147,27 @@ func (s *Stick) setStatus(fn func(*Status)) {
 
 // Candidate is a hub copy on the stick that a new disk can be restored from.
 type Candidate struct {
-	HubID, Snapshot string
-	TakenAt         time.Time
+	HubID, Dir string
+	TakenAt    time.Time // its key file's last copy
 }
 
-// Candidates lists the copies on the stick: each hub folder's snapshot, or the
-// previous one if a power cut came between the two renames of a new snapshot.
+// Candidates lists the hub copies on the stick, newest first.
 func Candidates(usbDir string) []Candidate {
 	var out []Candidate
 	dirs, _ := filepath.Glob(filepath.Join(usbDir, "facility-hub", "*"))
 	for _, d := range dirs {
-		for _, name := range []string{"snapshot", "snapshot.old"} {
-			snap := filepath.Join(d, name)
-			if _, err := os.Stat(filepath.Join(snap, "hub.db")); err != nil {
-				continue
-			}
-			at := modTime(filepath.Join(snap, "hub.db"))
-			if b, err := os.ReadFile(filepath.Join(snap, "taken-at")); err == nil {
-				at = store.ParseTime(strings.TrimSpace(string(b)))
-			}
-			out = append(out, Candidate{HubID: filepath.Base(d), Snapshot: snap, TakenAt: at})
-			break
+		keys, state := filepath.Join(d, "keys.db"), filepath.Join(d, "state.rec")
+		if _, err := os.Stat(keys); err != nil {
+			continue
 		}
+		if _, err := os.Stat(state); err != nil {
+			continue
+		}
+		at := modTime(keys)
+		if t := modTime(state); t.After(at) {
+			at = t
+		}
+		out = append(out, Candidate{HubID: filepath.Base(d), Dir: d, TakenAt: at})
 	}
 	slices.SortFunc(out, func(a, b Candidate) int { return b.TakenAt.Compare(a.TakenAt) })
 	return out
@@ -216,16 +178,13 @@ func Candidates(usbDir string) []Candidate {
 // copied to the disk, so pulling the stick out afterwards loses nothing. Finish puts it
 // in place at the next start.
 func Stage(usbDir, dataDir, id, username, password string) error {
-	i := slices.IndexFunc(Candidates(usbDir), func(c Candidate) bool { return c.HubID == id })
+	cands := Candidates(usbDir)
+	i := slices.IndexFunc(cands, func(c Candidate) bool { return c.HubID == id })
 	if i < 0 {
 		return errors.New("no copy of that hub on the stick")
 	}
-	c := Candidates(usbDir)[i]
-	hubDir := filepath.Dir(c.Snapshot)
-	keys := filepath.Join(c.Snapshot, "hub.db")
-	if k := filepath.Join(hubDir, "keys.db"); modTime(k).After(modTime(keys)) {
-		keys = k
-	}
+	c := cands[i]
+	keys := filepath.Join(c.Dir, "keys.db")
 	if _, err := store.UnwrapFromKeyFile(keys, username, password); err != nil {
 		return err
 	}
@@ -235,11 +194,8 @@ func Stage(usbDir, dataDir, id, username, password string) error {
 		return err
 	}
 	copies := map[string]string{keys: filepath.Join(staging, "hub.db"),
-		store.DataPath(filepath.Join(c.Snapshot, "hub.db")): store.DataPath(filepath.Join(staging, "hub.db"))}
-	if _, err := os.Stat(filepath.Join(hubDir, "maxseq")); err == nil {
-		copies[filepath.Join(hubDir, "maxseq")] = filepath.Join(staging, "maxseq")
-	}
-	recs, _ := filepath.Glob(filepath.Join(hubDir, "outbox", "*.rec"))
+		filepath.Join(c.Dir, "state.rec"): filepath.Join(staging, "state.rec")}
+	recs, _ := filepath.Glob(filepath.Join(c.Dir, "outbox", "*.rec"))
 	for _, r := range recs {
 		copies[r] = filepath.Join(staging, "outbox", filepath.Base(r))
 	}
@@ -268,20 +224,16 @@ func Finish(dataDir, storePath string) error {
 	if err := os.Rename(filepath.Join(staging, "hub.db"), storePath); err != nil {
 		return err
 	}
-	if err := os.Rename(store.DataPath(filepath.Join(staging, "hub.db")), store.DataPath(storePath)); err != nil {
-		return err
-	}
 	if err := writeFileSync(filepath.Join(dataDir, restoreReplay), []byte(staging)); err != nil {
 		return err
 	}
 	os.Remove(filepath.Join(dataDir, restoreReady))
-	slog.Warn("store restored from the USB stick; a staff login unlocks it and puts back the newer saves")
+	slog.Warn("hub restored from the USB stick; a staff login unlocks it, puts back its state and saves, and pulls the rest")
 	return nil
 }
 
-// replay runs after an unlock: the saves copied after the snapshot go back in the
-// outbox as pending; saves the snapshot holds as pending that the stick saw sent
-// since are marked sent.
+// replay runs right after the first unlock of a restored hub, in its new data file:
+// the users and state go back, then the saves, as pending.
 func (s *Stick) replay() {
 	marker := filepath.Join(s.H.Cfg.DataDir, restoreReplay)
 	b, err := os.ReadFile(marker)
@@ -289,9 +241,19 @@ func (s *Stick) replay() {
 		return
 	}
 	staging := strings.TrimSpace(string(b))
+	sealed, err := os.ReadFile(filepath.Join(staging, "state.rec"))
+	if err == nil {
+		var plain []byte
+		if plain, err = s.H.Store.OpenBlob(stateAAD, sealed); err == nil {
+			err = s.H.Store.ImportState(plain)
+		}
+	}
+	if err != nil {
+		slog.Error("restoring the hub's state from the USB stick", "err", err)
+		return
+	}
 	files, _ := filepath.Glob(filepath.Join(staging, "outbox", "*.rec"))
 	var entries []*store.RawOutbox
-	pending := map[int64]bool{}
 	for _, f := range files {
 		seq, _ := strconv.ParseInt(strings.TrimSuffix(filepath.Base(f), ".rec"), 10, 64)
 		sealed, err := os.ReadFile(f)
@@ -305,7 +267,6 @@ func (s *Stick) replay() {
 			continue
 		}
 		entries = append(entries, &e)
-		pending[seq] = true
 	}
 	slices.SortFunc(entries, func(a, b *store.RawOutbox) int { return int(a.Seq - b.Seq) })
 	n, err := s.H.Store.RestoreOutbox(entries)
@@ -313,14 +274,10 @@ func (s *Stick) replay() {
 		slog.Error("restoring saves from the USB stick", "err", err)
 		return
 	}
-	sent, err := s.H.Store.MarkSentSince(readSeq(filepath.Join(staging, "maxseq")), pending)
-	if err != nil {
-		slog.Error("restoring saves from the USB stick", "err", err)
-		return
-	}
 	os.Remove(marker)
 	os.RemoveAll(staging)
-	slog.Info("saves restored from the USB stick", "put back", n, "already sent", sent)
+	s.H.Store.NewDataFile = false
+	slog.Info("hub state and saves restored from the USB stick", "saves", n)
 }
 
 func modTime(p string) time.Time {

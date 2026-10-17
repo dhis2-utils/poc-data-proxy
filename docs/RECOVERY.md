@@ -59,31 +59,28 @@ Every outbox write is also written to a USB stick plugged into the hub, encrypte
 
 Chosen for the kit (DEPLOYMENT.md, section 1; built 2026-10-17, `internal/stick`, tested in `internal/e2e/stick_test.go`): one USB stick per box, which before set-up carries the hub's setup code and after set-up is this mirror. Its state (present, last copy, failing, full) shows on the hub's page and in the heartbeat, so central sees a hub without a working stick. The facility keeps the stick in the box, and keeps it when a disk is replaced.
 
-The hub keeps a copy on a USB stick in two parts, so the stick is not worn out by constant writes:
+The stick holds only what a restore needs and central does not have; the cached data is left out, since central sends it again (decided 2026-10-17: a daily full snapshot, 6.5 GB at the HC IV size, only saved waiting for the first pulls after a restore):
 
-- **Every minute, if anything is new:** the offline saves accepted since the last copy, plus changed key slots, tokens, the hub's identity and keys, and sync state. A few kilobytes per save; nothing is written when nobody saves. Copying runs on its own schedule, so a slow or failing stick never delays a client's save.
-- **Nightly or weekly:** a full snapshot of the store (the hub can already write a consistent encrypted copy of itself), so a restored hub can work offline at once instead of waiting to pull its cache again from central.
+- **Every minute, if anything is new:** each offline save still pending, the key file (key slots, identity) when it changed, and the hub's state (the users with their tokens, settings, catalog, hub token) when it changed. A few kilobytes; nothing is written when nobody saves. Copying runs on its own schedule, so a slow or failing stick never delays a client's save.
 
-Both stay encrypted as on the disk: the stick is as safe as the disk, opened only with a user's password.
+Everything stays encrypted as on the disk: the stick is as safe as the disk, opened only with a user's password.
 
 | Failure | What happens | Lost |
 |---|---|---|
 | Board | Move the disk and the stick to a new board; it boots as the same hub. | Nothing: saves are synced to the disk before the hub confirms them. |
-| Disk | New disk with the image; at first boot the hub finds the stick, restores the last snapshot and replays the newer saves, with the same hub ID. | At most the last minute's saves (Android devices still hold theirs). Records central changed since the snapshot return with the next pull. |
+| Disk | New disk with the image; on its setup page a staff member of the hub restores it from the stick, with their own password; it restarts as the same hub, puts back its state and pending saves at the first login, and pulls its data again. | At most the last minute's saves (Android devices still hold theirs), and changes central refused that were still on the hub (their issues stay on central, values masked). Until the first pulls finish, the restored hub has no data to serve offline. |
 | Stick | The hub keeps working and shows a warning on the dashboard and in the heartbeat, so central and the district see it. | Nothing while the disk lives. |
 
-- Health checks: stick missing, unwritable or full, a periodic write-and-read-back failing, or the snapshot older than its schedule.
+- Health checks: stick missing, unwritable or full, a periodic write-and-read-back failing.
 - As built:
-  - **What the stick holds.** The per-minute copy holds the saves still pending, each sealed whole with the data key, so who saved it, its flags and its order cannot be changed on the stick. A save is rewritten when it changes (a corrected aggregate value). It leaves the stick once pushed, or refused and reported.
-  - **Key file and snapshot.** The key file is copied whenever it changes, with the highest save number the stick has seen. The snapshot is written beside the previous one and swapped in; after a power cut between the two renames, the previous one (`snapshot.old`) is offered.
-  - **A full stick.** A snapshot that does not fit, or fails, leaves nothing behind and is tried again an hour later; the per-minute copies go on.
+  - **Saves.** The copy holds the saves still pending, each sealed whole with the data key, so who saved it, its flags and its order cannot be changed on the stick. A save is rewritten when it changes (a corrected aggregate value), and leaves the stick once pushed, or refused and reported, so a restore never sends again what central has.
   - **Mount check:** the hub uses `usb_dir` only when it is a mount point, so a missing stick never fills the hub's own disk.
   - **Restore is explicit.** A new disk starts as a new hub. Its setup page offers each hub copy on the stick, and a staff member of that hub restores it with their own password, checked offline against the copy's key slots. A stick from another box, or a crafted one, therefore does nothing on its own, and a new box never clones a hub that is still running.
-  - **What a restore does.** Everything it needs is first copied to the disk, so pulling the stick out does not matter. The hub restarts as the same hub, locked. The first staff login puts back the saves made after the snapshot and marks as sent the ones the stick saw pushed since, so nothing central already has is sent again. Copying to the stick resumes after that.
+  - **What a restore does.** Everything it needs is first copied to the disk, so pulling the stick out does not matter. The hub restarts as the same hub, locked, with a new, empty data file. The first staff login puts back its state and pending saves, which are pushed; the next syncs pull its data again, as after set-up. Copying to the stick resumes after that.
 - The stick: an industrial USB stick or a pSLC card in a USB reader, formatted ext4 (journaled), not exFAT.
 - Interactions: keys bound to the board (option I) would not move with the disk, so a moved disk would need a login before pushing; the central registry's replaced-hub check must accept a restored hub with the same ID.
 - Tests (conditions phase): remove the stick during copying, fail the disk, restore on a fresh store, and check nothing is missing or duplicated against central.
-- Cost: medium. The per-minute copy and the warning first; snapshot and restore at first boot next.
+- Cost: built (internal/stick).
 
 ### D. Keep data recoverable on the clients (Android)
 

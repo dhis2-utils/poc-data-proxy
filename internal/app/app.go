@@ -62,6 +62,7 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 	if err != nil {
 		return nil, err
 	}
+	st.NewDataFile = stick.RestorePending(cfg.DataDir) // a restored hub's cache is pulled again
 	EnsureIdentity(st)
 	h := core.New(cfg, version, st)
 	h.Monitor.OnChangeInOrder(h.NoteConnectivity)

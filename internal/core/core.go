@@ -353,6 +353,11 @@ func (h *Hub) Unlock(dk hubcrypto.Key) error {
 	if err := h.Store.SetDK(dk); err != nil {
 		return err
 	}
+	// Before the runtime is read: a hub restored from its USB stick puts its state
+	// back first.
+	for _, fn := range h.afterUnlock {
+		fn()
+	}
 	b, err := h.Store.State("runtime")
 	if err != nil {
 		h.Store.SetDK(nil)
@@ -375,14 +380,12 @@ func (h *Hub) Unlock(dk hubcrypto.Key) error {
 		return fmt.Errorf("build index: %w", err)
 	}
 	slog.Info("store unlocked", "objects", h.Index.Len(), "index_ms", time.Since(t).Milliseconds())
-	for _, fn := range h.afterUnlock {
-		fn()
-	}
 	h.TriggerSync()
 	return nil
 }
 
-// AfterUnlock registers a function run after each unlock, before the first sync.
+// AfterUnlock registers a function run at each unlock, once the data key is set and
+// before the runtime and the index are loaded.
 func (h *Hub) AfterUnlock(fn func()) { h.afterUnlock = append(h.afterUnlock, fn) }
 
 // Lock forgets the data key and all decrypted state.

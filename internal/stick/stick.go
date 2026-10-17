@@ -18,23 +18,22 @@ import (
 
 // Status is the stick's health, for the admin page and the heartbeat.
 type Status struct {
-	Present      bool   `json:"present"`
-	Writable     bool   `json:"writable"`
-	LastCopy     string `json:"lastCopy,omitempty"`
-	LastSnapshot string `json:"lastSnapshot,omitempty"`
-	FreeBytes    uint64 `json:"freeBytes,omitempty"`
-	Error        string `json:"error,omitempty"`
+	Present   bool   `json:"present"`
+	Writable  bool   `json:"writable"`
+	LastCopy  string `json:"lastCopy,omitempty"`
+	FreeBytes uint64 `json:"freeBytes,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // Stick runs on its own timer, so a slow or failing stick never delays a save.
 type Stick struct {
-	H          *core.Hub
-	mu         sync.Mutex
-	st         Status
-	keysAt     int64              // the key file's last change copied
-	sums       map[int64][32]byte // what each save on the stick holds
-	snapFailed time.Time          // the last failed snapshot, to retry later
-	tickMu     sync.Mutex         // one tick at a time
+	H        *core.Hub
+	mu       sync.Mutex
+	st       Status
+	keysAt   int64              // the key file's last change copied
+	sums     map[int64][32]byte // what each save on the stick holds
+	stateSum [32]byte           // what state.rec holds
+	tickMu   sync.Mutex         // one tick at a time
 }
 
 func New(h *core.Hub) *Stick {
@@ -135,7 +134,6 @@ func (s *Stick) check() Status {
 		return st
 	}
 	st.Writable = true
-	os.RemoveAll(filepath.Join(s.root(), s.H.HubID(), "snapshot.tmp")) // a snapshot cut short (one tick at a time)
 	var fs syscall.Statfs_t
 	if syscall.Statfs(s.dir(), &fs) == nil {
 		st.FreeBytes = uint64(fs.Bavail) * uint64(fs.Bsize)

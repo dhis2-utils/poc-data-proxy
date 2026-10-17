@@ -60,12 +60,11 @@ type Config struct {
 	// KeySlotMaxAge removes the key slot of a user who has not logged in for this long.
 	KeySlotMaxAge time.Duration
 	// USBDir is where the box's USB stick is mounted ("" for none): the setup code
-	// before set-up, then a copy of the store (docs/RECOVERY.md, C2). USBRequireMount
-	// uses it only when it is a mount point, so a missing stick never fills the hub's
-	// own disk. USBSnapshotInterval is how often a whole snapshot is written.
-	USBDir              string
-	USBRequireMount     bool
-	USBSnapshotInterval time.Duration
+	// before set-up, then what a restore needs (docs/RECOVERY.md, C2).
+	// USBRequireMount uses it only when it is a mount point, so a missing stick never
+	// fills the hub's own disk.
+	USBDir          string
+	USBRequireMount bool
 	// CentralMoveAfter is how long central's address must have stopped answering
 	// before the hub moves to an announced or redirected new one (docs/DEPLOYMENT.md,
 	// section 6): a brief outage during a planned move must not move it early.
@@ -85,7 +84,6 @@ func Default() Config {
 		FullPullInterval:       7 * 24 * time.Hour,
 		USBRequireMount:        true,
 		CentralMoveAfter:       time.Hour,
-		USBSnapshotInterval:    24 * time.Hour,
 		OwnershipCheckInterval: time.Hour,
 		AccessRefreshInterval:  time.Hour,
 		ReconnectDelay:         5 * time.Minute,
@@ -151,8 +149,6 @@ func (c *Config) set(k, v string) error {
 		c.CentralMoveAfter, err = time.ParseDuration(v)
 	case "usb_dir":
 		c.USBDir = v
-	case "usb_snapshot_interval":
-		c.USBSnapshotInterval, err = time.ParseDuration(v)
 	case "full_pull_interval":
 		c.FullPullInterval, err = time.ParseDuration(v)
 	case "ownership_check_interval":
