@@ -147,24 +147,52 @@ func (c *client) approve(ctx context.Context, r Request) error {
 	return nil
 }
 
+type ref struct {
+	ID          string   `json:"id"`
+	Authorities []string `json:"authorities"`
+}
+
 // account creates the hub's user, or gives the existing one (approved before) a new
-// password; either way assigned to the facility only.
+// password. An existing account the hub would refuse is not handed over again: the
+// approver is told what to correct (docs/FACILITY-HUB-APP.md, step 3).
 func (c *client) account(ctx context.Context, creds Credentials, facility string) (string, error) {
+	var role ref
+	if err := c.do(ctx, "GET", "/api/userRoles/"+url.PathEscape(c.o.Role)+"?fields=id,authorities", nil, &role); err != nil {
+		return "", fmt.Errorf("reading the hub account role: %w", err)
+	}
+	if len(role.Authorities) > 0 {
+		return "", fmt.Errorf("the hub account role has authorities (%s): it must have none", strings.Join(role.Authorities, ", "))
+	}
 	var us struct {
 		Users []struct {
-			ID                string `json:"id"`
-			OrganisationUnits []struct {
-				ID string `json:"id"`
-			} `json:"organisationUnits"`
+			ID                         string `json:"id"`
+			Disabled                   bool   `json:"disabled"`
+			OrganisationUnits          []ref  `json:"organisationUnits"`
+			DataViewOrganisationUnits  []ref  `json:"dataViewOrganisationUnits"`
+			TeiSearchOrganisationUnits []ref  `json:"teiSearchOrganisationUnits"`
+			UserRoles                  []ref  `json:"userRoles"`
 		} `json:"users"`
 	}
-	if err := c.do(ctx, "GET", "/api/users?filter=username:eq:"+url.QueryEscape(creds.Username)+"&fields=id,organisationUnits[id]&paging=false", nil, &us); err != nil {
+	if err := c.do(ctx, "GET", "/api/users?filter=username:eq:"+url.QueryEscape(creds.Username)+
+		"&fields=id,disabled,organisationUnits[id],dataViewOrganisationUnits[id],teiSearchOrganisationUnits[id],userRoles[id,authorities]&paging=false", nil, &us); err != nil {
 		return "", err
 	}
 	if len(us.Users) == 1 {
 		u := us.Users[0]
-		if len(u.OrganisationUnits) != 1 || u.OrganisationUnits[0].ID != facility {
-			return "", errors.New("its existing account is not assigned to its facility only")
+		facilityOnly := func(ous []ref, mayBeEmpty bool) bool {
+			return (mayBeEmpty && len(ous) == 0) || (len(ous) == 1 && ous[0].ID == facility)
+		}
+		var auths []string
+		for _, r := range u.UserRoles {
+			auths = append(auths, r.Authorities...)
+		}
+		switch {
+		case u.Disabled:
+			return "", errors.New("its existing account is disabled: enable it first if the hub should have it back")
+		case !facilityOnly(u.OrganisationUnits, false) || !facilityOnly(u.DataViewOrganisationUnits, true) || !facilityOnly(u.TeiSearchOrganisationUnits, true):
+			return "", errors.New("its existing account is not assigned to its facility only (capture, data view and search): correct it, then approve again")
+		case len(auths) > 0:
+			return "", fmt.Errorf("its existing account has authorities (%s): give it only the hub account role, then approve again", strings.Join(auths, ", "))
 		}
 		patch := []map[string]string{{"op": "replace", "path": "/password", "value": creds.Password}}
 		if err := c.doType(ctx, "PATCH", "/api/users/"+u.ID, patch, nil, "application/json-patch+json"); err != nil {

@@ -219,7 +219,20 @@ func (c *Central) findUser(w http.ResponseWriter, r *http.Request) {
 		for _, o := range u.OrgUnits {
 			ous = append(ous, map[string]any{"id": o})
 		}
-		users = append(users, map[string]any{"id": u.UID, "username": u.Username, "organisationUnits": ous})
+		refs := func(ids []string) []any {
+			out := []any{}
+			for _, o := range ids {
+				out = append(out, map[string]any{"id": o})
+			}
+			return out
+		}
+		auths := u.Authorities
+		if auths == nil {
+			auths = []string{}
+		}
+		users = append(users, map[string]any{"id": u.UID, "username": u.Username, "disabled": u.Disabled, "organisationUnits": ous,
+			"dataViewOrganisationUnits": refs(u.DataViewOrgUnits), "teiSearchOrganisationUnits": refs(u.SearchOrgUnits),
+			"userRoles": []any{map[string]any{"id": "HubRoleAcct", "authorities": auths}}})
 	}
 	writeJSON(w, 200, map[string]any{"users": users})
 }

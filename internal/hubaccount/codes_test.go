@@ -29,7 +29,7 @@ func TestCodes(t *testing.T) {
 	}
 	// Addresses a move code is never made for: the app and the hub must agree on the
 	// form, and these have more than one.
-	for _, bad := range []string{"https://bücher.example/dhis", "https://h.example/a b", "https://h.example/x?y=1", "https://h.example/x#f", "ftp://h.example"} {
+	for _, bad := range []string{"https://bücher.example/dhis", "https://h.example/a b", "https://h.example/x?y=1", "https://h.example/x#f", "ftp://h.example", "https://h.example/a{b}", "https://h.example:/dhis", "https://h.example/a%20b"} {
 		if CheckAddress(bad) == nil {
 			t.Errorf("CheckAddress(%q) accepted", bad)
 		}

@@ -8,10 +8,10 @@ A hub waiting for an account has, in `facility-hub-registry/<hub ID>`: `accountR
 
 1. List the entries with `accountRequested` and no `account`.
 2. The approver calls the facility, on a number they already have (never a code from someone who calls them), and asks for the code on the hub's page. Refuse unless `AccountCode(boxKey, hubID, facility)` equals the code read out (compare without dashes or spaces, in upper case). Anyone in the hub owners group can write the entry; the code on the hub's screen is what ties the entry, its key and its facility to the hub.
-3. Look up the user `<hub ID>`:
-   - none: create it, with a random password meeting DHIS2's rules, assigned to `facility` only for capture, data view and search, with the hub account role (no authorities);
-   - one assigned to `facility` only: replace its password (`PATCH /api/users/{id}`, JSON patch on `/password`);
-   - anything else: refuse.
+3. Refuse if the hub account role has any authorities. Look up the user `<hub ID>`:
+   - none: create it, with a random password meeting DHIS2's rules, assigned to `facility` only for capture, data view and search, with the hub account role;
+   - one the hub would take up (enabled, assigned to `facility` only for capture, and to nothing or `facility` for data view and search, with roles that have no authorities): replace its password (`PATCH /api/users/{id}`, JSON patch on `/password`);
+   - anything else: refuse, saying what to correct. Handing it over again would only have the hub refuse it again.
 4. Add it to the hub accounts group.
 5. Make a move key (32 random bytes). Delete `facility-hub-keys/<hub ID>` if it exists, create it empty (`{}`), share it with no one (`POST /api/sharing?type=dataStore&id=<its metaData id>`, `publicAccess "--------"`, no user or group accesses), and only then write `{"moveKey": "<base64>"}`: a new entry is public until its sharing is set. Creating it afresh makes the approver its owner: whoever created it before would keep access as owner.
 6. Seal `{"username": "<hub ID>", "password": "...", "moveKey": "<base64>"}` to `boxKey` (`hubaccount.Seal`: an ephemeral X25519 key, HKDF-SHA256 bound to the hub ID, AES-256-GCM; see `internal/hubaccount/box.go`).
@@ -19,7 +19,9 @@ A hub waiting for an account has, in `facility-hub-registry/<hub ID>`: `accountR
 
 The hub takes the account up at its next refresh, replaces the password and token, and removes `account` and `accountRequested`. An account it refuses (another name, other org units, authorities, a password central refuses) makes it ask again.
 
-Approving and making move codes need a superuser: the move key's entry is shared with no one, so only its owner (the approver) and superusers can read or replace it.
+Approving and making move codes need a superuser: the move key's entry is shared with no one, so only its owner (the approver) and superusers can read or replace it. One approver per hub at a time: two approvals of the same hub within seconds can leave the hub with a move key central no longer holds (the hub then needs approving again).
+
+If central locks accounts after failed logins, someone could trigger it on a waiting hub's account (its name is the hub ID), and the hub would read the refusal as an account it cannot use and ask again: approve it again later.
 
 ## Move codes
 
@@ -31,7 +33,7 @@ Both are base32 (RFC 4648 alphabet `A–Z2–7`, no padding), cut short and writ
 
 - `AccountCode(pub, hubID, facility)`: the first 16 characters of base32(SHA-256(`"facility-hub account code"` 0x00 hubID 0x00 facility 0x00 pub)), in groups of 4. 80 bits: the key in the entry is public, so a key matching the hub's code must be out of reach of an offline search.
 - `MoveCode(moveKey, address)`: the first 10 characters of base32(HMAC-SHA256(moveKey, normalized address)), in groups of 5. 50 bits: it can only be tried on the hub, which throttles wrong codes.
-- Addresses: `http(s)://host[:port][/path]` in printable ASCII, with no spaces, `?`, `#`, `%` or user; the app refuses any other (as the hub does), since such addresses have more than one written form.
+- Addresses: `http(s)://host[:port][/path]` written with letters, digits and `- . _ ~ ! $ & ' ( ) * + , ; = / : @ [ ]` only, with a port given if there is a colon after the host; the app refuses any other (as the hub does), since such addresses have more than one written form.
 - Normalized address: surrounding spaces and trailing slashes removed, scheme and host in lower case, the default port (`:443` for https, `:80` for http) removed, the path as typed.
 
 Test values (`internal/hubaccount/codes_test.go`):

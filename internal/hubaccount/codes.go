@@ -37,20 +37,24 @@ func MoveCode(moveKey []byte, address string) string {
 }
 
 // CheckAddress refuses an address a move code is never made for: anything but
-// http(s)://host[:port][/path] in plain ASCII, without spaces, user, query or fragment.
-// The hub and the app must agree on an address's form, and these have more than one.
+// http(s)://host[:port][/path] written with letters, digits and - . _ ~ ! $ & ' ( ) * +
+// , ; = / : @ [ ] only (no spaces, user, query, fragment or %-escapes), and a port, if
+// any, given. The hub and the app must agree on an address's form, and other
+// addresses have more than one.
 func CheckAddress(raw string) error {
 	raw = strings.TrimSpace(raw)
 	for i := 0; i < len(raw); i++ {
-		if c := raw[i]; c <= ' ' || c >= 0x7f || c == '?' || c == '#' || c == '%' {
-			return fmt.Errorf("an address of letters, digits and punctuation only, without spaces, ? or #")
+		c := raw[i]
+		if !('a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || strings.IndexByte("-._~!$&'()*+,;=/:@[]", c) >= 0) {
+			return fmt.Errorf("an address of letters, digits and - . _ ~ ! $ & ' ( ) * + , ; = / : @ only")
 		}
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
 		return err
 	}
-	if s := strings.ToLower(u.Scheme); (s != "https" && s != "http") || u.Host == "" || u.User != nil || u.Opaque != "" {
+	if s := strings.ToLower(u.Scheme); (s != "https" && s != "http") || u.Host == "" || u.User != nil || u.Opaque != "" ||
+		strings.HasSuffix(u.Host, ":") {
 		return fmt.Errorf("an address like https://central.example.org/dhis")
 	}
 	return nil

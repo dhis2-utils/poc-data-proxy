@@ -69,6 +69,8 @@ type Central struct {
 	OnTokenCreate func(username string)
 	// FailPaths makes a path answer this status (tests).
 	FailPaths map[string]int
+	// RoleAuthorities are the authorities of user roles (default: none).
+	RoleAuthorities map[string][]string
 	// LoseResponse ("PUT /api/...": n) carries out the next n such requests but answers
 	// them with 502, as when the answer is lost on the way back.
 	LoseResponse map[string]int
@@ -496,6 +498,15 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		c.createUser(w, r)
 	case p == "/api/users" && r.Method == "GET":
 		c.findUser(w, r)
+	case strings.HasPrefix(p, "/api/userRoles/") && r.Method == "GET":
+		id := strings.TrimPrefix(p, "/api/userRoles/")
+		c.mu.Lock()
+		auths := c.RoleAuthorities[id]
+		c.mu.Unlock()
+		if auths == nil {
+			auths = []string{}
+		}
+		writeJSON(w, 200, map[string]any{"id": id, "authorities": auths})
 	case strings.HasPrefix(p, "/api/users/") && r.Method == "PATCH":
 		c.patchUser(w, r, strings.TrimPrefix(p, "/api/users/"))
 	case strings.HasPrefix(p, "/api/userGroups/") && r.Method == "POST":

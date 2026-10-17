@@ -479,6 +479,38 @@ func TestHubAsksAgainWhenTheAccountIsRefused(t *testing.T) {
 	if reg := e.central.DataStoreValue("facility-hub-registry", h.HubID()); reg["account"] != nil || reg["accountRequested"] != true {
 		t.Fatalf("the hub did not ask again: %v", reg)
 	}
+	// Review 5: approving again says what is wrong with the account, instead of handing
+	// over the same account the hub refuses; once corrected, it goes through.
+	if _, err := e.approveWith(h.AccountCode()); err == nil || !strings.Contains(err.Error(), "authorities") {
+		t.Fatalf("approved the refused account again: %v", err)
+	}
+	e.central.Users[h.HubID()].Authorities = []string{}
+	e.adopt()
+}
+
+// Review 5: a disabled account (how a hub's account is revoked) is not handed over
+// again by an approval that only replaces its password.
+func TestApproveRefusesADisabledAccount(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	h := e.app.Hub
+	e.approve()
+	e.central.Users[h.HubID()].Disabled = true
+	h.RefreshCatalog(context.Background())
+	if _, err := e.approveWith(h.AccountCode()); err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("approved a disabled account: %v", err)
+	}
+}
+
+// Review 5: the hub account role must have no authorities, or every hub refuses its
+// account.
+func TestApproveRefusesARoleWithAuthorities(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.central.RoleAuthorities = map[string][]string{"HubRoleAcct": {"F_TRACKED_ENTITY_ADD"}}
+	if _, err := e.approveWith(e.app.Hub.AccountCode()); err == nil || e.central.Users[e.app.Hub.HubID()] != nil {
+		t.Fatalf("approved with a role that has authorities: %v", err)
+	}
 }
 
 // Review 4, I2: after a lost answer to a password change, an error while finding out
