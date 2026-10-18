@@ -47,30 +47,42 @@ def main():
 
 
 def open_page(page, route):
+    """Opens the app at route and returns its frame: 2.42+ shows apps inside the
+    global shell, in an iframe; older versions, or a cached app, without it."""
     page.goto(f"{APP}#{route}", wait_until="domcontentloaded", timeout=120_000)
+    for _ in range(240):
+        for fr in page.frames:
+            if "/api/apps/facility-hub/" in fr.url and fr is not page.main_frame:
+                fr.wait_for_load_state("domcontentloaded")
+                return fr
+        if "/api/apps/facility-hub/" in page.url and page.locator("iframe").count() == 0 \
+                and page.locator("main").count() > 0:
+            return page.main_frame
+        page.wait_for_timeout(500)
+    return page.main_frame
 
 
 def run(page):
     if ACTION == "list":
-        open_page(page, "/")
-        page.wait_for_selector("[data-hub], text=No hubs", timeout=120_000)
-        R["hubs"] = page.eval_on_selector_all("[data-hub]", "els => els.map(e => e.dataset.hub)")
+        app = open_page(page, "/")
+        app.locator("[data-hub]").or_(app.get_by_text("No hubs", exact=True)).first.wait_for(timeout=120_000)
+        R["hubs"] = app.eval_on_selector_all("[data-hub]", "els => els.map(e => e.dataset.hub)")
     elif ACTION == "approve":
         hub = os.environ["HUB_ID"]
-        open_page(page, "/approvals")
-        row = page.locator("tr", has_text=hub)
+        app = open_page(page, "/approvals")
+        row = app.locator("tr", has_text=hub)
         row.get_by_role("button", name="Approve").click(timeout=120_000)
-        page.fill("input[name=code]", os.environ["CODE"])
-        page.get_by_role("dialog").get_by_role("button", name="Approve").click()
-        page.wait_for_selector("text=/^(Approved|Not approved)$/", timeout=120_000)
-        R["approved"] = page.locator("text=Approved").count() > 0 and page.locator("text=Not approved").count() == 0
-        R["dialog"] = page.get_by_role("dialog").inner_text()[:1000]
+        app.fill("input[name=code]", os.environ["CODE"])
+        app.get_by_role("dialog").get_by_role("button", name="Approve").click()
+        app.wait_for_selector("text=/^(Approved|Not approved)$/", timeout=120_000)
+        R["approved"] = app.locator("text=Not approved").count() == 0
+        R["dialog"] = app.get_by_role("dialog").inner_text()[:1000]
     elif ACTION == "movecode":
         hub = os.environ["HUB_ID"]
-        open_page(page, "/moves")
-        page.fill("input[name=address]", os.environ["ADDRESS"])
-        page.get_by_role("button", name="Make codes").click(timeout=120_000)
-        el = page.wait_for_selector(f"[data-hub='{hub}']", timeout=120_000)
+        app = open_page(page, "/moves")
+        app.fill("input[name=address]", os.environ["ADDRESS"])
+        app.get_by_role("button", name="Make codes").click(timeout=120_000)
+        el = app.wait_for_selector(f"[data-hub='{hub}']", timeout=120_000)
         R["code"] = el.inner_text().strip()
     elif ACTION == "screens":
         for name, route in [("hubs", "/"), ("approvals", "/approvals"), ("moves", "/moves")]:
