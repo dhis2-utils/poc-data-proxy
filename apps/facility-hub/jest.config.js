@@ -10,6 +10,7 @@ const defaults = require(
 )
 
 module.exports = {
+    setupFiles: ['<rootDir>/jest.setup.js'],
     transformIgnorePatterns: [
         '/node_modules/(?!(\\.pnpm|@noble|moment/dist/))',
     ],
