@@ -5,8 +5,54 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-10-18T22:54:25.680Z\n"
-"PO-Revision-Date: 2026-10-18T22:54:25.680Z\n"
+"POT-Creation-Date: 2026-10-18T23:06:02.920Z\n"
+"PO-Revision-Date: 2026-10-18T23:06:02.921Z\n"
+
+msgid "Approve the hub of {{- facility}}"
+msgstr "Approve the hub of {{- facility}}"
+
+msgid ""
+"Call the facility on a number you already have (never use a code from "
+"someone who calls you), and ask them to read the code shown on the hub's "
+"page, under \"The hub's own account\"."
+msgstr ""
+"Call the facility on a number you already have (never use a code from "
+"someone who calls you), and ask them to read the code shown on the hub's "
+"page, under \"The hub's own account\"."
+
+msgid "Hub {{- id}}, set up by {{- by}}"
+msgstr "Hub {{- id}}, set up by {{- by}}"
+
+msgid "Code from the hub's page"
+msgstr "Code from the hub's page"
+
+msgid "Not approved"
+msgstr "Not approved"
+
+msgid "Approved"
+msgstr "Approved"
+
+msgid ""
+"The hub takes its account up at its next refresh (within about an hour, "
+"once it is online)."
+msgstr ""
+"The hub takes its account up at its next refresh (within about an hour, "
+"once it is online)."
+
+msgid "Close"
+msgstr "Close"
+
+msgid "Cancel"
+msgstr "Cancel"
+
+msgid "Approve"
+msgstr "Approve"
+
+msgid "For the national team"
+msgstr "For the national team"
+
+msgid "Only superusers approve hubs and give out move codes."
+msgstr "Only superusers approve hubs and give out move codes."
 
 msgid "Hubs"
 msgstr "Hubs"
@@ -20,10 +66,377 @@ msgstr "Central moves"
 msgid "Collapse menu"
 msgstr "Collapse menu"
 
-msgctxt "Application title"
-msgid "__MANIFEST_APP_TITLE"
-msgstr "Facility Hub"
+msgid "Never reported"
+msgstr "Never reported"
 
-msgctxt "Application description"
-msgid "__MANIFEST_APP_DESCRIPTION"
-msgstr "The facility hubs of this country: their state, approvals and central moves"
+msgid "Silent"
+msgstr "Silent"
+
+msgid "Pending data"
+msgstr "Pending data"
+
+msgid "Refused changes"
+msgstr "Refused changes"
+
+msgid "Low disk"
+msgstr "Low disk"
+
+msgid "USB stick"
+msgstr "USB stick"
+
+msgid "Token expired"
+msgstr "Token expired"
+
+msgid "Upgrade failed"
+msgstr "Upgrade failed"
+
+msgid "Needs upgrade"
+msgstr "Needs upgrade"
+
+msgid ""
+"This hub has never reported – it may not have finished its set-up, or "
+"cannot reach central."
+msgstr ""
+"This hub has never reported – it may not have finished its set-up, or "
+"cannot reach central."
+
+msgid "No heartbeat since {{- when}} – the hub may be off, or cannot reach central."
+msgstr "No heartbeat since {{- when}} – the hub may be off, or cannot reach central."
+
+msgid "{{- n}} saves wait for their user to log in on the hub again."
+msgstr "{{- n}} saves wait for their user to log in on the hub again."
+
+msgid ""
+"{{- n}} saves have waited more than a day to reach central (last sent {{- "
+"when}})."
+msgstr ""
+"{{- n}} saves have waited more than a day to reach central (last sent {{- "
+"when}})."
+
+msgid "Central refused {{- n}} changes made on this hub – see them below."
+msgstr "Central refused {{- n}} changes made on this hub – see them below."
+
+msgid "Only {{- free}} free on the hub's disk."
+msgstr "Only {{- free}} free on the hub's disk."
+
+msgid "The hub's USB stick does not work ({{- error}}) – replace it."
+msgstr "The hub's USB stick does not work ({{- error}}) – replace it."
+
+msgid "not writable"
+msgstr "not writable"
+
+msgid ""
+"No USB stick in the hub – put the box's stick back, it holds the copy a new "
+"disk is restored from."
+msgstr ""
+"No USB stick in the hub – put the box's stick back, it holds the copy a new "
+"disk is restored from."
+
+msgid ""
+"The token the hub uses for its housekeeping has expired – a staff member "
+"should take the hub over on its page."
+msgstr ""
+"The token the hub uses for its housekeeping has expired – a staff member "
+"should take the hub over on its page."
+
+msgid "The last upgrade failed – {{- reason}}"
+msgstr "The last upgrade failed – {{- reason}}"
+
+msgid ""
+"Central runs a DHIS2 version this hub release does not support – it only "
+"passes requests through until it is upgraded."
+msgstr ""
+"Central runs a DHIS2 version this hub release does not support – it only "
+"passes requests through until it is upgraded."
+
+msgid "never"
+msgstr "never"
+
+msgid "1 minute ago"
+msgstr "1 minute ago"
+
+msgid "{{- n}} minutes ago"
+msgstr "{{- n}} minutes ago"
+
+msgid "1 hour ago"
+msgstr "1 hour ago"
+
+msgid "{{- n}} hours ago"
+msgstr "{{- n}} hours ago"
+
+msgid "{{- n}} days ago"
+msgstr "{{- n}} days ago"
+
+msgid "Hub accounts"
+msgstr "Hub accounts"
+
+msgid ""
+"Each approved hub gets a user in this group (write sharing on the "
+"facility-hub namespaces, except facility-hub-admin) with this role, which "
+"must have no authorities."
+msgstr ""
+"Each approved hub gets a user in this group (write sharing on the "
+"facility-hub namespaces, except facility-hub-admin) with this role, which "
+"must have no authorities."
+
+msgid "User group"
+msgstr "User group"
+
+msgid "User role"
+msgstr "User role"
+
+msgid "Save"
+msgstr "Save"
+
+msgid "Not saved"
+msgstr "Not saved"
+
+msgid "Could not load the hubs"
+msgstr "Could not load the hubs"
+
+msgid "Hubs waiting for their own account"
+msgstr "Hubs waiting for their own account"
+
+msgid "None."
+msgstr "None."
+
+msgid "Facility"
+msgstr "Facility"
+
+msgid "Hub"
+msgstr "Hub"
+
+msgid "Set up by"
+msgstr "Set up by"
+
+msgid "Set up"
+msgstr "Set up"
+
+msgid "Could not load the hub"
+msgstr "Could not load the hub"
+
+msgid "No such hub"
+msgstr "No such hub"
+
+msgid "This hub does not exist, or is not in your org units."
+msgstr "This hub does not exist, or is not in your org units."
+
+msgid "All hubs"
+msgstr "All hubs"
+
+msgid "Waiting for its own account"
+msgstr "Waiting for its own account"
+
+msgid "Set the hub accounts group and role on the Approvals page first."
+msgstr "Set the hub accounts group and role on the Approvals page first."
+
+msgid "Latest report"
+msgstr "Latest report"
+
+msgid "by {{- by}}"
+msgstr "by {{- by}}"
+
+msgid "Last heartbeat"
+msgstr "Last heartbeat"
+
+msgid "Last sync"
+msgstr "Last sync"
+
+msgid "Last error"
+msgstr "Last error"
+
+msgid "Pending saves"
+msgstr "Pending saves"
+
+msgid "Free disk"
+msgstr "Free disk"
+
+msgid "last copy {{- when}}"
+msgstr "last copy {{- when}}"
+
+msgid "missing"
+msgstr "missing"
+
+msgid "Version"
+msgstr "Version"
+
+msgid "(central DHIS2 {{- v}})"
+msgstr "(central DHIS2 {{- v}})"
+
+msgid "Housekeeping token"
+msgstr "Housekeeping token"
+
+msgid "expires {{- when}}"
+msgstr "expires {{- when}}"
+
+msgid "Last 90 days"
+msgstr "Last 90 days"
+
+msgid "No history reported yet."
+msgstr "No history reported yet."
+
+msgid "Day"
+msgstr "Day"
+
+msgid "Syncs"
+msgstr "Syncs"
+
+msgid "Outages"
+msgstr "Outages"
+
+msgid "Minutes offline"
+msgstr "Minutes offline"
+
+msgid "Longest outage (min)"
+msgstr "Longest outage (min)"
+
+msgid "Pending peak"
+msgstr "Pending peak"
+
+msgid "Lowest free disk"
+msgstr "Lowest free disk"
+
+msgid ""
+"Values are masked (***) – central staff see which field caused it, not what "
+"was entered. The hub removes a change from this list once it is resolved."
+msgstr ""
+"Values are masked (***) – central staff see which field caused it, not what "
+"was entered. The hub removes a change from this list once it is resolved."
+
+msgid "When"
+msgstr "When"
+
+msgid "Kind"
+msgstr "Kind"
+
+msgid "Object"
+msgstr "Object"
+
+msgid "Error codes"
+msgstr "Error codes"
+
+msgid "Message"
+msgstr "Message"
+
+msgid "working"
+msgstr "working"
+
+msgid "failing"
+msgstr "failing"
+
+msgid "Facility hubs"
+msgstr "Facility hubs"
+
+msgid "Hubs waiting for approval"
+msgstr "Hubs waiting for approval"
+
+msgid "1 hub waits for its own account."
+msgstr "1 hub waits for its own account."
+
+msgid "{{- n}} hubs wait for their own account."
+msgstr "{{- n}} hubs wait for their own account."
+
+msgid "Approve hubs"
+msgstr "Approve hubs"
+
+msgid "Search by facility"
+msgstr "Search by facility"
+
+msgid "Flagged only"
+msgstr "Flagged only"
+
+msgid "No hubs"
+msgstr "No hubs"
+
+msgid "No hub matches."
+msgstr "No hub matches."
+
+msgid "No hub has been set up in your org units yet."
+msgstr "No hub has been set up in your org units yet."
+
+msgid "Pending"
+msgstr "Pending"
+
+msgid "Refused"
+msgstr "Refused"
+
+msgid "Token of"
+msgstr "Token of"
+
+msgid "Flags"
+msgstr "Flags"
+
+msgid "retired"
+msgstr "retired"
+
+msgid "Planned move"
+msgstr "Planned move"
+
+msgid ""
+"Announce central's new address before a move. Hubs switch to it once this "
+"address has stopped answering for an hour, and only if the new one is the "
+"same DHIS2."
+msgstr ""
+"Announce central's new address before a move. Hubs switch to it once this "
+"address has stopped answering for an hour, and only if the new one is the "
+"same DHIS2."
+
+msgid "Could not read the planned move"
+msgstr "Could not read the planned move"
+
+msgid "Announced – {{- url}}"
+msgstr "Announced – {{- url}}"
+
+msgid "not before {{- when}}"
+msgstr "not before {{- when}}"
+
+msgid "Withdraw"
+msgstr "Withdraw"
+
+msgid "No move announced."
+msgstr "No move announced."
+
+msgid "New address"
+msgstr "New address"
+
+msgid "Not before (optional)"
+msgstr "Not before (optional)"
+
+msgid "Announce"
+msgstr "Announce"
+
+msgid "Move codes"
+msgstr "Move codes"
+
+msgid ""
+"After an unplanned move, give each facility central's new address and its "
+"hub's code. Staff enter both on the hub's page; the hub checks the code "
+"itself and moves only to that address."
+msgstr ""
+"After an unplanned move, give each facility central's new address and its "
+"hub's code. Staff enter both on the hub's page; the hub checks the code "
+"itself and moves only to that address."
+
+msgid "Central's new address"
+msgstr "Central's new address"
+
+msgid "Make codes"
+msgstr "Make codes"
+
+msgid "Could not read the move keys"
+msgstr "Could not read the move keys"
+
+msgid "Codes for {{- address}}"
+msgstr "Codes for {{- address}}"
+
+msgid "Code"
+msgstr "Code"
+
+msgid "no code – approve first"
+msgstr "no code – approve first"
+
+msgid "Print"
+msgstr "Print"
+
+msgid "Download CSV"
+msgstr "Download CSV"
