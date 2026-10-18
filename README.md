@@ -17,6 +17,7 @@ A small device on a facility LAN that caches the facility's DHIS2 tracker data a
 | [PERFORMANCE.md](docs/PERFORMANCE.md) | How the hub scales: current results on Pi-class profiles, load on central, sizing, history |
 | [HARDWARE-TESTING.md](docs/HARDWARE-TESTING.md) | Testing on real Raspberry Pis (Pi 4 1 GB, Pi 5 4 GB, SD card and SSD): set-up, calibration, ladder, full downloads, bytes written, power cuts |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Rolling out hubs: hardware, image, setup at the facility, networks, reaching the hub securely, running the fleet; options under consideration |
+| [FACILITY-HUB-APP.md](docs/FACILITY-HUB-APP.md) | The Facility Hub app on central: its screens, and what it must match on the hub's side (approving a hub's own account, move codes) |
 | [RECOVERY.md](docs/RECOVERY.md) | Keeping unsynced data safe: backup and recovery options (ideas, not decisions) |
 | [docs/reviews/](docs/reviews/README.md) | Dated independent reviews (security and confidentiality), and the names the code cites them by |
 | [AGENTS.md](AGENTS.md) | How to change the code: keep the structure, guards, checks before committing |
@@ -26,6 +27,7 @@ A small device on a facility LAN that caches the facility's DHIS2 tracker data a
 | Path | What it is |
 |---|---|
 | `cmd/hub` | The binary: `serve`, `migrate`, `keygen`, `release`, `version` |
+| `apps/facility-hub` | The Facility Hub app, a DHIS2 app on central: hubs and their flags, approvals, central moves (docs/FACILITY-HUB-APP.md) |
 | `cmd/fakecentral` | A stand-in DHIS2, with generated data at any size, for the upgrade script and the performance runs |
 | `cmd/hubtest` | Live tests against real DHIS2 instances: provisions a profile and runs the live suite (docs/TESTING.md) |
 | `cmd/hubload` | Load generator: web and Android users against a hub (docs/PERFORMANCE.md) |
@@ -41,6 +43,8 @@ A small device on a facility LAN that caches the facility's DHIS2 tracker data a
 | `internal/proxy` | Pass-through with a per-user GET cache (spec 5.1) |
 | `internal/sync` | Outbox push, issue reporting, pull, reserved value pool, heartbeat (spec 11) |
 | `internal/ui` | `/hub/status`, setup flow, admin page (spec 6.2, 12) |
+| `internal/hubaccount` | The hub's own account: the sealed box it arrives in, the account and move codes, the approval steps (the reference the app matches) |
+| `internal/stick` | The USB stick: setup code, the copy a new disk is restored from (docs/RECOVERY.md) |
 | `internal/upgrade` | Signed releases, store migration on a copy, binary swap, health check, rollback (spec 12a) |
 | `internal/compat` | **All DHIS2-version-specific request and response handling**, one file per version (`v42.go`) |
 | `internal/central` | HTTP client for central and the connectivity monitor (spec 5.2) |
@@ -51,9 +55,10 @@ A small device on a facility LAN that caches the facility's DHIS2 tracker data a
 | `internal/live` | The live suite: scenarios and oracles against a provisioned instance or the fake |
 | `internal/perf` | In-process performance tests: pulls, queries, load on central |
 | `perf` | Container runs on Pi-class profiles (`perf/pi.sh`) and their results |
-| `clients` | Playwright drivers for the real web apps (Capture web, eRegisters, Aggregate Data Entry) used by the live suite, and the eRegisters instance setup |
+| `clients` | Playwright drivers for the real web apps (Capture web, eRegisters, Aggregate Data Entry, the Facility Hub app) used by the live suite, and the eRegisters instance setup |
 | `testdata/2.42` | Request/response fixtures and Capture endpoint lists recorded from DHIS2 2.42.6, plus the first round's manual test setup (`SETUP.md`, `setup_instance.py`) |
 | `deploy` | Example image defaults file and systemd unit |
+| `scripts/demo-facility-hubs.py` | Adds demo hubs to a test instance, for trying the Facility Hub app |
 | `scripts/test-upgrade.sh` | Scenario 11: self-upgrade, rollback, unsigned release |
 
 ## Build

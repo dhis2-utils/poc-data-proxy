@@ -1,6 +1,15 @@
 # Facility Hub app: what it must match
 
-The Facility Hub app is a DHIS2 app on central, used by the national team and districts (to build; its other duties are in [DEPLOYMENT.md](DEPLOYMENT.md), section 6, "The Facility Hub app"). This note fixes the parts the hubs depend on exactly: approving a hub's own account, and move codes. `internal/hubaccount` is the reference implementation, used by the hub's tests; the app's tests must give the same values (below).
+The Facility Hub app is a DHIS2 app on central, used by the national team and districts (first version built 2026-10-18 in [apps/facility-hub](../apps/facility-hub); its other duties, still to build, are in [DEPLOYMENT.md](DEPLOYMENT.md), section 6, "The Facility Hub app"). This note fixes the parts the hubs depend on exactly: approving a hub's own account, and move codes. `internal/hubaccount` is the reference implementation, used by the hub's tests; the app (`apps/facility-hub/src/hubaccount`) gives the same values (below).
+
+## The app
+
+- **Install:** the zip from `pnpm build` in App Management. Opening it needs the authority `M_facilityhub` (DHIS2 drops the dash of the app's key); give it to the national team's and districts' roles.
+- **Hubs:** every hub under the user's org units (superusers: all), with its last heartbeat, pending and refused changes, free disk, USB stick, version and token owner, and flags: no heartbeat for 2 days; saves waiting more than a day, or for their user to log in again; refused changes; under 2 GB free; USB stick missing or failing; housekeeping token expired; failed upgrade; needs an upgrade. Filtering by org unit is done in the app, not by sharing: the namespaces hold no patient data.
+- **A hub:** its latest report with each flag explained, its 90-day history, its refused changes (masked), and "Approve" while it waits.
+- **Approvals** (superusers): the hub accounts user group and role, kept in `facility-hub-admin/accounts`, and the hubs waiting, approved with the code from the hub's page.
+- **Central moves** (superusers): a planned move (`facility-hub-admin/central-move`), and move codes for a new address, printable or as CSV.
+- **`facility-hub-admin`** must be writable by administrators only (a planned move there moves every hub). The app creates its entries empty, shares them as public read only, and only then writes them: a new dataStore entry is public read and write until its sharing is set.
 
 ## Approving a hub's own account
 
@@ -44,3 +53,5 @@ Test values (`internal/hubaccount/codes_test.go`):
 | `MoveCode(32 × 0x02, "https://new.example.org/dhis")` | `IJ3O2-BXZPR` |
 | `MoveCode(32 × 0x02, " HTTPS://New.Example.org/dhis/ ")` | `IJ3O2-BXZPR` |
 | `MoveCode(32 × 0x02, "https://new.example.org:443/dhis")` | `IJ3O2-BXZPR` |
+
+The sealed box has a test value too: `TestBoxVector` (`internal/hubaccount/box_test.go`) builds it for fixed inputs (ephemeral key 32 × 0x03, nonce 12 × 0x04, the hub's key from 32 × 0x05, hub ID `hub-x`, plaintext `{"username":"hub-x"}`), pins its bytes and opens it with the hub's `Open`; the app's `seal` gives the same bytes (`src/hubaccount/box.test.ts`).

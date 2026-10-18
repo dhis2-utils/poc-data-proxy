@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { writeAdminEntry } from './adminEntry'
 import { Flag, flags, Heartbeat, visible } from './flags'
 import { listNamespace, useApi } from '@/api/useApi'
 import { useMe } from '@/hooks/useMe'
@@ -185,22 +186,6 @@ const getOrNull = async <T>(
     }
 }
 
-const putOrPost = async (
-    api: ReturnType<typeof useApi>,
-    path: string,
-    value: unknown
-) => {
-    try {
-        await api.request('PUT', path, value)
-    } catch (e) {
-        if (e instanceof ApiError && e.status === 404) {
-            await api.request('POST', path, value)
-            return
-        }
-        throw e
-    }
-}
-
 const accountsPath = '/dataStore/facility-hub-admin/accounts'
 
 export const useAccountsSettings = () => {
@@ -211,7 +196,7 @@ export const useAccountsSettings = () => {
         queryFn: () => getOrNull<AccountsSettings>(api, accountsPath),
     })
     const save = useMutation(
-        (s: AccountsSettings) => putOrPost(api, accountsPath, s),
+        (s: AccountsSettings) => writeAdminEntry(api, 'accounts', s),
         {
             onSuccess: () => client.invalidateQueries(['accountsSettings']),
         }
@@ -238,7 +223,7 @@ export const useCentralMove = () => {
     })
     const done = { onSuccess: () => client.invalidateQueries(['centralMove']) }
     const set = useMutation(
-        (m: CentralMove) => putOrPost(api, movePath, m),
+        (m: CentralMove) => writeAdminEntry(api, 'central-move', m),
         done
     )
     const clear = useMutation(() => api.request('DELETE', movePath), done)

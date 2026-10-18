@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-10-18T23:06:02.920Z\n"
-"PO-Revision-Date: 2026-10-18T23:06:02.921Z\n"
+"POT-Creation-Date: 2026-10-18T23:07:29.437Z\n"
+"PO-Revision-Date: 2026-10-18T23:07:29.437Z\n"
 
 msgid "Approve the hub of {{- facility}}"
 msgstr "Approve the hub of {{- facility}}"
@@ -440,3 +440,11 @@ msgstr "Print"
 
 msgid "Download CSV"
 msgstr "Download CSV"
+
+msgctxt "Application title"
+msgid "__MANIFEST_APP_TITLE"
+msgstr "Facility Hub"
+
+msgctxt "Application description"
+msgid "__MANIFEST_APP_DESCRIPTION"
+msgstr "The facility hubs of this country: their state, approvals and central moves"
