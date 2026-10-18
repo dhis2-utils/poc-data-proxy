@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-10-18T23:07:29.437Z\n"
-"PO-Revision-Date: 2026-10-18T23:07:29.437Z\n"
+"POT-Creation-Date: 2026-10-18T23:43:35.880Z\n"
+"PO-Revision-Date: 2026-10-18T23:43:35.880Z\n"
 
 msgid "Approve the hub of {{- facility}}"
 msgstr "Approve the hub of {{- facility}}"
@@ -47,6 +47,9 @@ msgstr "Cancel"
 
 msgid "Approve"
 msgstr "Approve"
+
+msgid "Could not read your user"
+msgstr "Could not read your user"
 
 msgid "For the national team"
 msgstr "For the national team"
@@ -303,6 +306,9 @@ msgstr ""
 "Values are masked (***) – central staff see which field caused it, not what "
 "was entered. The hub removes a change from this list once it is resolved."
 
+msgid "The {{- shown}} most recent of {{- total}}"
+msgstr "The {{- shown}} most recent of {{- total}}"
+
 msgid "When"
 msgstr "When"
 
@@ -369,6 +375,9 @@ msgstr "Flags"
 msgid "retired"
 msgstr "retired"
 
+msgid "Central runs on https - hubs only move to an https address"
+msgstr "Central runs on https - hubs only move to an https address"
+
 msgid "Planned move"
 msgstr "Planned move"
 
@@ -399,8 +408,8 @@ msgstr "No move announced."
 msgid "New address"
 msgstr "New address"
 
-msgid "Not before (optional)"
-msgstr "Not before (optional)"
+msgid "Not before, your time (optional)"
+msgstr "Not before, your time (optional)"
 
 msgid "Announce"
 msgstr "Announce"

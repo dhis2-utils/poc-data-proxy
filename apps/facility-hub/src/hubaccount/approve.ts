@@ -21,17 +21,17 @@ export const toBase64 = (bytes: Uint8Array): string => {
     return out
 }
 
+/** Standard base64 with padding, strictly (as Go's base64.StdEncoding): anything else is empty. */
 export const fromBase64 = (s: string): Uint8Array => {
+    if (s.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(s)) {
+        return new Uint8Array(0)
+    }
     const clean = s.replace(/=+$/, '')
     const out: number[] = []
     let bits = 0
     let value = 0
     for (const c of clean) {
-        const v = b64.indexOf(c)
-        if (v < 0) {
-            return new Uint8Array(0)
-        }
-        value = (value << 6) | v
+        value = (value << 6) | b64.indexOf(c)
         bits += 6
         if (bits >= 8) {
             out.push((value >> (bits - 8)) & 255)

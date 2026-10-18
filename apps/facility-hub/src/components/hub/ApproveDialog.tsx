@@ -61,7 +61,7 @@ export const ApproveDialog = ({
         hub.registry.facilityName ??
         hub.registry.facility
     return (
-        <Modal onClose={onClose} position="middle">
+        <Modal onClose={running ? undefined : onClose} position="middle">
             <ModalTitle>
                 {i18n.t('Approve the hub of {{- facility}}', { facility })}
             </ModalTitle>
@@ -109,7 +109,7 @@ export const ApproveDialog = ({
             </ModalContent>
             <ModalActions>
                 <ButtonStrip end>
-                    <Button onClick={onClose} secondary>
+                    <Button onClick={onClose} secondary disabled={running}>
                         {done ? i18n.t('Close') : i18n.t('Cancel')}
                     </Button>
                     {!done && (

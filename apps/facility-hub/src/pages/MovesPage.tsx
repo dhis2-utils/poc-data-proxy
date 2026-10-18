@@ -1,3 +1,4 @@
+import { useConfig } from '@dhis2/app-runtime'
 import i18n from '@dhis2/d2-i18n'
 import {
     Button,
@@ -23,13 +24,22 @@ import { useCentralMove, useHubs, useMoveKeys, place } from '@/hubs/useHubs'
 // A planned move: hubs read it from the current central and switch once the old
 // address has stopped answering (docs/DEPLOYMENT.md, section 6).
 const PlannedMove = () => {
+    const { baseUrl } = useConfig()
     const { move, isLoading, error, set, clear } = useCentralMove()
     const [url, setUrl] = useState('')
     const [from, setFrom] = useState('')
     if (isLoading) {
         return <CircularLoader small />
     }
-    const problem = url.trim() ? checkAddress(url) : null
+    const problem = url.trim()
+        ? (checkAddress(url) ??
+          (normalizeAddress(url).startsWith('http:') &&
+          new URL(baseUrl, window.location.href).protocol === 'https:'
+              ? i18n.t(
+                    'Central runs on https - hubs only move to an https address'
+                )
+              : null))
+        : null
     return (
         <div className={styles.card}>
             <h2 className={styles.subtitle}>{i18n.t('Planned move')}</h2>
@@ -46,7 +56,7 @@ const PlannedMove = () => {
                     {error.message}
                 </NoticeBox>
             )}
-            {move ? (
+            {move?.url ? (
                 <div className={styles.row}>
                     <div>
                         {i18n.t('Announced – {{- url}}', { url: move.url })}
@@ -70,6 +80,7 @@ const PlannedMove = () => {
             <div className={styles.row}>
                 <InputField
                     label={i18n.t('New address')}
+                    name="planned"
                     placeholder="https://hmis.example.org"
                     value={url}
                     onChange={({ value }) => setUrl(value ?? '')}
@@ -78,7 +89,7 @@ const PlannedMove = () => {
                     className={styles.search}
                 />
                 <InputField
-                    label={i18n.t('Not before (optional)')}
+                    label={i18n.t('Not before, your time (optional)')}
                     type="datetime-local"
                     value={from}
                     onChange={({ value }) => setFrom(value ?? '')}
@@ -106,7 +117,10 @@ const PlannedMove = () => {
     )
 }
 
-const csvCell = (s: string) => `"${s.replace(/"/g, '""')}"`
+// Quoted; a cell a spreadsheet would read as a formula starts with ' (facility names
+// and hub IDs come from the registry, which hub owners write).
+const csvCell = (s: string) =>
+    `"${(/^[=+\-@]/.test(s) ? `'${s}` : s).replace(/"/g, '""')}"`
 
 // Move codes after an unplanned move: one per hub, for the new address, computed here
 // from the hubs' move keys (docs/FACILITY-HUB-APP.md). Nothing is written.
@@ -151,7 +165,7 @@ const MoveCodes = () => {
         )
         a.download = 'move-codes.csv'
         a.click()
-        URL.revokeObjectURL(a.href)
+        setTimeout(() => URL.revokeObjectURL(a.href), 10000)
     }
 
     if (isLoading) {

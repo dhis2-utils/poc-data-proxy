@@ -85,8 +85,14 @@ func runApp(t *testing.T, e *tk.Env, user, password, action string, env ...strin
 	if err := json.Unmarshal(b, &r); err != nil {
 		t.Fatalf("%v: %s", err, b)
 	}
-	if r.Exception != "" || len(r.Errors) > 0 {
-		t.Errorf("%s as %s: %s %v (screenshot in %s)", action, user, r.Exception, r.Errors, out)
+	// 409: the app creating an admin entry that exists, before taking it over.
+	failed := slices.DeleteFunc(slices.Clone(r.Failed), func(f any) bool {
+		m, _ := f.(map[string]any)
+		return m["status"] == float64(409) && strings.HasPrefix(fmt.Sprint(m["url"]), "/api/dataStore/facility-hub-admin/")
+	})
+	if r.Login != 200 || r.Exception != "" || len(r.Errors) > 0 || len(failed) > 0 {
+		t.Errorf("%s as %s: login %d, %s, page errors %v, failed requests %v (screenshot in %s)",
+			action, user, r.Login, r.Exception, r.Errors, failed, out)
 	}
 	return r
 }
@@ -118,9 +124,18 @@ func TestFacilityHubApp(t *testing.T) {
 			t.Fatalf("%s: %d %v %.300s", p.path, st, err, b)
 		}
 	}
-	accounts := map[string]string{"group": group, "role": role}
-	if st, _, _ := e.Central.Do("PUT", "/api/dataStore/facility-hub-admin/accounts", accounts); st == 404 {
-		e.Central.Do("POST", "/api/dataStore/facility-hub-admin/accounts", accounts)
+	// As the app writes it: created, shared as public read only, then written.
+	e.Central.Do("DELETE", "/api/dataStore/facility-hub-admin/accounts", nil)
+	e.Central.Do("POST", "/api/dataStore/facility-hub-admin/accounts", map[string]string{})
+	var meta struct {
+		ID string `json:"id"`
+	}
+	e.Central.JSON("GET", "/api/dataStore/facility-hub-admin/accounts/metaData", nil, &meta)
+	e.Central.Do("POST", "/api/sharing?type=dataStore&id="+meta.ID, map[string]any{"object": map[string]any{
+		"publicAccess": "r-------", "userAccesses": []any{}, "userGroupAccesses": []any{}}})
+	if st, b, err := e.Central.Do("PUT", "/api/dataStore/facility-hub-admin/accounts",
+		map[string]string{"group": group, "role": role}); err != nil || st >= 300 {
+		t.Fatalf("accounts settings: %d %v %.300s", st, err, b)
 	}
 
 	r := runApp(t, e, e.M.AdminUser, e.M.AdminPassword, "approve", "HUB_ID="+h.HubID(), "CODE="+h.AccountCode())
@@ -134,11 +149,48 @@ func TestFacilityHubApp(t *testing.T) {
 	if rt.TokenOwner() != h.HubID() || rt.MoveKey == nil {
 		t.Fatalf("the hub did not take up the account the app handed over: owner %q", rt.TokenOwner())
 	}
+	// The move key the app kept is shared with no one.
+	var keyMeta struct {
+		Sharing struct {
+			Public string         `json:"public"`
+			Users  map[string]any `json:"users"`
+		} `json:"sharing"`
+	}
+	if err := e.Central.JSON("GET", "/api/dataStore/facility-hub-keys/"+h.HubID()+"/metaData", nil, &keyMeta); err != nil {
+		t.Fatal(err)
+	}
+	if keyMeta.Sharing.Public != "--------" || len(keyMeta.Sharing.Users) > 0 {
+		t.Errorf("the move key is shared: %+v", keyMeta.Sharing)
+	}
 
 	const address = "https://new.example.org/dhis"
 	r = runApp(t, e, e.M.AdminUser, e.M.AdminPassword, "movecode", "HUB_ID="+h.HubID(), "ADDRESS="+address)
 	if want := hubaccount.MoveCode(rt.MoveKey, address); r.Code != want {
 		t.Errorf("the app's move code %q, the hub's %q", r.Code, want)
+	}
+
+	// A planned move, written by the app: readable by all, writable by administrators
+	// only (an earlier entry by someone else is replaced), withdrawn by emptying it.
+	nurse := e.M.Users[tk.RoleNurse]
+	e.Central.Do("DELETE", "/api/dataStore/facility-hub-admin/central-move", nil)
+	tk.NewCentral(e.M.CentralURL, nurse.Username, e.M.Password).Do("POST",
+		"/api/dataStore/facility-hub-admin/central-move", map[string]string{"url": "https://evil.example.org"})
+	runApp(t, e, e.M.AdminUser, e.M.AdminPassword, "announce", "ADDRESS="+address)
+	var move struct {
+		URL string `json:"url"`
+	}
+	e.Central.JSON("GET", "/api/dataStore/facility-hub-admin/central-move", nil, &move)
+	if move.URL != address {
+		t.Errorf("planned move %q", move.URL)
+	}
+	if st, _, _ := tk.NewCentral(e.M.CentralURL, nurse.Username, e.M.Password).Do("PUT",
+		"/api/dataStore/facility-hub-admin/central-move", map[string]string{"url": "https://evil.example.org"}); st < 300 {
+		t.Errorf("a staff member who created the entry first still writes the planned move (%d)", st)
+	}
+	runApp(t, e, e.M.AdminUser, e.M.AdminPassword, "withdraw")
+	var withdrawn map[string]any
+	if err := e.Central.JSON("GET", "/api/dataStore/facility-hub-admin/central-move", nil, &withdrawn); err != nil || len(withdrawn) != 0 {
+		t.Errorf("planned move not withdrawn: %v %v", withdrawn, err)
 	}
 
 	// Users who may open the app: one in the hub's district, one in another.

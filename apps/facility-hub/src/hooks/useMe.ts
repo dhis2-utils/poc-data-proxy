@@ -16,6 +16,14 @@ export type Me = {
     paths: string[]
 }
 
+// Outside the hook, so its result keeps its identity between renders.
+const toMe = (m: MeResponse): Me => ({
+    id: m.id,
+    username: m.username,
+    superuser: m.authorities?.includes('ALL') ?? false,
+    paths: (m.organisationUnits ?? []).map((o) => o.path),
+})
+
 export const useMe = () => {
     const {
         data: me,
@@ -29,12 +37,7 @@ export const useMe = () => {
                 fields: 'id,username,authorities,organisationUnits[id,path]',
             },
         },
-        select: (m) => ({
-            id: m.id,
-            username: m.username,
-            superuser: m.authorities?.includes('ALL') ?? false,
-            paths: (m.organisationUnits ?? []).map((o) => o.path),
-        }),
+        select: toMe,
         cacheTime: Infinity,
         staleTime: Infinity,
     })

@@ -1,0 +1,38 @@
+{
+    "comment": "Addresses for move codes: the hub (codes_test.go) and the Facility Hub app (codes.test.ts) both check these. normalized is the form the code is made for.",
+    "accepted": [
+        {"address": "https://new.example.org/dhis", "normalized": "https://new.example.org/dhis"},
+        {"address": " HTTPS://New.Example.org/dhis/ ", "normalized": "https://new.example.org/dhis"},
+        {"address": "https://new.example.org:443/dhis", "normalized": "https://new.example.org/dhis"},
+        {"address": "http://new.example.org:80", "normalized": "http://new.example.org"},
+        {"address": "https://new.example.org:8443/dhis", "normalized": "https://new.example.org:8443/dhis"},
+        {"address": "https://10.0.0.5:8080", "normalized": "https://10.0.0.5:8080"},
+        {"address": "https://[2001:DB8::1]:443/x", "normalized": "https://[2001:db8::1]/x"},
+        {"address": "https://h.example/a-b_c.d~e!$&'()*+,;=:@/f", "normalized": "https://h.example/a-b_c.d~e!$&'()*+,;=:@/f"},
+        {"address": "http://localhost:8080", "normalized": "http://localhost:8080"}
+    ],
+    "refused": [
+        "https://bücher.example/dhis",
+        "https://h.example/a b",
+        "https://h.example/x?y=1",
+        "https://h.example/x#f",
+        "ftp://h.example",
+        "https://h.example/a{b}",
+        "https://h.example:/dhis",
+        "https://h.example/a%20b",
+        "https://h:abc",
+        "http://h:+80",
+        "https://h:1_0",
+        "https://h:-1",
+        "https://[::1",
+        "https://[abc]x",
+        "https://[::1]x",
+        "https://a[b]c",
+        "https://:443",
+        "https://:8080/d",
+        "https://user@h.example",
+        "﻿https://h.example",
+        "h.example/dhis",
+        "https://"
+    ]
+}

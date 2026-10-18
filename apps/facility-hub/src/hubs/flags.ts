@@ -116,3 +116,10 @@ export const visible = (
         (p) =>
             p !== '' && (facilityPath === p || facilityPath.startsWith(`${p}/`))
     )
+
+/**
+ * Whether s is a DHIS2 identifier. Hub owners write the registry: a facility that is
+ * not one is shown as unknown, not sent to central (where it would fail the whole
+ * lookup).
+ */
+export const uid = (s: string) => /^[A-Za-z][A-Za-z0-9]{10}$/.test(s)

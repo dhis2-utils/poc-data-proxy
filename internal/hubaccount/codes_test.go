@@ -2,6 +2,8 @@ package hubaccount
 
 import (
 	"bytes"
+	"encoding/json"
+	"os"
 	"testing"
 )
 
@@ -43,6 +45,34 @@ func TestCodes(t *testing.T) {
 	for _, typed := range []string{"abcde-fghij", "ABCDE FGHIJ", "abcdefghij"} {
 		if NormalizeCode(typed) != "ABCDEFGHIJ" {
 			t.Errorf("NormalizeCode(%q) = %q", typed, NormalizeCode(typed))
+		}
+	}
+}
+
+// The table the Facility Hub app checks too (apps/facility-hub/src/hubaccount/codes.test.ts).
+func TestAddressTable(t *testing.T) {
+	b, err := os.ReadFile("testdata/addresses.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var table struct {
+		Accepted []struct{ Address, Normalized string }
+		Refused  []string
+	}
+	if err := json.Unmarshal(b, &table); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range table.Accepted {
+		if err := CheckAddress(a.Address); err != nil {
+			t.Errorf("CheckAddress(%q): %v", a.Address, err)
+		}
+		if got := NormalizeAddress(a.Address); got != a.Normalized {
+			t.Errorf("NormalizeAddress(%q) = %q, want %q", a.Address, got, a.Normalized)
+		}
+	}
+	for _, a := range table.Refused {
+		if CheckAddress(a) == nil {
+			t.Errorf("CheckAddress(%q) accepted", a)
 		}
 	}
 }

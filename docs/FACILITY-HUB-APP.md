@@ -9,7 +9,7 @@ The Facility Hub app is a DHIS2 app on central, used by the national team and di
 - **A hub:** its latest report with each flag explained, its 90-day history, its refused changes (masked), and "Approve" while it waits.
 - **Approvals** (superusers): the hub accounts user group and role, kept in `facility-hub-admin/accounts`, and the hubs waiting, approved with the code from the hub's page.
 - **Central moves** (superusers): a planned move (`facility-hub-admin/central-move`), and move codes for a new address, printable or as CSV.
-- **`facility-hub-admin`** must be writable by administrators only (a planned move there moves every hub). The app creates its entries empty, shares them as public read only, and only then writes them: a new dataStore entry is public read and write until its sharing is set.
+- **`facility-hub-admin`** must be writable by administrators only (a planned move there moves every hub). The app creates its entries empty, shares them as public read only, and only then writes them: a new dataStore entry is public read and write until its sharing is set. An entry someone else created first is deleted and created again, since its owner keeps write access whatever the sharing says. A planned move is withdrawn by writing it empty, not by deleting it, which would let anyone create it again.
 
 ## Approving a hub's own account
 
@@ -27,6 +27,8 @@ A hub waiting for an account has, in `facility-hub-registry/<hub ID>`: `accountR
 7. Read the entry again; refuse if `boxKey` or `facility` changed meanwhile, or it has an `account` (another approval); set `account: {"username": "<hub ID>", "box": "<base64>"}` and write it back, changing nothing else.
 
 The hub takes the account up at its next refresh, replaces the password and token, and removes `account` and `accountRequested`. An account it refuses (another name, other org units, authorities, a password central refuses) makes it ask again.
+
+An approval that fails after step 5 leaves central with a move key the hub never got: approve the hub again before making move codes for it.
 
 Approving and making move codes need a superuser: the move key's entry is shared with no one, so only its owner (the approver) and superusers can read or replace it. One approver per hub at a time: two approvals of the same hub within seconds can leave the hub with a move key central no longer holds (the hub then needs approving again).
 

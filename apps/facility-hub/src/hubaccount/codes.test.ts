@@ -1,7 +1,27 @@
 /**
  * @jest-environment node
  */
-import { accountCode, checkAddress, moveCode, normalizeCode } from './codes'
+/// <reference types="node" />
+import fs from 'fs'
+import path from 'path'
+import {
+    accountCode,
+    checkAddress,
+    moveCode,
+    normalizeAddress,
+    normalizeCode,
+} from './codes'
+
+// The table the hub checks too (internal/hubaccount/codes_test.go, TestAddressTable).
+const table = JSON.parse(
+    fs.readFileSync(
+        path.join(
+            __dirname,
+            '../../../../internal/hubaccount/testdata/addresses.json'
+        ),
+        'utf8'
+    )
+) as { accepted: { address: string; normalized: string }[]; refused: string[] }
 
 // The values of docs/FACILITY-HUB-APP.md and internal/hubaccount/codes_test.go: the
 // hub computes the same codes.
@@ -34,6 +54,18 @@ describe('codes', () => {
             moveCode(fill(32, 2), 'https://new.example.org:8443/dhis')
         ).not.toBe(base)
         expect(moveCode(fill(32, 2), 'https://new.example.org')).not.toBe(base)
+    })
+
+    it.each(table.accepted)(
+        'accepts $address as the hub does',
+        ({ address, normalized }) => {
+            expect(checkAddress(address)).toBeNull()
+            expect(normalizeAddress(address)).toBe(normalized)
+        }
+    )
+
+    it.each(table.refused)('refuses %j as the hub does', (address) => {
+        expect(checkAddress(address)).not.toBeNull()
     })
 
     it.each([

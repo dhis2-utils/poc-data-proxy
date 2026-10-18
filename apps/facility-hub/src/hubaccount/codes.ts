@@ -73,31 +73,24 @@ export const moveCode = (moveKey: Uint8Array, address: string): string =>
         ).slice(0, 10)
     )
 
-const allowed = /^[A-Za-z0-9\-._~!$&'()*+,;=/:@[\]]*$/
-
 /**
- * Refuses an address a move code is never made for: anything but
- * http(s)://host[:port][/path] in the allowed characters, without user, query or
- * fragment, and with a port given if there is a colon after the host. Returns the
- * reason, or null.
+ * The form of an address a move code is made for, the same pattern as the hub's
+ * (internal/hubaccount/codes.go): http(s)://, a host name or an [IPv6] address, an
+ * optional numeric port, a path of letters, digits and - . _ ~ ! $ & ' ( ) * + , ; = : @ /.
+ * Anything else has more than one written form, and the hub and the app must agree
+ * (internal/hubaccount/testdata/addresses.json).
  */
-export const checkAddress = (raw: string): string | null => {
-    const s = raw.trim()
-    if (!allowed.test(s)) {
-        return "an address of letters, digits and - . _ ~ ! $ & ' ( ) * + , ; = / : @ only"
-    }
-    const m = /^([A-Za-z]+):\/\/([^/]*)(\/.*)?$/.exec(s)
-    if (
-        !m ||
-        !['http', 'https'].includes(m[1].toLowerCase()) ||
-        m[2] === '' ||
-        m[2].includes('@') ||
-        m[2].endsWith(':')
-    ) {
-        return 'an address like https://central.example.org/dhis'
-    }
-    return null
-}
+const address =
+    /^([Hh][Tt][Tt][Pp][Ss]?):\/\/([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(:[0-9]{1,5})?(\/[A-Za-z0-9\-._~!$&'()*+,;=:@/]*)?$/
+
+// Surrounding ASCII white space only, as the hub trims.
+const trimAddress = (raw: string) => raw.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '')
+
+/** Refuses an address a move code is never made for: the reason, or null. */
+export const checkAddress = (raw: string): string | null =>
+    address.test(trimAddress(raw))
+        ? null
+        : "an address like https://central.example.org/dhis, of letters, digits and - . _ ~ ! $ & ' ( ) * + , ; = / : @ only"
 
 /**
  * The form of an address a move code is made for (it must pass checkAddress): no
@@ -105,19 +98,21 @@ export const checkAddress = (raw: string): string | null => {
  * the path as typed.
  */
 export const normalizeAddress = (raw: string): string => {
-    const s = raw.trim().replace(/\/+$/, '')
-    const m = /^([A-Za-z]+):\/\/([^/]*)(\/.*)?$/.exec(s)
+    const s = trimAddress(raw).replace(/\/+$/, '')
+    const m = address.exec(s)
     if (!m) {
         return s
     }
     const scheme = m[1].toLowerCase()
-    let host = m[2].toLowerCase()
-    const defaultPort =
-        scheme === 'https' ? ':443' : scheme === 'http' ? ':80' : ''
-    if (defaultPort && host.endsWith(defaultPort)) {
-        host = host.slice(0, -defaultPort.length)
+    const host = m[2].toLowerCase()
+    let port = m[3] ?? ''
+    if (
+        (scheme === 'https' && port === ':443') ||
+        (scheme === 'http' && port === ':80')
+    ) {
+        port = ''
     }
-    return `${scheme}://${host}${m[3] ?? ''}`
+    return `${scheme}://${host}${port}${m[4] ?? ''}`
 }
 
 /** A code as typed, without spaces or dashes, in upper case. */

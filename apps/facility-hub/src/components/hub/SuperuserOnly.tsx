@@ -6,12 +6,19 @@ import styles from '@/pages/Pages.module.css'
 
 /** Shows its children to superusers only (approving and moving need the ALL authority). */
 export const SuperuserOnly = ({ children }: PropsWithChildren) => {
-    const { me, isLoading } = useMe()
+    const { me, isLoading, error } = useMe()
     if (isLoading) {
         return (
             <div className={styles.loading}>
                 <CircularLoader />
             </div>
+        )
+    }
+    if (error) {
+        return (
+            <NoticeBox error title={i18n.t('Could not read your user')}>
+                {error.message}
+            </NoticeBox>
         )
     }
     if (!me?.superuser) {

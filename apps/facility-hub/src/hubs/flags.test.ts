@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { flags, Heartbeat, visible } from './flags'
+import { flags, Heartbeat, uid, visible } from './flags'
 
 const now = new Date('2026-10-18T12:00:00Z')
 const ago = (hours: number) =>
@@ -88,5 +88,21 @@ describe('visible', () => {
 
     it('shows every hub to a superuser, also one whose facility is unknown', () => {
         expect(visible('', { paths: [], superuser: true })).toBe(true)
+    })
+})
+
+describe('uid', () => {
+    it('accepts a DHIS2 identifier only', () => {
+        expect(uid('DiszpKrYNg8')).toBe(true)
+        for (const bad of [
+            '',
+            'x',
+            'DiszpKrYNg8,x',
+            'Diszp#rYNg8',
+            '1iszpKrYNg8',
+            'DiszpKrYNg80',
+        ]) {
+            expect(uid(bad)).toBe(false)
+        }
     })
 })

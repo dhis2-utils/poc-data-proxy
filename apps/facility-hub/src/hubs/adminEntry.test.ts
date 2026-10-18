@@ -38,4 +38,19 @@ describe('writeAdminEntry', () => {
             api.sharing['meta-facility-hub-admin-central-move']
         ).toBeDefined()
     })
+
+    it('takes over an entry someone else created first, who would keep writing it as its owner', async () => {
+        const api = new FakeApi()
+        api.store['facility-hub-admin'] = {
+            'central-move': { url: 'https://evil.example' },
+        }
+        api.creators['facility-hub-admin/central-move'] = 'SomeoneElse'
+        await writeAdminEntry(api, 'central-move', {
+            url: 'https://new.example.org',
+        })
+        expect(api.creators['facility-hub-admin/central-move']).toBe(api.me)
+        expect(api.entry('facility-hub-admin', 'central-move')).toEqual({
+            url: 'https://new.example.org',
+        })
+    })
 })

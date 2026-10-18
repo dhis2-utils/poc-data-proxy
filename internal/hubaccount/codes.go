@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"fmt"
-	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -36,26 +36,19 @@ func MoveCode(moveKey []byte, address string) string {
 	return group(b32.EncodeToString(m.Sum(nil))[:10])
 }
 
-// CheckAddress refuses an address a move code is never made for: anything but
-// http(s)://host[:port][/path] written with letters, digits and - . _ ~ ! $ & ' ( ) * +
-// , ; = / : @ [ ] only (no spaces, user, query, fragment or %-escapes), and a port, if
-// any, given. The hub and the app must agree on an address's form, and other
-// addresses have more than one.
+// address is the form of an address a move code is made for, the same pattern as the
+// Facility Hub app's (codes.ts): http(s)://, a host name or an [IPv6] address, an
+// optional numeric port, a path of letters, digits and - . _ ~ ! $ & ' ( ) * + , ; = : @ /.
+// Anything else has more than one written form, and the hub and the app must agree.
+var address = regexp.MustCompile(`^([Hh][Tt][Tt][Pp][Ss]?)://([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(:[0-9]{1,5})?(/[A-Za-z0-9\-._~!$&'()*+,;=:@/]*)?$`)
+
+// trimAddress removes surrounding ASCII white space only (the app does the same).
+func trimAddress(raw string) string { return strings.Trim(raw, " \t\r\n") }
+
+// CheckAddress refuses an address a move code is never made for (see address).
 func CheckAddress(raw string) error {
-	raw = strings.TrimSpace(raw)
-	for i := 0; i < len(raw); i++ {
-		c := raw[i]
-		if !('a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || strings.IndexByte("-._~!$&'()*+,;=/:@[]", c) >= 0) {
-			return fmt.Errorf("an address of letters, digits and - . _ ~ ! $ & ' ( ) * + , ; = / : @ only")
-		}
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return err
-	}
-	if s := strings.ToLower(u.Scheme); (s != "https" && s != "http") || u.Host == "" || u.User != nil || u.Opaque != "" ||
-		strings.HasSuffix(u.Host, ":") {
-		return fmt.Errorf("an address like https://central.example.org/dhis")
+	if !address.MatchString(trimAddress(raw)) {
+		return fmt.Errorf("an address like https://central.example.org/dhis, of letters, digits and - . _ ~ ! $ & ' ( ) * + , ; = / : @ only")
 	}
 	return nil
 }
@@ -64,14 +57,16 @@ func CheckAddress(raw string) error {
 // CheckAddress): no surrounding spaces or trailing slash, scheme and host in lower
 // case, no default port (443 for https, 80 for http), the path as typed.
 func NormalizeAddress(raw string) string {
-	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
-	u, err := url.Parse(raw)
-	if err != nil {
-		return raw
+	s := strings.TrimRight(trimAddress(raw), "/")
+	m := address.FindStringSubmatch(s)
+	if m == nil {
+		return s
 	}
-	scheme, host := strings.ToLower(u.Scheme), strings.ToLower(u.Host)
-	host = strings.TrimSuffix(host, map[string]string{"https": ":443", "http": ":80"}[scheme])
-	return scheme + "://" + host + u.EscapedPath()
+	scheme, host, port := strings.ToLower(m[1]), strings.ToLower(m[2]), m[3]
+	if (scheme == "https" && port == ":443") || (scheme == "http" && port == ":80") {
+		port = ""
+	}
+	return scheme + "://" + host + port + m[4]
 }
 
 // NormalizeCode is a code as typed, without spaces or dashes, in upper case.

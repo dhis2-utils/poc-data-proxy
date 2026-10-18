@@ -25,6 +25,9 @@ export class FakeApi implements Api {
     users: Record<string, User> = {}
     roleAuthorities: Record<string, string[]> = {}
     log: string[] = []
+    // The logged-in user, and who created each entry (its owner).
+    me = 'MeUser00001'
+    creators: Record<string, string> = {}
     // A path whose next request fails with this status (tests of failed steps).
     failNext: Record<string, number> = {}
     // Run before the second GET of the registry entry (a change meanwhile).
@@ -48,7 +51,12 @@ export class FakeApi implements Api {
             const [, ns, key, meta] = m
             const k = decodeURIComponent(key)
             if (meta) {
-                return { id: `meta-${ns}-${k}` }
+                const owner = this.creators[`${ns}/${k}`] ?? this.me
+                return {
+                    id: `meta-${ns}-${k}`,
+                    createdBy: { id: owner },
+                    sharing: { owner },
+                }
             }
             const has = this.store[ns] && k in this.store[ns]
             switch (method) {
@@ -71,6 +79,7 @@ export class FakeApi implements Api {
                         ...this.store[ns],
                         [k]: clone(body),
                     }
+                    this.creators[`${ns}/${k}`] = this.me
                     return {}
                 case 'PUT':
                     if (!has) {
@@ -84,8 +93,12 @@ export class FakeApi implements Api {
                     }
                     delete this.store[ns][k]
                     delete this.sharing[`meta-${ns}-${k}`]
+                    delete this.creators[`${ns}/${k}`]
                     return {}
             }
+        }
+        if (p === '/me' && method === 'GET') {
+            return { id: this.me }
         }
         if (p === '/sharing' && method === 'POST') {
             this.sharing[new URLSearchParams(query).get('id') ?? ''] = body

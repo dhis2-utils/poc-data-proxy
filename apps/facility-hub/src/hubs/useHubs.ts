@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { writeAdminEntry } from './adminEntry'
-import { Flag, flags, Heartbeat, visible } from './flags'
+import { Flag, flags, Heartbeat, uid, visible } from './flags'
 import { listNamespace, useApi } from '@/api/useApi'
 import { useMe } from '@/hooks/useMe'
 import { ApiError } from '@/hubaccount/api'
@@ -75,7 +76,7 @@ export const useHubs = () => {
                 ...new Set(
                     registry
                         .map((r) => r.value.facility)
-                        .filter((f): f is string => !!f)
+                        .filter((f): f is string => !!f && uid(f))
                 ),
             ]
             const ous = new Map<string, OrgUnit>()
@@ -107,14 +108,17 @@ export const useHubs = () => {
             })
         },
     })
-    const hubs =
-        me && query.data
-            ? query.data.filter((h) => visible(h.orgUnit?.path ?? '', me))
-            : undefined
+    const hubs = useMemo(
+        () =>
+            me && query.data
+                ? query.data.filter((h) => visible(h.orgUnit?.path ?? '', me))
+                : undefined,
+        [me, query.data]
+    )
     return {
         hubs,
         me,
-        isLoading: meLoading || query.isLoading,
+        isLoading: meLoading || query.isInitialLoading,
         error: meError ?? (query.error as Error | null),
     }
 }
@@ -155,10 +159,11 @@ export const useHub = (id: string) => {
                     'GET',
                     `/dataStore/facility-hub-issues?fields=.&filter=hub_id:eq:${encodeURIComponent(id)}&pageSize=200`
                 )) as { entries?: { key: string; value: Omit<Issue, 'key'> }[] }
-                issues = (res.entries ?? []).map((e) => ({
-                    key: e.key,
-                    ...e.value,
-                }))
+                issues = (res.entries ?? [])
+                    .map((e) => ({ key: e.key, ...e.value }))
+                    .sort((a, b) =>
+                        (b.createdAt ?? '').localeCompare(a.createdAt ?? '')
+                    )
             } catch (e) {
                 if (!(e instanceof ApiError && e.status === 404)) {
                     throw e
@@ -226,7 +231,12 @@ export const useCentralMove = () => {
         (m: CentralMove) => writeAdminEntry(api, 'central-move', m),
         done
     )
-    const clear = useMutation(() => api.request('DELETE', movePath), done)
+    // Withdrawn by writing it empty (hubs ignore a move without an address): deleting it
+    // would let anyone create it again.
+    const clear = useMutation(
+        () => writeAdminEntry(api, 'central-move', {}),
+        done
+    )
     return {
         move: query.data,
         isLoading: query.isLoading,

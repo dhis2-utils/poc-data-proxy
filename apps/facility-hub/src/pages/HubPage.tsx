@@ -212,6 +212,14 @@ export const HubPage = () => {
                         'Values are masked (***) – central staff see which field caused it, not what was entered. The hub removes a change from this list once it is resolved.'
                     )}
                 </div>
+                {(hb?.issues ?? 0) > issues.length && (
+                    <div className={styles.muted}>
+                        {i18n.t('The {{- shown}} most recent of {{- total}}', {
+                            shown: issues.length,
+                            total: hb?.issues,
+                        })}
+                    </div>
+                )}
                 {issues.length === 0 ? (
                     <div className={styles.muted}>{i18n.t('None.')}</div>
                 ) : (

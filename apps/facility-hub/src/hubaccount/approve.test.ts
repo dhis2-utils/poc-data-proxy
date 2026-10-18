@@ -213,4 +213,11 @@ describe('approve', () => {
         )
         expect(api.entry('facility-hub-keys', hubID)!.moveKey).toBeUndefined()
     })
+
+    it('reads base64 as the hub does: padded, or not at all', () => {
+        const key = toBase64(new Uint8Array(32).fill(9))
+        expect(fromBase64(key)).toHaveLength(32)
+        expect(fromBase64(key.replace(/=+$/, ''))).toHaveLength(0)
+        expect(fromBase64(`${key}AAAA!`)).toHaveLength(0)
+    })
 })

@@ -6,6 +6,8 @@ Run by internal/live/hubapp_test.go, which installs the app and passes:
     list      the hub IDs the user sees on the hubs page
     approve   HUB_ID, CODE: approve the hub in the Approvals page's dialog
     movecode  HUB_ID, ADDRESS: the move code shown for the hub and address
+    announce  ADDRESS: announce a planned move to it
+    withdraw  withdraw the planned move
     screens   screenshots of every page into OUT (for a person to look at)
   OUT (folder for screenshots).
 Prints one JSON object: the action's result, any page errors and failed requests.
@@ -84,6 +86,19 @@ def run(page):
         app.get_by_role("button", name="Make codes").click(timeout=120_000)
         el = app.wait_for_selector(f"[data-hub='{hub}']", timeout=120_000)
         R["code"] = el.inner_text().strip()
+    elif ACTION == "announce":
+        app = open_page(page, "/moves")
+        app.fill("input[name=planned]", os.environ["ADDRESS"])
+        app.get_by_role("button", name="Announce").click(timeout=120_000)
+        # The new address shown (an earlier announcement may be on the page already).
+        shown = app.get_by_text(os.environ["ADDRESS"].strip().rstrip("/").lower(), exact=False).first
+        shown.wait_for(timeout=120_000)
+        R["shown"] = shown.inner_text()
+    elif ACTION == "withdraw":
+        app = open_page(page, "/moves")
+        app.get_by_role("button", name="Withdraw").click(timeout=120_000)
+        app.get_by_text("No move announced").wait_for(timeout=120_000)
+        R["shown"] = "No move announced"
     elif ACTION == "screens":
         for name, route in [("hubs", "/"), ("approvals", "/approvals"), ("moves", "/moves")]:
             open_page(page, route)
