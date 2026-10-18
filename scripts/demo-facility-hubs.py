@@ -24,7 +24,20 @@ FACILITIES = [  # (facility, its state)
     ("agM0BKQlTh3", "refused"),        # Batkanu CHC, Bombali
     ("GHHvGp7tgtZ", "usb-upgrade"),    # Binkolo CHC, Bombali
     ("c41XRVOYNJm", "retired"),        # Baiima CHP, Kailahun
+    ("uFp0ztDOFbI", "waiting"),        # Bendu CHC, Bonthe: waits for its own account
 ]
+
+# The waiting hub's box key: the public half of 32 x 0x11 (a demo, not a secret). Its
+# account code is printed, to try an approval in the app; no hub takes the account up.
+WAITING_BOX_KEY = "e06Qm75//kTEZaIgA31gjuNYl9Me+XLwf3SJLLD3PxM="
+
+
+def account_code(pub, hub, facility):
+    """AccountCode of docs/FACILITY-HUB-APP.md."""
+    import hashlib
+    digest = hashlib.sha256(b"facility-hub account code\0" + hub.encode() + b"\0" + facility.encode() + b"\0" + pub).digest()
+    code = base64.b32encode(digest).decode()[:16]
+    return "-".join(code[i:i + 4] for i in range(0, 16, 4))
 
 
 def main():
@@ -60,11 +73,16 @@ def main():
             for n in range(1, 4):
                 req("DELETE", f"/dataStore/facility-hub-issues/{hub}-{n}")
             continue
-        put("facility-hub-registry", hub, {
+        reg = {
             "hubId": hub, "facility": facility, "status": "retired" if state == "retired" else "active",
             "setupBy": "demo", "setupAt": iso(now - dt.timedelta(days=120)), "hubVersion": "0.1.0",
             "demo": True,
-        })
+        }
+        if state == "waiting":
+            reg.update(accountRequested=True, boxKey=WAITING_BOX_KEY)
+            print(f"{hub} waits for approval; its account code: "
+                  f"{account_code(base64.b64decode(WAITING_BOX_KEY), hub, facility)}")
+        put("facility-hub-registry", hub, reg)
         last = now - (dt.timedelta(days=3) if state == "silent" else dt.timedelta(minutes=12))
         history = []
         for d in range(90, 0, -1):
