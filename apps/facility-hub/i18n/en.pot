@@ -1,0 +1,29 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: i18next-conv\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1)\n"
+"POT-Creation-Date: 2026-10-18T22:54:25.680Z\n"
+"PO-Revision-Date: 2026-10-18T22:54:25.680Z\n"
+
+msgid "Hubs"
+msgstr "Hubs"
+
+msgid "Approvals"
+msgstr "Approvals"
+
+msgid "Central moves"
+msgstr "Central moves"
+
+msgid "Collapse menu"
+msgstr "Collapse menu"
+
+msgctxt "Application title"
+msgid "__MANIFEST_APP_TITLE"
+msgstr "Facility Hub"
+
+msgctxt "Application description"
+msgid "__MANIFEST_APP_DESCRIPTION"
+msgstr "The facility hubs of this country: their state, approvals and central moves"
