@@ -9,7 +9,7 @@ This is a proposal built on what the POC showed (see [FINDINGS.md](FINDINGS.md))
 1. **One image per country, no per-facility configuration.** Every hub is flashed with the same image. A hub learns its facility, programs and users from central when a setup user logs in (spec 6.2). A box can go to any facility, and a spare can replace any hub.
 2. **Nothing to install on site.** The installer plugs in power and network and logs in once. No keyboard, screen or command line.
 3. **Central stays the source of truth.** A hub can be wiped or replaced at any time without data loss once its outbox is pushed. Backups of hubs are not needed.
-4. **Devices keep reaching the hub when its address changes.** IP addresses change when a router is replaced, and tablets that point at a stale IP break silently. How, and how the connection is secured, is open (section 4, "Reaching the hub securely").
+4. **Devices keep reaching the hub when its address changes.** IP addresses change when a router is replaced, and tablets that point at a stale IP break silently. Devices use `https://dhis2.local`, which follows the hub (section 4, "Reaching the hub securely").
 5. **Fail closed.** If the hub cannot decide something, it says "needs connection" rather than guessing.
 6. **No IT staff at facilities, no visits needed.** The people at a hub facility are the staff who enter data. Setting up, replacing and unlocking a hub are things they can do with an installation card; everything else is done from central.
 7. **A hub only where it is needed.** A hub is for sharing data between staff and devices inside a facility while the internet is down. Most small facilities do not need one (section 0).
@@ -45,7 +45,7 @@ One kit per facility, assembled and flashed at a central depot.
 | USB stick | An industrial USB stick, in the box | Two jobs, one stick (built; `usb_dir`): before set-up it carries the hub's setup code (below); after set-up it holds what a restore needs: every pending save, the key file and the hub's state, copied each minute (RECOVERY.md, option C2), so a dead disk loses at most a minute of saves; the cached data comes back from central. |
 | Case | Wall-mountable; being tested: a passive-cooled metal case for the Pi 4, a fan (active cooler or fan case) for the Pi 5 | Heat and dust. A fanless case has no fan to fail; the Pi 5 may need one to avoid throttling. Chosen after the tests (HARDWARE-TESTING.md). |
 | Network | Ethernet cable; optional USB 4G modem for facilities with no uplink | See section 4. |
-| Label | Hub ID and a QR code for connecting devices (section 4, "Reaching the hub securely") | The label is what staff and support use to find the hub. A Pi has no screen to show the code on. |
+| Label | Hub ID and `dhis2.local` | The label is what staff and support use to find the hub. Nothing depends on it: the stick has the same (`hub.txt`, section 4). |
 
 Rough cost per kit: USD 150–220.
 
@@ -56,7 +56,7 @@ One generic image per release, built by the software supplier's CI with Raspberr
 - **Raspberry Pi OS Lite, 64-bit.** No desktop.
 - **The hub binary** at `/usr/local/bin/hub`, the systemd unit from [`deploy/hub.service`](deploy/hub.service), and a `hub` service user.
 - **No country settings.** Central's address is given at set-up (section 3), from a QR code on the country's installation card; the release source and key are the supplier's, built in. `hub.yaml` needs no `central_url` (built: without it, set-up asks for the address and the setup code); a release channel and its key remain until releases move to GitHub **(to build)**. The setup user group is gone (built 2026-10-17).
-- **Networking:** NetworkManager; `dnsmasq`, used only in "hub provides the network" mode (section 4); `avahi-daemon` for `hub.local`.
+- **Networking:** NetworkManager; `dnsmasq`, used only in "hub provides the network" mode (section 4); `avahi-daemon` for `dhis2.local`.
 - **Time:** `chrony` with the country's NTP servers, falling back to the RTC.
 - **Firewall** (`nftables`): inbound HTTPS from the LAN only. No SSH.
 - **Updates:** `unattended-upgrades` for OS security fixes. The hub binary upgrades itself from the supplier's GitHub releases, to the version the country chose on central (section 6, "Upgrades").
@@ -147,9 +147,9 @@ Facilities differ. The image supports four cases without per-facility configurat
 ```
 
 - The hub is an ordinary DHCP client on the LAN.
-- **Ask for a DHCP reservation** on the router so the hub keeps its address, where someone can configure the router. Whether it is required depends on how devices find the hub ("Reaching the hub securely" below).
+- **No DHCP reservation needed:** devices find the hub by name ("Reaching the hub securely" below).
 - **Check for client isolation.** Some routers isolate Wi-Fi clients from each other and from the wired LAN ("AP isolation", "guest network"). Tablets then cannot reach the hub. The setup page should test this **(to build: the setup page asks the installer to open the status page from a tablet)**.
-- **Check for DNS rebinding protection** if devices reach the hub by a public name (section 4, "Reaching the hub securely", option A).
+- **Check that `dhis2.local` resolves** from a tablet; some routers filter multicast. The hub's IP works as a fallback.
 
 ### Case B: a 4G MiFi or mobile router as the only network
 
@@ -183,7 +183,7 @@ A hub with no network cannot be configured over one, and has no screen. So it pr
 5. **Afterwards:** if the joined network is gone for 15 minutes, the setup Wi-Fi returns, so a hub is never out of reach because a router changed its password. The setup Wi-Fi runs only while the hub has no network.
 6. **Security:** besides the per-kit password, the setup page needs the setup code before set-up and a staff login after it, as on any network.
 
-Open with it: the hub's address changes when it moves from its own network to the facility's, which ties in with how devices find the hub ("Reaching the hub securely" below).
+The hub's IP changes when it moves from its own network to the facility's; devices use `dhis2.local`, so that does not matter ("Reaching the hub securely" below).
 
 ### USB modems: one kind only (plan, to build)
 
@@ -215,76 +215,45 @@ The hub supports the first kind only. Generic support for the others is an endle
 
 All connections to central are outgoing. Nothing on the internet needs to reach the hub, so it works behind NAT and carrier-grade NAT on 4G.
 
-### Reaching the hub securely (options, not decided)
+### Reaching the hub securely (decided 2026-10-19)
 
 The hardest part of deployment. Two requirements:
 
-1. **Security.** Every connection to the hub is encrypted and authenticated, on the facility LAN too. No plain HTTP, and no certificate warnings that staff learn to click through: a warning clicked through stops a listener on the Wi-Fi, not someone actively impersonating the hub (a fake access point, a spoofing device), and it teaches staff to ignore warnings everywhere.
-2. **Simplicity for end users.** Connecting a device is one step that needs no technical knowledge, and nothing breaks when the hub's address changes.
+1. **Security.** Every connection to the hub is encrypted and authenticated, on the facility LAN too. No plain HTTP, and no certificate warnings that staff learn to click through: a warning clicked through stops a listener on the Wi-Fi, not someone actively impersonating the hub (a fake access point, a spoofing device), and it teaches staff to ignore warnings everywhere. Browsers also refuse service workers, which offline apps need, on a certificate they do not trust.
+2. **Simplicity for end users.** One address everywhere, which does not change when the hub's IP does, and no router configuration: small facilities have nobody who can set a DHCP reservation or a DNS server.
 
-The constraints, from the POC and from how TLS works:
+**Decision: `https://dhis2.local`, with the hub's own certificate authority installed once on each device (option C below).** Browsers are the clients: the Capture web app and the other DHIS2 web apps, installed as apps from the hub's address where wanted. The Android Capture app is on hold for deployment (it does not trust certificate authorities installed by the user, see option B); tests keep covering it where they can. The cost is the installation on each device, about a minute with a guide, and hardest on personal phones; a custom app that would avoid it is not on the table now.
 
-- **The Android Capture app does not trust user-installed certificate authorities.** A self-signed or private-CA certificate only works on rooted or fully managed devices.
-- **Android apps do not reliably resolve `.local` names** (mDNS); Windows and macOS do. Wi-Fi isolation, multicast filtering and separate subnets break mDNS for everyone.
-- **While the internet is down, devices find the hub only by IP address or through a DNS server the hub controls.** A public DNS name is looked up through the provider's DNS; phones cache answers for minutes and many routers not at all.
-- **No public certificate can be issued for a private IP address.**
+#### How it works
 
-#### Option A: public DNS name and publicly trusted certificate
+- **The name.** The hub announces `dhis2.local` on the LAN by mDNS (`avahi`), whatever its IP, so nothing needs a reservation. Tested on Android 14 (system resolver and Chrome) and iOS (FINDINGS.md, "Devices trusting the hub's certificate"). Two hubs on one network would make the second `dhis2-2.local`; the hub's page shows the name it got. Where Wi-Fi isolation or multicast filtering breaks mDNS, the hub's IP address works too (in `hub.txt` on the USB stick and on the hub's page). **(To build: the hub announces and serves `dhis2.local`; today it is `hub.local`.)**
+- **The certificate.** The hub's certificate authority is limited by name constraints to the hub's own names and private addresses, so installing it cannot expose any other site. The hub keeps the authority's key, encrypted in its store, and issues its server certificate again before it expires and whenever its addresses change. Server certificates last at most 825 days (Apple's limit for any TLS certificate); the authority lasts ten years, so a device installs it once. **(To build: today the hub destroys the authority's key after issuing one certificate, so a changed IP or an expired certificate would need every device to install a new authority.)** A stolen hub's key lets the thief impersonate that one hub to its own devices: that hub is retired and its devices install the new hub's authority (section 3, "Replacing or moving a hub").
+- **Getting the genuine authority.** A user's first login on the hub is online anyway. The hub publishes its authority's certificate in its registry entry on central, and devices get it over central's HTTPS, from a page that shows the facility's hub. The hub also serves it at `http://dhis2.local/hub/ca.crt`, with its fingerprint to compare. **(To build: the page on central.)**
+- **The first visit.** `http://dhis2.local` serves only a start page. It tries `https://dhis2.local` in the background: if the device trusts it, the page moves there at once; if not, it shows the steps for that device (Android, iPhone, Windows, macOS) and the file. After the first HTTPS visit the hub sends HSTS, so the browser goes straight to HTTPS next time. **(To build; to check: whether browsers keep HSTS for `.local` names, and whether Chrome's HTTPS-first mode tries HTTPS for them by itself.)**
+- **Installing, per platform** (measured on a Samsung tablet with Android 14 and on an iPhone):
+  - *Android:* download the file, then Settings › Security and privacy › More security settings › Install from device storage › CA certificate; Android warns "Your privacy is at risk", then "Install anyway", the screen lock, and the file. Android requires a screen lock (PIN, pattern or password) for any installed certificate. Opening the file in Chrome only says it must be installed in Settings.
+  - *iPhone and iPad:* open the file in Safari and allow the profile; Settings › General › VPN & Device Management › install; then Settings › General › About › Certificate Trust Settings › switch on full trust. Without the last step Safari keeps warning.
+  - *Windows:* double-click the file, "Install Certificate", and pick "Trusted Root Certification Authorities" by hand. *macOS:* Keychain Access and "Always Trust". Firefox may need its own import; managed fleets push it with Group Policy, Intune or an MDM, which also covers managed tablets.
+- **On the hub PC itself** (Windows option), `https://localhost` needs no installation.
 
-Each hub gets a name under a country zone (for example `h-4f7k2q.hubs.hmis.example.org`) pointing to its LAN address, and a Let's Encrypt certificate for it. Stock Android and every browser trust it with nothing installed.
+#### Considered and not chosen
 
-What it takes:
+**Option A: a public name and a Let's Encrypt certificate per hub.** Each hub gets a random public name (for example `h-4f7k2q.hubs.hmis.example.org`) pointing to its LAN address, and a publicly trusted certificate through the DNS-01 challenge, run by a name service the country or HISP would operate. Every device would trust it with nothing installed. Not chosen because **offline, the name does not resolve**: devices ask the router, the router asks the internet. It works only where the hub is the facility's DNS server, and making the hub the staff Wi-Fi everywhere, or configuring routers, is not doable. Also against it: a new service to run, rate limits (about 50 new certificates per domain per week), certificate lifetimes heading to 47 days so that a hub offline longer loses its certificate, routers that drop public names with private addresses (DNS rebinding protection), and no `dhis2.local`: Let's Encrypt only issues for public names, and one name and certificate shared by all hubs would put the same key on every hub.
 
-- *Central:* nothing new in DHIS2. The hub adds its LAN addresses to its heartbeat; the service below uses an account that can read the `facility-hub-*` namespaces and write certificates back.
-- *A name service (new, run by the country or HISP):* a small periodic job that updates each hub's DNS record from its heartbeat and gets certificates with the DNS-01 challenge. It holds the DNS API credentials; hubs never do. Better than an earlier draft of this design, which sent hubs their key: the hub puts a certificate signing request in the datastore and picks up the certificate, so its key never leaves it.
-- *The hub:* report its LAN addresses (on Windows, the adapter on the default route, not VPN or virtual adapters), generate the key and signing request, reload the certificate without a restart, renew in time, accept its own name as a host, serve on 443.
-- *Administration:* a domain with a DNS provider that has an API, and a decision on who owns it. Let's Encrypt limits new certificates to about 50 per registered domain per week (renewals mostly exempt), so 500 hubs take about 10 weeks unless the limit is raised. Certificate lifetimes are getting shorter, so a hub offline for longer than one loses its certificate. Every certificate is published in public logs: use random names, not facility names.
-- *Each facility:* routers and resolvers with DNS rebinding protection (OpenWrt and Pi-hole by default, some ISP routers) drop public answers that hold private addresses; the zone must be allowed there.
-
-The gap: **offline, the name does not resolve** unless the hub is the facility's DNS server (case C, or the router hands out the hub as DNS server, which needs router configuration and a fixed hub address). Without that, the option works online and fails exactly when the hub is needed. With its moving parts, it is the most complex option to run.
-
-#### Option B: the Capture app pins the hub's key
-
-The hub keeps its own key and self-signed certificate, as now. The Capture app stores the fingerprint of the hub's public key with the account, and for that server accepts that key and no other. A key that does not match is a hard error ("This is not your facility's hub"), with no "connect anyway".
-
-- *Connecting a device:* join the facility Wi-Fi; in Capture choose "Add account" and "Scan hub code"; scan the QR code, which holds the hub's address, the key fingerprint and the hub ID; the app connects, checks the key and shows the hub's name ("Kibuye HC IV hub, connect?"); log in with the normal DHIS2 account. A user's first login on a hub must be online. A short code to type is the fallback for a broken camera.
-- *Where the code comes from, and why it can be trusted* (the fingerprint is not secret; what matters is that it comes from the real hub):
-  - The hub's dashboard on the hub PC itself (Windows option), opened on `localhost`: nothing on the network to intercept, and showing a false code needs control of the PC, which would compromise the hub anyway. No labels to print.
-  - A printed label (a Pi has no screen). Anyone walking past can stick another code over it.
-  - A DHIS2 app on central: the hub publishes its address and fingerprint in its registry entry, and the app shows "your facility's hub" to its users. Central's public certificate and DHIS2's own accounts carry the trust. Requires that only the hub (with its hub token) or an admin can write that entry: protect the namespace (section 6, "Security operations"). Needs the internet when the device is connected.
-  - Further: Capture asks central for its facility's hub while online, and pins the key it gets, with no code to scan. The same trust anchor, more Android work.
-  - The hub's dashboard opened from another device's browser is only as trustworthy as that browser's connection to the hub. The dashboard should say so when it is not opened on `localhost`.
-- *Lifecycle:* the key, not the address, is the identity. The hub can announce itself on the LAN (DNS-SD), and the app accepts any address that presents the pinned key: the announcement needs no protection, so a changed IP needs no rescan and no DHCP reservation. Certificates are renewed with the same key, so nothing expires for devices. A hub restored on another machine keeps working for devices if the backup holds its TLS key (`data_dir/tls.key`); otherwise each device rescans (about 10–30 per facility). A stolen key means a new key and every device rescanning.
-- *Work:*
-  - In the DHIS2 Android SDK, not only the app screens: a trust check per server in its OkHttp client, which also loads images and files. OkHttp's own pinning is not enough, because it still requires a publicly trusted chain. A contained change in our estimate; it is the Android team's roadmap and needs their security review.
-  - In the hub: the QR code and fingerprint on the dashboard, the registry entry, optionally the LAN announcement, and the TLS key in backups.
-  - Nothing else on central; no domain, no name service.
-- Works offline, by IP, fully encrypted; stricter than a public certificate, since one key is accepted instead of any of about 150 public authorities.
-
-#### Option C: the hub's own CA, installed on the device
-
-Exists now (`tls: true`): at first boot the hub makes a CA limited by name constraints to its own names and private addresses, issues its certificate (for `hub.local`, the host name, `<host>.local`, `localhost` and its LAN addresses), and destroys the CA key. Devices install `ca.crt` from `/hub/ca.crt`. Installing it cannot expose other sites to interception.
-
-- *Android:* ignored by Capture unless the device is fully managed, so not a general answer for tablets.
-- *Laptops and desktops:* the way browsers get trust, since a browser cannot pin a key. Installation is the burden: on Windows, double-click and pick "Trusted Root Certification Authorities" by hand; on macOS, Keychain Access and "Always Trust"; Firefox may need its own import; locked-down laptops may forbid it. Managed fleets push it with Group Policy or Intune. The hub could serve a one-click installer.
-- *Address:* use `https://<pc-name>.local`. The certificate lists the LAN addresses the hub had at first boot and the CA key is gone, so a changed IP breaks it, while the name stays valid.
-- *On the hub PC itself* (Windows option), `https://localhost` needs no installation at all.
+**Option B: the Capture app pins the hub's key** (on hold, with the Android Capture app). The hub keeps its own key; the app stores its fingerprint from a QR code or from central and accepts that key and no other, by IP, offline, with nothing installed. Needs a trust check per server in the DHIS2 Android SDK's HTTP client (OkHttp's own pinning still requires a publicly trusted chain), which is the Android team's work and security review. Kept in mind for when Android Capture comes back.
 
 #### Ruled out
 
 - **Plain HTTP**, even on the facility LAN. Anyone on the Wi-Fi reads passwords and patient data. Test set-ups only.
-- **Self-signed certificates with warnings clicked through** (requirement 1).
-- **`.local` names alone for Android** (constraints above).
-
-#### Leading combination (not decided)
-
-Option B for Android, with the code shown on the hub PC's dashboard (Windows) or from central's registry through a DHIS2 app, and option C for the few laptops, or `localhost` on the hub PC. It meets both requirements without infrastructure, but depends on the Android team. Until it ships, encryption for Android exists only on managed devices with the hub's CA installed. Option A remains the alternative if browsers become the main clients and installing the CA proves unworkable, provided the offline lookup gap is closed.
+- **Certificate warnings clicked through** (requirement 1).
+- **A USB stick to carry the authority to devices.**
 
 ## 5. Pointing client devices at the hub
 
 ### New devices
 
-- **Android tablets:** in the Capture app's login screen, scan the hub's QR code (from the hub's dashboard, its label or central; section 4, "Reaching the hub securely"). Then log in. The tablet syncs metadata and data from the hub.
+- **Every device, once:** install the hub's certificate authority, guided by `http://dhis2.local` (section 4, "Reaching the hub securely"). Then open `https://dhis2.local` and log in; install the Capture web app from there as an app where wanted.
+- **Android Capture app:** on hold for deployment (it does not trust the hub's authority).
 - **With an MDM** (Android Enterprise, for example Intune, Headwind or Google's), push the hub URL with the device. The Capture app's managed-configuration support needs checking before relying on this **(to check)**.
 - **Laptops and desktops:** a browser bookmark or a desktop shortcut to the hub's address. Installing the Capture web app as a PWA from the hub's address gives an app-like icon.
 
@@ -397,7 +366,7 @@ A hub only serves its own facility. A community health worker's tablet that visi
   - The new address is kept in the store, so it survives restarts. A hub that misses all of these keeps working offline, with its data, waiting for an address.
   - The older path through a signed release manifest (`hub release -central-url`) still works, but no longer fits once releases are shared by all countries.
 - **Signing.** Hub binaries and the release manifest are signed with the supplier's ed25519 release key, which hubs check before upgrading. The Windows installer and `hub.exe` are also Authenticode-signed with a code-signing certificate issued to the supplier's organisation; its key must sit in hardware, so CI signs through a cloud signing service (for example Azure Trusted Signing, about USD 10 a month, or DigiCert KeyLocker) with `signtool`, or `jsign` from Linux. SmartScreen warns until the certificate has built up download reputation.
-- **Host names:** if devices reach the hub by a name other than its host name, `hub.local` or its IP (for example a router DNS name), list it in `hub_hosts`; the hub refuses unknown `Host` headers.
+- **Host names:** if devices reach the hub by a name other than its host name, `dhis2.local` or its IP (for example a router DNS name), list it in `hub_hosts`; the hub refuses unknown `Host` headers.
 
 ## 7. Rollout plan
 

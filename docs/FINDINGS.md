@@ -142,7 +142,7 @@ Offline, a user whose own cache misses a metadata URL is served another user's c
 
 ### Long-term TLS
 
-What the POC does: at first boot the hub creates a CA limited by name constraints to its own names and private address ranges, issues a server certificate for `hub.local`, the host name, `localhost` and the LAN IPs, and discards the CA key; devices install `ca.crt` (served at `/hub/ca.crt`). An earlier version made the server certificate itself a CA, so anyone reading its key could have minted certificates for any site. The options for production, with the requirements they must meet, are in DEPLOYMENT.md, "Reaching the hub securely".
+What the POC does: at first boot the hub creates a CA limited by name constraints to its own names and private address ranges, issues a server certificate for `hub.local`, the host name, `localhost` and the LAN IPs, and discards the CA key; devices install `ca.crt` (served at `/hub/ca.crt`). An earlier version made the server certificate itself a CA, so anyone reading its key could have minted certificates for any site. The decision for production (`https://dhis2.local` and the hub's authority installed on each device) and the options weighed are in DEPLOYMENT.md, "Reaching the hub securely"; what devices did is under "Devices trusting the hub's certificate" below.
 
 ### Client-side fallback in app-runtime
 
@@ -474,3 +474,18 @@ What the hub does with a change central refuses (tested in `internal/e2e`: `Test
 - **Still open:**
   - a refused change that can never pass as it is (repair);
   - the retry instruction for refusals in bulk after central is fixed (docs/DEPLOYMENT.md, "Refused in bulk").
+
+## Devices trusting the hub's certificate
+
+Tested 2026-10-19 with a test authority made like the hub's (ECDSA P-256, name constraint to one `.local` name, server certificate for that name valid 30 days), served from a Mac on a phone hotspot under its mDNS name:
+
+- **Samsung Galaxy Tab A7 Lite (SM-T220), Android 14, Chrome.**
+  - The `.local` name resolved, both in the system resolver and in Chrome.
+  - Opening the certificate file in Chrome only says it must be installed in Settings; there is no install from the browser.
+  - Installed through Settings › Security and privacy › More security settings › Install from device storage › CA certificate, past a "Your privacy is at risk" warning and "Install anyway". Android requires a screen lock first.
+  - Chrome then trusted the HTTPS page with no warning; the name constraint was honoured. No "network may be monitored" notice appeared (it may after a reboot).
+- **iPhone, Safari.**
+  - The `.local` name resolved, over HTTP and HTTPS.
+  - Installing the profile alone was not enough: Safari kept warning until full trust was switched on in Settings › General › About › Certificate Trust Settings. Then the page opened with no warning; the name constraint was honoured.
+  - A warning clicked through still loads the page, which is exactly what deployments must not teach.
+- **Still to check:** older Android versions resolving `.local`; whether browsers keep HSTS for `.local` names; Windows and macOS with a name-constrained authority.
