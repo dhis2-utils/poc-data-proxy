@@ -1,0 +1,290 @@
+[
+  {
+    "hubId": "hub-SU1z6KWAIYI",
+    "pilotHubs": [
+      "hub-SU1z6KWAIYI"
+    ],
+    "percent": 0,
+    "in": true
+  },
+  {
+    "hubId": "hub-9Y2lQUc1ciA",
+    "pilotHubs": [],
+    "percent": 10,
+    "in": false
+  },
+  {
+    "hubId": "hub-zVTpFbHVOR0",
+    "pilotHubs": [],
+    "percent": 50,
+    "in": false
+  },
+  {
+    "hubId": "hub-vXrkjy0Su7t",
+    "pilotHubs": [],
+    "percent": 100,
+    "in": true
+  },
+  {
+    "hubId": "hub-HGRxtFAmI0b",
+    "pilotHubs": [],
+    "percent": 0,
+    "in": false
+  },
+  {
+    "hubId": "hub-a6FCf1Un33w",
+    "pilotHubs": [
+      "hub-a6FCf1Un33w"
+    ],
+    "percent": 10,
+    "in": true
+  },
+  {
+    "hubId": "hub-OdmM38V9v9R",
+    "pilotHubs": [],
+    "percent": 50,
+    "in": false
+  },
+  {
+    "hubId": "hub-CL8TOzotvAs",
+    "pilotHubs": [
+      "hub-kHCjHt3ZFua"
+    ],
+    "percent": 100,
+    "in": true
+  },
+  {
+    "hubId": "hub-f5CfUzGqrux",
+    "pilotHubs": [],
+    "percent": 0,
+    "in": false
+  },
+  {
+    "hubId": "hub-IsAzDQCjPJA",
+    "pilotHubs": [],
+    "percent": 10,
+    "in": false
+  },
+  {
+    "hubId": "hub-sFBAQsBwH1x",
+    "pilotHubs": [
+      "hub-sFBAQsBwH1x"
+    ],
+    "percent": 50,
+    "in": true
+  },
+  {
+    "hubId": "hub-5DliSRjRPXx",
+    "pilotHubs": [],
+    "percent": 100,
+    "in": true
+  },
+  {
+    "hubId": "hub-hIswhQsvmzD",
+    "pilotHubs": [],
+    "percent": 0,
+    "in": false
+  },
+  {
+    "hubId": "hub-qPmjjLPQ7UM",
+    "pilotHubs": [],
+    "percent": 10,
+    "in": false
+  },
+  {
+    "hubId": "hub-PadUmNK9VhJ",
+    "pilotHubs": [
+      "hub-akTiyP1Jqwc"
+    ],
+    "percent": 50,
+    "in": true
+  },
+  {
+    "hubId": "hub-PvPO8Z9qnB2",
+    "pilotHubs": [
+      "hub-PvPO8Z9qnB2"
+    ],
+    "percent": 100,
+    "in": true
+  },
+  {
+    "hubId": "hub-IfPglJYuzf1",
+    "pilotHubs": [],
+    "percent": 0,
+    "in": false
+  },
+  {
+    "hubId": "hub-u999Lonur8U",
+    "pilotHubs": [],
+    "percent": 10,
+    "in": false
+  },
+  {
+    "hubId": "hub-3tZwrOFZmRm",
+    "pilotHubs": [],
+    "percent": 50,
+    "in": false
+  },
+  {
+    "hubId": "hub-1lvQhqpiujw",
+    "pilotHubs": [],
+    "percent": 100,
+    "in": true
+  },
+  {
+    "hubId": "hub-NJqHsIAml5Y",
+    "pilotHubs": [
+      "hub-NJqHsIAml5Y"
+    ],
+    "percent": 0,
+    "in": true
+  },
+  {
+    "hubId": "hub-0JFn4QFmWVd",
+    "pilotHubs": [
+      "hub-Ls2A9R3mPxH"
+    ],
+    "percent": 10,
+    "in": false
+  },
+  {
+    "hubId": "hub-JfjebyOBNT0",
+    "pilotHubs": [],
+    "percent": 50,
+    "in": false
+  },
+  {
+    "hubId": "hub-11Fz1l7fzMB",
+    "pilotHubs": [],
+    "percent": 100,
+    "in": true
+  },
+  {
+    "hubId": "hub-7Qxeo1zZUhu",
+    "pilotHubs": [],
+    "percent": 0,
+    "in": false
+  },
+  {
+    "hubId": "hub-FbcMGy4YfjE",
+    "pilotHubs": [
+      "hub-FbcMGy4YfjE"
+    ],
+    "percent": 10,
+    "in": true
+  },
+  {
+    "hubId": "hub-yyYrWCWFFfX",
+    "pilotHubs": [],
+    "percent": 50,
+    "in": false
+  },
+  {
+    "hubId": "hub-zbOQSFjwdUb",
+    "pilotHubs": [],
+    "percent": 100,
+    "in": true
+  },
+  {
+    "hubId": "hub-5MiE9T3vCT5",
+    "pilotHubs": [
+      "hub-z2TAKZXGMRA"
+    ],
+    "percent": 0,
+    "in": false
+  },
+  {
+    "hubId": "hub-Fydf23rzPvd",
+    "pilotHubs": [],
+    "percent": 10,
+    "in": false
+  },
+  {
+    "hubId": "hub-V8QUQDJlxZc",
+    "pilotHubs": [
+      "hub-V8QUQDJlxZc"
+    ],
+    "percent": 50,
+    "in": true
+  },
+  {
+    "hubId": "hub-vSMmbOExi6o",
+    "pilotHubs": [],
+    "percent": 100,
+    "in": true
+  },
+  {
+    "hubId": "hub-1uNdT8A81Fr",
+    "pilotHubs": [],
+    "percent": 0,
+    "in": false
+  },
+  {
+    "hubId": "hub-X7BSPKbE1rS",
+    "pilotHubs": [],
+    "percent": 10,
+    "in": false
+  },
+  {
+    "hubId": "hub-eVTXe5fpg76",
+    "pilotHubs": [],
+    "percent": 50,
+    "in": true
+  },
+  {
+    "hubId": "hub-Nlf7AGLyw9c",
+    "pilotHubs": [
+      "hub-Nlf7AGLyw9c"
+    ],
+    "percent": 100,
+    "in": true
+  },
+  {
+    "hubId": "hub-H3c3vr5AwwU",
+    "pilotHubs": [],
+    "percent": 0,
+    "in": false
+  },
+  {
+    "hubId": "hub-kCYiYJg5VVo",
+    "pilotHubs": [],
+    "percent": 10,
+    "in": false
+  },
+  {
+    "hubId": "hub-rJR4oGkKl9n",
+    "pilotHubs": [],
+    "percent": 50,
+    "in": true
+  },
+  {
+    "hubId": "hub-OcwNne6T3zi",
+    "pilotHubs": [],
+    "percent": 100,
+    "in": true
+  },
+  {
+    "hubId": "hub-ten0006abcd",
+    "pilotHubs": [],
+    "percent": 10,
+    "in": true
+  },
+  {
+    "hubId": "hub-ten0009abcd",
+    "pilotHubs": [],
+    "percent": 10,
+    "in": true
+  },
+  {
+    "hubId": "hub-ten0012abcd",
+    "pilotHubs": [],
+    "percent": 10,
+    "in": true
+  },
+  {
+    "hubId": "hub-ünïcode-é",
+    "pilotHubs": [],
+    "percent": 50,
+    "in": true
+  }
+]

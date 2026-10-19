@@ -4,6 +4,8 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
+	"os"
 	"testing"
 )
 
@@ -51,5 +53,28 @@ func TestInStage(t *testing.T) {
 	}
 	if !InStage(Choice{Percent: 100}, "hub-x") {
 		t.Fatal("100 % takes everyone")
+	}
+}
+
+// testdata/stages.json holds the hub and the Facility Hub app to one rule
+// (apps/facility-hub/src/hubs/stage.test.ts reads the same table).
+func TestStageTable(t *testing.T) {
+	b, err := os.ReadFile("testdata/stages.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows []struct {
+		HubID     string   `json:"hubId"`
+		PilotHubs []string `json:"pilotHubs"`
+		Percent   int      `json:"percent"`
+		In        bool     `json:"in"`
+	}
+	if err := json.Unmarshal(b, &rows); err != nil || len(rows) < 40 {
+		t.Fatalf("%d rows, %v", len(rows), err)
+	}
+	for _, r := range rows {
+		if got := InStage(Choice{PilotHubs: r.PilotHubs, Percent: r.Percent}, r.HubID); got != r.In {
+			t.Errorf("%s at %d%%: %v, table says %v", r.HubID, r.Percent, got, r.In)
+		}
 	}
 }
