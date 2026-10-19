@@ -28,7 +28,10 @@ type Config struct {
 	// NMDnsmasqDir is NetworkManager's dnsmasq-shared.d, for the setup Wi-Fi's DNS.
 	NMDnsmasqDir string
 	// MDNS: the hub answers dhis2.local itself (Windows; the Pi has avahi).
-	MDNS             bool
+	MDNS bool
+	// SetupLocalOnly: set-up only from the machine itself (Windows: being at the PC
+	// proves presence at the facility, so no setup code is needed).
+	SetupLocalOnly   bool
 	DataDir          string        // e.g. /var/lib/hub
 	SyncInterval     time.Duration // outbox push + pull cadence
 	PingInterval     time.Duration // connectivity probe cadence
@@ -160,6 +163,8 @@ func (c *Config) set(k, v string) error {
 		c.NMDnsmasqDir = v
 	case "mdns":
 		c.MDNS, err = strconv.ParseBool(v)
+	case "setup_local_only":
+		c.SetupLocalOnly, err = strconv.ParseBool(v)
 	case "data_dir":
 		c.DataDir = v
 	case "sync_interval":

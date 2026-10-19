@@ -50,6 +50,8 @@ func main() {
 		err = migrate(args)
 	case "keygen":
 		err = keygen(args)
+	case "init":
+		err = hubInit(args)
 	case "release":
 		err = release(args)
 	case "version":
