@@ -37,6 +37,7 @@ var tmpl = template.Must(template.New("").Funcs(template.FuncMap{
 		return s
 	},
 	"json": func(v any) string { b, _ := json.Marshal(v); return string(b) },
+	"gb":   func(b uint64) string { return fmt.Sprintf("%.0f GB", float64(b)/(1<<30)) },
 }).ParseFS(templateFS, "templates/*.html"))
 
 type UI struct {
@@ -47,6 +48,9 @@ type UI struct {
 	Reset func(by string, discard bool) error
 	// Restart restarts the hub process (nil where nothing restarts it, as in tests).
 	Restart func()
+	// ChooseUSB keeps the hub's copy on the removable drive at a root (Windows,
+	// usb_dir: auto; stick.Stick.Choose).
+	ChooseUSB func(root string) error
 	// Net manages the network on a Pi (nil elsewhere): the pages' network section.
 	Net   *netsetup.Manager
 	setup setupFlow
@@ -65,6 +69,7 @@ func (u *UI) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/hub/ui/sync", u.admin(u.handleSyncNow))
 	mux.HandleFunc("/hub/ui/uplink", u.admin(u.handleUplink))
 	mux.HandleFunc("/hub/ui/proxy", u.admin(u.handleProxy))
+	mux.HandleFunc("/hub/ui/usb", u.admin(u.handleUSB))
 	mux.HandleFunc("/hub/network/join", u.handleNetwork(false))
 	mux.HandleFunc("/hub/network/facility", u.handleNetwork(true))
 	mux.HandleFunc("/hub/ui/reset", u.admin(u.handleReset))
@@ -314,6 +319,19 @@ func (u *UI) handleUplink(w http.ResponseWriter, r *http.Request) {
 		u.H.Monitor.Probe(r.Context(), u.H.Central.BaseURL())
 	}
 	http.Redirect(w, r, "/hub/ui", http.StatusFound)
+}
+
+// handleUSB records the staff member's choice of stick for the hub's copy.
+func (u *UI) handleUSB(w http.ResponseWriter, r *http.Request) {
+	msg := "The hub keeps its copy on that stick"
+	if r.Method != http.MethodPost || u.ChooseUSB == nil {
+		http.Redirect(w, r, "/hub/ui", http.StatusFound)
+		return
+	}
+	if err := u.ChooseUSB(r.FormValue("root")); err != nil {
+		msg = err.Error()
+	}
+	http.Redirect(w, r, "/hub/ui?msg="+url.QueryEscape(msg), http.StatusFound)
 }
 
 // handleProxy sets the web proxy for central and GitHub (sites that force one).

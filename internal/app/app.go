@@ -150,6 +150,7 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 	})
 	a2 := &App{Hub: h, Handler: logRequests(cfg, recoverer(root)), Worker: worker, Upgrader: up, Stick: stick.New(h),
 		StorePath: storePath, ui: u}
+	u.ChooseUSB = a2.Stick.Choose
 	if cfg.MDNS {
 		a2.MDNS = &mdns.Responder{Name: hubtls.Name, Addrs: func() []net.IP {
 			var ips []net.IP

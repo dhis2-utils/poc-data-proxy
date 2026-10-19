@@ -54,7 +54,10 @@
 {{with .Orphans}}<div class="card"><h2>Saves waiting for a user</h2><p><b>{{.}}</b> saves belong to users not on this hub (restored from a copy made before they first logged in). They cannot be sent as their author; ask central's administrator.</p></div>{{end}}
 
 {{with .Heartbeat.usb}}<div class="card"><h2>USB stick</h2>
-<p>{{if not .Present}}<b>No stick found.</b> Put the box's USB stick in: it holds the copy a new disk is restored from.{{else if not .Writable}}<b>The stick does not work</b>{{with .Error}}: {{.}}{{end}}. Replace it.{{else}}Working. Last copy {{or (short .LastCopy) "none yet"}}{{end}}</p></div>{{end}}
+{{if .Ask}}<p>The hub keeps a copy on a USB stick, so a new disk can be restored from it. Choose the stick that stays in this PC; staff's own sticks must not be chosen.</p>
+{{range .Ask}}<form class="inline" method="post" action="/hub/ui/usb"><input type="hidden" name="root" value="{{.Root}}"><button class="secondary">Keep the hub's copy on drive {{.Root}} ({{.Label}}, {{gb .Size}})</button></form>{{end}}
+{{else if .Missing}}<p><b>The USB stick chosen for the hub's copy is not plugged in.</b> Put it back; the hub does not use another stick by itself.</p>
+{{else}}<p>{{if not .Present}}<b>No stick found.</b> Put the box's USB stick in: it holds the copy a new disk is restored from.{{else if not .Writable}}<b>The stick does not work</b>{{with .Error}}: {{.}}{{end}}. Replace it.{{else}}Working. Last copy {{or (short .LastCopy) "none yet"}}{{end}}</p>{{end}}</div>{{end}}
 
 {{if .Offline}}<div class="card"><h2>Central has moved?</h2>
 <p>If central DHIS2 now has a new address, the national team gives you the address and a code for this hub. Enter both here.</p>

@@ -190,6 +190,13 @@ type Candidate struct {
 // Candidates lists the hub copies on the stick, newest first.
 func Candidates(usbDir string) []Candidate {
 	var out []Candidate
+	if usbDir == "auto" { // Windows: every removable drive plugged in
+		for _, d := range Removable() {
+			out = append(out, Candidates(d.Root)...)
+		}
+		slices.SortFunc(out, func(a, b Candidate) int { return b.TakenAt.Compare(a.TakenAt) })
+		return out
+	}
 	dirs, _ := filepath.Glob(filepath.Join(usbDir, "facility-hub", "*"))
 	for _, d := range dirs {
 		keys, state := filepath.Join(d, "keys.db"), filepath.Join(d, "state.rec")

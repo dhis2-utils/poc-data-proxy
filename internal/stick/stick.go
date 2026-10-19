@@ -24,7 +24,14 @@ type Status struct {
 	LastCopy  string `json:"lastCopy,omitempty"`
 	FreeBytes uint64 `json:"freeBytes,omitempty"`
 	Error     string `json:"error,omitempty"`
+	// usb_dir: auto (Windows): the drives to choose from when none is chosen yet, and
+	// whether the chosen one is not plugged in.
+	Ask     []Drive `json:"ask,omitempty"`
+	Missing bool    `json:"missing,omitempty"`
 }
+
+// MetaChoice is the drive a staff member chose for the copy (usb_dir: auto).
+const MetaChoice = "usb_choice"
 
 // Stick runs on its own timer, so a slow or failing stick never delays a save.
 type Stick struct {
@@ -36,6 +43,7 @@ type Stick struct {
 	stateSum [32]byte           // what state.rec holds
 	certsSum [32]byte           // what tls.rec holds
 	tickMu   sync.Mutex         // one tick at a time
+	autoRoot string             // usb_dir: auto: the chosen drive's root, "" while none
 	// Info is the text of facility-hub/hub.txt (the hub's ID, address and setup Wi-Fi,
 	// for whoever holds the box); nil writes none.
 	Info func() string
@@ -53,12 +61,53 @@ func New(h *core.Hub) *Stick {
 	return s
 }
 
-// dir is where the stick is mounted ("" for none).
-func (s *Stick) dir() string { return s.H.Cfg.USBDir }
+// dir is where the stick is mounted ("" for none; with usb_dir: auto, the chosen
+// removable drive, "" while none is chosen or plugged in).
+func (s *Stick) dir() string {
+	if s.auto() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.autoRoot
+	}
+	return s.H.Cfg.USBDir
+}
+
+func (s *Stick) auto() bool { return s.H.Cfg.USBDir == "auto" }
+
+// configured: a stick is part of this hub (usb_dir set).
+func (s *Stick) configured() bool { return s.H.Cfg.USBDir != "" }
+
+// locate finds the chosen drive (usb_dir: auto) and reports the choice to make, or the
+// drive missing, in the status.
+func (s *Stick) locate() bool {
+	root, ask, missing := Locate(Removable(), s.H.HubID(), s.H.Store.Meta(MetaChoice), hasHub(s.H.HubID()))
+	s.mu.Lock()
+	s.autoRoot = root
+	s.st.Ask, s.st.Missing = ask, missing
+	if root == "" {
+		s.st.Present, s.st.Writable, s.st.FreeBytes = false, false, 0
+	}
+	s.mu.Unlock()
+	return root != ""
+}
+
+// Choose keeps the hub's copy on the removable drive at root from now on: a staff
+// member's choice on the admin page (usb_dir: auto).
+func (s *Stick) Choose(root string) error {
+	for _, d := range Removable() {
+		if d.Root == root {
+			if err := os.MkdirAll(filepath.Join(root, "facility-hub", s.H.HubID()), 0o700); err != nil {
+				return err
+			}
+			return s.H.Store.SetMeta(MetaChoice, d.ID())
+		}
+	}
+	return errors.New("that drive is not plugged in")
+}
 
 // Run ticks every minute until ctx ends.
 func (s *Stick) Run(ctx context.Context) {
-	if s.dir() == "" {
+	if !s.configured() {
 		return
 	}
 	t := time.NewTicker(time.Minute)
@@ -75,7 +124,7 @@ func (s *Stick) Run(ctx context.Context) {
 
 // Status returns the last health check (nil without a stick configured).
 func (s *Stick) Status() *Status {
-	if s == nil || s.dir() == "" {
+	if s == nil || !s.configured() {
 		return nil
 	}
 	s.mu.Lock()
@@ -89,11 +138,14 @@ func (s *Stick) root() string { return filepath.Join(s.dir(), "facility-hub") }
 
 // Tick checks the stick and does what is due.
 func (s *Stick) Tick(ctx context.Context) {
-	if s.dir() == "" {
+	if !s.configured() {
 		return
 	}
 	s.tickMu.Lock()
 	defer s.tickMu.Unlock()
+	if s.auto() && !s.locate() {
+		return
+	}
 	st := s.check()
 	s.setStatus(func(cur *Status) {
 		cur.Present, cur.Writable, cur.FreeBytes, cur.Error = st.Present, st.Writable, st.FreeBytes, st.Error
@@ -123,7 +175,7 @@ func (s *Stick) check() Status {
 	if err != nil || !fi.IsDir() {
 		return st
 	}
-	if s.H.Cfg.USBRequireMount && !mountPoint(s.dir()) {
+	if s.H.Cfg.USBRequireMount && !s.auto() && !mountPoint(s.dir()) {
 		return st // the folder, not a stick: never fill the hub's own disk
 	}
 	st.Present = true
