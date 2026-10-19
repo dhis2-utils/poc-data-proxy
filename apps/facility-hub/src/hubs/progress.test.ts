@@ -58,3 +58,40 @@ describe('progress', () => {
         expect(progress(hubs, choice).waiting).toBe(1)
     })
 })
+
+describe('progress, review fixes', () => {
+    const choice = {
+        version: '0.3.0',
+        pilotHubs: ['hub-new', 'hub-ign'],
+        percent: 0,
+    }
+    it('counts a hub on a newer version as done: hubs never go back', () => {
+        const p = progress(
+            [hub('hub-new', { heartbeat: { version: '0.10.0' } })],
+            choice
+        )
+        expect(p.onVersion).toBe(1)
+        expect(p.waiting).toBe(0)
+    })
+    it('lists an ignored release with the failures (it will not be retried)', () => {
+        const p = progress(
+            [
+                hub('hub-ign', {
+                    heartbeat: {
+                        version: '0.2.0',
+                        lastUpgrade: {
+                            result: 'ignored',
+                            to: '0.3.0',
+                            reason: 'the release has no valid signature',
+                        },
+                    },
+                }),
+            ],
+            choice
+        )
+        expect(p.failed).toEqual([
+            { id: 'hub-ign', reason: 'the release has no valid signature' },
+        ])
+        expect(p.waiting).toBe(0)
+    })
+})

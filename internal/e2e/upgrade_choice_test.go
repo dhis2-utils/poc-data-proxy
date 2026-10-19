@@ -6,12 +6,14 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dhis2/facility-hub/internal/core"
 	"github.com/dhis2/facility-hub/internal/upgrade"
@@ -169,5 +171,69 @@ func TestNoChoiceNoUpgrade(t *testing.T) {
 	e.sync()
 	if got := rs.requested(); len(got) != 0 {
 		t.Fatalf("fetched %v without a choice", got)
+	}
+}
+
+// Review: a release whose binary does not match its checksum is not downloaded again
+// every cycle (costly on a modem).
+func TestChecksumMismatchNotRetried(t *testing.T) {
+	e, rs := upgradeEnv(t)
+	rs.publish("0.3.0", "0.3.0")
+	for p := range rs.files {
+		if strings.Contains(p, "/hub-") {
+			rs.files[p] = []byte("tampered")
+		}
+	}
+	e.choose(`{"version":"0.3.0","percent":100}`)
+	e.sync()
+	e.sync()
+	n := 0
+	for _, p := range rs.requested() {
+		if strings.Contains(p, "/hub-") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("binary downloaded %d times", n)
+	}
+}
+
+// Review: a slow link that keeps delivering finishes; one that stops is given up on
+// after the idle time, not after a fixed total.
+func TestDownloadIdleTimeout(t *testing.T) {
+	restore := upgrade.SetDownloadIdle(300 * time.Millisecond)
+	t.Cleanup(restore)
+	e, rs := upgradeEnv(t)
+	rs.publish("0.3.0", "0.3.0")
+	bin := rs.files["v0.3.0/hub-"+runtime.GOOS+"-"+runtime.GOARCH]
+	stall := false
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/hub-") {
+			rs.srv.Config.Handler.ServeHTTP(w, r)
+			return
+		}
+		for i := range bin { // a byte every 20 ms: 1.4 s in all, never idle for long
+			w.Write(bin[i : i+1])
+			w.(http.Flusher).Flush()
+			if stall && i == 5 {
+				time.Sleep(2 * time.Second)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}))
+	t.Cleanup(slow.Close)
+	e.app.Upgrader.Base = slow.URL
+	e.choose(`{"version":"0.3.0","percent":100}`)
+	e.sync()
+	if r := lastUpgrade(e); r["to"] != "0.3.0" || !strings.Contains(fmt.Sprint(r["reason"]), "migration") {
+		t.Fatalf("slow but steady download did not finish: %v", r)
+	}
+	e.app.Hub.Store.SetMeta("upgrade_skip", "")
+	e.app.Hub.Store.SetMeta(core.MetaUpgrade, "")
+	stall = true
+	start := time.Now()
+	e.sync()
+	if d := time.Since(start); d > 1500*time.Millisecond {
+		t.Fatalf("a stalled download held the cycle for %v", d)
 	}
 }

@@ -1,0 +1,15 @@
+# Pi OS keeps the Wi-Fi blocked (rfkill) until a country is set, by Imager or
+# raspi-config. A hub has neither, and one image serves every country: unblock it, so
+# the setup Wi-Fi can start. Without a country the radio uses the world regulatory
+# domain (channels 1-11), which every country allows.
+[Unit]
+Description=Unblock the Wi-Fi for the hub's setup Wi-Fi
+After=systemd-rfkill.service
+Before=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/rfkill unblock wifi
+
+[Install]
+WantedBy=multi-user.target

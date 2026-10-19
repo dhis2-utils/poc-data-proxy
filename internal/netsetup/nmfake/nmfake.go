@@ -21,6 +21,10 @@ type NM struct {
 	FailUp  map[string]string // connection → nmcli error message
 	UpCount map[string]int
 	Cable   bool
+	// Block holds "connection up <name>" until the channel is closed; Blocked hears
+	// the name when it starts waiting.
+	Block   map[string]chan struct{}
+	Blocked chan string
 }
 
 func (f *NM) Run(ctx context.Context, args ...string) (string, error) {
@@ -84,6 +88,17 @@ func (f *NM) stateful(args []string) (string, error) {
 		delete(f.Conns, args[2])
 		delete(f.Up, args[2])
 		return "", nil
+	case len(args) == 5 && args[0] == "connection" && args[1] == "modify" && args[3] == "connection.id":
+		if f.Conns[args[2]] == nil {
+			return "", fmt.Errorf("unknown connection %s", args[2])
+		}
+		f.Conns[args[4]] = f.Conns[args[2]]
+		delete(f.Conns, args[2])
+		if f.Up[args[2]] {
+			delete(f.Up, args[2])
+			f.Up[args[4]] = true
+		}
+		return "", nil
 	case len(args) == 3 && args[0] == "connection" && args[1] == "down":
 		delete(f.Up, args[2])
 		return "", nil
@@ -93,6 +108,12 @@ func (f *NM) stateful(args []string) (string, error) {
 			return "", fmt.Errorf("unknown connection %s", name)
 		}
 		f.UpCount[name]++
+		if ch := f.Block[name]; ch != nil {
+			if f.Blocked != nil {
+				f.Blocked <- name
+			}
+			<-ch
+		}
 		if msg := f.FailUp[name]; msg != "" {
 			return msg, fmt.Errorf("nmcli up: %s", msg)
 		}

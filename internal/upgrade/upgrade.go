@@ -176,6 +176,7 @@ func (u *Upgrader) check(ctx context.Context) error {
 	sum := sha256.Sum256(bin)
 	if hex.EncodeToString(sum[:]) != strings.ToLower(m.SHA256[plat]) {
 		u.record(Result{Result: "ignored", From: u.H.Version, To: m.Version, Reason: "binary checksum does not match signed manifest"})
+		u.H.Store.SetMeta("upgrade_skip", m.Version) // not downloaded again every cycle
 		return errors.New("checksum mismatch")
 	}
 	binDir := u.dir("bin")
@@ -237,6 +238,9 @@ func (u *Upgrader) check(ctx context.Context) error {
 		return err
 	}
 	ok = true
+	// A swap that fails exits and restarts on the old binary: this version is then not
+	// tried again every cycle (after a success the hub runs it, and the mark is moot).
+	u.H.Store.SetMeta("upgrade_skip", m.Version)
 	slog.Info("upgrading", "from", u.H.Version, "to", m.Version)
 	u.Shutdown()
 	if err := swapStore(u.StorePath, next, mk.PrevStore); err != nil {
@@ -295,9 +299,12 @@ func (u *Upgrader) fetchManifest(ctx context.Context, version string) (*Manifest
 
 // get fetches a file from the release source, refusing more than limit bytes.
 func (u *Upgrader) get(ctx context.Context, name string, limit int64) ([]byte, error) {
-	// The check runs inside the sync cycle; a hung channel must not stall push and pull.
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	// The check runs inside the sync cycle: a download that stops delivering is given up
+	// after downloadIdle, while a slow one that keeps going may take as long as it needs.
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	idle := time.AfterFunc(downloadIdle, cancel)
+	defer idle.Stop()
 	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(u.Base, "/")+"/"+name, nil)
 	if err != nil {
 		return nil, err
@@ -312,7 +319,7 @@ func (u *Upgrader) get(ctx context.Context, name string, limit int64) ([]byte, e
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("release source %s: HTTP %d", name, resp.StatusCode)
 	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	b, err := io.ReadAll(io.LimitReader(progressReader{resp.Body, idle}, limit+1))
 	if err == nil && int64(len(b)) > limit {
 		return nil, fmt.Errorf("release source %s: larger than %d bytes", name, limit)
 	}
@@ -569,4 +576,28 @@ func HandedOverDK() []byte {
 		return nil
 	}
 	return dk
+}
+
+// downloadIdle is how long a download may deliver nothing before it is given up.
+var downloadIdle = 2 * time.Minute
+
+// SetDownloadIdle changes downloadIdle (tests) and returns a function restoring it.
+func SetDownloadIdle(d time.Duration) func() {
+	old := downloadIdle
+	downloadIdle = d
+	return func() { downloadIdle = old }
+}
+
+// progressReader restarts the idle timer whenever bytes arrive.
+type progressReader struct {
+	r     io.Reader
+	timer *time.Timer
+}
+
+func (p progressReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	if n > 0 {
+		p.timer.Reset(downloadIdle)
+	}
+	return n, err
 }

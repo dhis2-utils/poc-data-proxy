@@ -47,14 +47,19 @@ check "no cloud-init seed on the boot partition" sh -c "! mdir -i '$WORK/boot.vf
 [ "$(mode /tmp)" = 01777 ] && ok "/tmp is 01777" || bad "/tmp mode $(mode /tmp)"
 
 # The hub.
-debugfs -R "dump /usr/local/bin/hub $WORK/hub" "$R" >/dev/null 2>&1
+debugfs -R "dump /usr/local/lib/hub/hub $WORK/hub" "$R" >/dev/null 2>&1
 check "the hub binary is an arm64 executable" python3 -c "
 import sys; b = open('$WORK/hub', 'rb').read(20)
 sys.exit(0 if b[:4] == b'\x7fELF' and int.from_bytes(b[18:20], 'little') == 183 else 1)"
 HUBUID=$(cat_ /etc/passwd | awk -F: '$1 == "hub" {print $3}')
 HUBGID=$(cat_ /etc/passwd | awk -F: '$1 == "hub" {print $4}')
 check "a hub system user exists" test -n "$HUBUID"
-check "the hub binary belongs to the hub user (self-upgrade)" sh -c "debugfs -R 'stat /usr/local/bin/hub' '$R' 2>/dev/null | grep -q 'User: *$HUBUID '"
+check "the hub binary belongs to the hub user (self-upgrade)" sh -c "debugfs -R 'stat /usr/local/lib/hub/hub' '$R' 2>/dev/null | grep -q 'User: *$HUBUID '"
+# Self-upgrade writes the new binary next to the running one, then renames it: the
+# folder must be the hub's, not root's /usr/local/bin.
+check "the hub's binary folder is the hub's (self-upgrade)" sh -c "test -n '$HUBUID' && debugfs -R 'stat /usr/local/lib/hub' '$R' 2>/dev/null | grep -q 'User: *$HUBUID '"
+check "hub.service runs the binary in that folder" sh -c "debugfs -R 'cat /etc/systemd/system/hub.service' '$R' 2>/dev/null | grep -q '^ExecStart=/usr/local/lib/hub/hub '"
+check "rfkill does not block the Wi-Fi (setup Wi-Fi)" exists /etc/systemd/system/multi-user.target.wants/hub-wifi-unblock.service
 check "hub.service is enabled" exists /etc/systemd/system/multi-user.target.wants/hub.service
 check "hub.service may bind ports 80 and 443" sh -c "debugfs -R 'cat /etc/systemd/system/hub.service' '$R' 2>/dev/null | grep -q CAP_NET_BIND_SERVICE"
 YAML=$(cat_ /etc/hub/hub.yaml)

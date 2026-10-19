@@ -24,9 +24,25 @@ type ExecRunner struct{}
 func (ExecRunner) Run(ctx context.Context, args ...string) (string, error) {
 	out, err := exec.CommandContext(ctx, "nmcli", args...).CombinedOutput()
 	if err != nil {
-		return string(out), fmt.Errorf("nmcli %s: %s", args[len(args)-1], strings.TrimSpace(string(out)))
+		return string(out), nmcliError(args, string(out))
 	}
 	return string(out), nil
+}
+
+// nmcliError names the command (such as "connection add"), never its arguments: they
+// can hold a Wi-Fi password, and the error reaches the hub's pages and logs.
+func nmcliError(args []string, out string) error {
+	var cmd []string
+	for i := 0; i < len(args) && len(cmd) < 2; i++ {
+		switch a := args[i]; {
+		case a == "-f" || a == "-w":
+			i++ // the option's value
+		case strings.HasPrefix(a, "-"):
+		default:
+			cmd = append(cmd, a)
+		}
+	}
+	return fmt.Errorf("nmcli %s: %s", strings.Join(cmd, " "), strings.TrimSpace(out))
 }
 
 // Device is a network device as NetworkManager reports it.

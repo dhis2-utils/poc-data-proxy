@@ -13,11 +13,13 @@ apt-get clean
 rm -rf /var/lib/apt/lists/* /etc/cloud
 if id pi >/dev/null 2>&1; then userdel -r pi 2>/dev/null || userdel pi; fi
 
-# The hub's user: owns its binary (self-upgrade replaces it) and its data.
+# The hub's user: owns its binary's folder (self-upgrade writes the new binary there and
+# renames it into place) and its data.
 useradd --system --home-dir /var/lib/hub --no-create-home --shell /usr/sbin/nologin hub
 usermod -aG netdev hub
-chown hub:hub /usr/local/bin/hub
-chmod 0755 /usr/local/bin/hub
+chown -R hub:hub /usr/local/lib/hub
+chmod 0755 /usr/local/lib/hub /usr/local/lib/hub/hub
+ln -sf ../lib/hub/hub /usr/local/bin/hub
 # The setup Wi-Fi's captive DNS answer is written here by the hub (internal/netsetup).
 mkdir -p /etc/NetworkManager/dnsmasq-shared.d
 chgrp hub /etc/NetworkManager/dnsmasq-shared.d
@@ -27,7 +29,7 @@ echo dhis2 > /etc/hostname
 sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tdhis2/' /etc/hosts
 grep -q '^127\.0\.1\.1' /etc/hosts || printf '127.0.1.1\tdhis2\n' >> /etc/hosts
 
-systemctl enable hub.service nftables.service chrony.service avahi-daemon.service NetworkManager.service
+systemctl enable hub.service hub-wifi-unblock.service nftables.service chrony.service avahi-daemon.service NetworkManager.service
 systemctl disable userconfig.service sshswitch.service 2>/dev/null || true
 # A new machine ID at first boot, so cloned images do not share one.
 : > /etc/machine-id

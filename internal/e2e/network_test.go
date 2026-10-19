@@ -3,6 +3,8 @@ package e2e
 import (
 	"context"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -102,5 +104,27 @@ func TestHubTxtOnStick(t *testing.T) {
 	b, _ = os.ReadFile(filepath.Join(usb, "facility-hub", "hub.txt"))
 	if !strings.HasSuffix(string(b), "Facility Wi-Fi: Clinic Staff\n") || strings.Contains(string(b), "longenough") {
 		t.Fatalf("hub.txt in case C:\n%s", b)
+	}
+}
+
+// Review: before set-up, only a device on the setup Wi-Fi changes the network, not
+// anyone on the facility's cable LAN.
+func TestNetworkChangeOnlyFromSetupWifi(t *testing.T) {
+	e, _, nm, _ := netEnv(t)
+	post := func(remote string) int {
+		r := httptest.NewRequest("POST", "http://localhost/hub/network/facility",
+			strings.NewReader(url.Values{"ssid": {"Evil"}, "password": {"longenough"}}.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Set("Origin", "http://localhost")
+		r.RemoteAddr = remote
+		w := httptest.NewRecorder()
+		e.app.Handler.ServeHTTP(w, r)
+		return w.Code
+	}
+	if code := post("192.168.1.50:40000"); code != http.StatusForbidden || nm.Up[netsetup.FacilityConn] {
+		t.Fatalf("from the cable LAN: %d, up %v", code, nm.Up)
+	}
+	if code := post("10.42.0.23:40000"); code != http.StatusOK || !nm.Up[netsetup.FacilityConn] {
+		t.Fatalf("from the setup Wi-Fi: %d, up %v", code, nm.Up)
 	}
 }

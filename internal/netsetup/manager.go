@@ -9,8 +9,10 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -36,13 +38,35 @@ type Manager struct {
 	// first (tests run it at once).
 	Delay func(func())
 
-	mu       sync.Mutex
+	mu       sync.Mutex // held through nmcli calls, which can take a minute
+	pwMu     sync.Mutex // the setup password file
+	snap     atomic.Pointer[snapshot]
 	started  time.Time
 	lastNet  time.Time // when the hub last had a network (zero: never since start)
 	setupAt  time.Time // when the setup Wi-Fi last started
 	devs     []Device
 	networks []Network
 	lastErr  string
+}
+
+// snapshot is what Status and Captive read, so the pages and every captive-portal
+// request never wait for a switch in progress.
+type snapshot struct {
+	devs     []Device
+	networks []Network
+	lastErr  string
+}
+
+// publish updates the snapshot; called with mu held, after every change.
+func (m *Manager) publish() {
+	m.snap.Store(&snapshot{devs: slices.Clone(m.devs), networks: m.networks, lastErr: m.lastErr})
+}
+
+func (m *Manager) current() *snapshot {
+	if s := m.snap.Load(); s != nil {
+		return s
+	}
+	return &snapshot{}
 }
 
 // Status is what the hub's pages show about the network.
@@ -97,6 +121,7 @@ func (m *Manager) Tick(ctx context.Context) {
 		return
 	}
 	m.devs = devs
+	defer m.publish()
 	kind, _ := Uplink(devs)
 	setupOn, facilityOn := m.active(SetupConn), m.active(FacilityConn)
 	switch {
@@ -131,8 +156,10 @@ func (m *Manager) Tick(ctx context.Context) {
 	}
 }
 
-func (m *Manager) active(conn string) bool {
-	for _, d := range m.devs {
+func (m *Manager) active(conn string) bool { return activeIn(m.devs, conn) }
+
+func activeIn(devs []Device, conn string) bool {
+	for _, d := range devs {
 		if d.Connection == conn && strings.HasPrefix(d.State, "connected") {
 			return true
 		}
@@ -141,11 +168,7 @@ func (m *Manager) active(conn string) bool {
 }
 
 // Captive reports whether the setup Wi-Fi is on: the hub then answers every name.
-func (m *Manager) Captive() bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.active(SetupConn)
-}
+func (m *Manager) Captive() bool { return activeIn(m.current().devs, SetupConn) }
 
 // startSetup scans first (one radio: scanning while it is an access point drops
 // phones), then starts the setup Wi-Fi with every DNS name answered by the hub.
@@ -176,6 +199,7 @@ func (m *Manager) startSetup(ctx context.Context) {
 	}
 	m.markUp(SetupConn)
 	m.setupAt = m.now()
+	m.publish()
 	slog.Info("network: no network; setup Wi-Fi on", "ssid", m.setupSSID())
 }
 
@@ -183,6 +207,7 @@ func (m *Manager) stopSetup(ctx context.Context) {
 	m.R.Run(ctx, "connection", "down", SetupConn)
 	m.writeCaptive(false)
 	m.markDown(SetupConn)
+	m.publish()
 	slog.Info("network: setup Wi-Fi off")
 }
 
@@ -228,8 +253,11 @@ func (m *Manager) Join(ssid, password string) error {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		m.stopSetup(ctx)
-		m.R.Run(ctx, "connection", "delete", WifiConn)
-		args := []string{"connection", "add", "type", "wifi", "ifname", "wlan0", "con-name", WifiConn,
+		// The new network under a temporary name: the Wi-Fi joined before stays until
+		// this one works, and is retried if it does not.
+		const trying = WifiConn + "-new"
+		m.R.Run(ctx, "connection", "delete", trying)
+		args := []string{"connection", "add", "type", "wifi", "ifname", "wlan0", "con-name", trying,
 			"autoconnect", "yes", "ssid", ssid}
 		if password != "" {
 			args = append(args, "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", password)
@@ -238,13 +266,18 @@ func (m *Manager) Join(ssid, password string) error {
 			m.failed(ctx, err)
 			return
 		}
-		if out, err := m.R.Run(ctx, "-w", "60", "connection", "up", WifiConn); err != nil {
-			m.R.Run(ctx, "connection", "delete", WifiConn)
+		if out, err := m.R.Run(ctx, "-w", "60", "connection", "up", trying); err != nil {
+			m.R.Run(ctx, "connection", "delete", trying)
 			m.failed(ctx, errors.New(out+" "+err.Error()))
 			return
 		}
+		m.R.Run(ctx, "connection", "delete", WifiConn)
+		if _, err := m.R.Run(ctx, "connection", "modify", trying, "connection.id", WifiConn); err != nil {
+			slog.Warn("network: renaming the joined Wi-Fi", "err", err)
+		}
 		m.lastErr, m.lastNet = "", m.now()
 		m.markUp(WifiConn)
+		m.publish()
 		m.save(func(s *saved) { s.Wifi, s.Facility = ssid, "" })
 		m.R.Run(ctx, "connection", "delete", FacilityConn)
 		slog.Info("network: joined a Wi-Fi", "ssid", ssid)
@@ -279,6 +312,7 @@ func (m *Manager) MakeFacilityWifi(ssid, password string) error {
 		}
 		m.lastErr, m.lastNet = "", m.now()
 		m.markUp(FacilityConn)
+		m.publish()
 		m.save(func(s *saved) { s.Facility, s.Wifi = ssid, "" })
 		slog.Info("network: the hub is the facility's Wi-Fi", "ssid", ssid)
 	})
@@ -305,28 +339,28 @@ func (m *Manager) failed(ctx context.Context, err error) {
 		m.lastErr = strings.TrimSpace(msg)
 	}
 	slog.Warn("network: switching failed; setup Wi-Fi back", "reason", m.lastErr)
+	m.publish()
 	m.startSetup(ctx)
 }
 
 // Status is the current network for the hub's pages.
 func (m *Manager) Status() Status {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	snap := m.current()
 	pw, _ := m.setupPassword()
-	st := Status{Networks: m.networks, LastError: m.lastErr, SetupSSID: m.setupSSID(), SetupPassword: pw, Mode: "none"}
+	st := Status{Networks: snap.networks, LastError: snap.lastErr, SetupSSID: m.setupSSID(), SetupPassword: pw, Mode: "none"}
 	sv := m.load()
-	kind, name := Uplink(m.devs)
+	kind, name := Uplink(snap.devs)
 	switch {
-	case m.active(SetupConn):
+	case activeIn(snap.devs, SetupConn):
 		st.Mode = "setup"
-	case m.active(FacilityConn):
+	case activeIn(snap.devs, FacilityConn):
 		st.Mode, st.Name = "facility", sv.Facility
 	case kind == "wifi":
 		st.Mode, st.Name = kind, sv.Wifi
 	case kind != "":
 		st.Mode, st.Name = kind, name
 	}
-	for _, d := range m.devs {
+	for _, d := range snap.devs {
 		st.Addresses = append(st.Addresses, d.Addresses...)
 	}
 	return st
@@ -336,6 +370,8 @@ func (m *Manager) setupSSID() string { return "Hub-" + m.HubID }
 
 // setupPassword is made once, at first use, and kept in the data folder.
 func (m *Manager) setupPassword() (string, error) {
+	m.pwMu.Lock()
+	defer m.pwMu.Unlock()
 	p := filepath.Join(m.DataDir, "setup-wifi")
 	if b, err := os.ReadFile(p); err == nil && len(strings.TrimSpace(string(b))) == 12 {
 		return strings.TrimSpace(string(b)), nil

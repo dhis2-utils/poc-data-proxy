@@ -119,7 +119,7 @@ func TestJoinFailsBringsSetupBack(t *testing.T) {
 	r := newRig(t)
 	r.tick(0)
 	r.tick(61 * time.Second)
-	r.nm.FailUp[WifiConn] = "Error: Connection activation failed: Secrets were required, but not provided."
+	r.nm.FailUp[WifiConn+"-new"] = "Error: Connection activation failed: Secrets were required, but not provided."
 	r.m.Join("Clinic", "wrong")
 	if !r.nm.Up[SetupConn] || !r.captiveFile() {
 		t.Fatalf("no setup Wi-Fi after a failed join: up %v", r.nm.Up)
@@ -127,10 +127,10 @@ func TestJoinFailsBringsSetupBack(t *testing.T) {
 	if st := r.m.Status(); st.LastError != "wrong password" {
 		t.Fatalf("last error %q", st.LastError)
 	}
-	if r.nm.Conns[WifiConn] != nil {
+	if r.nm.Conns[WifiConn+"-new"] != nil || r.nm.Conns[WifiConn] != nil {
 		t.Error("a failed Wi-Fi is kept and would be retried")
 	}
-	r.nm.FailUp[WifiConn] = "Error: No network with SSID 'Gone' found."
+	r.nm.FailUp[WifiConn+"-new"] = "Error: No network with SSID 'Gone' found."
 	r.m.Join("Gone", "x")
 	if st := r.m.Status(); st.LastError != "network not found" {
 		t.Fatalf("last error %q", st.LastError)
@@ -227,4 +227,63 @@ func TestSavedWifiRetried(t *testing.T) {
 	if !r.nm.Up[WifiConn] || r.nm.Up[SetupConn] || r.captiveFile() {
 		t.Fatalf("not rejoined: up %v", r.nm.Up)
 	}
+}
+
+// Review: a Wi-Fi password never reaches the pages or the logs through an error.
+func TestErrorHidesSecrets(t *testing.T) {
+	err := nmcliError([]string{"connection", "add", "type", "wifi", "ssid", "Clinic", "wifi-sec.psk", "hunter22"}, "Error: invalid psk")
+	if strings.Contains(err.Error(), "hunter22") || !strings.Contains(err.Error(), "connection add") {
+		t.Fatalf("%v", err)
+	}
+}
+
+// Review: a failed join keeps the Wi-Fi joined before, which the hub keeps retrying.
+func TestFailedJoinKeepsPreviousWifi(t *testing.T) {
+	r := newRig(t)
+	r.tick(0)
+	r.tick(61 * time.Second)
+	r.m.Join("Clinic", "secret123")
+	r.tick(10 * time.Second)
+	delete(r.nm.Up, WifiConn) // the router is gone
+	r.tick(15*time.Minute + time.Second)
+	r.nm.FailUp[WifiConn+"-new"] = "Error: Connection activation failed: Secrets were required, but not provided."
+	r.m.Join("Other", "wrong")
+	if !strings.Contains(strings.Join(r.nm.Conns[WifiConn], " "), "ssid Clinic") {
+		t.Fatalf("the Wi-Fi joined before is gone: %v", r.nm.Conns)
+	}
+	if r.nm.Conns[WifiConn+"-new"] != nil {
+		t.Error("the failed profile is kept")
+	}
+	n := r.nm.UpCount[WifiConn]
+	r.tick(15*time.Minute + time.Second)
+	if !r.nm.Up[WifiConn] || r.nm.UpCount[WifiConn] != n+1 {
+		t.Fatalf("the Wi-Fi joined before was not retried: up %v", r.nm.Up)
+	}
+}
+
+// Review: the pages (and the captive check on every phone request) do not wait for a
+// switch, which can take a minute.
+func TestStatusDoesNotWaitForSwitch(t *testing.T) {
+	r := newRig(t)
+	r.tick(0)
+	r.tick(61 * time.Second)
+	release := make(chan struct{})
+	r.nm.Block = map[string]chan struct{}{WifiConn + "-new": release}
+	r.nm.Blocked = make(chan string, 1)
+	done := make(chan struct{})
+	r.m.Delay = func(f func()) { go func() { f(); close(done) }() }
+	r.m.Join("Clinic", "secret123")
+	<-r.nm.Blocked
+	got := make(chan Status, 1)
+	go func() { r.m.Captive(); got <- r.m.Status() }()
+	select {
+	case st := <-got:
+		if st.SetupSSID == "" {
+			t.Errorf("status %+v", st)
+		}
+	case <-time.After(time.Second):
+		t.Error("Status waited for the switch")
+	}
+	close(release)
+	<-done
 }

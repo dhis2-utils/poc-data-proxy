@@ -51,7 +51,7 @@ debugfs -R "rdump / $ROOT" "$WORK/root.ext4" >/dev/null 2>&1
 python3 "$HERE/fixmodes.py" "$WORK/root.ext4" "$ROOT"
 rm "$WORK/root.ext4"
 cp -r --no-preserve=ownership "$HERE/files/." "$ROOT/"
-install -D -m 0755 "$BIN" "$ROOT/usr/local/bin/hub"
+install -D -m 0755 "$BIN" "$ROOT/usr/local/lib/hub/hub"
 install -D -m 0644 "$REPO/deploy/hub.service" "$ROOT/etc/systemd/system/hub.service"
 install -m 0755 "$HERE/customize.sh" "$ROOT/tmp/customize.sh"
 mv "$ROOT/etc/resolv.conf" "$WORK/resolv.conf.orig" 2>/dev/null || true

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"net"
 	"net/http"
 
 	"github.com/dhis2/facility-hub/internal/core"
@@ -39,8 +40,8 @@ func (u *UI) netView() *netView {
 }
 
 // handleNetwork joins a Wi-Fi or makes the hub the facility's Wi-Fi. Before set-up
-// anyone on the setup Wi-Fi may (its password is the gate, as for the setup page);
-// afterwards staff of the facility only.
+// anyone on the setup Wi-Fi may (its password is the gate), but not anyone on the
+// facility's cable LAN; afterwards staff of the facility only.
 func (u *UI) handleNetwork(facility bool) http.HandlerFunc {
 	do := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || u.Net == nil {
@@ -66,6 +67,23 @@ func (u *UI) handleNetwork(facility bool) http.HandlerFunc {
 			http.Error(w, "cross-origin request refused", http.StatusForbidden)
 			return
 		}
+		if u.Net == nil || !u.Net.Captive() || !fromSetupWifi(r.RemoteAddr) {
+			http.Error(w, "connect to the hub's setup Wi-Fi to change its network", http.StatusForbidden)
+			return
+		}
 		do(w, r)
 	}
+}
+
+// setupNet is the setup Wi-Fi's network (NetworkManager's shared mode, 10.42.0.1/24).
+var setupNet = &net.IPNet{IP: net.IPv4(10, 42, 0, 0), Mask: net.CIDRMask(24, 32)}
+
+// fromSetupWifi: a device on the setup Wi-Fi, or the hub itself.
+func fromSetupWifi(remote string) bool {
+	host, _, err := net.SplitHostPort(remote)
+	if err != nil {
+		host = remote
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLoopback() || setupNet.Contains(ip))
 }

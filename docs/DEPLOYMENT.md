@@ -54,7 +54,7 @@ Rough cost per kit: USD 150–220.
 One generic image per release (built 2026-10-19: `image/`, see image/README.md). The supplier's CI builds it from Raspberry Pi OS Lite and publishes it, with a signed checksum, in the GitHub release next to the hub binaries (`.github/workflows/release.yml`). The build needs no loop devices or mounts: it extracts the root file system, customises it in a chroot and rebuilds it (FINDINGS.md, "Building the image without mounts"). Nothing in the image is country-specific, so no country maintains its own image across hub and DHIS2 releases. `image/check.sh` checks every built image without booting it. The image contains:
 
 - **Raspberry Pi OS Lite, 64-bit** (trixie). No desktop, no SSH, no console user, no cloud-init: set-up happens on the hub's own page.
-- **The hub binary** at `/usr/local/bin/hub`, owned by the `hub` service user so it can upgrade itself, and the systemd unit from [`deploy/hub.service`](../deploy/hub.service).
+- **The hub binary** at `/usr/local/lib/hub/hub`, in a folder the `hub` service user owns so it can upgrade itself (linked from `/usr/local/bin/hub`); a Wi-Fi unblocked at boot (Pi OS blocks it until a country is set; the world regulatory domain applies); and the systemd unit from [`deploy/hub.service`](../deploy/hub.service).
 - **No country settings.** Central's address is given at set-up (section 3), from the country's installation card. The release source and key are the supplier's, built into the binary. `hub.yaml` has only the ports, folders and `network: networkmanager`.
 - **Networking:**
   - NetworkManager for every connection, with a polkit rule that lets the hub manage it;
