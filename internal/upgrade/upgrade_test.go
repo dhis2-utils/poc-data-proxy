@@ -78,3 +78,14 @@ func TestStageTable(t *testing.T) {
 		}
 	}
 }
+
+// Windows runs a program only by its .exe name (CreateProcess appends .exe to a name
+// without one): the downloaded version is saved as one.
+func TestDownloadedBinaryName(t *testing.T) {
+	if got := binaryName("0.4.0", "windows"); got != "hub-0.4.0.exe" {
+		t.Errorf("windows: %s", got)
+	}
+	if got := binaryName("0.4.0", "linux"); got != "hub-0.4.0" {
+		t.Errorf("linux: %s", got)
+	}
+}

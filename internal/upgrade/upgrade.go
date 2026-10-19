@@ -180,7 +180,7 @@ func (u *Upgrader) check(ctx context.Context) error {
 	}
 	binDir := u.dir("bin")
 	os.MkdirAll(binDir, 0o755)
-	newBin := filepath.Join(binDir, "hub-"+m.Version)
+	newBin := filepath.Join(binDir, binaryName(m.Version, runtime.GOOS))
 	if err := os.WriteFile(newBin, bin, 0o755); err != nil {
 		return err
 	}
@@ -549,4 +549,13 @@ func (p progressReader) Read(b []byte) (int, error) {
 		p.timer.Reset(downloadIdle)
 	}
 	return n, err
+}
+
+// binaryName is the downloaded version's file name: with .exe on Windows, which runs
+// programs only by that name.
+func binaryName(version, goos string) string {
+	if goos == "windows" {
+		return "hub-" + version + ".exe"
+	}
+	return "hub-" + version
 }
