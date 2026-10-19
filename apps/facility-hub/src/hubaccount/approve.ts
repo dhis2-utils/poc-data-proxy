@@ -160,7 +160,7 @@ export const approve = async (
         id: string
     }
     await step(
-        'Limiting its move key to administrators',
+        'Limiting its move key to the hub managers',
         () =>
             api.request(
                 'POST',

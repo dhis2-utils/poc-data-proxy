@@ -127,7 +127,7 @@ func (c *client) approve(ctx context.Context, r Request) error {
 	}
 	share := map[string]any{"object": map[string]any{"publicAccess": "--------", "userAccesses": []any{}, "userGroupAccesses": managers}}
 	if err := c.do(ctx, "POST", "/api/sharing?type=dataStore&id="+meta.ID, share, nil); err != nil {
-		return fmt.Errorf("limiting its move key to administrators: %w", err)
+		return fmt.Errorf("limiting its move key to the hub managers: %w", err)
 	}
 	if err := c.do(ctx, "PUT", keyPath, map[string]string{"moveKey": base64.StdEncoding.EncodeToString(moveKey)}, nil); err != nil {
 		return fmt.Errorf("keeping its move key: %w", err)
