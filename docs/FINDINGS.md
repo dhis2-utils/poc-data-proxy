@@ -120,7 +120,7 @@ Countries move DHIS2 to new domains and hosting, so a hub's central URL must be 
 Before this round, a set-up hub kept its central URL in its own store and ignored the config file, so moving a fleet meant resetting and setting up every hub again. The design now in the code:
 
 1. **An allowlist instead of one URL.** `central_hosts` in the image lists permitted hosts (`hmis.example.org`, `*.hmis.example.org`). Setup accepts any https URL on those hosts. `central_url`, if set, is the default and is always allowed.
-2. **Fleet-wide moves through the signed release channel.** The signed release manifest may carry `centralUrl`. A hub that reads it checks that the URL is allowed and that the new server knows the hub (its registry entry is there and the hub token works), then switches. Only the holder of the release key can move hubs, and no visit or new image is needed.
+2. **Fleet-wide moves through the signed release channel** (removed 2026-10-19 with the release channel; moves now use the planned move and move codes, DEPLOYMENT.md section 6). The signed release manifest could carry `centralUrl`. A hub that reads it checks that the URL is allowed and that the new server knows the hub (its registry entry is there and the hub token works), then switches. Only the holder of the release key can move hubs, and no visit or new image is needed.
 3. **A one-time setup token for images with neither.** If the image sets neither `central_url` nor `central_hosts`, setup requires the token the hub writes at first boot to `data_dir/setup-token`, printed on the label at the depot. Only someone holding the device can choose the server.
 
 ### Offline search covers this facility only, and Capture should say so
@@ -489,3 +489,22 @@ Tested 2026-10-19 with a test authority made like the hub's (ECDSA P-256, name c
   - Installing the profile alone was not enough: Safari kept warning until full trust was switched on in Settings › General › About › Certificate Trust Settings. Then the page opened with no warning; the name constraint was honoured.
   - A warning clicked through still loads the page, which is exactly what deployments must not teach.
 - **Still to check:** older Android versions resolving `.local`; whether browsers keep HSTS for `.local` names; Windows and macOS with a name-constrained authority.
+
+## Building the image without mounts
+
+Measured 2026-10-19, building the hub's image from Raspberry Pi OS Lite (trixie, 2026-10-06) in a container without loop devices, FUSE or mount rights (as in many CI containers):
+
+- **The build works without mounting anything:**
+  1. cut the partitions out with `dd`;
+  2. extract the root file system with `debugfs rdump`;
+  3. customise it in a `chroot` (apt works without `/proc`, warning only that `/dev/pts` is missing);
+  4. rebuild it with `mkfs.ext4 -d`;
+  5. edit the FAT boot partition with mtools;
+  6. write a new disk with `sfdisk` and the original disk identifier, so the `PARTUUID`s in `cmdline.txt` and `fstab` still match.
+- **`debugfs rdump` drops setuid bits and owners.**
+  - It extracts every file owned by the user running it, with modes masked: `sudo` came out 0755 instead of 4755.
+  - `image/fixmodes.py` reads every directory's entries back from the ext4 (`debugfs ls -p`, one batch) and restores mode, owner and group: 32 entries in the stock image.
+  - Extended attributes, such as file capabilities, are not restored. None were found on the files checked: trixie's `ping` uses ICMP sockets.
+- **The stock image sets itself up at first boot**, which a hub must not do: cloud-init with a seed on the boot partition, `userconf-pi` asking for a user, a user `pi`, and SSH. The build removes all of them. Pi OS's own first-boot growth of the root file system (`resize` in `cmdline.txt`) is kept.
+- **`proot` crashed in this container** (signal 11, with and without seccomp); a plain `chroot` as root works.
+

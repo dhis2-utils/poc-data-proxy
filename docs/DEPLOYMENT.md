@@ -51,18 +51,29 @@ Rough cost per kit: USD 150–220.
 
 ## 2. The hub image and releases
 
-One generic image per release, built by the software supplier's CI with Raspberry Pi's image tools (`pi-gen` or `rpi-image-gen`) and published, signed, as a GitHub release next to the hub binaries and the Windows installer **(to build)**. Nothing in it is country-specific, so no country maintains its own image across hub and DHIS2 releases. The image contains:
+One generic image per release (built 2026-10-19: `image/`, see image/README.md). The supplier's CI builds it from Raspberry Pi OS Lite and publishes it, with a signed checksum, in the GitHub release next to the hub binaries (`.github/workflows/release.yml`). The build needs no loop devices or mounts: it extracts the root file system, customises it in a chroot and rebuilds it (FINDINGS.md, "Building the image without mounts"). Nothing in the image is country-specific, so no country maintains its own image across hub and DHIS2 releases. `image/check.sh` checks every built image without booting it. The image contains:
 
-- **Raspberry Pi OS Lite, 64-bit.** No desktop.
-- **The hub binary** at `/usr/local/bin/hub`, the systemd unit from [`deploy/hub.service`](deploy/hub.service), and a `hub` service user.
-- **No country settings.** Central's address is given at set-up (section 3), from a QR code on the country's installation card; the release source and key are the supplier's, built in. `hub.yaml` needs no `central_url` (built: without it, set-up asks for the address and the setup code); a release channel and its key remain until releases move to GitHub **(to build)**. The setup user group is gone (built 2026-10-17).
-- **Networking:** NetworkManager; `dnsmasq`, used only in "hub provides the network" mode (section 4); `avahi-daemon` for `dhis2.local`.
-- **Time:** `chrony` with the country's NTP servers, falling back to the RTC.
-- **Firewall** (`nftables`): inbound HTTPS from the LAN only. No SSH.
-- **Updates:** `unattended-upgrades` for OS security fixes. The hub binary upgrades itself from the supplier's GitHub releases, to the version the country chose on central (section 6, "Upgrades").
-- **Watchdog:** the hardware watchdog plus `Restart=always` in systemd.
+- **Raspberry Pi OS Lite, 64-bit** (trixie). No desktop, no SSH, no console user, no cloud-init: set-up happens on the hub's own page.
+- **The hub binary** at `/usr/local/bin/hub`, owned by the `hub` service user so it can upgrade itself, and the systemd unit from [`deploy/hub.service`](../deploy/hub.service).
+- **No country settings.** Central's address is given at set-up (section 3), from the country's installation card. The release source and key are the supplier's, built into the binary. `hub.yaml` has only the ports, folders and `network: networkmanager`.
+- **Networking:**
+  - NetworkManager for every connection, with a polkit rule that lets the hub manage it;
+  - its built-in DHCP and DNS for the hub's own Wi-Fi (section 4);
+  - `avahi-daemon` for `dhis2.local`, with the host name `dhis2`.
+- **Time:** `chrony` with public NTP pools, falling back to the RTC.
+- **Firewall** (`nftables`): from private addresses only, ports 80 and 443 and mDNS, plus DHCP and DNS on the hub's own Wi-Fi.
+- **Updates:** `unattended-upgrades` for OS security fixes, rebooting at 03:00 when needed. The hub binary upgrades itself from the supplier's GitHub releases, to the version the country chose on central (section 6, "Upgrades").
+- **Watchdog:** the hardware watchdog (`RuntimeWatchdogSec=15`), plus `Restart=always` in systemd.
+- **The USB stick** is mounted for the hub at `/media/hub-usb` when plugged in (FAT or exFAT; a udev rule).
 - **No remote access.** A support VPN was considered and is out of scope for now: it needs a server, and it would add little, since the hub's data stays encrypted until a staff member logs in. Support works from central (section 6).
-- **First-boot service:** regenerates SSH host keys and the machine ID, so cloned images do not share identities.
+- **A machine ID made at first boot**, so cloned images do not share one.
+
+**Verified on hardware later** (no Pi yet):
+- booting the image, and the root file system growing to the disk;
+- NetworkManager's access-point mode with the captive DNS, joining a Wi-Fi, and case C with real devices;
+- USB modems;
+- the watchdog, the RTC with `chrony`, and the USB stick mount;
+- an upgrade on a Pi.
 
 The image holds **no secrets**. Each hub gets its own data key, hub ID and signing key pair at first boot and setup. Patient data on the SSD is encrypted by the hub itself: everything except a small key file (hub ID, mode, central URL, and each user's username and key slot) is in a data file encrypted with AES-256-XTS under the data key, so full-disk encryption is optional. If it is used, it must unlock without a person present, for example with a key held in TPM-like storage, which the Pi does not have. This is why the POC relies on application-level encryption.
 
@@ -148,14 +159,15 @@ Facilities differ. The image supports four cases without per-facility configurat
 
 - The hub is an ordinary DHCP client on the LAN.
 - **No DHCP reservation needed:** devices find the hub by name ("Reaching the hub securely" below).
-- **Check for client isolation.** Some routers isolate Wi-Fi clients from each other and from the wired LAN ("AP isolation", "guest network"). Tablets then cannot reach the hub. The setup page should test this **(to build: the setup page asks the installer to open the status page from a tablet)**.
+- **Check for client isolation.** Some routers isolate Wi-Fi clients from each other and from the wired LAN ("AP isolation", "guest network"). Tablets then cannot reach the hub.
 - **Check that `dhis2.local` resolves** from a tablet; some routers filter multicast. The hub's IP works as a fallback.
+- **Both checks, from a tablet** (built): open `dhis2.local` from a tablet. The admin page then says "Devices reach this hub by dhis2.local", or that they reach it only by IP address, or that no other device has opened it yet, which suggests client isolation.
 
 ### Case B: a 4G MiFi or mobile router as the only network
 
 These small devices often have no Ethernet port and frequently isolate clients.
 
-- The hub joins the MiFi's Wi-Fi as a client, chosen on the setup Wi-Fi ("Setup Wi-Fi" below) **(to build)**.
+- The hub joins the MiFi's Wi-Fi as a client, chosen on the setup Wi-Fi ("Setup Wi-Fi" below; built, untested on hardware).
 - If the MiFi isolates clients, use case C instead and connect the MiFi to the hub as its uplink.
 
 ### Case C: no usable local network; the hub provides it
@@ -164,13 +176,13 @@ These small devices often have no Ethernet port and frequently isolate clients.
  tablets, laptops ──Wi-Fi──► hub (access point, DHCP, DNS) ──Ethernet / USB 4G──► internet
 ```
 
-- The hub runs its own Wi-Fi access point (`hostapd`), DHCP and DNS (`dnsmasq`). Its uplink is the Ethernet port (to a modem) or a USB 4G modem.
+- The hub runs its own Wi-Fi access point, DHCP and DNS (NetworkManager's shared mode). Its uplink is the Ethernet port (to a modem) or a USB 4G modem.
 - The Pi's built-in Wi-Fi handles a small facility, about 10–15 devices. Beyond that, add a cheap external access point on the hub's Ethernet.
 - This is the most robust case, because the hub controls DHCP, DNS and client isolation. It is also the simplest to support remotely, because every facility in this mode looks the same.
-- Chosen on the setup Wi-Fi ("Setup Wi-Fi" below): the setup network becomes the facility's network, under a name and password the admin chooses **(to build)**.
+- Chosen on the setup Wi-Fi ("Setup Wi-Fi" below; built, untested on hardware): the setup network becomes the facility's network, under a name and password the admin chooses.
 - Its uplink: the Ethernet port to a modem or router, or a USB 4G stick of the one kind the hub supports ("USB modems" below).
 
-### Setup Wi-Fi: a hub with no screen or keyboard (plan, to build)
+### Setup Wi-Fi: a hub with no screen or keyboard (built 2026-10-19, untested on hardware)
 
 A hub with no network cannot be configured over one, and has no screen. So it provides one for the purpose:
 
@@ -182,10 +194,17 @@ A hub with no network cannot be configured over one, and has no screen. So it pr
 4. **Switching:** the Pi has one Wi-Fi radio, and running its own network while joining another is unreliable. So the hub scans first, keeps the choice, turns its own network off and joins. If that fails within about a minute, the setup Wi-Fi comes back with what went wrong ("wrong password", "network not found"). Before switching, the page tells the admin to put the phone back on the facility's Wi-Fi, and shows the hub's address there.
 5. **Afterwards:** if the joined network is gone for 15 minutes, the setup Wi-Fi returns, so a hub is never out of reach because a router changed its password. The setup Wi-Fi runs only while the hub has no network.
 6. **Security:** besides the per-kit password, the setup page needs the setup code before set-up and a staff login after it, as on any network.
+7. **Built in `internal/netsetup`**, through NetworkManager's `nmcli`. The connections are `hub-setup`, `hub-wifi` and `hub-facility`:
+   - The setup Wi-Fi starts 60 seconds after boot without a network, and 15 minutes after the network is lost.
+   - A cable or USB modem stops the setup Wi-Fi, never the facility's Wi-Fi.
+   - While the setup Wi-Fi is on, the hub tries a Wi-Fi it joined before every 15 minutes, so a router that restarted is rejoined without anyone coming back. NetworkManager does not retry while the radio is an access point.
+   - The captive answer is a dnsmasq line (`address=/#/10.42.0.1`) that the hub writes only while the setup Wi-Fi is on. The hub's plain-HTTP page sends phones to `http://10.42.0.1/`.
+   - The setup and admin pages show the network section. After set-up, changing the network needs a staff login.
+   - `hub.txt` leaves out the facility Wi-Fi's password, since the facility chose it.
 
 The hub's IP changes when it moves from its own network to the facility's; devices use `dhis2.local`, so that does not matter ("Reaching the hub securely" below).
 
-### USB modems: one kind only (plan, to build)
+### USB modems: one kind only (built 2026-10-19, untested on hardware)
 
 USB 4G sticks come in three kinds:
 
@@ -196,13 +215,13 @@ USB 4G sticks come in three kinds:
 The hub supports the first kind only. Generic support for the others is an endless list of models and operators that nobody on site could debug. In practice:
 
 - One tested model of the first kind per country, in the kit, prepared at the depot: SIM PIN off, APN checked.
-- The setup page and the admin page show whether the uplink works, nothing to configure.
+- The setup page and the admin page show whether the uplink works, nothing to configure: a stick of this kind shows as "USB modem" (drivers `cdc_ether`, `rndis_host`, `cdc_ncm`; phone tethering too).
 - Where that does not work out, a MiFi: the hub joins it over the setup Wi-Fi like any network, and it is often the simpler kit anyway.
 
 ### Case D: managed networks (hospital IT, NGO-managed sites)
 
 - Static IP or reserved DHCP, a firewall exception for outbound HTTPS to central and to GitHub (releases), and inbound HTTPS from client subnets.
-- Proxy servers: the hub needs outbound HTTPS to central's URL and GitHub (releases). Every outbound connection of the hub already honours the standard `HTTPS_PROXY` environment variable (Go's default transport; loopback is never proxied). On an image without SSH that is set nowhere, so sites that force a web proxy need a proxy field on the hub's page **(to build)**.
+- Proxy servers: the hub needs outbound HTTPS to central's URL and GitHub (releases). The admin page has a proxy field (built 2026-10-19), used for every outbound connection; empty uses the standard `HTTPS_PROXY` environment variable.
 
 ### What the hub needs from any network
 
@@ -235,7 +254,7 @@ Built 2026-10-19 (`internal/hubtls`, `internal/ui/start.go`, the stick's `tls.re
   - older Android versions (Android 14 is tested; versions before about 12 may not resolve `.local`, to check);
   - client isolation, which breaks the IP too and has to be fixed anyway (case A).
 
-  Then devices use `https://<the hub's IP>`, with the same certificate: the hub's certificate lists its current addresses. The IP is on the hub's admin page, in `hub.txt` on the USB stick (to build with the setup Wi-Fi), and in its heartbeat (`addresses`), so the Facility Hub app's hub page shows it to a district officer on the phone. Two costs: the IP can change, so such a facility needs a DHCP reservation on its router after all; and a browser keeps a site's offline data and installed app per address, so a device stays with one address, name or IP, and does not switch between them. A case C hub is its own network, so its address never changes.
+  Then devices use `https://<the hub's IP>`, with the same certificate: the hub's certificate lists its current addresses. The IP is on the hub's admin page, in `hub.txt` on the USB stick, and in its heartbeat (`addresses`), so the Facility Hub app's hub page shows it to a district officer on the phone. Two costs: the IP can change, so such a facility needs a DHCP reservation on its router after all; and a browser keeps a site's offline data and installed app per address, so a device stays with one address, name or IP, and does not switch between them. A case C hub is its own network, so its address never changes.
 - **The certificate.** The hub's certificate authority is limited to web servers (no code signing, mail or client certificates) and by name constraints to the hub's names (`dhis2.local`, `localhost`, its host name, the names in `hub_hosts`) and private addresses, so installing it cannot expose any public site. It lasts ten years, so a device installs it once. The hub keeps the authority's key and issues its server certificate again when fewer than 60 days are left and when its addresses change (checked every few minutes, without a restart). Server certificates last 397 days, inside Apple's 825-day limit for any TLS certificate. The authority's key sits next to the server's key, readable only by the hub's service user, not in the encrypted store: the hub needs to issue certificates without anyone logging in. Its files are written synced, so a power cut leaves the old file or the new one; a key that cannot be read stops the hub rather than being replaced, and a corrupt one is kept aside (`ca.key.bad`) and replaced. **What a stolen key allows** (from the disk; on the stick it is sealed): toward the devices that installed this hub's authority, impersonating `dhis2.local` (at any facility those devices visit, since every hub uses that name), the hub's other names, and HTTPS on any private address, such as a router's admin page. Not public sites, not software or mail. Accepted, as for a stolen server key; the hub is retired and its devices remove its authority and install the new hub's (section 3, "Replacing or moving a hub"). Narrowing the addresses to the hub's own subnet was considered: the subnet changes with the router, and the authority cannot be changed without every device installing again. A hub upgraded from a version that threw the key away makes a new authority once, and its devices install it again.
 - **Backup.** The authority, its key and the server's certificate are on the USB stick, sealed with the data key like the hub's state (RECOVERY.md, C2). A disk restored from the stick keeps them, so devices notice nothing. A new kit without the old stick has a new authority, and every device installs it (about 10 to 30 per facility).
 - **Getting the authority.** From the hub itself, at `http://dhis2.local/hub/ca.crt` (decided 2026-10-19). Someone on the facility Wi-Fi at the moment a device installs could hand it their own file instead and then impersonate the hub to that device: a one-time window per device, for this hub's names only, accepted. A cautious installer compares the fingerprint the start page shows with the one in the Facility Hub app on central (the hub's page there), which comes from the hub's heartbeat (`caFingerprint`) over central's HTTPS; the hub's admin page shows it too. Getting the file from central itself was considered: staff would have to open a page on central by themselves (a link on the hub's page proves nothing), which needs an app or page every staff member can open; it stays an option if a country's risk assessment asks for it.
@@ -299,7 +318,7 @@ A hub only serves its own facility. A community health worker's tablet that visi
     - the lowest free disk.
 
   The history shows how much time a hub spends online and offline. It lives in the same key, about 14 KB at 90 days, so the namespace still holds one key per hub.
-- **The Facility Hub app** (first version built 2026-10-18, `apps/facility-hub`, [FACILITY-HUB-APP.md](FACILITY-HUB-APP.md)), a DHIS2 app the national team installs on central in App Management. It lists hubs from `facility-hub-registry` with their latest heartbeat, approves hubs' own accounts and gives out move codes; holding the country's hub settings (retention, the hub version, retries) is still to build. It flags:
+- **The Facility Hub app** (first version built 2026-10-18, `apps/facility-hub`, [FACILITY-HUB-APP.md](FACILITY-HUB-APP.md)), a DHIS2 app the national team installs on central in App Management. It lists hubs from `facility-hub-registry` with their latest heartbeat, approves hubs' own accounts, gives out move codes, and chooses and stages the hub version (2026-10-19); holding the country's other hub settings (retention, retries) is still to build. It flags:
   - no heartbeat for more than 2 days;
   - pending data older than 1 day;
   - rejected objects (issues);
@@ -318,13 +337,13 @@ A hub only serves its own facility. A community health worker's tablet that visi
 
 ### Upgrades
 
-- **Hub software:** the supplier publishes signed releases on GitHub; each country chooses in the Facility Hub app which version its hubs run, and stages it **(to build; today the stages are in the signed manifest of a release channel the country hosts)**:
+- **Hub software** (built 2026-10-19): the supplier publishes signed releases on GitHub (`dhis2-utils/poc-data-proxy`, tag `v<version>`; the source and the public key are built into the binary). Each country chooses which version its hubs run in the Facility Hub app's "Hub version" page, which writes `facility-hub-admin/release`, and stages it:
   1. 5 pilot hubs, listed by hub ID;
   2. 10 %;
   3. 50 %;
   4. 100 %.
 
-  Each hub checks after its sync cycle, downloads the chosen version from GitHub and checks its signature, pushes its outbox, migrates a copy of its store, swaps, health-checks and rolls back on failure. Results show up in the heartbeat.
+  Each hub checks after its sync cycle, downloads the chosen version from GitHub and checks its signature, pushes its outbox, migrates a copy of its store, swaps, health-checks and rolls back on failure. It never moves to an older version, and does not try a version that failed on it again. Results show up in the heartbeat, and the page counts them per stage.
 - **Migrations on full hubs.** SQLite keeps sorts in memory, inside a 4 GB limit. A migration that built an index over existing rows ran out of it at 4.6 million objects, the busy HC IV kept for five years. A hub that cannot migrate rolls back and stays on its old release; once central moves to a DHIS2 version only the new release supports, it serves as pass-through only, and with hundreds of hubs a rollout stage could stall.
   - Fixed (2026-10-17): migrations sort through temporary files on the hub's disk, encrypted like the store, so their size is bounded by free disk, not memory. The same rebuild then took 26 s at 4.6 million objects (docs/PERFORMANCE.md, "Upgrading a large hub").
   - Still: a migration that touches existing rows is timed at that size before a release (AGENTS.md), and the first stage of a rollout includes some of the largest hubs, found by the heartbeat's disk use.
