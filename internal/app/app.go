@@ -103,6 +103,7 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 			http.Error(w, "unknown host name: open the hub by its address (hub_hosts)", http.StatusMisdirectedRequest)
 			return
 		}
+		h.NoteReach(r.Host, r.RemoteAddr)
 		// Apps call versioned paths (/api/42/tracker/...). Route them like the
 		// unversioned ones; central accepts either.
 		p := r.URL.Path

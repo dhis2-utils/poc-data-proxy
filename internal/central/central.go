@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -50,8 +51,30 @@ type Client struct {
 	Monitor *Monitor
 }
 
+// proxyURL is the web proxy set on the hub's admin page; empty uses the environment's
+// (HTTPS_PROXY). One per process, like the environment.
+var proxyURL atomic.Pointer[url.URL]
+
+// SetProxy sets the web proxy for every outbound connection ("" for the environment's).
+func SetProxy(p string) {
+	if u, err := url.Parse(p); p != "" && err == nil {
+		proxyURL.Store(u)
+		return
+	}
+	proxyURL.Store(nil)
+}
+
+// Proxy is the transports' proxy function.
+func Proxy(r *http.Request) (*url.URL, error) {
+	if u := proxyURL.Load(); u != nil {
+		return u, nil
+	}
+	return http.ProxyFromEnvironment(r)
+}
+
 func NewClient(baseURL string, m *Monitor) *Client {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.Proxy = Proxy
 	tr.ResponseHeaderTimeout = 60 * time.Second
 	return &Client{baseURL: strings.TrimRight(baseURL, "/"), Monitor: m,
 		HTTP: &http.Client{Transport: tr, Timeout: 5 * time.Minute,

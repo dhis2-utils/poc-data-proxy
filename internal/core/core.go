@@ -105,6 +105,7 @@ type Hub struct {
 	// aggAccess: each user's aggregate access (AggAccess), as access is theirs.
 	aggAccess map[int64]*aggregate.Access
 
+	reach     reach
 	SyncNow   chan struct{}
 	Upgrading atomic.Bool
 	Stats     SyncStats
@@ -248,6 +249,7 @@ func New(cfg config.Config, version string, st *store.Store) *Hub {
 	if base == "" {
 		base = cfg.CentralURL
 	}
+	central.SetProxy(st.Meta(MetaProxy))
 	h.Central = central.NewClient(base, mon)
 	return h
 }

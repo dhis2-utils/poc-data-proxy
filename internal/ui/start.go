@@ -14,7 +14,9 @@ import (
 // moves on to the same name and path over HTTPS once the device trusts the hub, or
 // shows how to install the authority. Nothing else is served without TLS.
 type Start struct {
-	DataDir   string
+	DataDir string
+	// Reached notes the request's name and client (Hub.NoteReach); may be nil.
+	Reached   func(host, remoteAddr string)
 	HTTPSPort string                 // the HTTPS listener's port; 443 is left out of links
 	Allowed   func(host string) bool // the hub's names and addresses (Hub.HostAllowed)
 }
@@ -23,6 +25,9 @@ func (s *Start) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.Allowed(r.Host) {
 		http.Error(w, "unknown host name: open the hub by its address (hub_hosts)", http.StatusMisdirectedRequest)
 		return
+	}
+	if s.Reached != nil {
+		s.Reached(r.Host, r.RemoteAddr)
 	}
 	if r.URL.Path == "/hub/ca.crt" {
 		serveAuthority(w, r, s.DataDir)

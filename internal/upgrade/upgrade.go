@@ -302,7 +302,9 @@ func (u *Upgrader) get(ctx context.Context, name string, limit int64) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.Proxy = central.Proxy
+	resp, err := (&http.Client{Transport: tr}).Do(req)
 	if err != nil {
 		return nil, err
 	}

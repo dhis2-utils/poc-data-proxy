@@ -15,8 +15,8 @@ import (
 	"testing"
 
 	"github.com/dhis2/facility-hub/internal/hubaccount"
-	"github.com/dhis2/facility-hub/internal/upgrade"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
+	"github.com/dhis2/facility-hub/internal/upgrade"
 )
 
 // appZip is the Facility Hub app as built (cd apps/facility-hub && pnpm build).

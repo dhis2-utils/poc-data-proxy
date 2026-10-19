@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"sort"
 	"time"
@@ -60,6 +61,7 @@ func (u *UI) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/hub/ui", u.admin(u.handleAdmin))
 	mux.HandleFunc("/hub/ui/sync", u.admin(u.handleSyncNow))
 	mux.HandleFunc("/hub/ui/uplink", u.admin(u.handleUplink))
+	mux.HandleFunc("/hub/ui/proxy", u.admin(u.handleProxy))
 	mux.HandleFunc("/hub/ui/reset", u.admin(u.handleReset))
 	mux.HandleFunc("/hub/ui/takeover", u.admin(u.handleTakeOver))
 	mux.HandleFunc("/hub/ui/move", u.admin(u.handleMove))
@@ -271,6 +273,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"ServerVersion": h.ServerVersion(), "Msg": r.URL.Query().Get("msg"),
 		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour), "Orphans": h.Store.PendingWithoutUser(),
 		"Offline": !h.Online(), "AccountCode": h.AccountCode(),
+		"Reach": reachText(h.Reach()), "Proxy": h.Proxy(),
 	})
 }
 
@@ -302,6 +305,30 @@ func (u *UI) handleUplink(w http.ResponseWriter, r *http.Request) {
 		u.H.Monitor.Probe(r.Context(), u.H.Central.BaseURL())
 	}
 	http.Redirect(w, r, "/hub/ui", http.StatusFound)
+}
+
+// handleProxy sets the web proxy for central and GitHub (sites that force one).
+func (u *UI) handleProxy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Redirect(w, r, "/hub/ui", http.StatusFound)
+		return
+	}
+	msg := "Proxy saved"
+	if err := u.H.SetProxy(r.FormValue("proxy")); err != nil {
+		msg = err.Error()
+	}
+	http.Redirect(w, r, "/hub/ui?msg="+url.QueryEscape(msg), http.StatusFound)
+}
+
+// reachText is the admin page's set-up check: do devices find the hub by name?
+func reachText(byName, byIP time.Time) string {
+	switch {
+	case !byName.IsZero():
+		return "Devices reach this hub by dhis2.local (last " + byName.Local().Format("2 Jan 15:04") + ")."
+	case !byIP.IsZero():
+		return "Devices reach this hub only by its IP address: ask for a DHCP reservation on the router, so the address stays the same."
+	}
+	return "No other device has opened this hub yet."
 }
 
 func (u *UI) handleReset(w http.ResponseWriter, r *http.Request) {
