@@ -175,7 +175,7 @@ These small devices often have no Ethernet port and frequently isolate clients.
 A hub with no network cannot be configured over one, and has no screen. So it provides one for the purpose:
 
 1. **When:** at boot, if the hub has no Ethernet link with DHCP and no saved Wi-Fi it can join, it starts its own setup Wi-Fi.
-2. **Its name and password:** "Hub-" and the hub ID, with a password the hub makes at its first boot at the depot, printed on the label with it (as the setup code is written to the USB stick). Not one password for every kit.
+2. **Its name and password:** "Hub-" and the hub ID, with a password the hub makes at its first boot at the depot. Not one password for every kit. Both are on the USB stick in the box, in `facility-hub/hub.txt`, which the hub writes and keeps current: the hub ID, the setup Wi-Fi's name and password, and the hub's address on the facility network. Unlike `setup-code.txt`, it stays after set-up, since the setup Wi-Fi is needed again when the facility's network changes. The label may repeat them, but nothing depends on a label or a sheet surviving: whoever holds the box has the stick. (Plain text on the stick weakens nothing: the setup Wi-Fi only leads to the setup page, which needs the setup code or a staff login.)
 3. **What the admin does:** connect a phone to that Wi-Fi; the phone opens the hub's setup page by itself, as a hotel Wi-Fi does (the hub answers every name with its own address). The page offers:
    - **Join an existing Wi-Fi** (case B, or case A without a cable): pick a network from a scan, enter its password;
    - **Make this hub the facility's Wi-Fi** (case C): the setup network becomes the facility's, under a name and password the admin chooses.
