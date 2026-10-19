@@ -43,7 +43,7 @@ One kit per facility, assembled and flashed at a central depot.
 | Power | Official power supply plus a small UPS (UPS HAT or a 12 V mini UPS) | Power cuts are common. A clean shutdown protects the store, and a UPS keeps the LAN up during short cuts. |
 | Clock | Required: the Pi 5's RTC with its battery; a Pi 4 has no RTC and needs an add-on RTC module | TLS and PAT expiry need the right time after a power cut with no internet, and offline the hub's clock decides which aggregate period is current and when a period expires: a board restarting at its last saved time would answer a new month's form as locked until it reaches a time server. (The hub's pulls follow central's clock, not its own.) |
 | USB stick | An industrial USB stick, in the box | Two jobs, one stick (built; `usb_dir`): before set-up it carries the hub's setup code (below); after set-up it holds what a restore needs: every pending save, the key file and the hub's state, copied each minute (RECOVERY.md, option C2), so a dead disk loses at most a minute of saves; the cached data comes back from central. |
-| Case | Passive-cooled metal case, wall-mountable | Heat and dust. No fan to fail. |
+| Case | Wall-mountable; being tested: a passive-cooled metal case for the Pi 4, a fan (active cooler or fan case) for the Pi 5 | Heat and dust. A fanless case has no fan to fail; the Pi 5 may need one to avoid throttling. Chosen after the tests (HARDWARE-TESTING.md). |
 | Network | Ethernet cable; optional USB 4G modem for facilities with no uplink | See section 4. |
 | Label | Hub ID and a QR code for connecting devices (section 4, "Reaching the hub securely") | The label is what staff and support use to find the hub. A Pi has no screen to show the code on. |
 
