@@ -140,6 +140,7 @@
   - on other systems, `hub service` prints "Windows only" and exits with 2.
 - [ ] **Step 1:** A test of the argument parsing, which is plain Go. Then implement with `windows/svc` and `windows/svc/mgr`.
 - [ ] **Step 2:** `GOOS=windows go vet ./cmd/hub` and `go test ./cmd/hub`.
+- [ ] **Step 2b:** On Windows the hub logs to `<data_dir>\hub.log` (capped at 10 MB, one old file kept), since a service or a `windowsgui` program has no console. `logfile_test.go` tests the cap on any OS.
 - [ ] **Step 3: Notes for the VM:** the service account's rights on the data folder are set by the installer (Task 7), not here.
 - [ ] **Step 4:** Commit: "hub service: run and install the Windows service".
 
@@ -190,7 +191,7 @@
   - files under `%LOCALAPPDATA%`;
   - `hub init -per-user`;
   - `certutil -user -addstore Root`;
-  - a Startup entry (`hub.exe serve -config …`, no window: `-windowsgui` build? no, a hidden start through the uninstaller-free `wscript` stub);
+  - a Startup entry (`hub.exe serve -config …`); `hub.exe` is built with `-H windowsgui`, so no console window opens, and the hub logs to `<data>\hub.log` (Task 5);
   - the shortcut and the uninstall entry.
 
   **Uninstall:** `hub service uninstall`; removes the firewall rules, the hosts line and the authority; keeps the data unless "remove data" is ticked.
