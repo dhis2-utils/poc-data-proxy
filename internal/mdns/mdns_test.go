@@ -66,16 +66,26 @@ func answers(t *testing.T, b []byte) (id uint16, out []rr) {
 	return id, out
 }
 
+func nets(cidrs ...string) func() []*net.IPNet {
+	return func() []*net.IPNet {
+		var out []*net.IPNet
+		for _, c := range cidrs {
+			ip, n, _ := net.ParseCIDR(c)
+			n.IP = ip
+			out = append(out, n)
+		}
+		return out
+	}
+}
+
 func responder() *Responder {
-	return &Responder{Name: "dhis2.local", Addrs: func() []net.IP {
-		return []net.IP{net.ParseIP("192.168.1.20"), net.ParseIP("8.8.8.8"), net.ParseIP("fe80::1"), net.ParseIP("10.0.0.5")}
-	}}
+	return &Responder{Name: "dhis2.local", Nets: nets("192.168.1.20/24", "8.8.8.8/24", "fe80::1/64", "10.0.0.5/8")}
 }
 
 func TestAnswersItsName(t *testing.T) {
 	r := responder()
 	for _, q := range [][]byte{query("dhis2.local", 1, false), query("DHIS2.Local", 1, true), query("dhis2.local", 255, false)} {
-		_, rrs := answers(t, r.Answer(q, false))
+		_, rrs := answers(t, r.Answer(q, nil, false))
 		if len(rrs) != 2 {
 			t.Fatalf("%d answers: %+v", len(rrs), rrs)
 		}
@@ -88,7 +98,7 @@ func TestAnswersItsName(t *testing.T) {
 	}
 	// A legacy unicast query (not from port 5353) gets its ID and question back, with a
 	// short TTL (RFC 6762, 6.7).
-	id, rrs := answers(t, r.Answer(query("dhis2.local", 1, false), true))
+	id, rrs := answers(t, r.Answer(query("dhis2.local", 1, false), nil, true))
 	if id != 0x1234 || len(rrs) != 2 || rrs[0].ttl > 10 {
 		t.Fatalf("legacy: id %x, %+v", id, rrs)
 	}
@@ -97,13 +107,13 @@ func TestAnswersItsName(t *testing.T) {
 func TestResponderIgnoresOthers(t *testing.T) {
 	r := responder()
 	for _, q := range [][]byte{query("other.local", 1, false), query("dhis2.local", 28, false), query("dhis2", 1, false)} {
-		if got := r.Answer(q, false); got != nil {
+		if got := r.Answer(q, nil, false); got != nil {
 			t.Errorf("answered %x", got)
 		}
 	}
 	resp := query("dhis2.local", 1, false)
 	resp[2] = 0x84 // a response, not a query
-	if r.Answer(resp, false) != nil {
+	if r.Answer(resp, nil, false) != nil {
 		t.Error("answered a response")
 	}
 }
@@ -117,7 +127,7 @@ func TestResponderMalformed(t *testing.T) {
 	many[4] = 0x03
 	long := append([]byte{0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}, []byte(strings.Repeat("\x3f"+strings.Repeat("a", 63), 5))...)
 	for _, b := range [][]byte{nil, q[:5], q[:len(q)-3], loop, many, long} {
-		if got := r.Answer(b, false); got != nil {
+		if got := r.Answer(b, nil, false); got != nil {
 			t.Errorf("answered malformed %x", b)
 		}
 	}
@@ -126,8 +136,8 @@ func TestResponderMalformed(t *testing.T) {
 func TestConflict(t *testing.T) {
 	own := []net.IP{net.ParseIP("192.168.1.20")}
 	resp := func(ip string) []byte {
-		other := &Responder{Name: "dhis2.local", Addrs: func() []net.IP { return []net.IP{net.ParseIP(ip)} }}
-		return other.Answer(query("dhis2.local", 1, false), true)
+		other := &Responder{Name: "dhis2.local", Nets: nets(ip + "/24")}
+		return other.Answer(query("dhis2.local", 1, false), nil, true)
 	}
 	ask := func(answers ...[]byte) func([]byte) [][]byte { return func([]byte) [][]byte { return answers } }
 	ctx := context.Background()
@@ -186,5 +196,19 @@ func TestRunSharesThePort(t *testing.T) {
 	defer cancel()
 	if err := responder().Run(ctx); err != nil {
 		t.Fatalf("could not share port 5353: %v", err)
+	}
+}
+
+// Review: a PC has virtual networks too (WSL, VirtualBox, VPN): a device gets the
+// address on its own network (RFC 6762, 15), not one it cannot reach.
+func TestAnswersOnTheQueriersNetwork(t *testing.T) {
+	r := &Responder{Name: "dhis2.local", Nets: nets("192.168.1.20/24", "172.28.16.1/20", "192.168.56.1/24")}
+	_, rrs := answers(t, r.Answer(query("dhis2.local", 1, false), net.ParseIP("192.168.1.33"), false))
+	if len(rrs) != 1 || !rrs[0].ip.Equal(net.ParseIP("192.168.1.20")) {
+		t.Fatalf("%+v", rrs)
+	}
+	// From somewhere no network of ours holds (routed): every address, as before.
+	if _, rrs := answers(t, r.Answer(query("dhis2.local", 1, false), net.ParseIP("10.9.9.9"), false)); len(rrs) != 3 {
+		t.Fatalf("%+v", rrs)
 	}
 }

@@ -40,6 +40,17 @@ for want in 'DHIS2FacilityHub' 'service install' 'netsh advfirewall firewall add
   'icacls' 'hub init' 'powercfg' 'Add-MpPreference' 'install.ini' 'CurrentVersion\Uninstall'; do
   check "the installer script: $want" grep -qF -- "$want" <<<"$STR"
 done
+# Review fixes: an elevated installer must not run or trust anything an ordinary user
+# could have put in ProgramData first.
+check "the data folder is taken over before anything in it runs" python3 - "$(dirname "$(realpath "$0")")/installer.nsi" <<'PY'
+import sys
+s = open(sys.argv[1]).read()
+own, run = s.find("/setowner *S-1-5-32-544"), s.find('"$HubExe" version')
+sys.exit(0 if 0 <= own < run else 1)
+PY
+check "the per-user move reads the user's own folder" grep -q 'UserAppDataLocal' <<<"$STR"
+check "the installer waits for the service to stop" grep -q 'service stop' <<<"$STR"
+check "uninstalling removes the Defender exclusion" grep -q 'Remove-MpPreference' <<<"$STR"
 echo
 if [ "$FAILS" -gt 0 ]; then echo "$FAILS checks failed"; exit 1; fi
 echo "all checks passed"

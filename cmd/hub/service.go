@@ -21,7 +21,7 @@ type serviceArgs struct {
 func parseServiceArgs(args []string) (serviceArgs, error) {
 	var a serviceArgs
 	if len(args) == 0 {
-		return a, errors.New("hub service run|install|uninstall")
+		return a, errors.New("hub service run|install|stop|uninstall")
 	}
 	fs := flag.NewFlagSet("service", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -40,9 +40,9 @@ func parseServiceArgs(args []string) (serviceArgs, error) {
 		if *cfg == "" || *exe == "" {
 			return a, errors.New("hub service install needs -config and -exe")
 		}
-	case "uninstall":
+	case "uninstall", "stop":
 	default:
-		return a, errors.New("hub service run|install|uninstall")
+		return a, errors.New("hub service run|install|stop|uninstall")
 	}
 	return serviceArgs{action: args[0], config: *cfg, exe: *exe, noStart: *noStart}, nil
 }

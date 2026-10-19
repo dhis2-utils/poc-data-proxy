@@ -11,9 +11,10 @@ func TestServiceArgs(t *testing.T) {
 		{[]string{"run", "-config", `C:\ProgramData\DHIS2 Facility Hub\hub.yaml`}, "run", `C:\ProgramData\DHIS2 Facility Hub\hub.yaml`, "", false},
 		{[]string{"install", "-config", "hub.yaml", "-exe", `C:\x\hub.exe`}, "install", "hub.yaml", `C:\x\hub.exe`, false},
 		{[]string{"uninstall"}, "uninstall", "", "", false},
+		{[]string{"stop"}, "stop", "", "", false},
 		{[]string{"install", "-config", "hub.yaml", "-exe", "hub.exe", "-nostart"}, "install", "hub.yaml", "hub.exe", false},
 		{[]string{"install", "-config", "hub.yaml"}, "", "", "", true}, // no exe
-		{[]string{"run"}, "", "", "", true}, // no config
+		{[]string{"run"}, "", "", "", true},                            // no config
 		{[]string{"restart"}, "", "", "", true},
 		{nil, "", "", "", true},
 	} {

@@ -57,3 +57,15 @@ func TestStickFoundByFolder(t *testing.T) {
 		t.Fatalf("id %q", e.ID())
 	}
 }
+
+// Review: an older stick that still holds the hub's folder never overrides the choice.
+func TestChoiceBeatsAnOldStick(t *testing.T) {
+	// E (old, holds the folder) and F (chosen) both plugged in: F.
+	if root, _, _ := Locate([]Drive{e, f}, "hub-abc", f.ID(), has(`E:\`)); root != `F:\` {
+		t.Fatalf("got %q", root)
+	}
+	// Only the old one plugged in: the chosen one is missing; the old one is not used.
+	if root, _, missing := Locate([]Drive{e}, "hub-abc", f.ID(), has(`E:\`)); root != "" || !missing {
+		t.Fatalf("got %q, missing %v", root, missing)
+	}
+}

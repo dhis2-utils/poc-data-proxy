@@ -44,6 +44,7 @@ VIAddVersionKey "LegalCopyright" "BSD-3-Clause, University of Oslo"
 
 Var DataDir
 Var HubExe
+Var UserAppDataLocal
 Var Url
 Var CAName
 
@@ -87,11 +88,38 @@ FunctionEnd
   StrCpy $HubExe "$DataDir\bin\hub.exe"
 !macroend
 
+; Before anything in ProgramData runs or is trusted: ordinary users may create folders
+; there, so a folder this installer did not make (not owned by Administrators or SYSTEM)
+; is moved aside unused, and the folder is taken over for Administrators and SYSTEM only.
+; The service's own account is added once the service exists.
+Function TakeOverDataDir
+  ${If} ${FileExists} "$DataDir\*.*"
+    nsExec::ExecToStack `powershell -NoProfile -NonInteractive -Command "(Get-Acl -LiteralPath '$DataDir').GetOwner([System.Security.Principal.SecurityIdentifier]).Value"`
+    Pop $0
+    Pop $1
+    ${WordFind} "$1" "S-1-5-32-544" "E+1" $2
+    ${If} ${Errors}
+      ${WordFind} "$1" "S-1-5-18" "E+1" $2
+      ${If} ${Errors}
+        ${GetTime} "" "L" $3 $4 $5 $6 $7 $8 $9
+        DetailPrint "Moving aside a hub folder this installer did not create (owner $1)."
+        Rename "$DataDir" "$DataDir.untrusted-$5$4$3$7$8$9"
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  CreateDirectory "$DataDir"
+  nsExec::ExecToLog 'icacls "$DataDir" /setowner *S-1-5-32-544 /T /C /Q'
+  Pop $0
+  nsExec::ExecToLog 'icacls "$DataDir" /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" /T /C /Q'
+  Pop $0
+FunctionEnd
+
 Function StopHub
   ${If} $MultiUser.InstallMode == "AllUsers"
-    nsExec::Exec 'sc stop ${SERVICE}'
-    Pop $0
-    Sleep 3000
+    ${If} ${FileExists} "$HubExe"
+      nsExec::ExecToLog '"$HubExe" service stop' ; waits until it has stopped
+      Pop $0
+    ${EndIf}
   ${Else}
     ReadEnvStr $R0 USERNAME
     nsExec::Exec 'taskkill /F /FI "USERNAME eq $R0" /IM hub.exe'
@@ -102,12 +130,19 @@ FunctionEnd
 Section "!The hub" SecHub
   SectionIn RO
   !insertmacro SetDataDir
+  ${If} $MultiUser.InstallMode == "AllUsers"
+    Call TakeOverDataDir
+    ; The installing user's own local folder (in this mode $LOCALAPPDATA is ProgramData).
+    SetShellVarContext current
+    StrCpy $UserAppDataLocal "$LOCALAPPDATA"
+    SetShellVarContext all
+  ${EndIf}
   Call StopHub
 
   ; From a per-user hub to the whole PC: the installing user's hub moves along, so it
   ; keeps its ID, approval and certificate authority (devices notice nothing).
   ${If} $MultiUser.InstallMode == "AllUsers"
-  ${AndIf} ${FileExists} "$LOCALAPPDATA\${NAME}\ca.key"
+  ${AndIf} ${FileExists} "$UserAppDataLocal\${NAME}\ca.key"
   ${AndIfNot} ${FileExists} "$DataDir\ca.key"
     MessageBox MB_YESNO "Your own hub on this PC (installed for you only) can move to the whole-PC install, keeping its set-up. Move it?" /SD IDYES IDNO nomove
       ReadEnvStr $R0 USERNAME
@@ -115,8 +150,8 @@ Section "!The hub" SecHub
       Pop $0
       DeleteRegValue HKCU "${RUNKEY}" "${NAME}"
       CreateDirectory "$DataDir"
-      Delete "$LOCALAPPDATA\${NAME}\hub.yaml" ; written again for the new place
-      nsExec::Exec 'robocopy "$LOCALAPPDATA\${NAME}" "$DataDir" /E /MOVE /NFL /NDL /NJH /NJS'
+      Delete "$UserAppDataLocal\${NAME}\hub.yaml" ; written again for the new place
+      nsExec::Exec 'robocopy "$UserAppDataLocal\${NAME}" "$DataDir" /E /MOVE /NFL /NDL /NJH /NJS'
       Pop $0
     nomove:
   ${EndIf}
@@ -256,6 +291,9 @@ Section "un.The hub" UnSecHub
     nsExec::ExecToLog '"$HubExe" service uninstall'
     Pop $0
     nsExec::Exec 'netsh advfirewall firewall delete rule name="${NAME}"'
+    Pop $0
+    ; Else any user could recreate the folder and hide files where Defender does not look.
+    nsExec::Exec `powershell -NoProfile -NonInteractive -Command "Remove-MpPreference -ExclusionPath '$DataDir'"`
     Pop $0
     nsExec::Exec 'certutil -delstore Root "$CAName"'
     Pop $0

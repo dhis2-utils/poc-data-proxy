@@ -21,23 +21,24 @@ func (d Drive) ID() string { return fmt.Sprintf("%s-%08X", d.Label, d.Serial) }
 // mount point). A variable, so tests can plug in folders.
 var Removable = removableDrives
 
-// Locate finds the hub's stick among the drives: the one holding the hub's folder (its
-// letter may have changed), else the one a person chose. Never a guess: with no choice
+// Locate finds the hub's stick among the drives: the one a person chose (found by its
+// label and serial, whatever its letter), else, before any choice, one holding the
+// hub's folder. Never a guess: with no choice
 // made it returns the drives to ask about, and when the chosen one is gone it reports
 // it missing rather than use another.
 func Locate(drives []Drive, hubID, choice string, has func(root string) bool) (root string, ask []Drive, missing bool) {
-	for _, d := range drives {
-		if has(d.Root) {
-			return d.Root, nil, false
-		}
-	}
-	if choice != "" {
+	if choice != "" { // a person's choice wins, even over an older stick of this hub
 		for _, d := range drives {
 			if d.ID() == choice {
 				return d.Root, nil, false
 			}
 		}
 		return "", nil, true
+	}
+	for _, d := range drives {
+		if has(d.Root) {
+			return d.Root, nil, false
+		}
 	}
 	return "", drives, false
 }

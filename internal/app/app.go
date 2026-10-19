@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -152,13 +151,7 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 		StorePath: storePath, ui: u}
 	u.ChooseUSB = a2.Stick.Choose
 	if cfg.MDNS {
-		a2.MDNS = &mdns.Responder{Name: hubtls.Name, Addrs: func() []net.IP {
-			var ips []net.IP
-			for _, a := range hubtls.Addresses() {
-				ips = append(ips, net.ParseIP(a))
-			}
-			return ips
-		}}
+		a2.MDNS = &mdns.Responder{Name: hubtls.Name, Nets: mdns.InterfaceNets}
 	}
 	if cfg.Network == "networkmanager" {
 		a2.SetNet(&netsetup.Manager{R: netsetup.ExecRunner{}, DataDir: cfg.DataDir, HubID: h.HubID(), DnsmasqDir: cfg.NMDnsmasqDir})

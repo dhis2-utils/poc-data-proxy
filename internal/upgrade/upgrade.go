@@ -393,6 +393,23 @@ func (u *Upgrader) AfterBoot(ctx context.Context, selfStatusURL string) {
 		os.Remove(path)
 		return
 	}
+	if !u.H.Store.Unlocked() {
+		// Started locked (the key was not handed over): the migrated data has not been
+		// opened yet. Check it at the first unlock, and keep the old store till then.
+		slog.Warn("upgraded hub started locked; the upgrade is checked at the first staff login", "to", mk.To)
+		u.H.AfterUnlock(func() error {
+			if _, err := os.Stat(path); err == nil {
+				go u.confirm(ctx, selfStatusURL, path, mk)
+			}
+			return nil
+		})
+		return
+	}
+	u.confirm(ctx, selfStatusURL, path, mk)
+}
+
+// confirm health-checks a swapped-in version: it keeps it, or rolls back.
+func (u *Upgrader) confirm(ctx context.Context, selfStatusURL, path string, mk Marker) {
 	reason := u.healthCheck(ctx, selfStatusURL)
 	if reason == "" {
 		os.Remove(path)

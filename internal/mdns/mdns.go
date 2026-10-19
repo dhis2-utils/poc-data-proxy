@@ -28,8 +28,8 @@ var group = &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: port}
 
 // Responder answers queries for Name.
 type Responder struct {
-	Name  string          // e.g. "dhis2.local"
-	Addrs func() []net.IP // the machine's addresses; only private IPv4 ones are answered
+	Name string              // e.g. "dhis2.local"
+	Nets func() []*net.IPNet // the machine's addresses with their networks (InterfaceNets)
 
 	silenced atomic.Bool
 }
@@ -37,9 +37,12 @@ type Responder struct {
 // Silenced reports whether another device answers the name (the hub's page says so).
 func (r *Responder) Silenced() bool { return r.silenced.Load() }
 
-// Answer returns the response to a query, or nil. A legacy query (one not from port
-// 5353, RFC 6762 section 6.7) gets its ID and question back and a short TTL.
-func (r *Responder) Answer(q []byte, legacy bool) []byte {
+// Answer returns the response to a query from the device at from (nil if unknown), or
+// nil. It answers with the private IPv4 addresses on that device's network (RFC 6762,
+// section 15: not a WSL or VPN adapter's), or all of them when no network of ours holds
+// it. A legacy query (one not from port 5353, section 6.7) gets its ID and question
+// back and a short TTL.
+func (r *Responder) Answer(q []byte, from net.IP, legacy bool) []byte {
 	if len(q) < 12 || q[2]&0x80 != 0 || q[2]&0x78 != 0 { // a response, or not a standard query
 		return nil
 	}
@@ -67,11 +70,17 @@ func (r *Responder) Answer(q []byte, legacy bool) []byte {
 	if !asked {
 		return nil
 	}
-	var ips []net.IP
-	for _, ip := range r.Addrs() {
-		if v4 := ip.To4(); v4 != nil && v4.IsPrivate() {
+	var ips, near []net.IP
+	for _, n := range r.Nets() {
+		if v4 := n.IP.To4(); v4 != nil && v4.IsPrivate() {
 			ips = append(ips, v4)
+			if from != nil && n.Contains(from) {
+				near = append(near, v4)
+			}
 		}
+	}
+	if len(near) > 0 {
+		ips = near
 	}
 	if len(ips) == 0 {
 		return nil
@@ -217,7 +226,11 @@ func (r *Responder) Serve(ctx context.Context, conn net.PacketConn) {
 		}
 		udp, _ := from.(*net.UDPAddr)
 		legacy := udp == nil || udp.Port != port
-		resp := r.Answer(buf[:n], legacy)
+		var fromIP net.IP
+		if udp != nil {
+			fromIP = udp.IP
+		}
+		resp := r.Answer(buf[:n], fromIP, legacy)
 		if resp == nil {
 			continue
 		}
@@ -244,7 +257,11 @@ func (r *Responder) Run(ctx context.Context) error {
 	}
 	go r.Serve(ctx, conn)
 	check := func() {
-		other := Conflict(ctx, askNetwork, r.Name, r.Addrs())
+		var own []net.IP
+		for _, n := range r.Nets() {
+			own = append(own, n.IP)
+		}
+		other := Conflict(ctx, askNetwork, r.Name, own)
 		if other != r.silenced.Load() {
 			r.silenced.Store(other)
 			if other {
@@ -289,4 +306,17 @@ func askNetwork(q []byte) [][]byte {
 		}
 		out = append(out, buf[:n])
 	}
+}
+
+// InterfaceNets is the machine's addresses with their networks.
+func InterfaceNets() []*net.IPNet {
+	var out []*net.IPNet
+	if addrs, err := net.InterfaceAddrs(); err == nil {
+		for _, a := range addrs {
+			if n, ok := a.(*net.IPNet); ok {
+				out = append(out, n)
+			}
+		}
+	}
+	return out
 }

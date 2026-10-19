@@ -21,7 +21,7 @@ func setupTokenPath(h *core.Hub) string { return h.SetupCodePath() }
 
 // EnsureSetupToken creates the setup token if setup needs one and none exists.
 func EnsureSetupToken(h *core.Hub) error {
-	if h.Mode() != core.ModeSetup || h.SetupMode() != core.SetupToken {
+	if h.Mode() != core.ModeSetup || !needToken(h) {
 		return nil
 	}
 	if _, err := os.Stat(setupTokenPath(h)); err == nil {
@@ -39,6 +39,12 @@ func EnsureSetupToken(h *core.Hub) error {
 		sb.WriteByte(tokenChars[int(c)%len(tokenChars)]) // 256 is a multiple of 32: no bias
 	}
 	return os.WriteFile(setupTokenPath(h), []byte(sb.String()+"\n"), 0o600)
+}
+
+// needToken: set-up needs the code from the box's USB stick, unless set-up only
+// opens on the machine itself (Windows: being at the PC proves presence).
+func needToken(h *core.Hub) bool {
+	return h.SetupMode() == core.SetupToken && !h.Cfg.SetupLocalOnly
 }
 
 func checkSetupToken(h *core.Hub, given string) error {

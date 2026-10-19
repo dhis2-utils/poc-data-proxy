@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -9,6 +10,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -235,5 +238,41 @@ func TestDownloadIdleTimeout(t *testing.T) {
 	e.sync()
 	if d := time.Since(start); d > 1500*time.Millisecond {
 		t.Fatalf("a stalled download held the cycle for %v", d)
+	}
+}
+
+// Review: a hub that starts locked after an upgrade (the key handover failed) has not
+// opened its migrated data yet: the upgrade is confirmed, and the old store removed,
+// only after the first unlock checks it.
+func TestUpgradeConfirmedAfterUnlock(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.web("nurse_a").login()
+	prev := filepath.Join(e.dir, "hub.db.prev")
+	os.WriteFile(prev, []byte("the old store"), 0o600)
+	mk, _ := json.Marshal(upgrade.Marker{State: "swapped", From: "0.0.9", To: "0.1.0", ExePath: filepath.Join(e.dir, "x"),
+		PrevBinary: filepath.Join(e.dir, "y"), PrevStore: prev})
+	os.WriteFile(filepath.Join(e.dir, "upgrade.json"), mk, 0o600)
+	e.stop()
+	e.start() // locked: no handed-over key
+	if e.app.Hub.Store.Unlocked() {
+		t.Fatal("unlocked without a login")
+	}
+	e.app.Upgrader.AfterBoot(context.Background(), e.srv.URL+"/hub/status")
+	if _, err := os.Stat(prev); err != nil {
+		t.Fatal("the old store was removed before the migrated one was opened")
+	}
+	if r := lastUpgrade(e); r["result"] == "ok" {
+		t.Fatal("confirmed while locked")
+	}
+	e.web("nurse_a").login()
+	for i := 0; i < 50 && lastUpgrade(e)["result"] != "ok"; i++ {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if r := lastUpgrade(e); r["result"] != "ok" {
+		t.Fatalf("not confirmed after the unlock: %v", r)
+	}
+	if _, err := os.Stat(prev); err == nil {
+		t.Error("the old store stays after the confirmation")
 	}
 }

@@ -148,7 +148,7 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 		src := auth.Source(r)
 		if f := u.Auth.Throttled(src, "setup-code"); f != nil {
 			err = errors.New("too many wrong setup codes; try again later")
-		} else if h.SetupMode() == core.SetupToken {
+		} else if needToken(h) {
 			err = checkSetupToken(h, r.FormValue("setup_token"))
 			u.Auth.Count(src, "setup-code", err != nil)
 		}
@@ -285,7 +285,7 @@ func (u *UI) setupForm(p *pendingSetup) map[string]any {
 		restores = stick.Candidates(h.Cfg.USBDir)
 	}
 	return map[string]any{"CentralURL": h.Cfg.CentralURL, "Pinned": h.SetupMode() == core.SetupPinned,
-		"NeedToken": h.SetupMode() == core.SetupToken, "Hosts": strings.Join(h.Cfg.CentralHosts, ", "),
+		"NeedToken": needToken(h), "Hosts": strings.Join(h.Cfg.CentralHosts, ", "),
 		"HubID": h.HubID(), "Pending": p, "Step": "", "Restores": restores, "Net": u.netView()}
 }
 

@@ -28,6 +28,8 @@ func service(args []string) error {
 		return svc.Run(serviceName, &handler{config: a.config})
 	case "install":
 		return installService(a.exe, a.config, !a.noStart)
+	case "stop":
+		return stopService()
 	default:
 		return uninstallService()
 	}
@@ -107,6 +109,44 @@ func installService(exe, cfg string, start bool) error {
 	return s.Start()
 }
 
+// stopService stops the service and waits until it has (up to a minute): the installer
+// replaces hub.exe next, which Windows refuses while it runs.
+func stopService() error {
+	m, err := mgr.Connect()
+	if err != nil {
+		return err
+	}
+	defer m.Disconnect()
+	s, err := m.OpenService(serviceName)
+	if err != nil {
+		return nil // not installed
+	}
+	defer s.Close()
+	return waitStopped(s)
+}
+
+func waitStopped(s *mgr.Service) error {
+	st, err := s.Query()
+	if err != nil {
+		return err
+	}
+	if st.State != svc.Stopped && st.State != svc.StopPending {
+		if st, err = s.Control(svc.Stop); err != nil {
+			return err
+		}
+	}
+	for i := 0; i < 120 && st.State != svc.Stopped; i++ {
+		time.Sleep(500 * time.Millisecond)
+		if st, err = s.Query(); err != nil {
+			return err
+		}
+	}
+	if st.State != svc.Stopped {
+		return fmt.Errorf("the service did not stop within a minute")
+	}
+	return nil
+}
+
 func uninstallService() error {
 	m, err := mgr.Connect()
 	if err != nil {
@@ -118,14 +158,7 @@ func uninstallService() error {
 		return nil // not installed
 	}
 	defer s.Close()
-	if st, err := s.Control(svc.Stop); err == nil {
-		for i := 0; i < 60 && st.State != svc.Stopped; i++ {
-			time.Sleep(500 * time.Millisecond)
-			if st, err = s.Query(); err != nil {
-				break
-			}
-		}
-	}
+	waitStopped(s)
 	return s.Delete()
 }
 
