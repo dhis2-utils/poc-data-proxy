@@ -178,7 +178,11 @@ func (u *UI) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodPost {
-		u.render(w, "login", nil)
+		var data map[string]any
+		if u.H.FromThisMachine(r.RemoteAddr) {
+			data = map[string]any{"Addresses": u.H.DeviceAddresses()}
+		}
+		u.render(w, "login", data)
 		return
 	}
 	r.ParseForm()

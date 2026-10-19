@@ -8,5 +8,9 @@
 <label for="p">Password</label><input id="p" type="password" name="password" autocomplete="current-password" required>
 <p><button type="submit">Log in</button></p>
 <p class="muted">Use your DHIS2 account. Only members of the hub setup user group can open the admin page.</p>
-</form></div></main>
+</form></div>
+{{with .}}{{with .Addresses}}<div class="card" style="max-width:460px"><h2>Devices on this network</h2>
+<p>Open the hub at <span class="mono">{{index . 0}}</span>.</p>
+{{if gt (len .) 1}}<p class="muted">Where that name does not work: {{range $i, $a := .}}{{if $i}}<span class="mono">{{$a}}</span> {{end}}{{end}}</p>{{end}}
+</div>{{end}}{{end}}</main>
 {{template "foot"}}

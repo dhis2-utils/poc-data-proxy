@@ -105,6 +105,11 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/hub/ui", http.StatusFound)
 		return
 	}
+	if h.Cfg.SetupLocalOnly && !h.FromThisMachine(r.RemoteAddr) {
+		// A hub on a PC: being at the PC proves presence at the facility.
+		http.Error(w, "Set up this hub on the PC it runs on: open https://localhost there.", http.StatusForbidden)
+		return
+	}
 	if r.Method == http.MethodGet {
 		u.render(w, "setup", u.setupForm(nil))
 		return

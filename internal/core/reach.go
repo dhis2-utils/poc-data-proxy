@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/central"
+	"github.com/dhis2/facility-hub/internal/hubtls"
 )
 
 // MetaProxy is the web proxy for outbound connections set on the admin page.
@@ -107,4 +108,33 @@ func (h *Hub) SetProxy(p string) error {
 	}
 	central.SetProxy(p)
 	return nil
+}
+
+// FromThisMachine reports whether a request comes from the machine the hub runs on:
+// loopback or one of its own addresses.
+func (h *Hub) FromThisMachine(remoteAddr string) bool {
+	ip, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		ip = remoteAddr
+	}
+	rip := net.ParseIP(ip)
+	return rip != nil && (rip.IsLoopback() || h.ownAddress(rip.String()))
+}
+
+// DeviceAddresses are the addresses other devices open the hub at, for the hub's page
+// on the machine itself: dhis2.local, then each private IPv4 address, with the HTTPS
+// port when it is not 443.
+func (h *Hub) DeviceAddresses() []string {
+	_, port, _ := net.SplitHostPort(h.Cfg.Listen)
+	withPort := func(host string) string {
+		if port == "" || port == "443" {
+			return "https://" + host
+		}
+		return "https://" + net.JoinHostPort(host, port)
+	}
+	out := []string{withPort("dhis2.local")}
+	for _, a := range hubtls.Addresses() {
+		out = append(out, withPort(a))
+	}
+	return out
 }
