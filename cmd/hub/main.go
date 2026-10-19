@@ -52,6 +52,8 @@ func main() {
 		err = keygen(args)
 	case "init":
 		err = hubInit(args)
+	case "service":
+		err = service(args)
 	case "release":
 		err = release(args)
 	case "version":
@@ -85,13 +87,19 @@ func serve(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	cfgPath := fs.String("config", "/etc/hub/hub.yaml", "image defaults file (spec 6.1)")
 	fs.Parse(args)
-	cfg, err := config.Load(*cfgPath)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return serveCtx(ctx, *cfgPath)
+}
+
+// serveCtx runs the hub until ctx ends (a signal, or the Windows service manager).
+func serveCtx(ctx context.Context, cfgPath string) error {
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return err
 	}
+	logToFile(cfg.DataDir)
 	setMemoryLimit()
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	var srv *http.Server
 	shutdown := func() {
