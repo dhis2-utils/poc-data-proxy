@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { flags, Heartbeat, uid, visible } from './flags'
+import { canManage, flags, Heartbeat, uid, visible } from './flags'
 
 const now = new Date('2026-10-18T12:00:00Z')
 const ago = (hours: number) =>
@@ -104,5 +104,24 @@ describe('uid', () => {
         ]) {
             expect(uid(bad)).toBe(false)
         }
+    })
+})
+
+describe('canManage', () => {
+    it('lets superusers and hub managers approve and move hubs', () => {
+        expect(canManage({ superuser: true, groups: [] }, undefined)).toBe(true)
+        expect(
+            canManage(
+                { superuser: false, groups: ['G1', 'Mgr'] },
+                { managers: 'Mgr' }
+            )
+        ).toBe(true)
+        expect(
+            canManage({ superuser: false, groups: ['G1'] }, { managers: 'Mgr' })
+        ).toBe(false)
+        expect(
+            canManage({ superuser: false, groups: ['G1'] }, { managers: '' })
+        ).toBe(false)
+        expect(canManage({ superuser: false, groups: [] }, null)).toBe(false)
     })
 })

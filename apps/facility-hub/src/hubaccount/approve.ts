@@ -65,6 +65,8 @@ export type ApproveOptions = {
     group: string
     /** The user role hub accounts get: it must have no authorities. */
     role: string
+    /** The hub managers group, which shares the move keys (missing: no one). */
+    managers?: string
     /** Called as each step starts, with what it does. */
     onStep?: (step: string) => void
 }
@@ -91,7 +93,7 @@ const step = async <T>(
 export const approve = async (
     api: Api,
     { hubID, code }: { hubID: string; code: string },
-    { group, role, onStep }: ApproveOptions
+    { group, role, managers, onStep }: ApproveOptions
 ): Promise<void> => {
     const regPath = `/dataStore/facility-hub-registry/${encodeURIComponent(hubID)}`
     const entry = (await step(
@@ -127,13 +129,8 @@ export const approve = async (
         password: newPassword(),
         moveKey: toBase64(moveKey),
     }
-    const uid = await account(api, { creds, facility, role, onStep })
+    await account(api, { creds, facility, group, role, onStep })
 
-    await step(
-        'Adding it to the hub accounts group',
-        () => api.request('POST', `/userGroups/${group}/users/${uid}`),
-        onStep
-    )
     const keyPath = `/dataStore/facility-hub-keys/${encodeURIComponent(hubID)}`
     await step(
         'Removing its old move key',
@@ -172,7 +169,10 @@ export const approve = async (
                     object: {
                         publicAccess: '--------',
                         userAccesses: [],
-                        userGroupAccesses: [],
+                        // The hub managers make move codes and approve again; no one else.
+                        userGroupAccesses: managers
+                            ? [{ id: managers, access: 'rw------' }]
+                            : [],
                     },
                 }
             ),
@@ -224,11 +224,13 @@ const account = async (
     {
         creds,
         facility,
+        group,
         role,
         onStep,
     }: {
         creds: { username: string; password: string }
         facility: string
+        group: string
         role: string
         onStep?: (s: string) => void
     }
@@ -294,6 +296,13 @@ const account = async (
                             path: '/password',
                             value: creds.password,
                         },
+                        // The group in the user, not through the group: DHIS2 lets hub
+                        // managers add members that way (F_USER_GROUPS_READ_ONLY_ADD_MEMBERS).
+                        {
+                            op: 'add',
+                            path: '/userGroups',
+                            value: [{ id: group }],
+                        },
                     ],
                     'application/json-patch+json'
                 ),
@@ -316,6 +325,7 @@ const account = async (
                 dataViewOrganisationUnits: ou,
                 teiSearchOrganisationUnits: ou,
                 userRoles: [{ id: role }],
+                userGroups: [{ id: group }],
             }),
         onStep
     )

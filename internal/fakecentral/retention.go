@@ -121,6 +121,7 @@ func (c *Central) createUser(w http.ResponseWriter, r *http.Request) {
 		OrganisationUnits      []struct{ ID string } `json:"organisationUnits"`
 		DataView               []struct{ ID string } `json:"dataViewOrganisationUnits"`
 		Search                 []struct{ ID string } `json:"teiSearchOrganisationUnits"`
+		Groups                 []struct{ ID string } `json:"userGroups"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Username == "" {
 		webMessage(w, 400, "bad user", "")
@@ -145,7 +146,7 @@ func (c *Central) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 	// Created with a role without authorities, as hub accounts are.
 	c.Users[in.Username] = &User{UID: in.ID, Username: in.Username, OrgUnits: ous, DataViewOrgUnits: ids(in.DataView),
-		SearchOrgUnits: ids(in.Search), Authorities: []string{}, StageRead: map[string]bool{}, StageWrite: map[string]bool{}}
+		SearchOrgUnits: ids(in.Search), Authorities: []string{}, Groups: ids(in.Groups), StageRead: map[string]bool{}, StageWrite: map[string]bool{}}
 	c.passwords[in.Username] = in.Password
 	c.mu.Unlock()
 	writeJSON(w, 201, map[string]any{"httpStatus": "Created", "httpStatusCode": 201, "status": "OK", "response": map[string]any{"uid": in.ID}})
@@ -175,16 +176,26 @@ func (c *Central) addToGroup(w http.ResponseWriter, p string) {
 func (c *Central) shareEntry(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Object struct {
-			UserAccesses []struct{ ID, Access string } `json:"userAccesses"`
+			UserAccesses      []struct{ ID, Access string } `json:"userAccesses"`
+			UserGroupAccesses []struct{ ID, Access string } `json:"userGroupAccesses"`
 		} `json:"object"`
 	}
 	json.NewDecoder(r.Body).Decode(&in)
 	rs, ws := map[string]bool{}, map[string]bool{}
+	c.mu.Lock()
 	for _, a := range in.Object.UserAccesses {
 		rs[a.ID] = strings.HasPrefix(a.Access, "r")
 		ws[a.ID] = strings.HasPrefix(a.Access, "rw")
 	}
-	c.mu.Lock()
+	// A group's access goes to its members.
+	for _, a := range in.Object.UserGroupAccesses {
+		for _, u := range c.Users {
+			if slices.Contains(u.Groups, a.ID) {
+				rs[u.UID] = rs[u.UID] || strings.HasPrefix(a.Access, "r")
+				ws[u.UID] = ws[u.UID] || strings.HasPrefix(a.Access, "rw")
+			}
+		}
+	}
 	if c.readers == nil {
 		c.readers, c.writers = map[string]map[string]bool{}, map[string]map[string]bool{}
 	}
@@ -239,7 +250,10 @@ func (c *Central) findUser(w http.ResponseWriter, r *http.Request) {
 
 // patchUser handles PATCH /api/users/{id} replacing the password (JSON patch).
 func (c *Central) patchUser(w http.ResponseWriter, r *http.Request, id string) {
-	var ops []struct{ Op, Path, Value string }
+	var ops []struct {
+		Op, Path string
+		Value    json.RawMessage
+	}
 	json.NewDecoder(r.Body).Decode(&ops)
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -248,11 +262,21 @@ func (c *Central) patchUser(w http.ResponseWriter, r *http.Request, id string) {
 			continue
 		}
 		for _, op := range ops {
-			if op.Op == "replace" && op.Path == "/password" {
+			switch {
+			case op.Op == "replace" && op.Path == "/password":
+				var pw string
+				json.Unmarshal(op.Value, &pw)
 				if c.passwords == nil {
 					c.passwords = map[string]string{}
 				}
-				c.passwords[u.Username] = op.Value
+				c.passwords[u.Username] = pw
+			case (op.Op == "add" || op.Op == "replace") && op.Path == "/userGroups":
+				var gs []struct{ ID string }
+				json.Unmarshal(op.Value, &gs)
+				u.Groups = nil
+				for _, g := range gs {
+					u.Groups = append(u.Groups, g.ID)
+				}
 			}
 		}
 		writeJSON(w, 200, map[string]any{"status": "OK"})

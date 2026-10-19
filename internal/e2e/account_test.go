@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -80,6 +81,16 @@ func TestHubAccount(t *testing.T) {
 	}
 	if u := e.central.Users[id]; u == nil || len(u.OrgUnits) != 1 || u.OrgUnits[0] != fc.Facility {
 		t.Fatalf("the hub's account is not scoped to its facility: %+v", u)
+	}
+	// In the hub accounts group, named when the user is created: DHIS2 lets a hub
+	// manager (not a superuser) add members that way, not through the group itself.
+	if u := e.central.Users[id]; !slices.Contains(u.Groups, "HubGrpAccts") {
+		t.Errorf("the hub's account is not in the hub accounts group: %v", u.Groups)
+	}
+	for r, n := range e.central.Requests {
+		if strings.HasPrefix(r, "POST /api/userGroups/") && n > 0 {
+			t.Errorf("approval used the group endpoint: %s", r)
+		}
 	}
 	if err := h.RefreshCatalog(context.Background()); err != nil {
 		t.Fatal(err)
@@ -212,6 +223,36 @@ func TestMoveKeyOnlyForAdministrators(t *testing.T) {
 		if resp.StatusCode == 200 {
 			t.Error("the hub's own token reads the move key")
 		}
+	}
+}
+
+// Hub managers (a user group the national team names) read and replace move keys
+// without being superusers; other staff do not read them.
+func TestMoveKeyForManagers(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	h := e.app.Hub
+	e.central.Users["nurse_b"].Groups = append(e.central.Users["nurse_b"].Groups, "HubGrpMgrs")
+	opts := e.approveOpts()
+	opts.Managers = "HubGrpMgrs"
+	if _, err := hubaccount.Approve(context.Background(), opts, []hubaccount.Request{{HubID: h.HubID(), Code: h.AccountCode()}}); err != nil {
+		t.Fatal(err)
+	}
+	read := func(user string) int {
+		req, _ := http.NewRequest("GET", e.cSrv.URL+"/api/dataStore/facility-hub-keys/"+h.HubID(), nil)
+		req.SetBasicAuth(user, fc.Password)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if st := read("nurse_b"); st != 200 {
+		t.Errorf("a hub manager cannot read the move key: %d", st)
+	}
+	if st := read("nurse_a"); st == 200 {
+		t.Error("a staff member who is not a hub manager reads the move key")
 	}
 }
 

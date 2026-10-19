@@ -14,7 +14,11 @@ const hubID = 'hub-Abc123XyZ90'
 const facility = 'DiszpKrYNg8'
 const hubPriv = new Uint8Array(32).fill(7)
 const hubPub = x25519.getPublicKey(hubPriv)
-const opts = { group: 'HubGrpAccts', role: 'HubRoleAcct' }
+const opts = {
+    group: 'HubGrpAccts',
+    role: 'HubRoleAcct',
+    managers: 'HubGrpMgrs',
+}
 
 // open is the hub's side (internal/hubaccount.Open), for checking what was sealed.
 const open = (box: Uint8Array) => {
@@ -67,6 +71,10 @@ describe('approve', () => {
         expect(user.teiSearchOrganisationUnits).toEqual([facility])
         expect(user.roles).toEqual([opts.role])
         expect(user.groups).toEqual([opts.group])
+        // Named in the user, not added through the group: hub managers may only do the former.
+        expect(api.log.filter((l) => l.startsWith('POST /userGroups'))).toEqual(
+            []
+        )
 
         const reg = api.entry('facility-hub-registry', hubID)!
         expect(reg.setupBy).toBe('nurse') // the rest of the entry is kept
@@ -86,7 +94,7 @@ describe('approve', () => {
             object: {
                 publicAccess: '--------',
                 userAccesses: [],
-                userGroupAccesses: [],
+                userGroupAccesses: [{ id: 'HubGrpMgrs', access: 'rw------' }],
             },
         })
         expect(steps.length).toBeGreaterThan(3)
@@ -157,7 +165,7 @@ describe('approve', () => {
             dataViewOrganisationUnits: [],
             teiSearchOrganisationUnits: [facility],
             roles: [opts.role],
-            groups: [opts.group],
+            groups: [],
             ...change,
         }
     }
@@ -167,6 +175,7 @@ describe('approve', () => {
         existing(api)
         await approve(api, { hubID, code }, opts)
         expect(Object.keys(api.users)).toEqual(['HubUser0001'])
+        expect(api.users.HubUser0001.groups).toEqual([opts.group])
         expect(api.users.HubUser0001.password).not.toBe('old')
         const reg = api.entry('facility-hub-registry', hubID)!
         expect(

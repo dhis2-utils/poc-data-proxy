@@ -13,7 +13,8 @@ pnpm start --proxy https://dhis2.example.org   # develop against an instance
 pnpm build                   # build/bundle/facility-hub-<version>.zip for App Management
 ```
 
-Users need the authority `M_facilityhub` to open it; superusers (`ALL`) also see
-Approvals and Central moves. `scripts/demo-facility-hubs.py` adds demo hubs to a test
+Users need the authority `M_facilityhub` to open it; hub managers (members of the
+group named on the Approvals page) and superusers also see Approvals and Central moves.
+Setting up hub managers: docs/FACILITY-HUB-APP.md, "Hub managers". `scripts/demo-facility-hubs.py` adds demo hubs to a test
 instance. The live test is `TestFacilityHubApp` (`internal/live`), which installs the
 built zip.

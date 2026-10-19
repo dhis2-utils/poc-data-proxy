@@ -123,3 +123,14 @@ export const visible = (
  * lookup).
  */
 export const uid = (s: string) => /^[A-Za-z][A-Za-z0-9]{10}$/.test(s)
+
+/**
+ * Whether a user approves hubs and makes move codes: a superuser, or a member of the
+ * hub managers group the national team named (facility-hub-admin/accounts).
+ */
+export const canManage = (
+    me: { superuser: boolean; groups: string[] },
+    settings?: { managers?: string } | null
+): boolean =>
+    me.superuser ||
+    (!!settings?.managers && me.groups.includes(settings.managers))

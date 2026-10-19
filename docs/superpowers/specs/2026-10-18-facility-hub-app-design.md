@@ -1,6 +1,6 @@
 # Facility Hub app, first version (design)
 
-Status: agreed in conversation 2026-10-17/18, scope "A. Operations core". The contract with the hubs is [docs/FACILITY-HUB-APP.md](../../FACILITY-HUB-APP.md); the app's other duties, left for later, are in DEPLOYMENT.md section 6.
+Status: agreed in conversation 2026-10-17/18, scope "A. Operations core". Changed 2026-10-19: hub managers, not only superusers, approve hubs and make move codes (see "Hub managers" below). The contract with the hubs is [docs/FACILITY-HUB-APP.md](../../FACILITY-HUB-APP.md); the app's other duties, left for later, are in DEPLOYMENT.md section 6.
 
 ## Purpose and users
 
@@ -62,3 +62,7 @@ Left menu; the last two only for superusers.
 ## Docs
 
 FACILITY-HUB-APP.md gains the screens; TESTING.md how to run the app's tests; DEPLOYMENT.md marks the app built, except settings, version staging and bulk retries.
+
+## Hub managers (2026-10-19)
+
+A hub manager might not be a superuser. Members of a hub managers group, named once by a superuser on the Approvals page, see Approvals and Central moves and do everything there except change the settings. Measured on 2.42: a user with `F_USER_ADD`, `F_USER_VIEW`, `F_USER_GROUPS_READ_ONLY_ADD_MEMBERS` and read access to the hub accounts group creates the hub's user in that group (named in the new user; the group's member endpoint wants write access), replaces a hub user's password and groups, and reads, replaces and deletes move keys shared with the group; DHIS2 confines them to their own org units. Move keys and the planned move are shared with the group. Accepted trade-off: every manager can make move codes for every hub. Details in docs/FACILITY-HUB-APP.md, "Hub managers".

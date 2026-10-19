@@ -15,7 +15,7 @@ import {
 } from '@dhis2/ui'
 import React, { useMemo, useState } from 'react'
 import styles from './Pages.module.css'
-import { SuperuserOnly } from '@/components/hub/SuperuserOnly'
+import { ManagersOnly } from '@/components/hub/ManagersOnly'
 import { fromBase64 } from '@/hubaccount/approve'
 import { checkAddress, moveCode, normalizeAddress } from '@/hubaccount/codes'
 import { when } from '@/hubs/format'
@@ -275,11 +275,11 @@ const MoveCodes = () => {
 }
 
 export const MovesPage = () => (
-    <SuperuserOnly>
+    <ManagersOnly>
         <div className={styles.page}>
             <h1 className={styles.title}>{i18n.t('Central moves')}</h1>
             <PlannedMove />
             <MoveCodes />
         </div>
-    </SuperuserOnly>
+    </ManagersOnly>
 )

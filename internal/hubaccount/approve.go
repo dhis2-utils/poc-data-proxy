@@ -27,13 +27,17 @@ type Credentials struct {
 	MoveKey  []byte `json:"moveKey"` // base64 in JSON
 }
 
-// Options for Approve: central, an account allowed to create users, and the user
-// group (write access to the facility-hub namespaces) and the user role with no
-// authorities that hub accounts get.
+// Options for Approve: central, an account allowed to create users (a superuser, or a
+// hub manager: docs/FACILITY-HUB-APP.md, "Hub managers"), and the user group (write
+// access to the facility-hub namespaces) and the user role with no authorities that
+// hub accounts get.
 type Options struct {
 	Central, Username, Password string
 	Group, Role                 string
-	HTTP                        *http.Client
+	// Managers is the user group of hub managers, who approve hubs and make move codes
+	// without being superusers: move keys are shared with it ("" for none).
+	Managers string
+	HTTP     *http.Client
 }
 
 // Request is one hub to approve, with the code the facility read from the hub's page.
@@ -46,11 +50,12 @@ type Request struct {
 //   - checks the code against the key in the hub's registry entry (AccountCode):
 //     anyone in the hub owners group can write the entry, but not the hub's screen;
 //   - creates the user <hub ID>, assigned to the hub's facility only (capture, data
-//     view and search), so anything public on central is still limited to it, or, for
-//     a hub approved before, gives that user a new password;
+//     view and search), so anything public on central is still limited to it, and in
+//     the hub accounts group; or, for a hub approved before, gives that user a new
+//     password and that group;
 //   - makes a new move key, kept on central in facility-hub-keys/<hub ID>, created
-//     afresh so that its owner is the approver, and shared with no one: only
-//     administrators read it (move codes, MoveCode);
+//     afresh so that its owner is the approver, and shared with the hub managers group
+//     only (move codes, MoveCode);
 //   - puts the credentials and the move key in the hub's registry entry, encrypted to
 //     the hub's key.
 //
@@ -97,12 +102,8 @@ func (c *client) approve(ctx context.Context, r Request) error {
 	moveKey := make([]byte, 32)
 	rand.Read(moveKey)
 	creds := Credentials{Username: id, Password: NewPassword(), MoveKey: moveKey}
-	uid, err := c.account(ctx, creds, facility)
-	if err != nil {
+	if _, err := c.account(ctx, creds, facility); err != nil {
 		return err
-	}
-	if err := c.do(ctx, "POST", "/api/userGroups/"+c.o.Group+"/users/"+uid, nil, nil); err != nil {
-		return fmt.Errorf("adding it to the hub accounts group: %w", err)
 	}
 	keyPath := "/api/dataStore/facility-hub-keys/" + url.PathEscape(id)
 	if err := c.do(ctx, "DELETE", keyPath, nil, nil); err != nil && !strings.Contains(err.Error(), ": 404 ") {
@@ -119,7 +120,12 @@ func (c *client) approve(ctx context.Context, r Request) error {
 	if err := c.do(ctx, "GET", keyPath+"/metaData", nil, &meta); err != nil {
 		return err
 	}
-	share := map[string]any{"object": map[string]any{"publicAccess": "--------", "userAccesses": []any{}, "userGroupAccesses": []any{}}}
+	// Shared with the hub managers, who make move codes and approve again, and no one else.
+	managers := []any{}
+	if c.o.Managers != "" {
+		managers = append(managers, map[string]string{"id": c.o.Managers, "access": "rw------"})
+	}
+	share := map[string]any{"object": map[string]any{"publicAccess": "--------", "userAccesses": []any{}, "userGroupAccesses": managers}}
 	if err := c.do(ctx, "POST", "/api/sharing?type=dataStore&id="+meta.ID, share, nil); err != nil {
 		return fmt.Errorf("limiting its move key to administrators: %w", err)
 	}
@@ -194,7 +200,10 @@ func (c *client) account(ctx context.Context, creds Credentials, facility string
 		case len(auths) > 0:
 			return "", fmt.Errorf("its existing account has authorities (%s): give it only the hub account role, then approve again", strings.Join(auths, ", "))
 		}
-		patch := []map[string]string{{"op": "replace", "path": "/password", "value": creds.Password}}
+		// The group in the user, not through the group: DHIS2 lets hub managers add
+		// members that way (F_USER_GROUPS_READ_ONLY_ADD_MEMBERS).
+		patch := []map[string]any{{"op": "replace", "path": "/password", "value": creds.Password},
+			{"op": "add", "path": "/userGroups", "value": []map[string]string{{"id": c.o.Group}}}}
 		if err := c.doType(ctx, "PATCH", "/api/users/"+u.ID, patch, nil, "application/json-patch+json"); err != nil {
 			return "", fmt.Errorf("giving its existing account a new password: %w", err)
 		}
@@ -205,7 +214,7 @@ func (c *client) account(ctx context.Context, creds Credentials, facility string
 	ou := []map[string]string{{"id": facility}}
 	user := map[string]any{"id": uid, "username": creds.Username, "password": creds.Password, "firstName": "Facility hub",
 		"surname": creds.Username, "organisationUnits": ou, "dataViewOrganisationUnits": ou, "teiSearchOrganisationUnits": ou,
-		"userRoles": []map[string]string{{"id": c.o.Role}}}
+		"userRoles": []map[string]string{{"id": c.o.Role}}, "userGroups": []map[string]string{{"id": c.o.Group}}}
 	if err := c.do(ctx, "POST", "/api/users", user, nil); err != nil {
 		return "", fmt.Errorf("creating its account: %w", err)
 	}

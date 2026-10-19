@@ -18,16 +18,19 @@ import { Link } from 'react-router-dom'
 import styles from './Pages.module.css'
 import { useApi } from '@/api/useApi'
 import { ApproveDialog } from '@/components/hub/ApproveDialog'
-import { SuperuserOnly } from '@/components/hub/SuperuserOnly'
+import { ManagersOnly } from '@/components/hub/ManagersOnly'
+import { useCanManage } from '@/hooks/useCanManage'
 import { when } from '@/hubs/format'
 import { HubRow, useAccountsSettings, useHubs, place } from '@/hubs/useHubs'
 
 type Named = { id: string; displayName: string }
 
-// The hub accounts group and role, chosen once by the national team.
+// The hub accounts group and role, and the hub managers group, set once by a superuser
+// (managers read them but do not change them).
 const AccountsSettingsCard = () => {
     const api = useApi()
     const { settings, isLoading, save } = useAccountsSettings()
+    const { superuser } = useCanManage()
     const choices = useQuery({
         queryKey: ['groupsAndRoles'],
         queryFn: async () => {
@@ -46,9 +49,11 @@ const AccountsSettingsCard = () => {
     })
     const [group, setGroup] = useState('')
     const [role, setRole] = useState('')
+    const [managers, setManagers] = useState('')
     useEffect(() => {
         setGroup(settings?.group ?? '')
         setRole(settings?.role ?? '')
+        setManagers(settings?.managers ?? '')
     }, [settings])
 
     if (isLoading || choices.isLoading) {
@@ -59,7 +64,7 @@ const AccountsSettingsCard = () => {
             <h2 className={styles.subtitle}>{i18n.t('Hub accounts')}</h2>
             <div className={styles.muted}>
                 {i18n.t(
-                    'Each approved hub gets a user in this group (write sharing on the facility-hub namespaces, except facility-hub-admin) with this role, which must have no authorities.'
+                    'Each approved hub gets a user in this group (write sharing on the facility-hub namespaces, except facility-hub-admin) with this role, which must have no authorities. Members of the hub managers group approve hubs and make move codes without being superusers; they need a role with F_USER_ADD, F_USER_VIEW, F_USER_GROUPS_READ_ONLY_ADD_MEMBERS and M_facilityhub, and read access to the hub accounts group. Only superusers change these settings.'
                 )}
             </div>
             <div className={styles.row}>
@@ -67,6 +72,7 @@ const AccountsSettingsCard = () => {
                     label={i18n.t('User group')}
                     selected={group}
                     onChange={({ selected }) => setGroup(selected)}
+                    disabled={!superuser}
                     filterable
                     className={styles.search}
                 >
@@ -82,6 +88,7 @@ const AccountsSettingsCard = () => {
                     label={i18n.t('User role')}
                     selected={role}
                     onChange={({ selected }) => setRole(selected)}
+                    disabled={!superuser}
                     filterable
                     className={styles.search}
                 >
@@ -93,13 +100,39 @@ const AccountsSettingsCard = () => {
                         />
                     ))}
                 </SingleSelectField>
+                <SingleSelectField
+                    label={i18n.t('Hub managers group')}
+                    selected={managers}
+                    onChange={({ selected }) => setManagers(selected)}
+                    disabled={!superuser}
+                    filterable
+                    clearable
+                    className={styles.search}
+                >
+                    {(choices.data?.groups ?? []).map((g) => (
+                        <SingleSelectOption
+                            key={g.id}
+                            value={g.id}
+                            label={g.displayName}
+                        />
+                    ))}
+                </SingleSelectField>
                 <Button
-                    onClick={() => save.mutate({ group, role })}
+                    onClick={() =>
+                        save.mutate({
+                            group,
+                            role,
+                            ...(managers && { managers }),
+                        })
+                    }
                     loading={save.isLoading}
                     disabled={
+                        !superuser ||
                         !group ||
                         !role ||
-                        (group === settings?.group && role === settings?.role)
+                        (group === settings?.group &&
+                            role === settings?.role &&
+                            managers === (settings?.managers ?? ''))
                     }
                 >
                     {i18n.t('Save')}
@@ -210,7 +243,7 @@ const Approvals = () => {
 }
 
 export const ApprovalsPage = () => (
-    <SuperuserOnly>
+    <ManagersOnly>
         <Approvals />
-    </SuperuserOnly>
+    </ManagersOnly>
 )

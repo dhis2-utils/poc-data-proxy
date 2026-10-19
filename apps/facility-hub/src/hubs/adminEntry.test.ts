@@ -10,8 +10,10 @@ import { FakeApi } from '@/hubaccount/fakeApi'
 describe('writeAdminEntry', () => {
     it('creates the entry readable by all, writable by no one but administrators', async () => {
         const api = new FakeApi()
-        await writeAdminEntry(api, 'central-move', {
-            url: 'https://new.example.org',
+        await writeAdminEntry(api, {
+            key: 'central-move',
+            value: { url: 'https://new.example.org' },
+            managers: 'HubGrpMgrs',
         })
         expect(api.entry('facility-hub-admin', 'central-move')).toEqual({
             url: 'https://new.example.org',
@@ -20,7 +22,7 @@ describe('writeAdminEntry', () => {
             object: {
                 publicAccess: 'r-------',
                 userAccesses: [],
-                userGroupAccesses: [],
+                userGroupAccesses: [{ id: 'HubGrpMgrs', access: 'rw------' }],
             },
         })
     })
@@ -28,8 +30,10 @@ describe('writeAdminEntry', () => {
     it('restricts an existing entry too', async () => {
         const api = new FakeApi()
         api.store['facility-hub-admin'] = { 'central-move': { url: 'x' } }
-        await writeAdminEntry(api, 'central-move', {
-            url: 'https://new.example.org',
+        await writeAdminEntry(api, {
+            key: 'central-move',
+            value: { url: 'https://new.example.org' },
+            managers: 'HubGrpMgrs',
         })
         expect(api.entry('facility-hub-admin', 'central-move')).toEqual({
             url: 'https://new.example.org',
@@ -45,8 +49,10 @@ describe('writeAdminEntry', () => {
             'central-move': { url: 'https://evil.example' },
         }
         api.creators['facility-hub-admin/central-move'] = 'SomeoneElse'
-        await writeAdminEntry(api, 'central-move', {
-            url: 'https://new.example.org',
+        await writeAdminEntry(api, {
+            key: 'central-move',
+            value: { url: 'https://new.example.org' },
+            managers: 'HubGrpMgrs',
         })
         expect(api.creators['facility-hub-admin/central-move']).toBe(api.me)
         expect(api.entry('facility-hub-admin', 'central-move')).toEqual({

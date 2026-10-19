@@ -175,7 +175,12 @@ export const useHub = (id: string) => {
 }
 
 /** The hub accounts user group and role an approval uses (facility-hub-admin/accounts). */
-export type AccountsSettings = { group: string; role: string }
+export type AccountsSettings = {
+    group: string
+    role: string
+    /** The hub managers group: its members approve hubs and make move codes. */
+    managers?: string
+}
 
 const getOrNull = async <T>(
     api: ReturnType<typeof useApi>,
@@ -201,7 +206,9 @@ export const useAccountsSettings = () => {
         queryFn: () => getOrNull<AccountsSettings>(api, accountsPath),
     })
     const save = useMutation(
-        (s: AccountsSettings) => writeAdminEntry(api, 'accounts', s),
+        // Written by superusers only: not shared with the hub managers.
+        (s: AccountsSettings) =>
+            writeAdminEntry(api, { key: 'accounts', value: s }),
         {
             onSuccess: () => client.invalidateQueries(['accountsSettings']),
         }
@@ -222,19 +229,31 @@ const movePath = '/dataStore/facility-hub-admin/central-move'
 export const useCentralMove = () => {
     const api = useApi()
     const client = useQueryClient()
+    const { settings } = useAccountsSettings()
+    const managers = settings?.managers
     const query = useQuery({
         queryKey: ['centralMove'],
         queryFn: () => getOrNull<CentralMove>(api, movePath),
     })
     const done = { onSuccess: () => client.invalidateQueries(['centralMove']) }
     const set = useMutation(
-        (m: CentralMove) => writeAdminEntry(api, 'central-move', m),
+        (m: CentralMove) =>
+            writeAdminEntry(api, {
+                key: 'central-move',
+                value: m,
+                managers: managers,
+            }),
         done
     )
     // Withdrawn by writing it empty (hubs ignore a move without an address): deleting it
     // would let anyone create it again.
     const clear = useMutation(
-        () => writeAdminEntry(api, 'central-move', {}),
+        () =>
+            writeAdminEntry(api, {
+                key: 'central-move',
+                value: {},
+                managers: managers,
+            }),
         done
     )
     return {

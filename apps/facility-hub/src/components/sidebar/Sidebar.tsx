@@ -5,7 +5,7 @@ import React, { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import styles from './Sidebar.module.css'
 import { Sidenav, SidenavItems, SidenavLink } from './sidenav'
-import { useMe } from '@/hooks/useMe'
+import { useCanManage } from '@/hooks/useCanManage'
 
 const SidebarNavLink = ({
     to,
@@ -38,7 +38,7 @@ export const Sidebar = ({
 }) => {
     const [collapsed, setCollapsed] = useState(false)
     const isCollapsed = collapsed || hideSidebar
-    const { me } = useMe()
+    const { canManage } = useCanManage()
 
     return (
         <aside
@@ -49,13 +49,13 @@ export const Sidebar = ({
             <Sidenav>
                 <SidenavItems>
                     <SidebarNavLink to="/" label={i18n.t('Hubs')} end />
-                    {me?.superuser && (
+                    {canManage && (
                         <SidebarNavLink
                             to="/approvals"
                             label={i18n.t('Approvals')}
                         />
                     )}
-                    {me?.superuser && (
+                    {canManage && (
                         <SidebarNavLink
                             to="/moves"
                             label={i18n.t('Central moves')}

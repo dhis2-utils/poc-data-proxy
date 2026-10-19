@@ -15,6 +15,7 @@ import React, { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import styles from './Pages.module.css'
 import { FlagTags } from '@/components/hub/FlagTags'
+import { useCanManage } from '@/hooks/useCanManage'
 import { ago, gb } from '@/hubs/format'
 import { HubRow, useHubs, place } from '@/hubs/useHubs'
 
@@ -36,7 +37,8 @@ const usbText = (h: HubRow) => {
 }
 
 export const HubsPage = () => {
-    const { hubs, me, isLoading, error } = useHubs()
+    const { hubs, isLoading, error } = useHubs()
+    const { canManage } = useCanManage()
     const [search, setSearch] = useState('')
     const [flaggedOnly, setFlaggedOnly] = useState(false)
     const navigate = useNavigate()
@@ -78,7 +80,7 @@ export const HubsPage = () => {
     return (
         <div className={styles.page}>
             <h1 className={styles.title}>{i18n.t('Facility hubs')}</h1>
-            {me?.superuser && waiting > 0 && (
+            {canManage && waiting > 0 && (
                 <NoticeBox title={i18n.t('Hubs waiting for approval')}>
                     {waiting === 1
                         ? i18n.t('1 hub waits for its own account.')

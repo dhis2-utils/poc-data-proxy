@@ -12,12 +12,11 @@ type Meta = {
  * dataStore entry is public (read and write) until its sharing is set, and its owner
  * (who created it) keeps write access whatever the sharing says. So an entry created by
  * someone else is deleted and created again; it is created empty, shared as public read
- * only, and only then written.
+ * only (and read-write for the hub managers), and only then written.
  */
 export const writeAdminEntry = async (
     api: Api,
-    key: string,
-    value: unknown
+    { key, value, managers }: { key: string; value: unknown; managers?: string }
 ) => {
     const path = `/dataStore/facility-hub-admin/${encodeURIComponent(key)}`
     const metaOf = async () =>
@@ -45,7 +44,10 @@ export const writeAdminEntry = async (
             object: {
                 publicAccess: 'r-------',
                 userAccesses: [],
-                userGroupAccesses: [],
+                // Writable by the hub managers too.
+                userGroupAccesses: managers
+                    ? [{ id: managers, access: 'rw------' }]
+                    : [],
             },
         }
     )

@@ -97,9 +97,9 @@ func runApp(t *testing.T, e *tk.Env, user, password, action string, env ...strin
 	return r
 }
 
-// TestFacilityHubApp drives the Facility Hub app (apps/facility-hub) on central: the
-// superuser approves a waiting hub with the code from the hub's page, and the hub takes
-// its account up; the app's move code for an address is the hub's own; a district user
+// TestFacilityHubApp drives the Facility Hub app (apps/facility-hub) on central: a hub
+// manager of the hub's district (not a superuser) approves a waiting hub with the code
+// from the hub's page, and the hub takes its account up; the app's move code for an address is the hub's own; a district user
 // sees the hub, a user of another district does not (docs/FACILITY-HUB-APP.md).
 func TestFacilityHubApp(t *testing.T) {
 	e := tk.Start(t)
@@ -124,7 +124,28 @@ func TestFacilityHubApp(t *testing.T) {
 			t.Fatalf("%s: %d %v %.300s", p.path, st, err, b)
 		}
 	}
-	// As the app writes it: created, shared as public read only, then written.
+	// The hub managers, set up once by a superuser: a group, and a role with the
+	// authorities to create users and add them to the (read-only) hub accounts group. The
+	// manager is not a superuser, and is assigned to the hub's district only.
+	mgrGroup, mgrRole, manager := tk.UID(), tk.UID(), "fhmgr"+strings.ToLower(tk.UID())
+	for _, p := range []struct {
+		path string
+		body map[string]any
+	}{
+		{"/api/userGroups", map[string]any{"id": mgrGroup, "name": "Hub managers " + mgrGroup}},
+		{"/api/userRoles", map[string]any{"id": mgrRole, "name": "Hub manager " + mgrRole, "authorities": []string{
+			"F_USER_ADD", "F_USER_VIEW", "F_USER_GROUPS_READ_ONLY_ADD_MEMBERS", "M_facilityhub"}}},
+		{"/api/users", map[string]any{"id": tk.UID(), "username": manager, "password": e.M.Password,
+			"firstName": "Hub", "surname": "manager", "organisationUnits": []map[string]string{{"id": e.M.District.ID}},
+			"userRoles": []map[string]string{{"id": mgrRole}}, "userGroups": []map[string]string{{"id": mgrGroup}}}},
+		{"/api/sharing?type=userGroup&id=" + group, map[string]any{"object": map[string]any{"publicAccess": "--------",
+			"userGroupAccesses": []map[string]string{{"id": mgrGroup, "access": "r-------"}}}}},
+	} {
+		if st, b, err := e.Central.Do("POST", p.path, p.body); err != nil || st >= 300 {
+			t.Fatalf("%s: %d %v %.300s", p.path, st, err, b)
+		}
+	}
+	// The settings, as the app writes them: created, shared as public read only, then written.
 	e.Central.Do("DELETE", "/api/dataStore/facility-hub-admin/accounts", nil)
 	e.Central.Do("POST", "/api/dataStore/facility-hub-admin/accounts", map[string]string{})
 	var meta struct {
@@ -134,11 +155,11 @@ func TestFacilityHubApp(t *testing.T) {
 	e.Central.Do("POST", "/api/sharing?type=dataStore&id="+meta.ID, map[string]any{"object": map[string]any{
 		"publicAccess": "r-------", "userAccesses": []any{}, "userGroupAccesses": []any{}}})
 	if st, b, err := e.Central.Do("PUT", "/api/dataStore/facility-hub-admin/accounts",
-		map[string]string{"group": group, "role": role}); err != nil || st >= 300 {
+		map[string]string{"group": group, "role": role, "managers": mgrGroup}); err != nil || st >= 300 {
 		t.Fatalf("accounts settings: %d %v %.300s", st, err, b)
 	}
 
-	r := runApp(t, e, e.M.AdminUser, e.M.AdminPassword, "approve", "HUB_ID="+h.HubID(), "CODE="+h.AccountCode())
+	r := runApp(t, e, manager, e.M.Password, "approve", "HUB_ID="+h.HubID(), "CODE="+h.AccountCode())
 	if !r.Approved {
 		t.Fatalf("not approved in the app: %s", r.Dialog)
 	}
@@ -149,22 +170,24 @@ func TestFacilityHubApp(t *testing.T) {
 	if rt.TokenOwner() != h.HubID() || rt.MoveKey == nil {
 		t.Fatalf("the hub did not take up the account the app handed over: owner %q", rt.TokenOwner())
 	}
-	// The move key the app kept is shared with no one.
+	// The move key the app kept is shared with the hub managers only.
 	var keyMeta struct {
 		Sharing struct {
-			Public string         `json:"public"`
-			Users  map[string]any `json:"users"`
+			Public     string         `json:"public"`
+			Users      map[string]any `json:"users"`
+			UserGroups map[string]any `json:"userGroups"`
 		} `json:"sharing"`
 	}
 	if err := e.Central.JSON("GET", "/api/dataStore/facility-hub-keys/"+h.HubID()+"/metaData", nil, &keyMeta); err != nil {
 		t.Fatal(err)
 	}
-	if keyMeta.Sharing.Public != "--------" || len(keyMeta.Sharing.Users) > 0 {
+	if _, ok := keyMeta.Sharing.UserGroups[mgrGroup]; keyMeta.Sharing.Public != "--------" ||
+		len(keyMeta.Sharing.Users) > 0 || len(keyMeta.Sharing.UserGroups) != 1 || !ok {
 		t.Errorf("the move key is shared: %+v", keyMeta.Sharing)
 	}
 
 	const address = "https://new.example.org/dhis"
-	r = runApp(t, e, e.M.AdminUser, e.M.AdminPassword, "movecode", "HUB_ID="+h.HubID(), "ADDRESS="+address)
+	r = runApp(t, e, manager, e.M.Password, "movecode", "HUB_ID="+h.HubID(), "ADDRESS="+address)
 	if want := hubaccount.MoveCode(rt.MoveKey, address); r.Code != want {
 		t.Errorf("the app's move code %q, the hub's %q", r.Code, want)
 	}
@@ -175,7 +198,7 @@ func TestFacilityHubApp(t *testing.T) {
 	e.Central.Do("DELETE", "/api/dataStore/facility-hub-admin/central-move", nil)
 	tk.NewCentral(e.M.CentralURL, nurse.Username, e.M.Password).Do("POST",
 		"/api/dataStore/facility-hub-admin/central-move", map[string]string{"url": "https://evil.example.org"})
-	runApp(t, e, e.M.AdminUser, e.M.AdminPassword, "announce", "ADDRESS="+address)
+	runApp(t, e, manager, e.M.Password, "announce", "ADDRESS="+address)
 	var move struct {
 		URL string `json:"url"`
 	}
@@ -187,7 +210,7 @@ func TestFacilityHubApp(t *testing.T) {
 		"/api/dataStore/facility-hub-admin/central-move", map[string]string{"url": "https://evil.example.org"}); st < 300 {
 		t.Errorf("a staff member who created the entry first still writes the planned move (%d)", st)
 	}
-	runApp(t, e, e.M.AdminUser, e.M.AdminPassword, "withdraw")
+	runApp(t, e, manager, e.M.Password, "withdraw")
 	var withdrawn map[string]any
 	if err := e.Central.JSON("GET", "/api/dataStore/facility-hub-admin/central-move", nil, &withdrawn); err != nil || len(withdrawn) != 0 {
 		t.Errorf("planned move not withdrawn: %v %v", withdrawn, err)

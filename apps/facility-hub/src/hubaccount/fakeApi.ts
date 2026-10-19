@@ -149,7 +149,7 @@ export class FakeApi implements Api {
                 dataViewOrganisationUnits: ids('dataViewOrganisationUnits'),
                 teiSearchOrganisationUnits: ids('teiSearchOrganisationUnits'),
                 roles: ids('userRoles'),
-                groups: [],
+                groups: ids('userGroups'),
             }
             return {}
         }
@@ -162,10 +162,13 @@ export class FakeApi implements Api {
             for (const op of body as {
                 op: string
                 path: string
-                value: string
+                value: unknown
             }[]) {
                 if (op.op === 'replace' && op.path === '/password') {
-                    u.password = op.value
+                    u.password = op.value as string
+                }
+                if (op.path === '/userGroups') {
+                    u.groups = (op.value as { id: string }[]).map((g) => g.id)
                 }
             }
             return {}

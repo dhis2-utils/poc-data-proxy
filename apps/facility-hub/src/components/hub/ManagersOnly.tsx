@@ -1,12 +1,12 @@
 import i18n from '@dhis2/d2-i18n'
 import { CircularLoader, NoticeBox } from '@dhis2/ui'
 import React, { PropsWithChildren } from 'react'
-import { useMe } from '@/hooks/useMe'
+import { useCanManage } from '@/hooks/useCanManage'
 import styles from '@/pages/Pages.module.css'
 
-/** Shows its children to superusers only (approving and moving need the ALL authority). */
-export const SuperuserOnly = ({ children }: PropsWithChildren) => {
-    const { me, isLoading, error } = useMe()
+/** Shows its children to superusers and hub managers only. */
+export const ManagersOnly = ({ children }: PropsWithChildren) => {
+    const { canManage, isLoading, error } = useCanManage()
     if (isLoading) {
         return (
             <div className={styles.loading}>
@@ -21,11 +21,11 @@ export const SuperuserOnly = ({ children }: PropsWithChildren) => {
             </NoticeBox>
         )
     }
-    if (!me?.superuser) {
+    if (!canManage) {
         return (
-            <NoticeBox title={i18n.t('For the national team')}>
+            <NoticeBox title={i18n.t('For hub managers')}>
                 {i18n.t(
-                    'Only superusers approve hubs and give out move codes.'
+                    'Only hub managers and superusers approve hubs and give out move codes.'
                 )}
             </NoticeBox>
         )
