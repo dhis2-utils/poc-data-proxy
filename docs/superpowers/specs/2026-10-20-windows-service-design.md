@@ -70,7 +70,40 @@ Same hub, same store, same app and releases; only the packaging, the service aro
 
 ## The builder's calls (made here, open to correction)
 
-- **Installer: an MSI built on Linux with `wixl` (msitools).**
+Settled after the design review on 2026-10-20 while the user was away, to be checked:
+
+1. **Where `hub.exe` runs: the data folder.**
+   - The installer puts it at `ProgramData\DHIS2 Facility Hub\bin\hub.exe` (per-user: `%LOCALAPPDATA%\DHIS2 Facility Hub\bin\hub.exe`), a folder only the service account and administrators may write. Self-upgrade then replaces it without opening Program Files to the service account.
+   - Program Files keeps only the uninstaller.
+   - The installer refuses to put back an older `hub.exe` than the one there (it asks `hub.exe version`), so re-running an old installer never downgrades a migrated store.
+   - Windows' Apps list shows the version installed, not the one the hub upgraded itself to; the hub's page shows the running one.
+2. **Signing: no certificate exists yet.**
+   - Everything is signed with a self-signed test certificate (`osslsigncode`) here and in CI.
+   - The CI step is one script, so it can move to a cloud signing service (Azure Trusted Signing or DigiCert KeyLocker, with `jsign`) when the supplier has a certificate. DEPLOYMENT.md, "Signing", is unchanged.
+3. **Trust and the address on the PC itself.**
+   - The installer runs `hub.exe init`, which makes the hub's certificate authority (as the first start would) and its settings.
+   - The admin installer then:
+     - adds the authority to the PC's trusted roots (`certutil -addstore Root`);
+     - maps `dhis2.local` to `127.0.0.1` in the hosts file;
+     - creates a desktop shortcut to `https://dhis2.local`.
+   - So staff on the PC use the same address as every other device, and browsers keep one set of offline data.
+   - The per-user installer adds the authority to the user's own store (Windows asks once), and its shortcut also opens `https://dhis2.local`, found through the hub's own responder.
+   - `https://localhost` keeps working, for the set-up page.
+   - Set-up accepts requests from the PC itself: loopback, or one of the PC's own addresses.
+4. **The USB stick is never adopted without a person.** Even with one removable drive plugged in, a staff member confirms it on the admin page ("Keep the hub's copy on drive E: (KINGSTON, 15 GB)"). The folder layout is the Pi's, `facility-hub\<hub ID>\`, so a copy from either can restore the other's disk.
+5. **From a per-user install to an admin install.** When the admin installer finds the installing user's per-user hub, it offers to move it:
+   1. stop it;
+   2. move its data folder to `ProgramData`;
+   3. set the access list;
+   4. remove the per-user start entry.
+
+   The hub keeps its ID, approval and authority, so devices notice nothing.
+6. **Conflicts.**
+   - **The name:** at start and every few minutes, the responder asks whether anyone else answers `dhis2.local` with an address that is not the PC's. If one does, it stays silent, and the hub's page says so ("Another device on this network answers dhis2.local: devices use \\<pc>.local or the IP").
+   - **Ports:** 443 and 80, else 8443 and 8080, else any free pair the system gives. Chosen once by `hub.exe init` and kept in `hub.yaml`.
+
+- **Installer: NSIS, built on Linux with `makensis`** (`wixl` cannot run the custom steps needed: the service, the firewall, the hosts file, the authority, the power plan). The single installer chooses an admin or a per-user install (NSIS MultiUser). `/S` installs silently, for CI and ministry software deployment.
+- *(Superseded: an MSI built with `wixl`.)*
   - The admin install puts the hub in `C:\Program Files\DHIS2 Facility Hub\` and its data in `C:\ProgramData\DHIS2 Facility Hub\`, which it creates with an access list for the service account only.
   - The per-user install puts both under `%LOCALAPPDATA%\DHIS2 Facility Hub\`.
   - If `wixl` cannot express something needed (per-user and per-machine from one package, custom actions), an NSIS installer (`makensis`) is the fallback.
