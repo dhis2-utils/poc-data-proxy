@@ -128,7 +128,11 @@ func serve(args []string) error {
 		go certs.Run(ctx.Done())
 		if cfg.HTTPListen != "" {
 			// The start page on plain HTTP (docs/DEPLOYMENT.md, "Reaching the hub securely").
-			start := &http.Server{Handler: &ui.Start{DataDir: cfg.DataDir, HTTPSPort: port, Allowed: a.Hub.HostAllowed, Reached: a.Hub.NoteReach},
+			page := &ui.Start{DataDir: cfg.DataDir, HTTPSPort: port, Allowed: a.Hub.HostAllowed, Reached: a.Hub.NoteReach}
+			if a.Net != nil {
+				page.Captive = a.Net.Captive
+			}
+			start := &http.Server{Handler: page,
 				ReadHeaderTimeout: 30 * time.Second, ReadTimeout: time.Minute, IdleTimeout: 2 * time.Minute}
 			hln, err := net.Listen("tcp", cfg.HTTPListen)
 			if err != nil {

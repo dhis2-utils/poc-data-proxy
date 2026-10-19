@@ -18,6 +18,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/auth"
 	"github.com/dhis2/facility-hub/internal/config"
 	"github.com/dhis2/facility-hub/internal/core"
+	"github.com/dhis2/facility-hub/internal/netsetup"
 	"github.com/dhis2/facility-hub/internal/proxy"
 	"github.com/dhis2/facility-hub/internal/stick"
 	"github.com/dhis2/facility-hub/internal/store"
@@ -28,11 +29,13 @@ import (
 )
 
 type App struct {
-	Hub       *core.Hub
-	Handler   http.Handler
-	Worker    *hubsync.Worker
-	Upgrader  *upgrade.Upgrader
-	Stick     *stick.Stick
+	Hub      *core.Hub
+	Handler  http.Handler
+	Worker   *hubsync.Worker
+	Upgrader *upgrade.Upgrader
+	Stick    *stick.Stick
+	// Net manages the network (Pi image, network: networkmanager); nil otherwise.
+	Net       *netsetup.Manager
 	StorePath string
 }
 
@@ -139,12 +142,19 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 			px.ServeHTTP(w, r)
 		}
 	})
-	return &App{Hub: h, Handler: logRequests(cfg, recoverer(root)), Worker: worker, Upgrader: up, Stick: stick.New(h),
-		StorePath: storePath}, nil
+	a2 := &App{Hub: h, Handler: logRequests(cfg, recoverer(root)), Worker: worker, Upgrader: up, Stick: stick.New(h),
+		StorePath: storePath}
+	if cfg.Network == "networkmanager" {
+		a2.Net = &netsetup.Manager{R: netsetup.ExecRunner{}, DataDir: cfg.DataDir, HubID: h.HubID(), DnsmasqDir: cfg.NMDnsmasqDir}
+	}
+	return a2, nil
 }
 
 // Start runs the connectivity monitor and sync worker until ctx ends.
 func (a *App) Start(ctx context.Context) {
+	if a.Net != nil {
+		go a.Net.Run(ctx)
+	}
 	go a.Hub.Monitor.Run(ctx, a.Hub.Central.BaseURL)
 	go a.Worker.Run(ctx)
 	go a.Stick.Run(ctx)

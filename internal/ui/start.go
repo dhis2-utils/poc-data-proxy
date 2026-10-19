@@ -15,6 +15,8 @@ import (
 // shows how to install the authority. Nothing else is served without TLS.
 type Start struct {
 	DataDir string
+	// Captive reports whether the setup Wi-Fi is on (netsetup.Manager.Captive); may be nil.
+	Captive func() bool
 	// Reached notes the request's name and client (Hub.NoteReach); may be nil.
 	Reached   func(host, remoteAddr string)
 	HTTPSPort string                 // the HTTPS listener's port; 443 is left out of links
@@ -23,6 +25,11 @@ type Start struct {
 
 func (s *Start) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.Allowed(r.Host) {
+		if s.Captive != nil && s.Captive() {
+			// The setup Wi-Fi answers every name with the hub: lead the phone to it.
+			http.Redirect(w, r, "http://10.42.0.1/", http.StatusFound)
+			return
+		}
 		http.Error(w, "unknown host name: open the hub by its address (hub_hosts)", http.StatusMisdirectedRequest)
 		return
 	}

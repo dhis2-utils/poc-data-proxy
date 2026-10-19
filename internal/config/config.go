@@ -21,7 +21,12 @@ type Config struct {
 	Listen       string // e.g. ":8443"
 	// HTTPListen serves the plain-HTTP start page and the hub's authority (":80" on the
 	// image, so http://dhis2.local works); empty: off.
-	HTTPListen       string
+	HTTPListen string
+	// Network "networkmanager": the hub manages its network through NetworkManager
+	// (the Pi image; internal/netsetup). Empty: the machine's network as it is.
+	Network string
+	// NMDnsmasqDir is NetworkManager's dnsmasq-shared.d, for the setup Wi-Fi's DNS.
+	NMDnsmasqDir     string
 	DataDir          string        // e.g. /var/lib/hub
 	SyncInterval     time.Duration // outbox push + pull cadence
 	PingInterval     time.Duration // connectivity probe cadence
@@ -78,6 +83,7 @@ type Config struct {
 func Default() Config {
 	return Config{
 		Listen:                 ":8443",
+		NMDnsmasqDir:           "/etc/NetworkManager/dnsmasq-shared.d",
 		DataDir:                "/var/lib/hub",
 		SyncInterval:           15 * time.Minute,
 		PingInterval:           15 * time.Second,
@@ -143,6 +149,13 @@ func (c *Config) set(k, v string) error {
 		c.Listen = v
 	case "http_listen":
 		c.HTTPListen = v
+	case "network":
+		if v != "" && v != "networkmanager" {
+			return fmt.Errorf("network: %q (only networkmanager)", v)
+		}
+		c.Network = v
+	case "nm_dnsmasq_dir":
+		c.NMDnsmasqDir = v
 	case "data_dir":
 		c.DataDir = v
 	case "sync_interval":

@@ -1,0 +1,230 @@
+package netsetup
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+type rig struct {
+	nm  *fakeNM
+	m   *Manager
+	now time.Time
+	t   *testing.T
+}
+
+func newRig(t *testing.T) *rig {
+	nm := &fakeNM{conns: map[string][]string{}, up: map[string]bool{}, failUp: map[string]string{},
+		upCount: map[string]int{}, scan: []Network{{SSID: "Clinic", Signal: 70, Secure: true}, {SSID: "Open", Signal: 40}}}
+	r := &rig{nm: nm, now: time.Date(2026, 10, 19, 8, 0, 0, 0, time.UTC), t: t}
+	r.m = &Manager{R: nm, DataDir: t.TempDir(), HubID: "hub-abc123", DnsmasqDir: t.TempDir(),
+		Now: func() time.Time { return r.now }, Delay: func(f func()) { f() }}
+	return r
+}
+
+func (r *rig) tick(after time.Duration) {
+	r.now = r.now.Add(after)
+	r.m.Tick(context.Background())
+}
+
+func (r *rig) captiveFile() bool {
+	_, err := os.Stat(filepath.Join(r.m.DnsmasqDir, "hub-captive.conf"))
+	return err == nil
+}
+
+func TestBootWithoutNetworkStartsSetup(t *testing.T) {
+	r := newRig(t)
+	r.tick(0)
+	r.tick(30 * time.Second)
+	if r.nm.up[SetupConn] {
+		t.Fatal("setup Wi-Fi before 60 seconds")
+	}
+	r.tick(31 * time.Second)
+	if !r.nm.up[SetupConn] || !r.captiveFile() || !r.m.Captive() {
+		t.Fatalf("no setup Wi-Fi after 61 s: %v", r.nm.calls)
+	}
+	add := strings.Join(r.nm.conns[SetupConn], " ")
+	for _, want := range []string{"ssid Hub-hub-abc123", "802-11-wireless.mode ap", "ipv4.method shared",
+		"ipv4.addresses 10.42.0.1/24", "wifi-sec.key-mgmt wpa-psk", "autoconnect no"} {
+		if !strings.Contains(add, want) {
+			t.Errorf("setup connection lacks %q: %s", want, add)
+		}
+	}
+	st := r.m.Status()
+	if st.Mode != "setup" || st.SetupSSID != "Hub-hub-abc123" || len(st.Networks) != 2 || st.Networks[0].SSID != "Clinic" {
+		t.Fatalf("status %+v", st)
+	}
+	if !strings.Contains(add, "wifi-sec.psk "+st.SetupPassword) {
+		t.Error("setup Wi-Fi without its password")
+	}
+}
+
+func TestCableStopsSetupNotFacility(t *testing.T) {
+	r := newRig(t)
+	r.tick(0)
+	r.tick(61 * time.Second)
+	r.nm.cable = true
+	r.tick(10 * time.Second)
+	if r.nm.up[SetupConn] || r.captiveFile() {
+		t.Fatal("setup Wi-Fi still on with a cable")
+	}
+	if st := r.m.Status(); st.Mode != "cable" || len(st.Addresses) == 0 {
+		t.Fatalf("status %+v", st)
+	}
+	if err := r.m.MakeFacilityWifi("Clinic Staff", "longenough"); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(10 * time.Second)
+	if !r.nm.up[FacilityConn] {
+		t.Fatal("a cable stopped the facility's Wi-Fi")
+	}
+}
+
+func TestJoinSucceeds(t *testing.T) {
+	r := newRig(t)
+	r.tick(0)
+	r.tick(61 * time.Second)
+	if err := r.m.Join("Clinic", "secret123"); err != nil {
+		t.Fatal(err)
+	}
+	if r.nm.up[SetupConn] || !r.nm.up[WifiConn] || r.captiveFile() {
+		t.Fatalf("not joined: up %v", r.nm.up)
+	}
+	add := strings.Join(r.nm.conns[WifiConn], " ")
+	if !strings.Contains(add, "ssid Clinic") || !strings.Contains(add, "wifi-sec.psk secret123") {
+		t.Errorf("join: %s", add)
+	}
+	r.tick(10 * time.Second)
+	if st := r.m.Status(); st.Mode != "wifi" || st.Name != "Clinic" || st.LastError != "" {
+		t.Fatalf("status %+v", st)
+	}
+}
+
+func TestJoinOpenNetwork(t *testing.T) {
+	r := newRig(t)
+	r.tick(0)
+	r.tick(61 * time.Second)
+	if err := r.m.Join("Open", ""); err != nil {
+		t.Fatal(err)
+	}
+	if add := strings.Join(r.nm.conns[WifiConn], " "); strings.Contains(add, "wifi-sec") {
+		t.Errorf("open network with security: %s", add)
+	}
+}
+
+func TestJoinFailsBringsSetupBack(t *testing.T) {
+	r := newRig(t)
+	r.tick(0)
+	r.tick(61 * time.Second)
+	r.nm.failUp[WifiConn] = "Error: Connection activation failed: Secrets were required, but not provided."
+	r.m.Join("Clinic", "wrong")
+	if !r.nm.up[SetupConn] || !r.captiveFile() {
+		t.Fatalf("no setup Wi-Fi after a failed join: up %v", r.nm.up)
+	}
+	if st := r.m.Status(); st.LastError != "wrong password" {
+		t.Fatalf("last error %q", st.LastError)
+	}
+	if r.nm.conns[WifiConn] != nil {
+		t.Error("a failed Wi-Fi is kept and would be retried")
+	}
+	r.nm.failUp[WifiConn] = "Error: No network with SSID 'Gone' found."
+	r.m.Join("Gone", "x")
+	if st := r.m.Status(); st.LastError != "network not found" {
+		t.Fatalf("last error %q", st.LastError)
+	}
+}
+
+func TestJoinedNetworkLostFor15Minutes(t *testing.T) {
+	r := newRig(t)
+	r.tick(0)
+	r.tick(61 * time.Second)
+	r.m.Join("Clinic", "secret123")
+	r.tick(10 * time.Second)
+	delete(r.nm.up, WifiConn) // the router is gone
+	r.tick(14 * time.Minute)
+	if r.nm.up[SetupConn] {
+		t.Fatal("setup Wi-Fi before 15 minutes")
+	}
+	r.tick(61 * time.Second)
+	if !r.nm.up[SetupConn] {
+		t.Fatal("no setup Wi-Fi after 15 minutes without a network")
+	}
+}
+
+func TestFacilityWifi(t *testing.T) {
+	r := newRig(t)
+	r.tick(0)
+	r.tick(61 * time.Second)
+	if err := r.m.MakeFacilityWifi("Clinic Staff", "short"); err == nil {
+		t.Fatal("password of 5 characters accepted")
+	}
+	if err := r.m.MakeFacilityWifi("", "longenough"); err == nil {
+		t.Fatal("empty name accepted")
+	}
+	if err := r.m.MakeFacilityWifi("Clinic Staff", "longenough"); err != nil {
+		t.Fatal(err)
+	}
+	if !r.nm.up[FacilityConn] || r.nm.up[SetupConn] || r.captiveFile() || r.m.Captive() {
+		t.Fatalf("up %v captive %v", r.nm.up, r.captiveFile())
+	}
+	add := strings.Join(r.nm.conns[FacilityConn], " ")
+	for _, want := range []string{"ssid Clinic Staff", "802-11-wireless.mode ap", "ipv4.method shared", "wifi-sec.psk longenough", "autoconnect yes"} {
+		if !strings.Contains(add, want) {
+			t.Errorf("facility connection lacks %q: %s", want, add)
+		}
+	}
+	r.tick(20 * time.Minute) // no uplink: the facility's Wi-Fi is the network, no setup Wi-Fi
+	if r.nm.up[SetupConn] || !r.nm.up[FacilityConn] {
+		t.Fatalf("up %v", r.nm.up)
+	}
+	if st := r.m.Status(); st.Mode != "facility" || st.Name != "Clinic Staff" {
+		t.Fatalf("status %+v", st)
+	}
+}
+
+func TestSetupPasswordStable(t *testing.T) {
+	r := newRig(t)
+	p1 := r.m.Status().SetupPassword
+	m2 := &Manager{R: r.nm, DataDir: r.m.DataDir, HubID: "hub-abc123", Now: r.m.Now}
+	if p2 := m2.Status().SetupPassword; p1 != p2 || len(p1) != 12 {
+		t.Fatalf("%q then %q", p1, p2)
+	}
+	for _, c := range p1 {
+		if !strings.ContainsRune(setupAlphabet, c) {
+			t.Fatalf("%q outside the alphabet", c)
+		}
+	}
+	if setupAlphabet != "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789" {
+		t.Fatal("alphabet changed")
+	}
+}
+
+// A router that restarts: the hub falls back to the setup Wi-Fi, then tries the joined
+// Wi-Fi again every 15 minutes (NetworkManager does not, while the radio is an access
+// point), so nobody has to come back to rejoin it.
+func TestSavedWifiRetried(t *testing.T) {
+	r := newRig(t)
+	r.tick(0)
+	r.tick(61 * time.Second)
+	r.m.Join("Clinic", "secret123")
+	r.tick(10 * time.Second)
+	delete(r.nm.up, WifiConn)
+	r.nm.failUp[WifiConn] = "Error: No network with SSID 'Clinic' found."
+	r.tick(15*time.Minute + time.Second)
+	if !r.nm.up[SetupConn] {
+		t.Fatal("no setup Wi-Fi")
+	}
+	n := r.nm.upCount[WifiConn]
+	r.tick(15*time.Minute + time.Second) // still gone: tried, setup Wi-Fi back
+	if r.nm.upCount[WifiConn] != n+1 || !r.nm.up[SetupConn] {
+		t.Fatalf("retries %d → %d, up %v", n, r.nm.upCount[WifiConn], r.nm.up)
+	}
+	delete(r.nm.failUp, WifiConn) // the router is back
+	r.tick(15*time.Minute + time.Second)
+	if !r.nm.up[WifiConn] || r.nm.up[SetupConn] || r.captiveFile() {
+		t.Fatalf("not rejoined: up %v", r.nm.up)
+	}
+}

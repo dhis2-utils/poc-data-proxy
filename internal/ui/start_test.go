@@ -78,3 +78,19 @@ AAQ=
 `
 
 const testFingerprint = "57:EE:9F:08:6F:8D:59:53:63:46:D9:B1:7E:6D:6C:F2:10:06:00:E9:E4:39:47:25:A3:83:1A:E6:95:54:63:3A"
+
+// On the setup Wi-Fi the hub answers every name (captive DNS): a phone's connectivity
+// check, or any page, leads to the hub's own address instead of an error.
+func TestCaptiveRedirects(t *testing.T) {
+	s := startFixture(t, "443").(*Start)
+	captive := true
+	s.Captive = func() bool { return captive }
+	w := get(s, "connectivitycheck.gstatic.com", "/generate_204")
+	if w.Code != http.StatusFound || w.Header().Get("Location") != "http://10.42.0.1/" {
+		t.Fatalf("%d %q", w.Code, w.Header().Get("Location"))
+	}
+	captive = false
+	if w := get(s, "connectivitycheck.gstatic.com", "/generate_204"); w.Code != http.StatusMisdirectedRequest {
+		t.Fatalf("without the setup Wi-Fi: %d", w.Code)
+	}
+}
