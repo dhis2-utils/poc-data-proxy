@@ -2,6 +2,7 @@
 <header><h1>Facility hub setup</h1><span class="sp"></span><span class="mono">hub {{.HubID}}</span></header>
 <main><div class="card" style="max-width:640px">
 {{with .Error}}<div class="err">{{.}}</div>{{end}}
+{{if not .Step}}{{with .Net}}{{template "netsection" .}}{{end}}{{end}}
 {{if not .Step}}{{range .Restores}}<div class="msg"><strong>The USB stick holds hub <span class="mono">{{.HubID}}</span></strong> (copy of {{.TakenAt.Format "2006-01-02 15:04"}}). If this box replaces that hub's broken disk, restore it instead of setting up a new hub. Log in with your own account on that hub.
 <form method="post" action="/hub/setup"><input type="hidden" name="step" value="restore"><input type="hidden" name="hub" value="{{.HubID}}">
 <label>Username <input type="text" name="username" autocomplete="username" required></label>

@@ -1,0 +1,10 @@
+{{template "head" .}}
+<header><h1>Facility hub network</h1><span class="sp"></span><span class="mono">hub {{.HubID}}</span></header>
+<main><div class="card">
+{{if .Error}}<div class="err">{{.Error}}</div><p><a href="/hub/">Back</a></p>
+{{else if .Facility}}<p>The hub now starts its own Wi-Fi <strong>{{.SSID}}</strong>. Connect your phone to {{.SSID}} and open <span class="mono">http://dhis2.local</span>.</p>
+<p class="muted">If the setup Wi-Fi comes back instead, it shows why.</p>
+{{else}}<p>Switch your phone to {{.SSID}} and open http://dhis2.local</p>
+<p class="muted">The hub joins {{.SSID}} in a few seconds. If that fails within a minute, the setup Wi-Fi comes back and shows why.</p>{{end}}
+</div></main>
+{{template "foot" .}}

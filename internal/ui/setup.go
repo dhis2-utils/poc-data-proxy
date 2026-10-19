@@ -281,7 +281,7 @@ func (u *UI) setupForm(p *pendingSetup) map[string]any {
 	}
 	return map[string]any{"CentralURL": h.Cfg.CentralURL, "Pinned": h.SetupMode() == core.SetupPinned,
 		"NeedToken": h.SetupMode() == core.SetupToken, "Hosts": strings.Join(h.Cfg.CentralHosts, ", "),
-		"HubID": h.HubID(), "Pending": p, "Step": "", "Restores": restores}
+		"HubID": h.HubID(), "Pending": p, "Step": "", "Restores": restores, "Net": u.netView()}
 }
 
 // setupLogin runs spec 6.2 steps 2-5.

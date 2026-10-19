@@ -17,6 +17,7 @@ import (
 
 	"github.com/dhis2/facility-hub/internal/auth"
 	"github.com/dhis2/facility-hub/internal/core"
+	"github.com/dhis2/facility-hub/internal/netsetup"
 	"github.com/dhis2/facility-hub/internal/store"
 	hubsync "github.com/dhis2/facility-hub/internal/sync"
 	"github.com/dhis2/facility-hub/internal/tracker"
@@ -46,7 +47,9 @@ type UI struct {
 	Reset func(by string, discard bool) error
 	// Restart restarts the hub process (nil where nothing restarts it, as in tests).
 	Restart func()
-	setup   setupFlow
+	// Net manages the network on a Pi (nil elsewhere): the pages' network section.
+	Net   *netsetup.Manager
+	setup setupFlow
 }
 
 func (u *UI) Register(mux *http.ServeMux) {
@@ -62,6 +65,8 @@ func (u *UI) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/hub/ui/sync", u.admin(u.handleSyncNow))
 	mux.HandleFunc("/hub/ui/uplink", u.admin(u.handleUplink))
 	mux.HandleFunc("/hub/ui/proxy", u.admin(u.handleProxy))
+	mux.HandleFunc("/hub/network/join", u.handleNetwork(false))
+	mux.HandleFunc("/hub/network/facility", u.handleNetwork(true))
 	mux.HandleFunc("/hub/ui/reset", u.admin(u.handleReset))
 	mux.HandleFunc("/hub/ui/takeover", u.admin(u.handleTakeOver))
 	mux.HandleFunc("/hub/ui/move", u.admin(u.handleMove))
@@ -273,7 +278,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"ServerVersion": h.ServerVersion(), "Msg": r.URL.Query().Get("msg"),
 		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour), "Orphans": h.Store.PendingWithoutUser(),
 		"Offline": !h.Online(), "AccountCode": h.AccountCode(),
-		"Reach": reachText(h.Reach()), "Proxy": h.Proxy(),
+		"Reach": reachText(h.Reach()), "Proxy": h.Proxy(), "Net": u.netView(),
 	})
 }
 

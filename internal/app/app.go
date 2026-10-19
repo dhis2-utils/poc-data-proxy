@@ -37,6 +37,7 @@ type App struct {
 	// Net manages the network (Pi image, network: networkmanager); nil otherwise.
 	Net       *netsetup.Manager
 	StorePath string
+	ui        *ui.UI
 }
 
 // EnsureIdentity gives a fresh store a hub ID and puts it in setup mode (spec 6.2 step 1).
@@ -143,11 +144,33 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 		}
 	})
 	a2 := &App{Hub: h, Handler: logRequests(cfg, recoverer(root)), Worker: worker, Upgrader: up, Stick: stick.New(h),
-		StorePath: storePath}
+		StorePath: storePath, ui: u}
 	if cfg.Network == "networkmanager" {
-		a2.Net = &netsetup.Manager{R: netsetup.ExecRunner{}, DataDir: cfg.DataDir, HubID: h.HubID(), DnsmasqDir: cfg.NMDnsmasqDir}
+		a2.SetNet(&netsetup.Manager{R: netsetup.ExecRunner{}, DataDir: cfg.DataDir, HubID: h.HubID(), DnsmasqDir: cfg.NMDnsmasqDir})
 	}
 	return a2, nil
+}
+
+// SetNet hands the hub's network to m: the pages' network section and hub.txt on the
+// USB stick.
+func (a *App) SetNet(m *netsetup.Manager) {
+	a.Net, a.ui.Net = m, m
+	a.Stick.Info = func() string { return hubInfo(a.Hub.HubID(), m.Status()) }
+}
+
+// hubInfo is facility-hub/hub.txt: what anyone holding the box needs to reach the hub.
+// The facility's own Wi-Fi password is left out (the facility chose it).
+func hubInfo(id string, st netsetup.Status) string {
+	addrs := "none"
+	if len(st.Addresses) > 0 {
+		addrs = strings.Join(st.Addresses, ", ")
+	}
+	s := "Facility hub " + id + "\nOpen: http://dhis2.local\nAddresses: " + addrs +
+		"\nSetup Wi-Fi: " + st.SetupSSID + "\nSetup Wi-Fi password: " + st.SetupPassword + "\n"
+	if st.Mode == "facility" {
+		s += "Facility Wi-Fi: " + st.Name + "\n"
+	}
+	return s
 }
 
 // Start runs the connectivity monitor and sync worker until ctx ends.

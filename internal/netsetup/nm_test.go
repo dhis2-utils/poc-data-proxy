@@ -2,12 +2,13 @@ package netsetup
 
 import (
 	"context"
+	"github.com/dhis2/facility-hub/internal/netsetup/nmfake"
 	"reflect"
 	"testing"
 )
 
-func canned() *fakeNM {
-	return &fakeNM{out: map[string]string{
+func canned() *nmfake.NM {
+	return &nmfake.NM{Out: map[string]string{
 		"-t -f DEVICE,TYPE,STATE,CONNECTION device": "eth0:ethernet:connected:Wired connection 1\n" +
 			"wlan0:wifi:disconnected:\n" +
 			"usb0:ethernet:connected:Wired connection 2\n" +

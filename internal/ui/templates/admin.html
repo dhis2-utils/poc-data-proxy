@@ -19,6 +19,7 @@
 <a href="/hub/ui/endpoints">Endpoint log</a>
 </div>
 
+{{with .Net}}{{template "netsection" .}}{{end}}
 <div class="card"><h2>Devices</h2>
 <p>Devices open <span class="mono">https://dhis2.local</span>{{with .Heartbeat.addresses}}, or where that name does not work <span class="mono">{{range $i, $a := .}}{{if $i}}, {{end}}https://{{$a}}{{end}}</span>{{end}}. A device that does not trust the hub yet opens <span class="mono">http://dhis2.local</span> and follows its steps once.</p>
 <p>{{.Reach}}</p>

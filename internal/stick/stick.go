@@ -4,6 +4,7 @@ package stick
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -36,6 +37,9 @@ type Stick struct {
 	stateSum [32]byte           // what state.rec holds
 	certsSum [32]byte           // what tls.rec holds
 	tickMu   sync.Mutex         // one tick at a time
+	// Info is the text of facility-hub/hub.txt (the hub's ID, address and setup Wi-Fi,
+	// for whoever holds the box); nil writes none.
+	Info func() string
 }
 
 func New(h *core.Hub) *Stick {
@@ -99,11 +103,14 @@ func (s *Stick) Tick(ctx context.Context) {
 		return
 	}
 	var err error
+	if s.Info != nil {
+		err = s.writeInfo(s.Info())
+	}
 	if s.H.Mode() == core.ModeSetup {
-		err = s.writeSetupCode()
+		err = errors.Join(err, s.writeSetupCode())
 	} else {
 		os.Remove(filepath.Join(s.root(), "setup-code.txt")) // used: it no longer works
-		err = s.mirror()
+		err = errors.Join(err, s.mirror())
 	}
 	if err != nil {
 		s.setStatus(func(cur *Status) { cur.Error = err.Error() })
@@ -145,6 +152,18 @@ func (s *Stick) check() Status {
 
 // writeSetupCode puts the setup code and hub ID on the stick while the hub waits to be
 // set up: whoever holds the box can then set it up, and no one else on the network.
+// writeInfo keeps facility-hub/hub.txt current.
+func (s *Stick) writeInfo(text string) error {
+	if err := os.MkdirAll(s.root(), 0o700); err != nil {
+		return err
+	}
+	path := filepath.Join(s.root(), "hub.txt")
+	if b, err := os.ReadFile(path); err == nil && string(b) == text {
+		return nil
+	}
+	return writeFileSync(path, []byte(text))
+}
+
 func (s *Stick) writeSetupCode() error {
 	code, err := os.ReadFile(s.H.SetupCodePath())
 	if err != nil {
