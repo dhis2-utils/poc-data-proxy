@@ -1,12 +1,16 @@
-// Package upgrade implements hub self-upgrade (spec 12a): signed releases from a
-// release channel, outbox drain, migration on a store copy, binary swap, re-exec,
-// health check and rollback.
+// Package upgrade implements hub self-upgrade (spec 12a): the version the country
+// chose on central, signed releases from the supplier's release source, outbox
+// drain, migration on a store copy, binary swap, re-exec, health check and rollback.
 //
-// Release channel layout (a static folder over HTTP):
+// The country's choice is facility-hub-admin/release on central:
 //
-//	release.json      {"version":"0.2.0","files":{"linux/arm64":"hub-linux-arm64",...},
-//	                   "sha256":{"linux/arm64":"<hex>",...},"stage":{"percent":100,"hubIds":[]}}
-//	release.json.sig  base64 ed25519 signature of release.json, by the release key
+//	{"version":"0.3.0","pilotHubs":["hub-…"],"percent":10}
+//
+// A release on the release source (GitHub: <base>/v<version>/<file>):
+//
+//	release.json      {"version":"0.3.0","files":{"linux/arm64":"hub-linux-arm64",...},
+//	                   "sha256":{"linux/arm64":"<hex>",...},"image":{"file":...,"sha256":...}}
+//	release.json.sig  base64 ed25519 signature of release.json, by the supplier's key
 //	hub-linux-arm64   the binary (its sha256 is covered by the signed manifest)
 package upgrade
 
@@ -22,9 +26,7 @@ import (
 	"hash/fnv"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,17 +42,32 @@ import (
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
+// The release source and the supplier's ed25519 public key (base64), set when the
+// binary is built (-ldflags -X github.com/dhis2/facility-hub/internal/upgrade.ReleaseKey=…).
+// A build without a key never upgrades.
+var (
+	ReleaseBase = "https://github.com/dhis2-utils/poc-data-proxy/releases/download"
+	ReleaseKey  = ""
+)
+
 type Manifest struct {
 	Version string            `json:"version"`
 	Files   map[string]string `json:"files"`
 	SHA256  map[string]string `json:"sha256"`
-	Stage   struct {
-		Percent int      `json:"percent"`
-		HubIDs  []string `json:"hubIds"`
-	} `json:"stage"`
-	// CentralURL moves every hub reading this manifest to a new central URL (a
-	// domain migration), without a new image or a site visit. Signed like the rest.
-	CentralURL string `json:"centralUrl,omitempty"`
+	Image   *Image            `json:"image,omitempty"`
+}
+
+// Image is the Pi image published with the release.
+type Image struct {
+	File   string `json:"file"`
+	SHA256 string `json:"sha256"`
+}
+
+// Choice is the version the country chose, and which hubs take it now.
+type Choice struct {
+	Version   string   `json:"version"`
+	PilotHubs []string `json:"pilotHubs"`
+	Percent   int      `json:"percent"`
 }
 
 // Marker is written to data_dir/upgrade.json across the re-exec.
@@ -76,6 +93,9 @@ type Result struct {
 
 type Upgrader struct {
 	H *core.Hub
+	// Base and Key: the release source and its public key (ReleaseBase and ReleaseKey
+	// unless a test sets them).
+	Base, Key string
 	// Drain pushes the outbox; it reports whether entries are still pending.
 	Drain func(ctx context.Context) (pending int, err error)
 	// Shutdown stops serving and closes the store before the re-exec.
@@ -97,8 +117,14 @@ func (u *Upgrader) record(r Result) {
 
 // Check runs one release channel check (called after each online sync cycle).
 func (u *Upgrader) Check(ctx context.Context) {
-	if u.H.Cfg.ReleaseChannel == "" {
-		return
+	if u.Base == "" {
+		u.Base = ReleaseBase
+	}
+	if u.Key == "" {
+		u.Key = ReleaseKey
+	}
+	if u.Key == "" {
+		return // a development build
 	}
 	if err := u.check(ctx); err != nil {
 		slog.Warn("upgrade check", "err", err)
@@ -106,21 +132,23 @@ func (u *Upgrader) Check(ctx context.Context) {
 }
 
 func (u *Upgrader) check(ctx context.Context) error {
-	m, err := u.fetchManifest(ctx)
-	if err != nil {
+	c, err := u.fetchChoice(ctx)
+	if err != nil || c == nil || CompareVersions(c.Version, u.H.Version) <= 0 {
 		return err
 	}
-	if m != nil && m.CentralURL != "" {
-		u.followCentral(ctx, m.CentralURL)
+	if skip := u.H.Store.Meta("upgrade_skip"); skip == c.Version {
+		return nil // this version already failed here
 	}
-	if m == nil || CompareVersions(m.Version, u.H.Version) <= 0 {
+	if !InStage(*c, u.H.HubID()) {
+		slog.Info("upgrade chosen but this hub is not in the current stage", "version", c.Version)
 		return nil
 	}
-	if skip := u.H.Store.Meta("upgrade_skip"); skip == m.Version {
-		return nil // this version already failed its health check here
+	m, err := u.fetchManifest(ctx, c.Version)
+	if err != nil || m == nil {
+		return err
 	}
-	if !InStage(m, u.H.HubID()) {
-		slog.Info("upgrade available but this hub is not in the current stage", "version", m.Version)
+	if m.Version != c.Version {
+		u.record(Result{Result: "ignored", From: u.H.Version, To: c.Version, Reason: "the release for " + c.Version + " says it is " + m.Version})
 		return nil
 	}
 	plat := runtime.GOOS + "/" + runtime.GOARCH
@@ -141,7 +169,7 @@ func (u *Upgrader) check(ctx context.Context) error {
 		slog.Warn("upgrading with stuck outbox entries; their authors must log in online", "entries", stuck)
 	}
 	// 2. Download and verify.
-	bin, err := u.get(ctx, m.Files[plat], 512<<20)
+	bin, err := u.get(ctx, "v"+m.Version+"/"+m.Files[plat], 512<<20)
 	if err != nil {
 		return err
 	}
@@ -224,20 +252,36 @@ func (u *Upgrader) check(ctx context.Context) error {
 	return Reexec(exe, dk)
 }
 
-// fetchManifest returns the release manifest, or nil if it is not correctly signed.
-// Nothing from an unsigned manifest is used or stored: the channel may be plain HTTP,
-// so its content is only trusted once the signature checks out (REVIEW-2 F2).
-func (u *Upgrader) fetchManifest(ctx context.Context) (*Manifest, error) {
-	raw, err := u.get(ctx, "release.json", 64<<10)
+// fetchChoice reads the country's choice from central; nil when there is none.
+func (u *Upgrader) fetchChoice(ctx context.Context) (*Choice, error) {
+	var c Choice
+	err := u.H.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-admin/release", nil, u.H.HubAuth(), &c)
+	var he *central.HTTPError
+	if errors.As(err, &he) && he.Status == http.StatusNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("release choice: %w", err)
+	}
+	if c.Version == "" {
+		return nil, nil
+	}
+	return &c, nil
+}
+
+// fetchManifest returns the release manifest of version, or nil if it is not
+// correctly signed. Nothing from an unsigned manifest is used (REVIEW-2 F2).
+func (u *Upgrader) fetchManifest(ctx context.Context, version string) (*Manifest, error) {
+	raw, err := u.get(ctx, "v"+version+"/release.json", 64<<10)
 	if err != nil {
 		return nil, err
 	}
-	sig, err := u.get(ctx, "release.json.sig", 1<<10)
-	if err != nil || !Verify(u.H.Cfg.ReleasePublicKey, raw, sig) {
+	sig, err := u.get(ctx, "v"+version+"/release.json.sig", 1<<10)
+	if err != nil || !Verify(u.Key, raw, sig) {
 		sum := sha256.Sum256(raw)
 		id := hex.EncodeToString(sum[:8])
 		if u.H.Store.Meta("upgrade_unsigned") != id { // report each such manifest once
-			u.record(Result{Result: "ignored", From: u.H.Version, Reason: "release channel served a manifest without a valid signature"})
+			u.record(Result{Result: "ignored", From: u.H.Version, To: version, Reason: "the release has no valid signature"})
 			u.H.Store.SetMeta("upgrade_unsigned", id)
 		}
 		return nil, nil
@@ -249,48 +293,12 @@ func (u *Upgrader) fetchManifest(ctx context.Context) (*Manifest, error) {
 	return m, nil
 }
 
-// followCentral switches the hub to the central URL a signed manifest names, once
-// the new server knows this hub: its registry entry is there and the hub token works.
-// The release key can already ship any code, so it may also move hubs; https is
-// required all the same, except for a local test server.
-func (u *Upgrader) followCentral(ctx context.Context, target string) {
-	h := u.H
-	target = strings.TrimRight(target, "/")
-	if target == h.Central.BaseURL() || h.Runtime() == nil {
-		return
-	}
-	pu, err := url.Parse(target)
-	if err != nil || pu.Hostname() == "" || (pu.Scheme != "https" && !isLoopback(pu.Hostname())) {
-		slog.Warn("release manifest names an unusable central URL; staying", "url", target)
-		return
-	}
-	c := central.NewClient(target, central.NewMonitor(h.Cfg.PingInterval, h.Cfg.PingTimeout))
-	var reg struct {
-		HubID string `json:"hubId"`
-	}
-	if err := c.JSON(ctx, "GET", "/api/dataStore/facility-hub-registry/"+url.PathEscape(h.HubID()), nil, h.HubAuth(), &reg); err != nil || reg.HubID != h.HubID() {
-		slog.Warn("new central URL does not know this hub yet; staying", "url", target, "err", err)
-		return
-	}
-	if err := h.Store.SetMeta(core.MetaCentralURL, target); err != nil {
-		slog.Error("saving new central URL", "err", err)
-		return
-	}
-	h.Central.SetBaseURL(target)
-	slog.Info("moved to new central URL from signed release manifest", "url", target)
-}
-
-func isLoopback(host string) bool {
-	ip := net.ParseIP(host)
-	return host == "localhost" || (ip != nil && ip.IsLoopback())
-}
-
-// get fetches a file from the release channel, refusing more than limit bytes.
+// get fetches a file from the release source, refusing more than limit bytes.
 func (u *Upgrader) get(ctx context.Context, name string, limit int64) ([]byte, error) {
 	// The check runs inside the sync cycle; a hung channel must not stall push and pull.
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(u.H.Cfg.ReleaseChannel, "/")+"/"+name, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(u.Base, "/")+"/"+name, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -300,11 +308,11 @@ func (u *Upgrader) get(ctx context.Context, name string, limit int64) ([]byte, e
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("release channel %s: HTTP %d", name, resp.StatusCode)
+		return nil, fmt.Errorf("release source %s: HTTP %d", name, resp.StatusCode)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err == nil && int64(len(b)) > limit {
-		return nil, fmt.Errorf("release channel %s: larger than %d bytes", name, limit)
+		return nil, fmt.Errorf("release source %s: larger than %d bytes", name, limit)
 	}
 	return b, err
 }
@@ -322,20 +330,16 @@ func Verify(pubB64 string, msg, sigB64 []byte) bool {
 	return ed25519.Verify(pub, msg, sig)
 }
 
-// InStage decides from the hub ID whether this hub is in the rollout stage.
-func InStage(m *Manifest, hubID string) bool {
-	if slices.Contains(m.Stage.HubIDs, hubID) {
+// InStage decides whether this hub takes the chosen version now: a pilot hub, or one
+// whose ID hashes under the percentage (apps/facility-hub/src/hubs/stage.ts does the
+// same; testdata/stages.json holds both to it).
+func InStage(c Choice, hubID string) bool {
+	if slices.Contains(c.PilotHubs, hubID) {
 		return true
-	}
-	if m.Stage.Percent <= 0 && len(m.Stage.HubIDs) > 0 {
-		return false
-	}
-	if m.Stage.Percent == 0 && len(m.Stage.HubIDs) == 0 {
-		return true // no stage given: everyone
 	}
 	h := fnv.New32a()
 	h.Write([]byte(hubID))
-	return int(h.Sum32()%100) < m.Stage.Percent
+	return int(h.Sum32()%100) < c.Percent
 }
 
 // CompareVersions compares dotted numeric versions ("0.2.10" > "0.2.9").

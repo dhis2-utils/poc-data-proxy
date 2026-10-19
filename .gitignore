@@ -8,3 +8,4 @@
 testresults/
 perf/results/
 __pycache__/
+.superpowers/

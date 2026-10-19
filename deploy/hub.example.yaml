@@ -9,8 +9,6 @@ data_dir: /var/lib/hub
 sync_interval: 15m
 ping_interval: 15s
 pat_expiry_days: 90
-release_channel: https://releases.example.org/hub/stable
-release_public_key: ""                     # base64 ed25519 key from `hub keygen` (release.pub)
 
 # Optional (defaults shown)
 # tls: true                 # the hub's own certificate authority, made at first boot (docs/DEPLOYMENT.md)

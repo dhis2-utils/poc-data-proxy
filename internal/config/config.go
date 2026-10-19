@@ -27,10 +27,8 @@ type Config struct {
 	PingInterval     time.Duration // connectivity probe cadence
 	PingTimeout      time.Duration
 	PATExpiryDays    int
-	ReleaseChannel   string // base URL of the release channel
-	ReleasePublicKey string // base64 ed25519 public key used to verify releases
-	TLS              bool   // self-signed TLS (spec 12); false for local development
-	ReservedPoolSize int    // target number of reserved values per generated attribute
+	TLS              bool // self-signed TLS (spec 12); false for local development
+	ReservedPoolSize int  // target number of reserved values per generated attribute
 	FullPullInterval time.Duration
 	// OwnershipCheckInterval: how often the hub checks that the facility still owns the
 	// enrollments it holds (transfers out do not show in incremental pulls).
@@ -171,10 +169,6 @@ func (c *Config) set(k, v string) error {
 		c.PATExpiryDays, err = strconv.Atoi(v)
 	case "reserved_pool_size":
 		c.ReservedPoolSize, err = strconv.Atoi(v)
-	case "release_channel":
-		c.ReleaseChannel = strings.TrimRight(v, "/")
-	case "release_public_key":
-		c.ReleasePublicKey = v
 	case "tls":
 		c.TLS, err = strconv.ParseBool(v)
 	case "offline_search_facility":

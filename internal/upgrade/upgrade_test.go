@@ -32,22 +32,24 @@ func TestCompareVersions(t *testing.T) {
 }
 
 func TestInStage(t *testing.T) {
-	m := &Manifest{}
-	if !InStage(m, "hub-x") {
-		t.Fatal("no stage means everyone")
+	if InStage(Choice{}, "hub-x") {
+		t.Fatal("no pilots and 0 % takes nobody")
 	}
-	m.Stage.HubIDs = []string{"hub-a"}
-	if !InStage(m, "hub-a") || InStage(m, "hub-b") {
-		t.Fatal("hub ID list")
+	c := Choice{PilotHubs: []string{"hub-a"}}
+	if !InStage(c, "hub-a") || InStage(c, "hub-b") {
+		t.Fatal("pilot hubs")
 	}
-	m.Stage.HubIDs, m.Stage.Percent = nil, 50
+	c = Choice{Percent: 50}
 	in := 0
 	for i := 0; i < 1000; i++ {
-		if InStage(m, "hub-"+string(rune('a'+i%26))+string(rune('a'+i/26%26))) {
+		if InStage(c, "hub-"+string(rune('a'+i%26))+string(rune('a'+i/26%26))) {
 			in++
 		}
 	}
 	if in < 300 || in > 700 {
 		t.Fatalf("50%% stage picked %d of 1000", in)
+	}
+	if !InStage(Choice{Percent: 100}, "hub-x") {
+		t.Fatal("100 % takes everyone")
 	}
 }

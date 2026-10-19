@@ -3,12 +3,9 @@ package e2e
 
 import (
 	"bytes"
-	"crypto/ed25519"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -301,43 +298,6 @@ func TestCreatedByKept(t *testing.T) {
 	d := ix.Full(ix.Get("OwnTe000001"))
 	if cb, _ := d["createdBy"].(map[string]any); cb["username"] != "nurse_a" || d["createdAt"] == "2000-01-01T00:00:00.000" {
 		t.Fatalf("createdBy %v createdAt %v", d["createdBy"], d["createdAt"])
-	}
-}
-
-// REVIEW-2 F1, F2: a signed release manifest can move hubs to a new central URL (a
-// domain migration); an unsigned one can do nothing, and none of its content is kept.
-func TestCentralMoveBySignedManifest(t *testing.T) {
-	e := newEnv(t)
-	e.setup()
-	h := e.app.Hub
-	moved := httptest.NewServer(e.central) // the same DHIS2 at a new address
-	t.Cleanup(moved.Close)
-
-	pub, priv, _ := ed25519.GenerateKey(nil)
-	files := map[string][]byte{}
-	channel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, ok := files[strings.TrimPrefix(r.URL.Path, "/")]
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-		w.Write(b)
-	}))
-	t.Cleanup(channel.Close)
-	h.Cfg.ReleaseChannel = channel.URL
-	h.Cfg.ReleasePublicKey = base64.StdEncoding.EncodeToString(pub)
-	manifest := []byte(`{"version":"0.1.0","files":{},"sha256":{},"centralUrl":"` + moved.URL + `","stage":{"percent":100}}`)
-
-	files["release.json"] = manifest // unsigned
-	e.sync()
-	if h.Central.BaseURL() != e.cSrv.URL || strings.Contains(h.Store.Meta("upgrade_unsigned"), "0.1.0") {
-		t.Fatalf("unsigned manifest acted on: %s %q", h.Central.BaseURL(), h.Store.Meta("upgrade_unsigned"))
-	}
-
-	files["release.json.sig"] = []byte(base64.StdEncoding.EncodeToString(ed25519.Sign(priv, manifest)))
-	e.sync()
-	if h.Central.BaseURL() != moved.URL || h.Store.Meta(core.MetaCentralURL) != moved.URL {
-		t.Fatalf("not moved: %s", h.Central.BaseURL())
 	}
 }
 

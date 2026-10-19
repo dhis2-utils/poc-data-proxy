@@ -94,7 +94,6 @@ The hub has no facility-specific configuration. It reads one small image-default
 | `aggregate_retention_periods` | Periods of each aggregate data set the hub keeps for offline use, the current one included (default 12). Central's dataStore key `facility-hub-config/aggregate` overrides it for all hubs: `{"retentionPeriods": 12, "dataSets": {"<data set>": 6}}` |
 | `access_refresh_interval` | How often each user's access list is re-read from central, besides at login (default 1h) |
 | `pat_expiry_days` | Lifetime of the personal access tokens the hub creates |
-| `release_channel`, `release_public_key` | Where to look for upgrades, and the ed25519 key releases must be signed with |
 | `tls` | `true` (default): at first boot the hub creates a CA limited to its own names and private addresses, issues its server certificate and discards the CA key. `false`: plain HTTP for development |
 | `reserved_pool_size` | Reserved values kept per generated attribute (default 150) |
 | `usb_dir` | Where the box's USB stick is mounted (none by default; the image uses `/media/hub-usb`). Before set-up the hub writes its setup code there; after, each minute, what a restore needs: the pending saves, the key file and the hub's state (docs/RECOVERY.md, C2). Used only when it is a mount point |
@@ -141,17 +140,18 @@ Hub endpoints:
 
 ## Releases and self-upgrade
 
+Releases come from the supplier's GitHub releases (`dhis2-utils/poc-data-proxy`, tag `v<version>`), signed with an ed25519 key. The release source and the public key are built into the binary, not set in `hub.yaml`:
+
 ```bash
-./hub keygen -out release                    # release.key (keep secret), release.pub (put in release_public_key)
-./hub release -key release.key -dir channel -version 0.2.0 [-percent 25] [-hubs hub-abc,hub-def] [-central-url https://new.example.org] \
-    linux/arm64=hub-linux-arm64 linux/amd64=hub-linux-amd64
+./hub keygen -out release        # release.key (the release workflow's secret), release.pub
+go build -ldflags "-X github.com/dhis2/facility-hub/internal/upgrade.ReleaseKey=$(cat release.pub)" ./cmd/hub
+./hub release -key release.key -dir out -version 0.3.0 [-image dhis2-hub-0.3.0-arm64.img.xz] \
+    linux/arm64=hub-linux-arm64 linux/amd64=hub-linux-amd64 windows/amd64=hub-windows-amd64.exe
 ```
 
-`-central-url` moves every hub that reads the manifest to a new central URL (a domain migration); a hub moves once the new server has its registry entry and accepts its token.
+`out/` holds the release's assets: the binaries (`hub-linux-arm64`, …), the image if given, `release.json` (version, file names and SHA-256 per platform, the image) and `release.json.sig`. A build without a key never upgrades.
 
-`channel/` is a static folder. Serve it over HTTP(S) and point `release_channel` at it. It contains `release.json` (version, file names, SHA-256 per platform, rollout stage), `release.json.sig` (ed25519 over `release.json`) and the binaries.
-
-After each online sync cycle the hub checks the channel. If it finds a newer, correctly signed release whose stage includes this hub, it:
+Each country chooses the version on central, in the Facility Hub app's "Hub version" page, which writes `facility-hub-admin/release`: `{"version": "0.3.0", "pilotHubs": [...], "percent": 10}`. After each online sync cycle a hub reads it; if the version is newer than its own, has not failed here before, and the hub is a pilot hub or its ID hashes under the percentage, it fetches that release's signed `release.json` and:
 
 1. pushes its outbox;
 2. downloads and verifies the binary;
@@ -167,7 +167,7 @@ If the health check fails, it restores the previous binary and store and re-exec
 
 ```bash
 go test ./...               # unit, golden-fixture, end-to-end and live-suite tests against the fake central
-scripts/test-upgrade.sh     # scenario 11: unsigned release ignored, signed upgrade, failed health check rolls back
+scripts/test-upgrade.sh     # scenario 11: the version chosen on central; unsigned release ignored, upgrade, failed health check rolls back
 go run ./cmd/hubtest matrix -profiles synthetic,sierra-leone,laos -versions 42   # the live suite against real DHIS2
 ```
 

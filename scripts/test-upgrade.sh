@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Scenario 11 (spec 13.3): hub self-upgrade against a local release channel.
+# Scenario 11 (spec 13.3): hub self-upgrade, from the version chosen on central
+# (facility-hub-admin/release) and a local release source laid out like GitHub's
+# (v<version>/release.json, its signature and the binaries).
 #
 #   1. An unsigned release is ignored.
 #   2. A signed release: the hub pushes its outbox, migrates a store copy, swaps the
@@ -24,10 +26,13 @@ fail() { echo "FAIL: $*"; echo "--- hub log"; tail -40 "$WORK/hub.log"; exit 1; 
 
 say "building (work dir $WORK)"
 go build -o "$WORK/fakecentral" ./cmd/fakecentral
-go build -ldflags "-X main.version=0.1.0" -o "$WORK/hub-0.1.0" ./cmd/hub
-go build -ldflags "-X main.version=0.2.0" -o "$WORK/hub-0.2.0" ./cmd/hub
-go build -ldflags "-X main.version=0.3.0 -X main.healthFail=true" -o "$WORK/hub-0.3.0" ./cmd/hub
-"$WORK/hub-0.1.0" keygen -out "$WORK/release"
+go build -o "$WORK/hub-tool" ./cmd/hub
+"$WORK/hub-tool" keygen -out "$WORK/release"
+UP=github.com/dhis2/facility-hub/internal/upgrade
+REL="-X $UP.ReleaseKey=$(cat "$WORK/release.pub") -X $UP.ReleaseBase=http://127.0.0.1:$CH_PORT"
+go build -ldflags "-X main.version=0.1.0 $REL" -o "$WORK/hub-0.1.0" ./cmd/hub
+go build -ldflags "-X main.version=0.2.0 $REL" -o "$WORK/hub-0.2.0" ./cmd/hub
+go build -ldflags "-X main.version=0.3.0 -X main.healthFail=true $REL" -o "$WORK/hub-0.3.0" ./cmd/hub
 PLAT="$(go env GOOS)/$(go env GOARCH)"
 
 mkdir -p "$WORK/channel" "$WORK/run/bin"
@@ -41,8 +46,6 @@ sync_interval: 1h
 ping_interval: 2s
 tls: false
 reserved_pool_size: 5
-release_channel: http://127.0.0.1:$CH_PORT
-release_public_key: $(cat "$WORK/release.pub")
 EOF
 
 "$WORK/fakecentral" -listen "127.0.0.1:$FC_PORT" > "$WORK/fc.log" 2>&1 & PIDS+=($!)
@@ -56,6 +59,17 @@ status() { curl -s "$H/hub/status" | python3 -c "import json,sys; print(json.loa
 heartbeat_upgrade() {
   curl -s -u hub_admin:Hub-Test-2026! "$FC/api/dataStore/facility-hub-status/$HUB_ID" |
     python3 -c "import json,sys; u=json.load(sys.stdin).get('lastUpgrade') or {}; print(u.get('result',''), u.get('to',''), u.get('reason',''))"
+}
+choose() { # choose <version>: the country's choice on central, every hub
+  local m=PUT
+  curl -sf -o /dev/null -u hub_admin:Hub-Test-2026! "$FC/api/dataStore/facility-hub-admin/release" || m=POST
+  curl -sf -o /dev/null -u hub_admin:Hub-Test-2026! -X $m -H 'Content-Type: application/json' \
+    "$FC/api/dataStore/facility-hub-admin/release" -d "{\"version\":\"$1\",\"pilotHubs\":[],\"percent\":100}"
+}
+publish() { "$WORK/hub-tool" release -key "$WORK/release.key" -dir "$WORK/channel/v$1" -version "$1" "$PLAT=$WORK/hub-$1"; }
+admin_login() {
+  curl -s -c "$WORK/admin.jar" -X POST "$H/api/auth/login" -H 'Content-Type: application/json' \
+    -d '{"username":"hub_admin","password":"Hub-Test-2026!"}' >/dev/null
 }
 sync_now() { curl -s -o /dev/null -b "$WORK/admin.jar" -X POST -H "Origin: $H" "$H/hub/ui/sync"; }
 is() { [ "$(status "$1")" = "$2" ]; } # is <status field> <value>
@@ -83,8 +97,10 @@ curl -s -b "$WORK/nurse.jar" -X POST "$H/api/tracker?async=false" -H 'Content-Ty
 [ "$(status pending)" = 1 ] || fail "expected 1 pending object"
 
 say "1. unsigned release 0.2.0 is ignored"
-"$WORK/hub-0.1.0" release -dir "$WORK/channel" -version 0.2.0 -unsigned "$PLAT=$WORK/hub-0.2.0"
+publish 0.2.0
+rm "$WORK/channel/v0.2.0/release.json.sig"
 curl -s -X POST "$FC/fake/up" >/dev/null
+choose 0.2.0
 wait_for 10 is mode online || fail "hub did not come back online"
 sync_now
 wait_for 15 is pending 0 || fail "outbox not pushed"
@@ -104,7 +120,7 @@ sync_now
 wait_for 15 is stuckOutbox 1 || fail "stuck entry not reported"
 
 say "2. signed release 0.2.0 installs and passes the health check"
-"$WORK/hub-0.1.0" release -key "$WORK/release.key" -dir "$WORK/channel" -version 0.2.0 "$PLAT=$WORK/hub-0.2.0"
+publish 0.2.0
 sync_now
 wait_for 30 is version 0.2.0 || fail "did not upgrade to 0.2.0"
 kill -0 $HUB_PID || fail "hub process gone (re-exec should keep the PID)"
@@ -112,22 +128,21 @@ kill -0 $HUB_PID || fail "hub process gone (re-exec should keep the PID)"
 [ "$(status locked)" = False ] || fail "store locked after upgrade (data key hand-over failed)"
 curl -sf -b "$WORK/nurse.jar" "$H/hub/status" >/dev/null
 wait_for 10 sh -c "grep -q 'upgrade result=ok' $WORK/hub.log" || fail "no ok result logged"
+admin_login # the admin session lived in the old process's memory
 sync_now
 wait_for 15 sh -c "curl -s -u hub_admin:Hub-Test-2026! $FC/api/dataStore/facility-hub-status/$HUB_ID | grep -q '\"result\":\"ok\"'" || fail "heartbeat does not report ok"
 echo "heartbeat lastUpgrade: $(heartbeat_upgrade)"
 
 say "3. signed release 0.3.0 fails its health check and rolls back"
-"$WORK/hub-0.1.0" release -key "$WORK/release.key" -dir "$WORK/channel" -version 0.3.0 "$PLAT=$WORK/hub-0.3.0"
-# Log in again: the admin session lived in the old process's memory.
-curl -s -c "$WORK/admin.jar" -X POST "$H/api/auth/login" -H 'Content-Type: application/json' \
-  -d '{"username":"hub_admin","password":"Hub-Test-2026!"}' >/dev/null
+publish 0.3.0
+choose 0.3.0
+admin_login # the admin session lived in the old process's memory
 sync_now
 wait_for 30 sh -c "grep -q 'health check failed' $WORK/hub.log" || fail "0.3.0 health check did not run"
 wait_for 30 sh -c "grep -q 'upgrade result=failed' $WORK/hub.log" || fail "rollback not recorded"
 wait_for 10 is version 0.2.0 || fail "not rolled back to 0.2.0"
 [ "$(status locked)" = False ] || fail "store locked after rollback"
-curl -s -c "$WORK/admin.jar" -X POST "$H/api/auth/login" -H 'Content-Type: application/json' \
-  -d '{"username":"hub_admin","password":"Hub-Test-2026!"}' >/dev/null
+admin_login
 sync_now
 wait_for 15 sh -c "curl -s -u hub_admin:Hub-Test-2026! $FC/api/dataStore/facility-hub-status/$HUB_ID | grep -q '\"result\":\"failed\"'" || fail "heartbeat does not report the failure"
 echo "heartbeat lastUpgrade: $(heartbeat_upgrade)"
