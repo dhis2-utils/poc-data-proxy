@@ -12,3 +12,4 @@ __pycache__/
 image/out/
 *.img
 *.img.xz
+windows/out/
