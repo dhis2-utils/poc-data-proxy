@@ -34,6 +34,7 @@ type Stick struct {
 	keysAt   int64              // the key file's last change copied
 	sums     map[int64][32]byte // what each save on the stick holds
 	stateSum [32]byte           // what state.rec holds
+	certsSum [32]byte           // what tls.rec holds
 	tickMu   sync.Mutex         // one tick at a time
 }
 

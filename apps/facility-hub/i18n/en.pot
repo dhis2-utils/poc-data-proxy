@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-10-19T06:19:51.861Z\n"
-"PO-Revision-Date: 2026-10-19T06:19:51.863Z\n"
+"POT-Creation-Date: 2026-10-19T11:38:20.513Z\n"
+"PO-Revision-Date: 2026-10-19T11:38:20.513Z\n"
 
 msgid "Approve the hub of {{- facility}}"
 msgstr "Approve the hub of {{- facility}}"
@@ -260,6 +260,12 @@ msgstr "Version"
 msgid "(central DHIS2 {{- v}})"
 msgstr "(central DHIS2 {{- v}})"
 
+msgid "Addresses"
+msgstr "Addresses"
+
+msgid "Certificate fingerprint"
+msgstr "Certificate fingerprint"
+
 msgid "Housekeeping token"
 msgstr "Housekeeping token"
 
@@ -461,11 +467,3 @@ msgstr ""
 "F_USER_ADD, F_USER_VIEW, F_USER_GROUPS_READ_ONLY_ADD_MEMBERS and "
 "M_facilityhub, and read access to the hub accounts group. Only superusers "
 "change these settings."
-
-msgctxt "Application title"
-msgid "__MANIFEST_APP_TITLE"
-msgstr "Facility Hub"
-
-msgctxt "Application description"
-msgid "__MANIFEST_APP_DESCRIPTION"
-msgstr "The facility hubs of this country: their state, approvals and central moves"

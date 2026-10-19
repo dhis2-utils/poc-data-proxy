@@ -140,6 +140,14 @@ export const HubPage = () => {
                                 v: hb.serverVersion,
                             })}
                     </dd>
+                    <dt>{i18n.t('Addresses')}</dt>
+                    <dd>
+                        {hb?.addresses?.length
+                            ? hb.addresses.map((a) => `https://${a}`).join(', ')
+                            : '—'}
+                    </dd>
+                    <dt>{i18n.t('Certificate fingerprint')}</dt>
+                    <dd className={styles.mono}>{hb?.caFingerprint || '—'}</dd>
                     <dt>{i18n.t('Housekeeping token')}</dt>
                     <dd>
                         {hb?.hubTokenOwner ?? '—'}{' '}

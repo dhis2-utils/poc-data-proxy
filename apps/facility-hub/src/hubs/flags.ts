@@ -33,6 +33,10 @@ export type Heartbeat = {
     } | null
     needsUpgrade?: boolean
     refusedGroups?: number
+    /** The hub's private IPv4 addresses: for devices where dhis2.local does not work. */
+    addresses?: string[] | null
+    /** SHA-256 of the certificate authority devices install, colon-separated hex. */
+    caFingerprint?: string
     history?: Day[]
 }
 

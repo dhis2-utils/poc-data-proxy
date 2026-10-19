@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/hubcrypto"
+	"github.com/dhis2/facility-hub/internal/hubtls"
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
@@ -22,6 +24,9 @@ import (
 //   - keys.db: the key file (key slots, identity), whenever it changed;
 //   - state.rec: the users (their tokens, still sealed) and the hub's state (settings,
 //     catalog, hub token), sealed with the data key, whenever it changed;
+//   - tls.rec: the hub's certificate authority, its key and the server's certificate,
+//     sealed with the data key, whenever they changed, so devices keep trusting a
+//     restored hub (docs/DEPLOYMENT.md, "Reaching the hub securely");
 //   - outbox/<seq>.rec: each offline save still pending, sealed whole with the data key
 //     (who saved it, its flags and order cannot be changed on the stick), rewritten
 //     when it changes (a corrected aggregate value); a save leaves the stick once
@@ -37,6 +42,8 @@ const (
 	restoreReady  = "restore-ready"       // in the data folder: staged, put in place at the next start
 	restoreReplay = "restored-from-stick" // in the data folder: state and saves to put back at unlock
 	stateAAD      = "stick-state"
+	certsAAD      = "stick-tls"
+	certsStaged   = "tls.json" // in the restore folder: the certificates, opened at Stage
 )
 
 // RestorePending reports whether a restore waits for its first unlock: the store may
@@ -75,6 +82,9 @@ func (s *Stick) mirror() error {
 	}
 	if err := s.copyState(filepath.Join(dir, "state.rec")); err != nil {
 		return fmt.Errorf("state: %w", err)
+	}
+	if err := s.copyCerts(filepath.Join(dir, "tls.rec")); err != nil {
+		return fmt.Errorf("certificates: %w", err)
 	}
 	keep := map[string]bool{}
 	for _, e := range pending {
@@ -123,6 +133,28 @@ func (s *Stick) copyState(path string) error {
 		return err
 	}
 	s.stateSum = sum
+	return nil
+}
+
+// copyCerts writes the hub's certificates, sealed, when they changed. A hub without
+// them (TLS off) has nothing to copy.
+func (s *Stick) copyCerts(path string) error {
+	b, err := hubtls.Bundle(s.H.Cfg.DataDir)
+	if err != nil {
+		return nil
+	}
+	sum := sha256.Sum256(b)
+	if _, err := os.Stat(path); err == nil && sum == s.certsSum {
+		return nil
+	}
+	sealed, err := s.H.Store.Seal(certsAAD, b)
+	if err != nil {
+		return err
+	}
+	if err := writeFileSync(path, sealed); err != nil {
+		return err
+	}
+	s.certsSum = sum
 	return nil
 }
 
@@ -185,7 +217,8 @@ func Stage(usbDir, dataDir, id, username, password string) error {
 	}
 	c := cands[i]
 	keys := filepath.Join(c.Dir, "keys.db")
-	if _, err := store.UnwrapFromKeyFile(keys, username, password); err != nil {
+	dk, err := store.UnwrapFromKeyFile(keys, username, password)
+	if err != nil {
 		return err
 	}
 	staging := filepath.Join(dataDir, "restore")
@@ -201,6 +234,16 @@ func Stage(usbDir, dataDir, id, username, password string) error {
 	}
 	for src, dst := range copies {
 		if err := copyFile(src, dst); err != nil {
+			os.RemoveAll(staging)
+			return err
+		}
+	}
+	// The certificates are put in place at the next start, before the hub serves, so
+	// they are opened now: without them devices install the new disk's authority.
+	if sealed, err := os.ReadFile(filepath.Join(c.Dir, "tls.rec")); err == nil {
+		if plain, err := hubcrypto.Open(dk, sealed, []byte(certsAAD)); err != nil {
+			slog.Error("the certificates on the USB stick do not open: devices will install the new disk's", "err", err)
+		} else if err := writeFileSync(filepath.Join(staging, certsStaged), plain); err != nil {
 			os.RemoveAll(staging)
 			return err
 		}
@@ -223,6 +266,12 @@ func Finish(dataDir, storePath string) error {
 	}
 	if err := os.Rename(filepath.Join(staging, "hub.db"), storePath); err != nil {
 		return err
+	}
+	if b, err := os.ReadFile(filepath.Join(staging, certsStaged)); err == nil {
+		if err := hubtls.Restore(dataDir, b); err != nil {
+			slog.Error("restoring the hub's certificates from the USB stick", "err", err)
+		}
+		os.Remove(filepath.Join(staging, certsStaged))
 	}
 	if err := writeFileSync(filepath.Join(dataDir, restoreReplay), []byte(staging)); err != nil {
 		return err

@@ -18,7 +18,7 @@ type hostCache struct {
 	allowed map[string]bool
 }
 
-// HostAllowed reports whether a request's Host names this hub: hub.local, the
+// HostAllowed reports whether a request's Host names this hub: dhis2.local, the
 // device's host name, one of its own addresses, localhost, or a name listed in
 // hub_hosts. Everything else is refused, so a DNS-rebinding page or a forged Host
 // header cannot make the hub write a foreign origin into its responses (review M1).
@@ -90,7 +90,7 @@ func (h *Hub) CentralAllowed(raw string) bool {
 }
 
 func ownHosts() map[string]bool {
-	m := map[string]bool{"localhost": true, "hub.local": true}
+	m := map[string]bool{"localhost": true, "dhis2.local": true}
 	if name, err := os.Hostname(); err == nil && name != "" {
 		name = strings.ToLower(name)
 		m[name], m[name+".local"] = true, true

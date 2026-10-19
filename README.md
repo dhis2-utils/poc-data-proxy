@@ -85,8 +85,9 @@ The hub has no facility-specific configuration. It reads one small image-default
 | `central_hosts` | Hosts setup may point a hub at (`hmis.example.org, *.hmis.example.org`); setup then asks for an `https://` URL on them. With neither key, setup needs the token in `data_dir/setup-token` (printed on the label) |
 | `password_fallback` | Store a user's central password, sealed, when a PAT cannot be created (spec 7.1). Default `false` |
 | `setup_user_group` | No longer used (accepted so that older files load): staff assigned to the facility set up, administer and reset its hub |
-| `listen` | Listen address, e.g. `:8443` |
-| `data_dir` | Store (`hub.db` key file, `hub.db.data` encrypted data file), TLS certificate (`ca.crt` for devices, also served at `/hub/ca.crt`), request log, upgrade files |
+| `listen` | Listen address, e.g. `:8443`; `:443` on the image, for `https://dhis2.local` |
+| `http_listen` | Plain-HTTP address for the start page and the hub's certificate (`:80` on the image, for `http://dhis2.local`); off when empty (the default). Every other request there gets the start page, which moves on to HTTPS once the device trusts the hub |
+| `data_dir` | Store (`hub.db` key file, `hub.db.data` encrypted data file), TLS certificates (the hub's authority `ca.crt` for devices, also served at `/hub/ca.crt`, with its key `ca.key`; the server's `tls.crt` and `tls.key`, renewed by the hub), request log, upgrade files |
 | `sync_interval`, `ping_interval`, `ping_timeout` | Sync cadence (default 15m, with ±10 % jitter) and connectivity probe (15s, 5s; spec 5.2) |
 | `reconnect_delay` | After an outage, wait up to this long at random before syncing, so hubs do not reach central together (default 5m). Until the outbox is pushed, the hub keeps answering tracker and aggregate requests itself |
 | Retention by program and tracked entity type | Central's dataStore key `facility-hub-config/retention`, read by every hub: `{"defaultMonths": 0, "programs": {"<program>": 12}, "trackedEntityTypes": {"<type>": 6}}`. Months of data kept, 0 or no entry keeps everything. Event programs keep events by event date. Tracker programs keep active enrollments in full and closed ones until their last change is older than the window, then as hidden stubs (for the "enrol once" check). Tracked entity types have no default: people are kept unless their type is named; an entity of a type with a window goes when it is old and has nothing left in full |
@@ -111,7 +112,7 @@ The hub has no facility-specific configuration. It reads one small image-default
 ./hub serve -config /etc/hub/hub.yaml
 ```
 
-1. **First boot.** The hub creates a hub ID and starts in setup mode. Open `https://<hub>:8443/` and you are sent to `/hub/setup`.
+1. **First boot.** The hub creates a hub ID and starts in setup mode. Open `https://dhis2.local/` (or `https://<hub>:8443/` with the default `listen`) and you are sent to `/hub/setup`.
 2. **Setup.** A staff member assigned to the facility logs in. The hub then:
    - picks the facility from the user's org units, with a picker if there are several;
    - checks that the DHIS2 version is supported;
@@ -136,7 +137,7 @@ Hub endpoints:
   - reset hub.
 - `/hub/ui/endpoints`: every endpoint and parameter clients called, and every parameter refused offline (spec 13.1).
 
-**Raspberry Pi.** Use 64-bit Raspberry Pi OS. Install the binary at `/usr/local/bin/hub`, the defaults at `/etc/hub/hub.yaml`, and [`deploy/hub.service`](deploy/hub.service) as a systemd unit. With the host name `hub`, `avahi-daemon` announces `hub.local`, which laptops resolve and Android does not reliably. The full image, hardware and network set-ups, and how devices reach the hub securely, are in [DEPLOYMENT.md](docs/DEPLOYMENT.md).
+**Raspberry Pi.** Use 64-bit Raspberry Pi OS. Install the binary at `/usr/local/bin/hub`, the defaults at `/etc/hub/hub.yaml`, and [`deploy/hub.service`](deploy/hub.service) as a systemd unit. Set the host name to `dhis2` (`hostnamectl set-hostname dhis2`), so `avahi-daemon` announces `dhis2.local`. The full image, hardware and network set-ups, and how devices reach the hub securely, are in [DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Releases and self-upgrade
 

@@ -17,8 +17,11 @@ type Config struct {
 	// CentralHosts are the hosts setup may point a hub at ("hmis.example.org",
 	// "*.hmis.example.org"). Empty: only CentralURL, or, without that, any https URL
 	// with the setup token from the label (REVIEW-2 F1).
-	CentralHosts     []string
-	Listen           string        // e.g. ":8443"
+	CentralHosts []string
+	Listen       string // e.g. ":8443"
+	// HTTPListen serves the plain-HTTP start page and the hub's authority (":80" on the
+	// image, so http://dhis2.local works); empty: off.
+	HTTPListen       string
 	DataDir          string        // e.g. /var/lib/hub
 	SyncInterval     time.Duration // outbox push + pull cadence
 	PingInterval     time.Duration // connectivity probe cadence
@@ -140,6 +143,8 @@ func (c *Config) set(k, v string) error {
 		// existing hub.yaml files still load.
 	case "listen":
 		c.Listen = v
+	case "http_listen":
+		c.HTTPListen = v
 	case "data_dir":
 		c.DataDir = v
 	case "sync_interval":

@@ -12,7 +12,9 @@ ExecStart=/usr/local/bin/hub serve -config /etc/hub/hub.yaml
 Restart=always
 RestartSec=5
 StateDirectory=hub
-AmbientCapabilities=
+# Ports 443 and 80 (https:// and http://dhis2.local), as an unprivileged user.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target

@@ -25,6 +25,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/central"
 	"github.com/dhis2/facility-hub/internal/compat"
 	"github.com/dhis2/facility-hub/internal/core"
+	"github.com/dhis2/facility-hub/internal/hubtls"
 	"github.com/dhis2/facility-hub/internal/store"
 	"github.com/dhis2/facility-hub/internal/tracker"
 )
@@ -1151,6 +1152,9 @@ func Status(h *core.Hub) map[string]any {
 		"refused": refused, "refusedGroups": refusedGroups,
 		// The USB stick (docs/RECOVERY.md, C2): central sees a hub without a working one.
 		"usb": usbStatus(h),
+		// How devices reach the hub (docs/DEPLOYMENT.md, "Reaching the hub securely"): its
+		// addresses where dhis2.local fails, and the authority's fingerprint to compare.
+		"addresses": hubtls.Addresses(), "caFingerprint": hubtls.Fingerprint(h.Cfg.DataDir),
 		// How the hub has lived, a summary per day for 90 days (history.go).
 		"history": h.History(),
 	}

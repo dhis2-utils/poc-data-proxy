@@ -19,6 +19,10 @@
 <a href="/hub/ui/endpoints">Endpoint log</a>
 </div>
 
+<div class="card"><h2>Devices</h2>
+<p>Devices open <span class="mono">https://dhis2.local</span>{{with .Heartbeat.addresses}}, or where that name does not work <span class="mono">{{range $i, $a := .}}{{if $i}}, {{end}}https://{{$a}}{{end}}</span>{{end}}. A device that does not trust the hub yet opens <span class="mono">http://dhis2.local</span> and follows its steps once.</p>
+<p class="muted">Certificate fingerprint (SHA-256) <span class="mono">{{or .Heartbeat.caFingerprint "none: TLS is off"}}</span> · <a href="/hub/ca.crt">the hub's certificate</a></p></div>
+
 <div class="card"><h2>Programs cached</h2><ul>{{range .Programs}}<li class="mono">{{.}}</li>{{else}}<li>none</li>{{end}}</ul></div>
 
 <div class="card"><h2>Users</h2><div class="scroll"><table>

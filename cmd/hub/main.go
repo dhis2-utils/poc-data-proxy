@@ -24,7 +24,9 @@ import (
 
 	"github.com/dhis2/facility-hub/internal/app"
 	"github.com/dhis2/facility-hub/internal/config"
+	"github.com/dhis2/facility-hub/internal/hubtls"
 	"github.com/dhis2/facility-hub/internal/store"
+	"github.com/dhis2/facility-hub/internal/ui"
 	"github.com/dhis2/facility-hub/internal/upgrade"
 )
 
@@ -114,11 +116,30 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
 	scheme := "http"
 	if cfg.TLS {
 		scheme = "https"
-		if srv.TLSConfig, err = selfSignedTLS(cfg.DataDir); err != nil {
+		certs, err := hubtls.Load(cfg.DataDir, cfg.HubHosts)
+		if err != nil {
 			return err
+		}
+		srv.TLSConfig, srv.Handler = certs.Config(), hubtls.HSTS(a.Handler)
+		go certs.Run(ctx.Done())
+		if cfg.HTTPListen != "" {
+			// The start page on plain HTTP (docs/DEPLOYMENT.md, "Reaching the hub securely").
+			start := &http.Server{Handler: &ui.Start{DataDir: cfg.DataDir, HTTPSPort: port, Allowed: a.Hub.HostAllowed},
+				ReadHeaderTimeout: 30 * time.Second, ReadTimeout: time.Minute, IdleTimeout: 2 * time.Minute}
+			hln, err := net.Listen("tcp", cfg.HTTPListen)
+			if err != nil {
+				return err
+			}
+			go func() { <-ctx.Done(); start.Close() }()
+			go func() {
+				if err := start.Serve(hln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					slog.Error("start page", "err", err)
+				}
+			}()
 		}
 	}
 	a.Start(ctx)
@@ -126,7 +147,6 @@ func serve(args []string) error {
 		<-ctx.Done()
 		shutdown()
 	}()
-	_, port, _ := net.SplitHostPort(ln.Addr().String())
 	go a.Upgrader.AfterBoot(ctx, fmt.Sprintf("%s://127.0.0.1:%s/hub/status", scheme, port))
 	slog.Info("hub listening", "addr", ln.Addr().String(), "tls", cfg.TLS, "version", version, "hubId", a.Hub.HubID(),
 		"mode", a.Hub.Mode(), "central", a.Hub.Central.BaseURL())

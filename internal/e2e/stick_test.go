@@ -17,6 +17,7 @@ import (
 
 	"github.com/dhis2/facility-hub/internal/config"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
+	"github.com/dhis2/facility-hub/internal/hubtls"
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
@@ -439,5 +440,37 @@ func TestStickStateNotOpeningKeepsTheHubLocked(t *testing.T) {
 	}
 	if e.app.Hub.Runtime() != nil {
 		t.Error("a runtime without the restored state")
+	}
+}
+
+// DEPLOYMENT.md, "Reaching the hub securely": a disk restored from the stick keeps the
+// hub's authority and server certificate, so its devices notice nothing. The new disk
+// made its own at boot; the restore replaces them.
+func TestStickKeepsHubCertificate(t *testing.T) {
+	e, _ := stickEnv(t, false)
+	e.setup()
+	if _, err := hubtls.Load(e.dir, nil); err != nil {
+		t.Fatal(err)
+	}
+	fp := hubtls.Fingerprint(e.dir)
+	e.web("nurse_a").login()
+	e.app.Stick.Tick(context.Background())
+	id := e.app.Hub.HubID()
+	e.diskDies()
+	if _, err := hubtls.Load(e.dir, nil); err != nil {
+		t.Fatal(err)
+	}
+	if hubtls.Fingerprint(e.dir) == fp {
+		t.Fatal("the new disk has the old authority before any restore")
+	}
+	e.restoreFromStick(id, "nurse_a", fc.Password)
+	if got := hubtls.Fingerprint(e.dir); got != fp {
+		t.Fatalf("authority after restore %s, want %s", got, fp)
+	}
+	if _, err := hubtls.Load(e.dir, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := hubtls.Fingerprint(e.dir); got != fp {
+		t.Fatal("the restored authority was replaced at the next start")
 	}
 }

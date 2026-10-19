@@ -1,0 +1,53 @@
+{{template "head" .}}
+<header><h1>DHIS2 at this facility</h1></header>
+<main>
+<div class="card" id="checking"><p>Opening DHIS2 securely…</p>
+<p class="muted">If nothing happens, this device does not trust the facility's hub yet. Follow the steps below once.</p></div>
+
+<div class="card"><h2>Trust the facility's hub on this device (once)</h2>
+<p>The hub encrypts everything with its own certificate. Install it once on each device, then this page opens DHIS2 by itself.</p>
+<p><a href="/hub/ca.crt"><button>Download the hub's certificate</button></a></p>
+<p class="muted">Fingerprint (SHA-256), to compare with the hub's page in the Facility Hub app on central:<br><span class="mono">{{.Fingerprint}}</span></p>
+</div>
+
+<div class="card os" data-os="android"><h2>Android</h2><ol>
+<li>Tap <b>Download the hub's certificate</b> above.</li>
+<li>Open <b>Settings › Security and privacy › More security settings › Install from device storage › CA certificate</b> (names differ a little between phones; search Settings for "CA certificate").</li>
+<li>Android warns "Your privacy is at risk": tap <b>Install anyway</b>. The certificate only works for this hub.</li>
+<li>Enter your screen lock (Android needs one), and pick <b>dhis2-hub.crt</b> from Downloads.</li>
+<li>Come back to this page and reload it.</li></ol></div>
+
+<div class="card os" data-os="ios"><h2>iPhone and iPad</h2><ol>
+<li>Open this page in <b>Safari</b> and tap <b>Download the hub's certificate</b>; allow the profile.</li>
+<li>Open <b>Settings › General › VPN &amp; Device Management</b>, tap the profile and <b>Install</b>.</li>
+<li>Open <b>Settings › General › About › Certificate Trust Settings</b> and switch on full trust for "DHIS2 facility hub". Without this step Safari keeps warning.</li>
+<li>Come back to this page and reload it.</li></ol></div>
+
+<div class="card os" data-os="windows"><h2>Windows</h2><ol>
+<li>Download the certificate and open it; choose <b>Install Certificate</b>.</li>
+<li>Choose <b>Place all certificates in the following store</b>, then <b>Trusted Root Certification Authorities</b>, and finish.</li>
+<li>Firefox: Settings › Privacy &amp; Security › Certificates › View Certificates › Authorities › Import.</li>
+<li>Restart the browser and open this page again.</li></ol></div>
+
+<div class="card os" data-os="mac"><h2>Mac</h2><ol>
+<li>Download the certificate and open it; Keychain Access adds it.</li>
+<li>In Keychain Access, open "DHIS2 facility hub", expand <b>Trust</b> and set <b>When using this certificate</b> to <b>Always Trust</b>.</li>
+<li>Open this page again.</li></ol></div>
+
+<div class="card"><p class="muted">Already done? <a href="{{.Target}}">Continue to DHIS2</a>. Never click through a certificate warning for the hub: ask your focal point instead.</p></div>
+</main>
+<script>
+(function () {
+  var target = {{.Target}}, probe = {{.Probe}};
+  var ua = navigator.userAgent, os = /Android/.test(ua) ? 'android'
+    : /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'ios'
+    : /Windows/.test(ua) ? 'windows' : /Macintosh/.test(ua) ? 'mac' : '';
+  if (os) document.querySelectorAll('.os').forEach(function (el) { el.hidden = el.getAttribute('data-os') !== os; });
+  // A device that trusts the hub completes this request; one that does not gets a
+  // network error, and stays here.
+  fetch(probe, { mode: 'no-cors', cache: 'no-store' })
+    .then(function () { location.replace(target); })
+    .catch(function () { document.getElementById('checking').hidden = true; });
+})();
+</script>
+{{template "foot" .}}
