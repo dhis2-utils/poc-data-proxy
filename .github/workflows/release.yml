@@ -1,0 +1,100 @@
+# A release: the hub binaries, the Pi image and the signed release.json, published as
+# the GitHub release v<version> that hubs upgrade from (README, "Releases and
+# self-upgrade"). Tags cannot be moved or deleted in this organisation: run this
+# workflow by hand (a dry run, nothing published) on the exact commit before tagging.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version for the dry run (nothing is published)
+        required: true
+        default: 0.0.0-dryrun
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        run: |
+          if [ "${{ github.event_name }}" = push ]; then V="${GITHUB_REF_NAME#v}"; else V="${{ inputs.version }}"; fi
+          echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "bad version $V"; exit 1; }
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+  binaries:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test
+        run: go vet ./... && go test ./...
+      - name: Build
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          RELEASE_PUBLIC_KEY: ${{ vars.RELEASE_PUBLIC_KEY }}
+        run: |
+          test -n "$RELEASE_PUBLIC_KEY" || { echo "set the repository variable RELEASE_PUBLIC_KEY"; exit 1; }
+          FLAGS="-X main.version=$VERSION -X github.com/dhis2/facility-hub/internal/upgrade.ReleaseKey=$RELEASE_PUBLIC_KEY"
+          mkdir -p bin
+          # windows/amd64 joins with the Windows service.
+          for p in linux/arm64 linux/amd64; do
+            out=bin/hub-${p%/*}-${p#*/}
+            CGO_ENABLED=0 GOOS=${p%/*} GOARCH=${p#*/} go build -trimpath -ldflags "$FLAGS" -o "$out" ./cmd/hub
+          done
+          go build -o bin/hub-tool ./cmd/hub
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: bin/
+
+  image:
+    needs: version
+    uses: ./.github/workflows/image.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+    secrets: inherit
+
+  publish:
+    needs: [version, binaries, image]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: bin
+      - uses: actions/download-artifact@v4
+        with:
+          name: image
+          path: img
+      - name: Sign the release
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          chmod +x bin/hub-tool
+          KEY=$(mktemp); trap 'rm -f "$KEY"' EXIT
+          if [ -n "$RELEASE_SIGNING_KEY" ]; then printf '%s\n' "$RELEASE_SIGNING_KEY" > "$KEY";
+          elif [ "${{ github.event_name }}" = push ]; then echo "set the secret RELEASE_SIGNING_KEY"; exit 1;
+          else bin/hub-tool keygen -out "${KEY%.key}" && mv "${KEY%.key}.key" "$KEY"; fi  # dry run: a throwaway key
+          bin/hub-tool release -key "$KEY" -dir out -version "$VERSION" -image "img/dhis2-hub-$VERSION-arm64.img.xz" \
+            linux/arm64=bin/hub-linux-arm64 linux/amd64=bin/hub-linux-amd64
+          ls -l out
+          for f in release.json release.json.sig hub-linux-arm64 hub-linux-amd64 "dhis2-hub-$VERSION-arm64.img.xz"; do
+            test -s "out/$f" || { echo "missing out/$f"; exit 1; }
+          done
+      - name: Publish
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" out/* --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --generate-notes

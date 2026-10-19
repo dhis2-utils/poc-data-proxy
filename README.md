@@ -149,6 +149,15 @@ go build -ldflags "-X github.com/dhis2/facility-hub/internal/upgrade.ReleaseKey=
     linux/arm64=hub-linux-arm64 linux/amd64=hub-linux-amd64 windows/amd64=hub-windows-amd64.exe
 ```
 
+**On GitHub**, `.github/workflows/release.yml` does this for a tag `v<version>`:
+1. tests;
+2. builds `linux/arm64` and `linux/amd64` (`windows/amd64` joins with the Windows service);
+3. builds and checks the Pi image (`image.yml`);
+4. signs with the secret `RELEASE_SIGNING_KEY`;
+5. publishes the release.
+
+The public key is the repository variable `RELEASE_PUBLIC_KEY`. Tags cannot be moved or deleted, so run the workflow by hand first: a dry run on the same commit, which publishes nothing and signs with a throwaway key.
+
 `out/` holds the release's assets: the binaries (`hub-linux-arm64`, …), the image if given, `release.json` (version, file names and SHA-256 per platform, the image) and `release.json.sig`. A build without a key never upgrades.
 
 Each country chooses the version on central, in the Facility Hub app's "Hub version" page, which writes `facility-hub-admin/release`: `{"version": "0.3.0", "pilotHubs": [...], "percent": 10}`. After each online sync cycle a hub reads it; if the version is newer than its own, has not failed here before, and the hub is a pilot hub or its ID hashes under the percentage, it fetches that release's signed `release.json` and:

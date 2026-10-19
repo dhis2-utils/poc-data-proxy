@@ -1,0 +1,44 @@
+# Builds and checks the hub's Raspberry Pi image (image/README.md). Called by
+# release.yml for a release; run by hand for a test image.
+name: Pi image
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Hub version (without the v)
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Hub version (without the v)
+        required: true
+        default: 0.0.0-dev
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Tools
+        run: sudo apt-get update -q && sudo apt-get install -y -q e2fsprogs mtools fdisk xz-utils
+      - name: Hub binary
+        env:
+          VERSION: ${{ inputs.version }}
+          RELEASE_PUBLIC_KEY: ${{ vars.RELEASE_PUBLIC_KEY }}
+        run: |
+          CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=$VERSION -X github.com/dhis2/facility-hub/internal/upgrade.ReleaseKey=$RELEASE_PUBLIC_KEY" \
+            -o hub-linux-arm64 ./cmd/hub
+      - name: Build the image
+        run: sudo image/build.sh hub-linux-arm64 "${{ inputs.version }}" out
+      - name: Check the image
+        run: sudo image/check.sh "out/dhis2-hub-${{ inputs.version }}-arm64.img.xz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image
+          path: out/dhis2-hub-${{ inputs.version }}-arm64.img.xz
+          compression-level: 0

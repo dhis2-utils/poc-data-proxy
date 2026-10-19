@@ -88,6 +88,17 @@ Live runs change their instance: use a disposable one, and restore it (or a fres
 | `go run ./cmd/hubtest run -profile sierra-leone -version 42` | the same from the Sierra Leone demo database (reset if the instance exists) |
 | `go run ./cmd/hubtest matrix -profiles synthetic,sierra-leone,laos -versions 42` | every profile × version, one instance at a time |
 
+### The Pi image
+
+`sudo image/check.sh <image>` reads a built image without booting it. It checks:
+- the partitions and the identifiers the boot configuration names;
+- a clean file system and setuid bits;
+- the hub binary, its user, its service and `hub.yaml`;
+- the host name, packages, users and firewall;
+- the polkit rule, the watchdog, the USB stick mount and the machine ID.
+
+It runs after every image build, in `image.yml` too (image/README.md). The hub's network logic is tested against a fake `nmcli` (`internal/netsetup`, `internal/netsetup/nmfake`). Booting and real Wi-Fi need a Pi.
+
 ### What the live suite contains
 
 | Test | What it checks |
