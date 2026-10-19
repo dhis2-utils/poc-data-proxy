@@ -1,0 +1,76 @@
+# The hub on Windows (docs/TESTING.md, "Windows"): the Go tests on Windows, then the
+# installer built on Linux, installed silently for the whole PC on a Windows runner,
+# checked (the service runs and answers over HTTPS with the hub's own authority) and
+# uninstalled.
+name: Windows
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  installer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Tools
+        run: sudo apt-get update -q && sudo apt-get install -y -q nsis osslsigncode p7zip-full
+      - name: Build and check the installer
+        run: |
+          windows/build.sh 0.0.0-ci out
+          windows/check.sh out/dhis2-hub-0.0.0-ci-setup.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: out/dhis2-hub-0.0.0-ci-setup.exe
+
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Go tests on Windows
+        shell: bash
+        run: go vet ./... && go test $(go list ./... | grep -v /internal/live)
+
+  install:
+    needs: installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+      - name: Install for the whole PC, silently
+        shell: pwsh
+        run: |
+          Start-Process -Wait -FilePath .\dhis2-hub-0.0.0-ci-setup.exe -ArgumentList '/S','/AllUsers'
+          $data = 'C:\ProgramData\DHIS2 Facility Hub'
+          Get-Content "$data\install.ini"
+          $svc = Get-Service DHIS2FacilityHub
+          for ($i = 0; $i -lt 30 -and $svc.Status -ne 'Running'; $i++) { Start-Sleep 2; $svc.Refresh() }
+          if ($svc.Status -ne 'Running') { Get-Content "$data\hub.log" -ErrorAction SilentlyContinue; throw "service: $($svc.Status)" }
+      - name: The hub answers over HTTPS, trusted through the PC's store
+        shell: pwsh
+        run: |
+          $data = 'C:\ProgramData\DHIS2 Facility Hub'
+          $port = ((Get-Content "$data\install.ini") -match '^https_port=') -replace 'https_port=',''
+          for ($i = 0; $i -lt 30; $i++) {
+            try { $r = Invoke-WebRequest -UseBasicParsing "https://localhost:$port/hub/status"; break } catch { Start-Sleep 2 }
+          }
+          if (-not $r) { Get-Content "$data\hub.log"; throw "no answer on https://localhost:$port" }
+          $r.Content
+          Resolve-DnsName dhis2.local -ErrorAction SilentlyContinue
+          Invoke-WebRequest -UseBasicParsing "https://dhis2.local:$port/hub/status" | Select-Object -ExpandProperty StatusCode
+      - name: Uninstall
+        shell: pwsh
+        run: |
+          $dir = 'C:\Program Files\DHIS2 Facility Hub'
+          Start-Process -Wait -FilePath "$dir\uninstall.exe" -ArgumentList '/AllUsers','/S',"_?=$dir"
+          if (Get-Service DHIS2FacilityHub -ErrorAction SilentlyContinue) { throw "the service is still installed" }
+          if (Select-String -Path "$env:windir\System32\drivers\etc\hosts" -Pattern 'DHIS2 Facility Hub' -Quiet) { throw "the hosts line is still there" }

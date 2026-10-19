@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -227,7 +228,8 @@ func TestBundleRestores(t *testing.T) {
 	if Fingerprint(dir) == "" || Fingerprint(dir) != Fingerprint(dir2) {
 		t.Errorf("fingerprints %q, %q", Fingerprint(dir), Fingerprint(dir2))
 	}
-	if st, _ := os.Stat(filepath.Join(dir2, "ca.key")); st.Mode().Perm() != 0o600 {
+	// Windows has no Unix modes: there the installer's access list protects the folder.
+	if st, _ := os.Stat(filepath.Join(dir2, "ca.key")); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Errorf("ca.key mode %v", st.Mode().Perm())
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -71,7 +72,7 @@ func TestTempFilesBesideTheStore(t *testing.T) {
 	if got, want := os.Getenv("SQLITE_TMPDIR"), filepath.Join(dir, "tmp"); got != want {
 		t.Fatalf("SQLITE_TMPDIR %q, want %q", got, want)
 	}
-	if fi, err := os.Stat(filepath.Join(dir, "tmp")); err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700 {
+	if fi, err := os.Stat(filepath.Join(dir, "tmp")); err != nil || !fi.IsDir() || (runtime.GOOS != "windows" && fi.Mode().Perm() != 0o700) {
 		t.Fatalf("temp folder: %v %v", fi, err)
 	}
 }

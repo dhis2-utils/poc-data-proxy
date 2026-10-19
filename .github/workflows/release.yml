@@ -47,12 +47,19 @@ jobs:
           test -n "$RELEASE_PUBLIC_KEY" || { echo "set the repository variable RELEASE_PUBLIC_KEY"; exit 1; }
           FLAGS="-X main.version=$VERSION -X github.com/dhis2/facility-hub/internal/upgrade.ReleaseKey=$RELEASE_PUBLIC_KEY"
           mkdir -p bin
-          # windows/amd64 joins with the Windows service.
           for p in linux/arm64 linux/amd64; do
             out=bin/hub-${p%/*}-${p#*/}
             CGO_ENABLED=0 GOOS=${p%/*} GOARCH=${p#*/} go build -trimpath -ldflags "$FLAGS" -o "$out" ./cmd/hub
           done
           go build -o bin/hub-tool ./cmd/hub
+      - name: Windows installer (hub.exe signed inside it)
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          RELEASE_PUBLIC_KEY: ${{ vars.RELEASE_PUBLIC_KEY }}
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q nsis osslsigncode p7zip-full
+          windows/build.sh "$VERSION" bin
+          windows/check.sh "bin/dhis2-hub-$VERSION-setup.exe"
       - uses: actions/upload-artifact@v4
         with:
           name: binaries
@@ -88,9 +95,10 @@ jobs:
           elif [ "${{ github.event_name }}" = push ]; then echo "set the secret RELEASE_SIGNING_KEY"; exit 1;
           else bin/hub-tool keygen -out "${KEY%.key}" && mv "${KEY%.key}.key" "$KEY"; fi  # dry run: a throwaway key
           bin/hub-tool release -key "$KEY" -dir out -version "$VERSION" -image "img/dhis2-hub-$VERSION-arm64.img.xz" \
-            linux/arm64=bin/hub-linux-arm64 linux/amd64=bin/hub-linux-amd64
+            linux/arm64=bin/hub-linux-arm64 linux/amd64=bin/hub-linux-amd64 windows/amd64=bin/hub-windows-amd64.exe
+          cp "bin/dhis2-hub-$VERSION-setup.exe" out/
           ls -l out
-          for f in release.json release.json.sig hub-linux-arm64 hub-linux-amd64 "dhis2-hub-$VERSION-arm64.img.xz"; do
+          for f in release.json release.json.sig hub-linux-arm64 hub-linux-amd64 hub-windows-amd64.exe "dhis2-hub-$VERSION-setup.exe" "dhis2-hub-$VERSION-arm64.img.xz"; do
             test -s "out/$f" || { echo "missing out/$f"; exit 1; }
           done
       - name: Publish
