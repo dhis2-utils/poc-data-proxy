@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dhis2/facility-hub/internal/access"
+	"github.com/dhis2/facility-hub/internal/diskfree"
 	"io"
 	"log/slog"
 	"maps"
@@ -19,7 +20,6 @@ import (
 	"strconv"
 	"strings"
 	stdsync "sync"
-	"syscall"
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/central"
@@ -1217,10 +1217,4 @@ func hubTokenExpires(h *core.Hub) any {
 	return nil
 }
 
-func diskFree(dir string) uint64 {
-	var st syscall.Statfs_t
-	if err := syscall.Statfs(dir, &st); err != nil {
-		return 0
-	}
-	return uint64(st.Bavail) * uint64(st.Bsize)
-}
+func diskFree(dir string) uint64 { return diskfree.Free(dir) }

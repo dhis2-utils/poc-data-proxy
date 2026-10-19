@@ -34,7 +34,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/central"
@@ -203,18 +202,13 @@ func (u *Upgrader) check(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// The data file's migrations need the data key: hand it over a pipe, as Reexec does.
+	// The data file's migrations need the data key: on standard input (on every system;
+	// Windows cannot pass other file handles to a child).
 	cctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	cmd := exec.CommandContext(cctx, newBin, "migrate", "-db", next)
-	keyPipe, err := dkPipe(dk)
-	if err != nil {
-		cancel()
-		return err
-	}
-	cmd.ExtraFiles = []*os.File{keyPipe}
-	cmd.Env = append(os.Environ(), DKEnv+"=3")
+	cmd.Stdin = strings.NewReader(hex.EncodeToString(dk))
+	cmd.Env = append(os.Environ(), DKEnv+"=stdin")
 	out, err := cmd.CombinedOutput()
-	keyPipe.Close()
 	cancel()
 	if err != nil {
 		removeStore(next)
@@ -477,9 +471,6 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	return os.Rename(tmp, dst)
 }
 
-// replaceBinary atomically puts src at dst (copy next to dst, then rename).
-func replaceBinary(src, dst string) error { return copyFile(src, dst, 0o755) }
-
 // swapStore moves live -> saveAs and incoming -> live, for the key file and its data
 // file. The store must be closed.
 func swapStore(live, incoming, saveAs string) error {
@@ -517,65 +508,6 @@ func removeStore(path string) {
 			os.Remove(f + sfx)
 		}
 	}
-}
-
-// dkPipe returns the read end of a pipe that yields the data key, hex encoded.
-func dkPipe(dk []byte) (*os.File, error) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		return nil, err
-	}
-	defer w.Close()
-	if _, err := w.Write([]byte(hex.EncodeToString(dk))); err != nil {
-		r.Close()
-		return nil, err
-	}
-	return r, nil
-}
-
-// DKEnv names the inherited file descriptor that carries the data key across a
-// re-exec, so an upgrade does not lock the store.
-const DKEnv = "HUB_DK_FD"
-
-// Reexec replaces this process with exe, handing the data key over a pipe.
-func Reexec(exe string, dk []byte) error {
-	env := os.Environ()
-	if len(dk) > 0 {
-		r, err := dkPipe(dk)
-		if err != nil {
-			return err
-		}
-		fd := int(r.Fd())
-		if _, _, e := syscall.Syscall(syscall.SYS_FCNTL, uintptr(fd), syscall.F_SETFD, 0); e != 0 {
-			return e
-		}
-		env = append(env, fmt.Sprintf("%s=%d", DKEnv, fd))
-	}
-	return syscall.Exec(exe, os.Args, env)
-}
-
-// HandedOverDK reads a data key passed by Reexec, if any.
-func HandedOverDK() []byte {
-	s := os.Getenv(DKEnv)
-	if s == "" {
-		return nil
-	}
-	os.Unsetenv(DKEnv)
-	fd, err := strconv.Atoi(s)
-	if err != nil {
-		return nil
-	}
-	f := os.NewFile(uintptr(fd), "dk")
-	defer f.Close()
-	b, err := io.ReadAll(f)
-	if err != nil {
-		return nil
-	}
-	dk, err := hex.DecodeString(strings.TrimSpace(string(b)))
-	if err != nil {
-		return nil
-	}
-	return dk
 }
 
 // downloadIdle is how long a download may deliver nothing before it is given up.

@@ -99,6 +99,7 @@ func serve(args []string) error {
 			srv.Shutdown(sctx)
 		}
 	}
+	upgrade.HandoverDir = cfg.DataDir // the Windows upgrade's key handover
 	a, err := app.New(cfg, version, healthFail == "true", shutdown)
 	if err != nil {
 		return err
