@@ -22,3 +22,16 @@ func TestHTTPListen(t *testing.T) {
 		t.Fatalf("%v %q %q", err, c.HTTPListen, c.Listen)
 	}
 }
+
+// The hub's own dhis2.local responder is for Windows; off unless asked for.
+func TestMDNS(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "hub.yaml")
+	os.WriteFile(p, []byte("data_dir: "+t.TempDir()+"\n"), 0o644)
+	if c, _ := Load(p); c.MDNS {
+		t.Fatal("on by default")
+	}
+	os.WriteFile(p, []byte("data_dir: "+t.TempDir()+"\nmdns: true\n"), 0o644)
+	if c, err := Load(p); err != nil || !c.MDNS {
+		t.Fatalf("%v %v", err, c.MDNS)
+	}
+}

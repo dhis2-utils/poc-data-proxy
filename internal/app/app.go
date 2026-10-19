@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +19,8 @@ import (
 	"github.com/dhis2/facility-hub/internal/auth"
 	"github.com/dhis2/facility-hub/internal/config"
 	"github.com/dhis2/facility-hub/internal/core"
+	"github.com/dhis2/facility-hub/internal/hubtls"
+	"github.com/dhis2/facility-hub/internal/mdns"
 	"github.com/dhis2/facility-hub/internal/netsetup"
 	"github.com/dhis2/facility-hub/internal/proxy"
 	"github.com/dhis2/facility-hub/internal/stick"
@@ -35,7 +38,9 @@ type App struct {
 	Upgrader *upgrade.Upgrader
 	Stick    *stick.Stick
 	// Net manages the network (Pi image, network: networkmanager); nil otherwise.
-	Net       *netsetup.Manager
+	Net *netsetup.Manager
+	// MDNS answers dhis2.local (mdns: true, Windows); nil otherwise.
+	MDNS      *mdns.Responder
 	StorePath string
 	ui        *ui.UI
 }
@@ -145,6 +150,15 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 	})
 	a2 := &App{Hub: h, Handler: logRequests(cfg, recoverer(root)), Worker: worker, Upgrader: up, Stick: stick.New(h),
 		StorePath: storePath, ui: u}
+	if cfg.MDNS {
+		a2.MDNS = &mdns.Responder{Name: hubtls.Name, Addrs: func() []net.IP {
+			var ips []net.IP
+			for _, a := range hubtls.Addresses() {
+				ips = append(ips, net.ParseIP(a))
+			}
+			return ips
+		}}
+	}
 	if cfg.Network == "networkmanager" {
 		a2.SetNet(&netsetup.Manager{R: netsetup.ExecRunner{}, DataDir: cfg.DataDir, HubID: h.HubID(), DnsmasqDir: cfg.NMDnsmasqDir})
 	}
@@ -177,6 +191,13 @@ func hubInfo(id string, st netsetup.Status) string {
 func (a *App) Start(ctx context.Context) {
 	if a.Net != nil {
 		go a.Net.Run(ctx)
+	}
+	if a.MDNS != nil {
+		go func() {
+			if err := a.MDNS.Run(ctx); err != nil {
+				slog.Error("mdns: cannot answer dhis2.local; devices use the PC's name or address", "err", err)
+			}
+		}()
 	}
 	go a.Hub.Monitor.Run(ctx, a.Hub.Central.BaseURL)
 	go a.Worker.Run(ctx)
