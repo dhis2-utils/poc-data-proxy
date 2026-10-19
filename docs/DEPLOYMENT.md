@@ -155,7 +155,7 @@ Facilities differ. The image supports four cases without per-facility configurat
 
 These small devices often have no Ethernet port and frequently isolate clients.
 
-- The hub joins the MiFi's Wi-Fi as a client. The Wi-Fi password is entered on the setup page **(to build: a Wi-Fi client setup step on the setup page, while the hub is reachable on its own temporary access point)**.
+- The hub joins the MiFi's Wi-Fi as a client, chosen on the setup Wi-Fi ("Setup Wi-Fi" below) **(to build)**.
 - If the MiFi isolates clients, use case C instead and connect the MiFi to the hub as its uplink.
 
 ### Case C: no usable local network; the hub provides it
@@ -167,7 +167,37 @@ These small devices often have no Ethernet port and frequently isolate clients.
 - The hub runs its own Wi-Fi access point (`hostapd`), DHCP and DNS (`dnsmasq`). Its uplink is the Ethernet port (to a modem) or a USB 4G modem.
 - The Pi's built-in Wi-Fi handles a small facility, about 10–15 devices. Beyond that, add a cheap external access point on the hub's Ethernet.
 - This is the most robust case, because the hub controls DHCP, DNS and client isolation. It is also the simplest to support remotely, because every facility in this mode looks the same.
-- Mode switch **(to build)**: if the hub finds no DHCP server on Ethernet at first boot, it starts its own access point with a fixed SSID and password printed on the label.
+- Chosen on the setup Wi-Fi ("Setup Wi-Fi" below): the setup network becomes the facility's network, under a name and password the admin chooses **(to build)**.
+- Its uplink: the Ethernet port to a modem or router, or a USB 4G stick of the one kind the hub supports ("USB modems" below).
+
+### Setup Wi-Fi: a hub with no screen or keyboard (plan, to build)
+
+A hub with no network cannot be configured over one, and has no screen. So it provides one for the purpose:
+
+1. **When:** at boot, if the hub has no Ethernet link with DHCP and no saved Wi-Fi it can join, it starts its own setup Wi-Fi.
+2. **Its name and password:** "Hub-" and the hub ID, with a password the hub makes at its first boot at the depot, printed on the label with it (as the setup code is written to the USB stick). Not one password for every kit.
+3. **What the admin does:** connect a phone to that Wi-Fi; the phone opens the hub's setup page by itself, as a hotel Wi-Fi does (the hub answers every name with its own address). The page offers:
+   - **Join an existing Wi-Fi** (case B, or case A without a cable): pick a network from a scan, enter its password;
+   - **Make this hub the facility's Wi-Fi** (case C): the setup network becomes the facility's, under a name and password the admin chooses.
+4. **Switching:** the Pi has one Wi-Fi radio, and running its own network while joining another is unreliable. So the hub scans first, keeps the choice, turns its own network off and joins. If that fails within about a minute, the setup Wi-Fi comes back with what went wrong ("wrong password", "network not found"). Before switching, the page tells the admin to put the phone back on the facility's Wi-Fi, and shows the hub's address there.
+5. **Afterwards:** if the joined network is gone for 15 minutes, the setup Wi-Fi returns, so a hub is never out of reach because a router changed its password. The setup Wi-Fi runs only while the hub has no network.
+6. **Security:** besides the per-kit password, the setup page needs the setup code before set-up and a staff login after it, as on any network.
+
+Open with it: the hub's address changes when it moves from its own network to the facility's, which ties in with how devices find the hub ("Reaching the hub securely" below).
+
+### USB modems: one kind only (plan, to build)
+
+USB 4G sticks come in three kinds:
+
+1. **Router in a stick** (often sold as "HiLink" or Ethernet mode): the stick shows up as a network card and hands out an address by DHCP. The hub needs no settings; it is one more wired uplink. The SIM PIN and the operator's APN live in the stick's own web page, and most sticks find the APN themselves.
+2. **Modems** (QMI, MBIM or serial): they need modem software on the hub, the APN, the PIN, and sometimes a mode switch, all varying by model and operator.
+3. **Sticks that first show up as a CD drive**, and must be switched before they work.
+
+The hub supports the first kind only. Generic support for the others is an endless list of models and operators that nobody on site could debug. In practice:
+
+- One tested model of the first kind per country, in the kit, prepared at the depot: SIM PIN off, APN checked.
+- The setup page and the admin page show whether the uplink works, nothing to configure.
+- Where that does not work out, a MiFi: the hub joins it over the setup Wi-Fi like any network, and it is often the simpler kit anyway.
 
 ### Case D: managed networks (hospital IT, NGO-managed sites)
 
