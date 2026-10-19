@@ -9,6 +9,7 @@ import { ApprovalsPage } from '@/pages/ApprovalsPage'
 import { HubPage } from '@/pages/HubPage'
 import { HubsPage } from '@/pages/HubsPage'
 import { MovesPage } from '@/pages/MovesPage'
+import { VersionPage } from '@/pages/VersionPage'
 import { SyncUrlWithGlobalShell } from '@/utils/SyncUrlWithGlobalShell'
 
 const queryClient = new QueryClient()
@@ -31,6 +32,7 @@ const router = createHashRouter([
                             { path: '/hubs/:id', element: <HubPage /> },
                             { path: '/approvals', element: <ApprovalsPage /> },
                             { path: '/moves', element: <MovesPage /> },
+                            { path: '/version', element: <VersionPage /> },
                         ],
                     },
                 ],

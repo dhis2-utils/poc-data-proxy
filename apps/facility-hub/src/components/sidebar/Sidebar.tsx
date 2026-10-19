@@ -61,6 +61,12 @@ export const Sidebar = ({
                             label={i18n.t('Central moves')}
                         />
                     )}
+                    {canManage && (
+                        <SidebarNavLink
+                            to="/version"
+                            label={i18n.t('Hub version')}
+                        />
+                    )}
                 </SidenavItems>
             </Sidenav>
             <button

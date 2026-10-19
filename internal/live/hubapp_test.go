@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/dhis2/facility-hub/internal/hubaccount"
+	"github.com/dhis2/facility-hub/internal/upgrade"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
 
@@ -214,6 +215,26 @@ func TestFacilityHubApp(t *testing.T) {
 	var withdrawn map[string]any
 	if err := e.Central.JSON("GET", "/api/dataStore/facility-hub-admin/central-move", nil, &withdrawn); err != nil || len(withdrawn) != 0 {
 		t.Errorf("planned move not withdrawn: %v %v", withdrawn, err)
+	}
+
+	// The hub version, chosen and staged by the app: readable by all (hubs read it),
+	// writable by the hub managers.
+	e.Central.Do("DELETE", "/api/dataStore/facility-hub-admin/release", nil)
+	runApp(t, e, manager, e.M.Password, "stage", "HUB_ID="+h.HubID(), "VERSION=9.9.9")
+	var choice upgrade.Choice
+	if err := e.Central.JSON("GET", "/api/dataStore/facility-hub-admin/release", nil, &choice); err != nil ||
+		choice.Version != "9.9.9" || len(choice.PilotHubs) != 1 || choice.PilotHubs[0] != h.HubID() || choice.Percent != 0 {
+		t.Errorf("release choice %+v %v", choice, err)
+	}
+	var relMeta struct {
+		Sharing struct {
+			Public     string         `json:"public"`
+			UserGroups map[string]any `json:"userGroups"`
+		} `json:"sharing"`
+	}
+	e.Central.JSON("GET", "/api/dataStore/facility-hub-admin/release/metaData", nil, &relMeta)
+	if _, ok := relMeta.Sharing.UserGroups[mgrGroup]; relMeta.Sharing.Public != "r-------" || !ok {
+		t.Errorf("release choice sharing %+v", relMeta.Sharing)
 	}
 
 	// Users who may open the app: one in the hub's district, one in another.

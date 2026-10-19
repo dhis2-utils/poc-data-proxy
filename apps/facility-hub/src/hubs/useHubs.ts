@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { writeAdminEntry } from './adminEntry'
 import { Flag, flags, Heartbeat, uid, visible } from './flags'
+import { ReleaseChoice } from './stage'
 import { listNamespace, useApi } from '@/api/useApi'
 import { useMe } from '@/hooks/useMe'
 import { ApiError } from '@/hubaccount/api'
@@ -262,6 +263,34 @@ export const useCentralMove = () => {
         error: query.error as Error | null,
         set,
         clear,
+    }
+}
+
+/** The country's choice of hub version (facility-hub-admin/release), read by every hub. */
+const releasePath = '/dataStore/facility-hub-admin/release'
+
+export const useRelease = () => {
+    const api = useApi()
+    const client = useQueryClient()
+    const { settings } = useAccountsSettings()
+    const query = useQuery({
+        queryKey: ['release'],
+        queryFn: () => getOrNull<ReleaseChoice>(api, releasePath),
+    })
+    const save = useMutation(
+        (c: ReleaseChoice) =>
+            writeAdminEntry(api, {
+                key: 'release',
+                value: c,
+                managers: settings?.managers,
+            }),
+        { onSuccess: () => client.invalidateQueries(['release']) }
+    )
+    return {
+        choice: query.data,
+        isLoading: query.isLoading,
+        error: query.error as Error | null,
+        save,
     }
 }
 

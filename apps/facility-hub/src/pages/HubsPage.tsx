@@ -9,6 +9,8 @@ import {
     DataTableRow,
     InputField,
     NoticeBox,
+    SingleSelectField,
+    SingleSelectOption,
     Switch,
 } from '@dhis2/ui'
 import React, { useMemo, useState } from 'react'
@@ -36,17 +38,22 @@ const usbText = (h: HubRow) => {
     return usb.writable && !usb.error ? i18n.t('working') : i18n.t('failing')
 }
 
+const hubVersion = (h: HubRow) =>
+    h.heartbeat?.version ?? h.registry.hubVersion ?? ''
+
 export const HubsPage = () => {
     const { hubs, isLoading, error } = useHubs()
     const { canManage } = useCanManage()
     const [search, setSearch] = useState('')
     const [flaggedOnly, setFlaggedOnly] = useState(false)
+    const [version, setVersion] = useState('')
     const navigate = useNavigate()
 
     const rows = useMemo(
         () =>
             (hubs ?? [])
                 .filter((h) => !flaggedOnly || h.flags.length > 0)
+                .filter((h) => !version || hubVersion(h) === version)
                 .filter((h) =>
                     facilityName(h)
                         .toLowerCase()
@@ -58,7 +65,12 @@ export const HubsPage = () => {
                         b.flags.length - a.flags.length ||
                         facilityName(a).localeCompare(facilityName(b))
                 ),
-        [hubs, search, flaggedOnly]
+        [hubs, search, flaggedOnly, version]
+    )
+    const versions = useMemo(
+        () =>
+            [...new Set((hubs ?? []).map(hubVersion).filter((v) => v))].sort(),
+        [hubs]
     )
 
     if (isLoading) {
@@ -97,6 +109,17 @@ export const HubsPage = () => {
                     value={search}
                     onChange={({ value }) => setSearch(value ?? '')}
                 />
+                <SingleSelectField
+                    className={styles.versionFilter}
+                    placeholder={i18n.t('Any version')}
+                    selected={version}
+                    clearable
+                    onChange={({ selected }) => setVersion(selected ?? '')}
+                >
+                    {versions.map((v) => (
+                        <SingleSelectOption key={v} value={v} label={v} />
+                    ))}
+                </SingleSelectField>
                 <Switch
                     label={i18n.t('Flagged only')}
                     checked={flaggedOnly}

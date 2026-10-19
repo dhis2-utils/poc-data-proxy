@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-10-19T11:38:20.513Z\n"
-"PO-Revision-Date: 2026-10-19T11:38:20.513Z\n"
+"POT-Creation-Date: 2026-10-19T17:48:18.992Z\n"
+"PO-Revision-Date: 2026-10-19T17:48:18.992Z\n"
 
 msgid "Approve the hub of {{- facility}}"
 msgstr "Approve the hub of {{- facility}}"
@@ -65,6 +65,9 @@ msgstr "Approvals"
 
 msgid "Central moves"
 msgstr "Central moves"
+
+msgid "Hub version"
+msgstr "Hub version"
 
 msgid "Collapse menu"
 msgstr "Collapse menu"
@@ -170,6 +173,21 @@ msgstr "{{- n}} hours ago"
 msgid "{{- n}} days ago"
 msgstr "{{- n}} days ago"
 
+msgid "All hubs"
+msgstr "All hubs"
+
+msgid "Pilot hubs only"
+msgstr "Pilot hubs only"
+
+msgid "No hubs"
+msgstr "No hubs"
+
+msgid "Pilot hubs and {{percent}} % of hubs"
+msgstr "Pilot hubs and {{percent}} % of hubs"
+
+msgid "{{percent}} % of hubs"
+msgstr "{{percent}} % of hubs"
+
 msgid "Hub accounts"
 msgstr "Hub accounts"
 
@@ -217,9 +235,6 @@ msgstr "No such hub"
 
 msgid "This hub does not exist, or is not in your org units."
 msgstr "This hub does not exist, or is not in your org units."
-
-msgid "All hubs"
-msgstr "All hubs"
 
 msgid "Waiting for its own account"
 msgstr "Waiting for its own account"
@@ -348,11 +363,11 @@ msgstr "Approve hubs"
 msgid "Search by facility"
 msgstr "Search by facility"
 
+msgid "Any version"
+msgstr "Any version"
+
 msgid "Flagged only"
 msgstr "Flagged only"
-
-msgid "No hubs"
-msgstr "No hubs"
 
 msgid "No hub matches."
 msgstr "No hub matches."
@@ -450,6 +465,46 @@ msgstr "Print"
 msgid "Download CSV"
 msgstr "Download CSV"
 
+msgid "Could not read the choice"
+msgstr "Could not read the choice"
+
+msgid "Could not save"
+msgstr "Could not save"
+
+msgid "Current choice"
+msgstr "Current choice"
+
+msgid "Next stage"
+msgstr "Next stage"
+
+msgid "Stop"
+msgstr "Stop"
+
+msgid "Why the upgrade failed"
+msgstr "Why the upgrade failed"
+
+msgid "Start a version with pilot hubs"
+msgstr "Start a version with pilot hubs"
+
+msgid ""
+"Pilot hubs take the version first. Check them, then move on to 10 %, 50 % "
+"and all hubs. Hubs never move to an older version."
+msgstr ""
+"Pilot hubs take the version first. Check them, then move on to 10 %, 50 % "
+"and all hubs. Hubs never move to an older version."
+
+msgid "Released versions"
+msgstr "Released versions"
+
+msgid "A version looks like 0.3.0"
+msgstr "A version looks like 0.3.0"
+
+msgid "Pilot hubs"
+msgstr "Pilot hubs"
+
+msgid "Start with pilot hubs"
+msgstr "Start with pilot hubs"
+
 msgctxt ""
 "facilityhub, and read access to the hub accounts group. Only superusers "
 "change these settings."
@@ -467,3 +522,11 @@ msgstr ""
 "F_USER_ADD, F_USER_VIEW, F_USER_GROUPS_READ_ONLY_ADD_MEMBERS and "
 "M_facilityhub, and read access to the hub accounts group. Only superusers "
 "change these settings."
+
+msgctxt "Application title"
+msgid "__MANIFEST_APP_TITLE"
+msgstr "Facility Hub"
+
+msgctxt "Application description"
+msgid "__MANIFEST_APP_DESCRIPTION"
+msgstr "The facility hubs of this country: their state, approvals and central moves"

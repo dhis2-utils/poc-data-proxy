@@ -8,6 +8,7 @@ Run by internal/live/hubapp_test.go, which installs the app and passes:
     movecode  HUB_ID, ADDRESS: the move code shown for the hub and address
     announce  ADDRESS: announce a planned move to it
     withdraw  withdraw the planned move
+    stage     HUB_ID, VERSION: start VERSION with HUB_ID as the only pilot hub
     screens   screenshots of every page into OUT (for a person to look at)
   OUT (folder for screenshots).
 Prints one JSON object: the action's result, any page errors and failed requests.
@@ -37,7 +38,9 @@ def main():
         R["login"] = r.status
         page = ctx.new_page()
         page.on("pageerror", lambda e: R["errors"].append(str(e)[:300]))
+        # Central's answers only: the version page also asks GitHub for releases.
         page.on("response", lambda resp: resp.status >= 400 and resp.status != 404
+                and resp.url.startswith(CENTRAL)
                 and R["failed"].append({"status": resp.status, "url": resp.url[len(CENTRAL):][:200]}))
         try:
             run(page)
@@ -99,8 +102,19 @@ def run(page):
         app.get_by_role("button", name="Withdraw").click(timeout=120_000)
         app.get_by_text("No move announced").wait_for(timeout=120_000)
         R["shown"] = "No move announced"
+    elif ACTION == "stage":
+        hub, version = os.environ["HUB_ID"], os.environ["VERSION"]
+        app = open_page(page, "/version")
+        app.fill("input[name=version]", version, timeout=120_000)
+        app.locator("[data-test=pilot-hubs] [data-test=dhis2-uicore-select-input]").click()
+        app.locator("[data-test=dhis2-uicore-select-menu-menuwrapper] input:not([type=checkbox])").first.fill(hub)
+        app.locator("[data-test=dhis2-uicore-select-menu-menuwrapper]").get_by_text(hub, exact=False).first.click()
+        app.locator("[data-test=dhis2-uicore-layer]").last.click(position={"x": 5, "y": 5})  # close the menu
+        app.get_by_role("button", name="Start with pilot hubs").click()
+        app.get_by_text(f"Version {version}: Pilot hubs only").wait_for(timeout=120_000)
+        R["shown"] = f"Version {version}: Pilot hubs only"
     elif ACTION == "screens":
-        for name, route in [("hubs", "/"), ("approvals", "/approvals"), ("moves", "/moves")]:
+        for name, route in [("hubs", "/"), ("approvals", "/approvals"), ("moves", "/moves"), ("version", "/version")]:
             open_page(page, route)
             page.wait_for_timeout(4000)
             page.screenshot(path=os.path.join(OUT, f"facility-hub-{name}.png"), full_page=True)
