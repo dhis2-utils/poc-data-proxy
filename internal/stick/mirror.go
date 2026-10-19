@@ -84,7 +84,8 @@ func (s *Stick) mirror() error {
 		return fmt.Errorf("state: %w", err)
 	}
 	if err := s.copyCerts(filepath.Join(dir, "tls.rec")); err != nil {
-		return fmt.Errorf("certificates: %w", err)
+		// Logged, not returned: the saves below matter more than the certificates.
+		slog.Error("copying the hub's certificates to the USB stick", "err", err)
 	}
 	keep := map[string]bool{}
 	for _, e := range pending {
@@ -141,6 +142,9 @@ func (s *Stick) copyState(path string) error {
 func (s *Stick) copyCerts(path string) error {
 	b, err := hubtls.Bundle(s.H.Cfg.DataDir)
 	if err != nil {
+		if s.H.Cfg.TLS {
+			return err // a hub serving TLS whose certificates cannot be copied: say so
+		}
 		return nil
 	}
 	sum := sha256.Sum256(b)

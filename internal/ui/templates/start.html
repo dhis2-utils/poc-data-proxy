@@ -45,7 +45,10 @@
   if (os) document.querySelectorAll('.os').forEach(function (el) { el.hidden = el.getAttribute('data-os') !== os; });
   // A device that trusts the hub completes this request; one that does not gets a
   // network error, and stays here.
-  fetch(probe, { mode: 'no-cors', cache: 'no-store' })
+  // Where HTTPS is blocked the request may hang: give up after 5 seconds.
+  var ctl = window.AbortController ? new AbortController() : null;
+  if (ctl) setTimeout(function () { ctl.abort(); }, 5000);
+  fetch(probe, { mode: 'no-cors', cache: 'no-store', signal: ctl ? ctl.signal : undefined })
     .then(function () { location.replace(target); })
     .catch(function () { document.getElementById('checking').hidden = true; });
 })();

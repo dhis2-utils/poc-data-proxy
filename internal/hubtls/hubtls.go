@@ -19,6 +19,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"math/big"
 	"net"
@@ -80,12 +81,13 @@ func systemEnv() env {
 
 // Certs serves the hub's current server certificate.
 type Certs struct {
-	dir   string
-	env   env
-	mu    sync.Mutex // Refresh
-	ca    *x509.Certificate
-	caKey *ecdsa.PrivateKey
-	cur   atomic.Pointer[tls.Certificate]
+	dir    string
+	env    env
+	mu     sync.Mutex // Refresh
+	ca     *x509.Certificate
+	caKey  *ecdsa.PrivateKey
+	cur    atomic.Pointer[tls.Certificate]
+	warned map[string]bool // names the authority does not cover, logged once
 }
 
 // Load reads the certificates in dir, making or renewing what is missing or stale.
@@ -98,7 +100,7 @@ func Load(dir string, extra []string) (*Certs, error) {
 }
 
 func load(dir string, e env) (*Certs, error) {
-	c := &Certs{dir: dir, env: e}
+	c := &Certs{dir: dir, env: e, warned: map[string]bool{}}
 	if err := c.loadCA(); err != nil {
 		return nil, err
 	}
@@ -172,8 +174,9 @@ func (c *Certs) wanted() ([]string, []net.IP) {
 	for _, n := range ownNames(c.env.host(), c.env.extra) {
 		if slices.Contains(c.ca.PermittedDNSDomains, n) {
 			names = append(names, n)
-		} else if slices.Contains(c.env.extra, n) {
-			slog.Warn("a name in hub_hosts is not covered by the hub's certificate: the authority was made before it was added", "name", n)
+		} else if !c.warned[n] {
+			c.warned[n] = true
+			slog.Warn("a name is not covered by the hub's certificate: the authority was made before it (a host name or hub_hosts entry changed since)", "name", n)
 		}
 	}
 	slices.Sort(names)
@@ -199,9 +202,15 @@ func ownNames(host string, extra []string) []string {
 		more = append(more, host, host+".local")
 	}
 	for _, x := range extra {
-		if net.ParseIP(x) == nil { // addresses are covered as addresses
-			more = append(more, strings.ToLower(strings.TrimSuffix(x, ".")))
+		x = strings.ToLower(strings.TrimSuffix(x, "."))
+		if net.ParseIP(x) != nil {
+			continue // addresses are covered as addresses
 		}
+		if !ValidHostName(x) {
+			slog.Warn("a name in hub_hosts is too wide for the hub's certificate; left out", "name", x)
+			continue
+		}
+		more = append(more, x)
 	}
 	for _, n := range more {
 		if !slices.Contains(out, n) {
@@ -211,20 +220,64 @@ func ownNames(host string, extra []string) []string {
 	return out
 }
 
+// ValidHostName reports whether a hub_hosts name may go into the authority's name
+// constraints, which also permit every name below it: a specific host, so at least
+// three labels ("hub.clinic.example.org"), or two under a local-only suffix
+// ("hub.lan"). "org", "example.org" or "co.uk" would let the authority vouch for whole
+// domains, and an empty name for everything.
+func ValidHostName(n string) bool {
+	n = strings.ToLower(strings.TrimSuffix(n, "."))
+	labels := strings.Split(n, ".")
+	for _, l := range labels {
+		if l == "" || len(l) > 63 || l[0] == '-' || l[len(l)-1] == '-' {
+			return false
+		}
+		for _, r := range l {
+			if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
+				return false
+			}
+		}
+	}
+	switch {
+	case strings.HasSuffix(n, ".home.arpa"):
+		return len(labels) >= 3
+	case slices.Contains([]string{"local", "lan", "internal"}, labels[len(labels)-1]):
+		return len(labels) >= 2
+	}
+	return len(labels) >= 3
+}
+
 // loadCA reads the authority and its key, or makes a new one. A hub from before the
 // key was kept has only ca.crt: it gets a new authority, and devices install it again.
+// A key that cannot be read (permissions, I/O) stops the hub rather than being
+// replaced, since every device would have to install the replacement; a corrupt one
+// (power loss) is kept aside as ca.key.bad and replaced, so the hub still starts.
 func (c *Certs) loadCA() error {
-	crtPEM, err1 := os.ReadFile(c.path("ca.crt"))
-	keyPEM, err2 := os.ReadFile(c.path("ca.key"))
-	if err1 == nil && err2 == nil {
-		ca, key, err := parsePair(crtPEM, keyPEM)
-		if err == nil && c.env.now().Before(ca.NotAfter) {
-			c.ca, c.caKey = ca, key
-			return nil
+	keyPEM, err := os.ReadFile(c.path("ca.key"))
+	if errors.Is(err, fs.ErrNotExist) {
+		if _, err := os.Stat(c.path("ca.crt")); err == nil {
+			slog.Warn("the hub's certificate authority has no key (made by an older version); making a new one, which devices must install")
 		}
-		slog.Warn("the hub's certificate authority is unusable; making a new one, which devices must install", "err", err)
-	} else if err1 == nil {
-		slog.Warn("the hub's certificate authority has no key (made by an older version); making a new one, which devices must install")
+		return c.newCA()
+	}
+	if err != nil {
+		return fmt.Errorf("the hub's certificate authority key: %w", err)
+	}
+	crtPEM, err := os.ReadFile(c.path("ca.crt"))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("the hub's certificate authority: %w", err)
+	}
+	ca, key, err := parsePair(crtPEM, keyPEM)
+	if err == nil && c.env.now().Before(ca.NotAfter) {
+		c.ca, c.caKey = ca, key
+		return nil
+	}
+	if err == nil {
+		err = errors.New("expired")
+	}
+	slog.Error("the hub's certificate authority is unusable; making a new one, which devices must install", "err", err)
+	for _, f := range []string{"ca.key", "ca.crt"} {
+		os.Rename(c.path(f), c.path(f+".bad"))
 	}
 	return c.newCA()
 }
@@ -262,7 +315,10 @@ func (c *Certs) newCA() error {
 		NotBefore:    now.Add(-time.Hour),
 		NotAfter:     now.Add(caLife),
 		KeyUsage:     x509.KeyUsageCertSign,
-		IsCA:         true, BasicConstraintsValid: true, MaxPathLenZero: true,
+		// Web servers only: Windows applies no name constraints to code signing, mail
+		// or client certificates, and this authority sits in its trusted roots.
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IsCA:        true, BasicConstraintsValid: true, MaxPathLenZero: true,
 		PermittedDNSDomainsCritical: true,
 		PermittedDNSDomains:         ownNames(host, c.env.extra),
 		PermittedIPRanges:           private,
@@ -404,15 +460,36 @@ func pemBlock(typ string, b []byte) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: typ, Bytes: b})
 }
 
+// writeAtomic replaces path with b, synced, so a power cut leaves the old file or the
+// new one, never an empty one.
 func writeAtomic(path string, b []byte, mode os.FileMode) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, mode); err != nil {
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	if err != nil {
 		return err
 	}
-	if err := os.Chmod(tmp, mode); err != nil {
+	_, err = f.Write(b)
+	if err == nil {
+		err = f.Chmod(mode)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	if d, err := os.Open(filepath.Dir(path)); err == nil {
+		d.Sync()
+		d.Close()
+	}
+	return nil
 }
 
 func serial() *big.Int {

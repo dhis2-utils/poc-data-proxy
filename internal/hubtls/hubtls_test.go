@@ -263,3 +263,78 @@ func TestExtraNamesCovered(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+// Review: the authority vouches for web servers only, not for code, mail or clients
+// (Windows applies no name constraints to code signing).
+func TestAuthorityOnlyForServers(t *testing.T) {
+	c, err := load(t.TempDir(), newFake().env())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.ca.ExtKeyUsage) != 1 || c.ca.ExtKeyUsage[0] != x509.ExtKeyUsageServerAuth {
+		t.Errorf("authority usages %v", c.ca.ExtKeyUsage)
+	}
+}
+
+// Review: a hub_hosts entry cannot widen the authority beyond a specific name.
+func TestWideHubHostsRefused(t *testing.T) {
+	for _, bad := range []string{".", "", "org", "*.example.org", "co.uk", "example.org", "a..b.org"} {
+		if ValidHostName(bad) {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	for _, good := range []string{"hub.clinic.example.org", "hub.lan", "dhis2.home.arpa", "router.local"} {
+		if !ValidHostName(good) {
+			t.Errorf("%q refused", good)
+		}
+	}
+	f := newFake()
+	e := f.env()
+	e.extra = []string{".", "org", "hub.clinic.example.org"}
+	c, err := load(t.TempDir(), e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range c.ca.PermittedDNSDomains {
+		if d == "" || d == "org" {
+			t.Errorf("authority permits %q", d)
+		}
+	}
+}
+
+// Review: a key that cannot be read (permissions, I/O) is not replaced: devices would
+// all have to install a new authority after one transient error.
+func TestUnreadableKeyNotReplaced(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads anything")
+	}
+	f, dir := newFake(), t.TempDir()
+	c1, err := load(dir, f.env())
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Chmod(filepath.Join(dir, "ca.key"), 0)
+	if _, err := load(dir, f.env()); err == nil {
+		t.Fatal("started with an unreadable authority key")
+	}
+	os.Chmod(filepath.Join(dir, "ca.key"), 0o600)
+	c2, err := load(dir, f.env())
+	if err != nil || !c2.ca.Equal(c1.ca) {
+		t.Fatalf("authority replaced: %v", err)
+	}
+}
+
+// A corrupt key (power loss) is kept aside and replaced, so the hub still starts.
+func TestCorruptKeyKeptAside(t *testing.T) {
+	f, dir := newFake(), t.TempDir()
+	if _, err := load(dir, f.env()); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(dir, "ca.key"), nil, 0o600)
+	if _, err := load(dir, f.env()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ca.key.bad")); err != nil {
+		t.Error("the corrupt key was not kept aside")
+	}
+}
