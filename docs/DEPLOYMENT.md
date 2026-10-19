@@ -97,7 +97,7 @@ Ideas for hardware and the image, recorded with what they would imply for the hu
   - *Out of reach:* theft, unplugging or wiping. With the above, a modified or foreign system does not boot and the data stays encrypted; what remains is continuity, covered in [RECOVERY.md](RECOVERY.md).
   - Likely more than a first deployment needs; recorded for later discussion.
 - **Operating system: gokrazy instead of Raspberry Pi OS.** gokrazy is a minimal Linux for Raspberry Pis in which every program on the device is a Go binary: no shell, no C programs, no package manager, a read-only root on A/B partitions, updated by writing a new image over the network. The hub is one static Go binary with pure-Go SQLite, so it would run unchanged, and Linux's drivers for USB and NVMe storage, Ethernet and the watchdog stay. It reaches most of "Locking the device against changes" above in one step. To check: Pi 5 support and the SSDs on both boards; how the hub's own self-upgrade fits gokrazy's image updates (one mechanism should own updates); the network set-ups that need more than a client (the hub's own access point in case C, mDNS, a UPS power-fail signal on GPIO), which would have to come from Go programs too; and how support staff look at a device without a shell. Considered and not preferred: unikernels (MirageOS, Unikraft, Nanos). They run on a hypervisor rather than directly on a Pi, so Linux stays underneath; MirageOS would mean rewriting the hub in OCaml; and the risks that matter most for the hub (a stolen disk, weak passwords, the hub's own access rules) are not in the operating system.
-- **No hardware: the hub as a Windows service on an existing facility PC.** The alternative to a kit. Same hub, same store, one PC.
+- **No hardware: the hub as a Windows service on an existing facility PC** (built 2026-10-20, see "The hub on a Windows PC" below; not yet run on Windows). The alternative to a kit. Same hub, same store, one PC. The notes below are what was known before it was built.
   - *Code:* the hub cross-compiles for Windows except in two places: free disk space for the status page (`statfs`) and the self-upgrade, which replaces the running process and hands it the data key (`internal/upgrade`). Windows cannot replace a running process or overwrite a running `.exe`, so the upgrade needs its own flow: Windows restarts the hub service on the new version (through its Service Control Manager; no person involved), with the data key handed over so the hub does not stay locked. The rest is small: Windows paths (`C:\ProgramData\...`) instead of `/var/lib/hub` and `/etc/hub`, access rules on the data folder instead of `0600`, and answering stop and shutdown from the service manager. Not checked yet: the SQLite driver and the encrypted file layer on Windows (file locking, flushes), and the test suite on a Windows runner.
   - *The PC:* must not sleep or hibernate (power plan); Windows Update reboots it; antivirus must exclude the data folder, or it locks and scans the database and its write-ahead log; it is someone's working PC, with full disks, other software and people switching it off. A desktop has no battery, so a power cut is a hard stop. Resources are not a concern: an old i3 with 4 GB and an SSD is faster than a Pi 5, with no SD card wear.
   - *After a restart* the hub is locked until a user with a key slot logs in through it (RECOVERY.md, notes). With Windows Update this happens more often than on a Pi. Windows offers what option I in RECOVERY.md needs, a secret held by the machine for a service at boot (DPAPI, the TPM), so pushing after a reboot without a login is easier here than on a Pi.
@@ -107,6 +107,28 @@ Ideas for hardware and the image, recorded with what they would imply for the hu
   - Considered and not preferred:
     - *Docker on Windows.* It needs the WSL2 virtual machine: Docker Desktop starts only when a Windows user logs in (a reboot then stops everything until someone does), may need a paid licence for large organisations, needs virtualisation enabled in the BIOS and 1–2 GB of extra memory, and puts the container behind its own address translation. It keeps the Linux image and self-upgrade, but fixes none of the PC issues above and hides DPAPI and the TPM.
     - *Several PCs sharing the hub, one acting as master.* Electing a master safely needs at least three machines switched on; otherwise two can each believe they are master. Accepting writes on more than one machine needs conflict merging, which the single-writer design (one outbox, central decides access) does not have. Devices also need one address that follows the master. A standby that only receives copies of the encrypted data file, and is promoted by hand, gives most of the benefit (RECOVERY.md, option C).
+
+## The hub on a Windows PC (built 2026-10-20, not yet run on Windows)
+
+For facilities without a Pi kit: the same hub on a PC they already have. That can be a records-room desktop or laptop staff use for their work, or a small server already there for another programme (OpenMRS for ART, say). The design is docs/superpowers/specs/2026-10-20-windows-service-design.md; the guide for the person at the PC is [WINDOWS-INSTALL.md](WINDOWS-INSTALL.md).
+
+- **Expectations.** Choose a PC that stays on while staff work. When it is off anyway, staff work online, from the apps' own offline cache, or on paper: degraded service, as for a Pi without power.
+- **One signed installer for every country** (`windows/`, NSIS, built and signed on Linux), from GitHub with the release or carried on a USB stick. It installs either way:
+  - **for the whole PC** (administrator rights): a service under its own virtual account, started at boot;
+  - **for one user** (no rights needed): it runs while that user is logged in.
+- **What the installer does:**
+  - picks free ports (443 and 80, else 8443 and 8080);
+  - creates the hub's certificate authority and adds it to the PC's trusted roots;
+  - maps `dhis2.local` to the PC itself;
+  - opens the firewall for the hub;
+  - optionally keeps the PC awake on mains power and asks Microsoft Defender to skip the hub's data;
+  - adds a desktop shortcut to `https://dhis2.local`.
+- **Devices use `dhis2.local`, as on the Pi.** The hub answers it itself on the network (`internal/mdns`), and stays silent if another device already does. The PC's name and IP are the fallback; the hub's page on the PC shows them.
+- **Set-up only on the PC itself:** being at the PC proves presence at the facility, so no setup code is needed.
+- **After a restart**, including Windows Update, the first staff login through the hub unlocks it, offline too. Until then saves wait. Nothing unlocks it without a person.
+- **USB stick.** The hub keeps its copy on a stick a staff member chose on the admin page (`usb_dir: auto`), found again by its folder whatever its drive letter. It never picks one by itself.
+- **Upgrades.** The same releases and staging as the Pi. The hub runs from its data folder, replaces its own `hub.exe` (the running one is renamed), and the service manager starts the new one. The data key is handed over in a file sealed to the hub's account (DPAPI), read once and refused after 2 minutes.
+- **Not checked until a Windows machine runs it:** everything in docs/TESTING.md, "Windows".
 
 ## 3. From depot to facility
 

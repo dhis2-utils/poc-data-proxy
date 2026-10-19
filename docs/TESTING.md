@@ -99,6 +99,26 @@ Live runs change their instance: use a disposable one, and restore it (or a fres
 
 It runs after every image build, in `image.yml` too (image/README.md). The hub's network logic is tested against a fake `nmcli` (`internal/netsetup`, `internal/netsetup/nmfake`). Booting and real Wi-Fi need a Pi.
 
+### Windows
+
+- **Here, on Linux:**
+  - every package builds and vets for windows/amd64 (`GOOS=windows GOARCH=amd64 go vet ./...`);
+  - the Windows-only logic runs behind plain-Go tests: the upgrade's key handover, port choice, choosing the USB stick, the `dhis2.local` responder, and the service's arguments;
+  - `windows/check.sh` checks a built installer: its signatures, `hub.exe` (64-bit, no console window), and what its script does.
+- **On GitHub** (`.github/workflows/windows.yml`), on every push:
+  - the Go tests on `windows-latest`;
+  - the installer, installed silently for the whole PC, checked (the service runs, answers over HTTPS at `localhost` and `dhis2.local` with the hub's own authority), then uninstalled.
+- **On a Windows VM, by hand** (not done yet):
+  1. install for the whole PC, and for one user without administrator rights;
+  2. set up the hub on the PC; open it from a tablet at `dhis2.local`, and at the IP;
+  3. restart the PC; check the hub stays locked until the first staff login, also offline;
+  4. upgrade through `facility-hub-admin/release`; check the hub comes back unlocked;
+  5. plug in two USB sticks, choose one, pull it out, and check the page reports it missing;
+  6. with Windows' own mDNS, and Bonjour installed, check `dhis2.local` still resolves;
+  7. check Defender's exclusion, the sleep setting, and the firewall on a network marked Public;
+  8. move a per-user hub to a whole-PC install;
+  9. uninstall, with and without removing the data.
+
 ### What the live suite contains
 
 | Test | What it checks |

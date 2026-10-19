@@ -26,7 +26,7 @@ A small device on a facility LAN that caches the facility's DHIS2 tracker data a
 
 | Path | What it is |
 |---|---|
-| `cmd/hub` | The binary: `serve`, `migrate`, `keygen`, `release`, `version` |
+| `cmd/hub` | The binary: `serve`, `migrate`, `keygen`, `release`, `init` (a data folder for the Windows installer), `service` (the Windows service), `version` |
 | `apps/facility-hub` | The Facility Hub app, a DHIS2 app on central: hubs and their flags, approvals, central moves (docs/FACILITY-HUB-APP.md) |
 | `cmd/fakecentral` | A stand-in DHIS2, with generated data at any size, for the upgrade script and the performance runs |
 | `cmd/hubtest` | Live tests against real DHIS2 instances: provisions a profile and runs the live suite (docs/TESTING.md) |
@@ -135,6 +135,8 @@ Hub endpoints:
   - **use my account** for the hub's own housekeeping (heartbeat, issue reports, generated IDs), when the person whose token it uses leaves;
   - reset hub.
 - `/hub/ui/endpoints`: every endpoint and parameter clients called, and every parameter refused offline (spec 13.1).
+
+**Windows.** `windows/build.sh <version> out/` builds the installer on Linux (`windows/README.md`); the guide for the person at the PC is [docs/WINDOWS-INSTALL.md](docs/WINDOWS-INSTALL.md).
 
 **Raspberry Pi.** Use 64-bit Raspberry Pi OS. Install the binary at `/usr/local/lib/hub/hub` (a folder the `hub` user owns, for self-upgrade), the defaults at `/etc/hub/hub.yaml`, and [`deploy/hub.service`](deploy/hub.service) as a systemd unit. Set the host name to `dhis2` (`hostnamectl set-hostname dhis2`), so `avahi-daemon` announces `dhis2.local`. The full image, hardware and network set-ups, and how devices reach the hub securely, are in [DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
