@@ -1,0 +1,8 @@
+# The hub image's defaults: the same for every hub in every country. Central's address
+# is given at set-up (docs/DEPLOYMENT.md, section 3); releases and their key are built
+# into the binary.
+listen: ":443"            # https://dhis2.local
+http_listen: ":80"        # http://dhis2.local: the start page and the hub's certificate
+data_dir: /var/lib/hub
+usb_dir: /media/hub-usb   # the box's USB stick, mounted by udev (90-hub-usb.rules)
+network: networkmanager   # setup Wi-Fi, joining a Wi-Fi, the hub as the facility's Wi-Fi

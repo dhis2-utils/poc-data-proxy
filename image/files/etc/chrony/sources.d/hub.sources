@@ -1,0 +1,2 @@
+# Public NTP; the board's RTC keeps the time across power cuts without internet.
+pool pool.ntp.org iburst

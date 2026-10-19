@@ -1,0 +1,7 @@
+// The hub service manages the network (setup Wi-Fi, joining a Wi-Fi, the facility's
+// Wi-Fi) through NetworkManager, as its own unprivileged user.
+polkit.addRule(function (action, subject) {
+    if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0 && subject.user === "hub") {
+        return polkit.Result.YES;
+    }
+});

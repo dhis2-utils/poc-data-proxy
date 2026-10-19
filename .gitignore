@@ -9,3 +9,6 @@ testresults/
 perf/results/
 __pycache__/
 .superpowers/
+image/out/
+*.img
+*.img.xz
