@@ -27,7 +27,7 @@ func service(args []string) error {
 	case "run":
 		return svc.Run(serviceName, &handler{config: a.config})
 	case "install":
-		return installService(a.exe, a.config)
+		return installService(a.exe, a.config, !a.noStart)
 	default:
 		return uninstallService()
 	}
@@ -68,7 +68,7 @@ func (h *handler) Execute(_ []string, req <-chan svc.ChangeRequest, status chan<
 	}
 }
 
-func installService(exe, cfg string) error {
+func installService(exe, cfg string, start bool) error {
 	m, err := mgr.Connect()
 	if err != nil {
 		return err
@@ -100,6 +100,9 @@ func installService(exe, cfg string) error {
 	}
 	if err := s.SetRecoveryActionsOnNonCrashFailures(true); err != nil {
 		return err
+	}
+	if !start {
+		return nil
 	}
 	return s.Start()
 }

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -59,7 +61,32 @@ setup_local_only: true
 	if _, err := hubtls.Load(dir, c.HubHosts); err != nil {
 		return r, err
 	}
-	return r, nil
+	return r, writeInstallINI(dir, r)
+}
+
+// writeInstallINI is what the NSIS installer reads (ReadINIStr): the ports, the
+// authority to trust and its name (to remove it again), and the address for the
+// desktop shortcut.
+func writeInstallINI(dir string, r initResult) error {
+	b, err := os.ReadFile(r.CA)
+	if err != nil {
+		return err
+	}
+	p, _ := pem.Decode(b)
+	if p == nil {
+		return errors.New("ca.crt is not PEM")
+	}
+	ca, err := x509.ParseCertificate(p.Bytes)
+	if err != nil {
+		return err
+	}
+	url := "https://dhis2.local"
+	if r.HTTPSPort != 443 {
+		url += ":" + strconv.Itoa(r.HTTPSPort)
+	}
+	ini := fmt.Sprintf("[hub]\r\nhttps_port=%d\r\nhttp_port=%d\r\nca=%s\r\nca_name=%s\r\nurl=%s\r\n",
+		r.HTTPSPort, r.HTTPPort, r.CA, ca.Subject.CommonName, url)
+	return os.WriteFile(filepath.Join(dir, "install.ini"), []byte(ini), 0o600)
 }
 
 func portOf(listen string) int {

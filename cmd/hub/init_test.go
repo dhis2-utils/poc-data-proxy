@@ -49,4 +49,11 @@ func TestInitWritesNothingCountrySpecific(t *testing.T) {
 	if !c.MDNS || !c.SetupLocalOnly || c.USBDir != "auto" || c.DataDir != dir || r.HTTPSPort != 8443 {
 		t.Fatalf("config %+v, result %+v", c, r)
 	}
+	// install.ini: what the NSIS installer reads (ReadINIStr).
+	ini, _ := os.ReadFile(filepath.Join(dir, "install.ini"))
+	for _, want := range []string{"[hub]", "https_port=8443", "http_port=8080", "ca=" + filepath.Join(dir, "ca.crt"), "ca_name=DHIS2 facility hub ", "url=https://dhis2.local:8443"} {
+		if !strings.Contains(string(ini), want) {
+			t.Errorf("install.ini lacks %q:\n%s", want, ini)
+		}
+	}
 }

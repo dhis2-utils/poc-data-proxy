@@ -15,6 +15,7 @@ const (
 
 type serviceArgs struct {
 	action, config, exe string
+	noStart             bool // install only: the installer sets the data folder's rights first
 }
 
 func parseServiceArgs(args []string) (serviceArgs, error) {
@@ -26,6 +27,7 @@ func parseServiceArgs(args []string) (serviceArgs, error) {
 	fs.SetOutput(io.Discard)
 	cfg := fs.String("config", "", "hub.yaml")
 	exe := fs.String("exe", "", "the hub.exe the service runs")
+	noStart := fs.Bool("nostart", false, "install without starting")
 	if err := fs.Parse(args[1:]); err != nil {
 		return a, err
 	}
@@ -42,5 +44,5 @@ func parseServiceArgs(args []string) (serviceArgs, error) {
 	default:
 		return a, errors.New("hub service run|install|uninstall")
 	}
-	return serviceArgs{action: args[0], config: *cfg, exe: *exe}, nil
+	return serviceArgs{action: args[0], config: *cfg, exe: *exe, noStart: *noStart}, nil
 }
