@@ -57,7 +57,7 @@ The hub drives NetworkManager through `nmcli`, behind a small interface so tests
 
 ## 3. Releases from GitHub
 
-- **Built in:** the release source (`https://github.com/dhis2/facility-hub/releases/download`) and the supplier's ed25519 public key are set when the binary is built (`-ldflags -X`), not in `hub.yaml`. `release_channel` and `release_public_key` are removed. Tests point the upgrader at a local server.
+- **Built in:** the release source (`https://github.com/dhis2-utils/poc-data-proxy/releases/download`) and the supplier's ed25519 public key are set when the binary is built (`-ldflags -X`; the default is the current repository, `dhis2-utils/poc-data-proxy`, changed in one place when it moves), not in `hub.yaml`. `release_channel` and `release_public_key` are removed. Tests point the upgrader at a local server.
 - **A release on GitHub** (tag `v<version>`) holds the binaries (`hub-linux-arm64`, `hub-linux-amd64`, `hub-windows-amd64.exe`), the image, and `release.json` with `release.json.sig`: `{"version", "files": {"linux/arm64": "hub-linux-arm64", ...}, "sha256": {...}, "image": {"file", "sha256"}}`. No stages and no `centralUrl` (central moves use move codes and the planned move). `hub release` writes these files into a folder for upload; `.github/workflows/release.yml` builds, signs (the key in a repository secret) and uploads them.
 - **The country's choice** is `facility-hub-admin/release` on central: `{"version": "0.3.0", "pilotHubs": ["hub-…"], "percent": 10}`, written by the app (section 4), shared like the other admin entries (public read, hub managers read-write).
 - **A hub, after each sync cycle:** reads that entry; if its version is newer than its own and the hub is in the stage (its ID in `pilotHubs`, or its hash under `percent`, as `InStage` does now), fetches `v<version>/release.json` and its signature from the release source, checks them, and upgrades as now (push, migrate a copy, swap, health check, roll back). It never moves to an older version; a version that failed its health check on this hub is not tried again. No entry: no upgrade.
@@ -65,7 +65,7 @@ The hub drives NetworkManager through `nmcli`, behind a small interface so tests
 ## 4. Version staging in the Facility Hub app
 
 - **A "Hub version" page** for superusers and hub managers:
-  - the version: picked from the supplier's GitHub releases (`api.github.com/repos/dhis2/facility-hub/releases`, readable from the browser) or typed;
+  - the version: picked from the supplier's GitHub releases (`api.github.com/repos/dhis2-utils/poc-data-proxy/releases`, readable from the browser) or typed;
   - the stage: pilot hubs only (picked from the hub list), 10 %, 50 %, 100 %, with "Next stage" as one button;
   - progress, from the heartbeats: hubs in the stage, on the version, failed or rolled back (with the reason), not yet reporting.
 - The hub list gets the version as a filter.
