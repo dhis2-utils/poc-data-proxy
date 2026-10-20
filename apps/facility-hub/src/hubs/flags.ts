@@ -32,6 +32,11 @@ export type Heartbeat = {
         at?: string
     } | null
     needsUpgrade?: boolean
+    /** Refused saves by kind, programme ("" for none) and error code: at most 100 groups. */
+    refused?:
+        | { kind: string; program: string; code: string; count: number }[]
+        | null
+    /** How many such groups there are in all. */
     refusedGroups?: number
     /** The hub's private IPv4 addresses: for devices where dhis2.local does not work. */
     addresses?: string[] | null

@@ -9,6 +9,7 @@ import { ApprovalsPage } from '@/pages/ApprovalsPage'
 import { HubPage } from '@/pages/HubPage'
 import { HubsPage } from '@/pages/HubsPage'
 import { MovesPage } from '@/pages/MovesPage'
+import { RefusalsPage } from '@/pages/RefusalsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { VersionPage } from '@/pages/VersionPage'
 import { SyncUrlWithGlobalShell } from '@/utils/SyncUrlWithGlobalShell'
@@ -35,6 +36,7 @@ const router = createHashRouter([
                             { path: '/moves', element: <MovesPage /> },
                             { path: '/version', element: <VersionPage /> },
                             { path: '/settings', element: <SettingsPage /> },
+                            { path: '/refusals', element: <RefusalsPage /> },
                         ],
                     },
                 ],

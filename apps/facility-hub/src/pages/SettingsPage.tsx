@@ -11,6 +11,7 @@ import {
 import React, { useState } from 'react'
 import styles from './Pages.module.css'
 import { ManagersOnly } from '@/components/hub/ManagersOnly'
+import { Named, useNamed } from '@/hooks/useNamed'
 import {
     aggregateForm,
     aggregateValue,
@@ -27,27 +28,6 @@ import {
     wholeNumber,
 } from '@/hubs/settings'
 import { useConfigEntry } from '@/hubs/useHubs'
-import { useApiDataQuery } from '@/utils/useApiDataQuery'
-
-type Named = { id: string; displayName: string }
-
-/** Programmes, person types or data sets, by display name. */
-const useNamed = (resource: 'programs' | 'trackedEntityTypes' | 'dataSets') => {
-    const q = useApiDataQuery<Record<string, Named[]>, Error, Named[]>({
-        queryKey: ['named', resource],
-        query: {
-            resource,
-            params: {
-                fields: 'id,displayName',
-                paging: false,
-                order: 'displayName:asc',
-            },
-        },
-        select: (r) => r[resource] ?? [],
-        staleTime: 10 * 60e3,
-    })
-    return { list: q.data ?? [], isLoading: q.isLoading, error: q.error }
-}
 
 const rangeText = (l: Limits) =>
     i18n.t('A whole number from {{- min}} to {{- max}}', l)

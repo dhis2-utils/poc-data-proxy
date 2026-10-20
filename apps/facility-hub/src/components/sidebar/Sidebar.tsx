@@ -69,6 +69,12 @@ export const Sidebar = ({
                     )}
                     {canManage && (
                         <SidebarNavLink
+                            to="/refusals"
+                            label={i18n.t('Refused saves')}
+                        />
+                    )}
+                    {canManage && (
+                        <SidebarNavLink
                             to="/settings"
                             label={i18n.t('Settings')}
                         />

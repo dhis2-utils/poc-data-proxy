@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-10-20T19:42:41.326Z\n"
-"PO-Revision-Date: 2026-10-20T19:42:41.326Z\n"
+"POT-Creation-Date: 2026-10-20T19:45:39.359Z\n"
+"PO-Revision-Date: 2026-10-20T19:45:39.360Z\n"
 
 msgid "Approve the hub of {{- facility}}"
 msgstr "Approve the hub of {{- facility}}"
@@ -195,6 +195,9 @@ msgstr "Central moves"
 
 msgid "Hub version"
 msgstr "Hub version"
+
+msgid "Refused saves"
+msgstr "Refused saves"
 
 msgid "Settings"
 msgstr "Settings"
@@ -613,6 +616,72 @@ msgstr "Print"
 
 msgid "Download CSV"
 msgstr "Download CSV"
+
+msgid "Could not load the refusals"
+msgstr "Could not load the refusals"
+
+msgid ""
+"Saves central refused, added up across the hubs still in use, by kind, "
+"programme and error code. Once the cause is fixed on central (a setting, an "
+"option, someone's access), Resend asks every hub to send that group's "
+"refused saves again, as their original authors, at its next sync. Central's "
+"new answer stands; a save it refuses again shows up here as a fresh refusal."
+msgstr ""
+"Saves central refused, added up across the hubs still in use, by kind, "
+"programme and error code. Once the cause is fixed on central (a setting, an "
+"option, someone's access), Resend asks every hub to send that group's "
+"refused saves again, as their original authors, at its next sync. Central's "
+"new answer stands; a save it refuses again shows up here as a fresh refusal."
+
+msgid "Not every group is counted"
+msgstr "Not every group is counted"
+
+msgid ""
+"1 hub has more groups of refused saves than its report lists, so some of "
+"its refusals are not counted here."
+msgstr ""
+"1 hub has more groups of refused saves than its report lists, so some of "
+"its refusals are not counted here."
+
+msgid ""
+"{{- n}} hubs have more groups of refused saves than their reports list, so "
+"some of their refusals are not counted here."
+msgstr ""
+"{{- n}} hubs have more groups of refused saves than their reports list, so "
+"some of their refusals are not counted here."
+
+msgid "Could not ask for a resend"
+msgstr "Could not ask for a resend"
+
+msgid "No refused saves"
+msgstr "No refused saves"
+
+msgid "No hub in your org units reports refused saves."
+msgstr "No hub in your org units reports refused saves."
+
+msgid "Programme"
+msgstr "Programme"
+
+msgid "Error code"
+msgstr "Error code"
+
+msgid "Last resent"
+msgstr "Last resent"
+
+msgid "Resend"
+msgstr "Resend"
+
+msgid "Resends asked for"
+msgstr "Resends asked for"
+
+msgid "None yet."
+msgstr "None yet."
+
+msgid "By"
+msgstr "By"
+
+msgid "The last 50 are kept."
+msgstr "The last 50 are kept."
 
 msgid "A whole number from {{- min}} to {{- max}}"
 msgstr "A whole number from {{- min}} to {{- max}}"
