@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-10-19T17:48:18.992Z\n"
-"PO-Revision-Date: 2026-10-19T17:48:18.992Z\n"
+"POT-Creation-Date: 2026-10-20T19:40:06.090Z\n"
+"PO-Revision-Date: 2026-10-20T19:40:06.091Z\n"
 
 msgid "Approve the hub of {{- facility}}"
 msgstr "Approve the hub of {{- facility}}"
@@ -47,6 +47,133 @@ msgstr "Cancel"
 
 msgid "Approve"
 msgstr "Approve"
+
+msgid "The hub listed no tokens, so none was deleted."
+msgstr "The hub listed no tokens, so none was deleted."
+
+msgid "1 of {{- n}} listed tokens deleted."
+msgstr "1 of {{- n}} listed tokens deleted."
+
+msgid "{{- d}} of {{- n}} listed tokens deleted."
+msgstr "{{- d}} of {{- n}} listed tokens deleted."
+
+msgid ""
+"1 token could not be deleted (already gone, or not shared with the hub "
+"managers)."
+msgstr ""
+"1 token could not be deleted (already gone, or not shared with the hub "
+"managers)."
+
+msgid ""
+"{{- n}} tokens could not be deleted (already gone, or not shared with the "
+"hub managers)."
+msgstr ""
+"{{- n}} tokens could not be deleted (already gone, or not shared with the "
+"hub managers)."
+
+msgid "A lost or stolen hub"
+msgstr "A lost or stolen hub"
+
+msgid ""
+"Deletes every token the hub lists and marks it revoked. A revoked hub that "
+"connects again stops serving data, deletes the tokens it still holds and "
+"sends nothing more."
+msgstr ""
+"Deletes every token the hub lists and marks it revoked. A revoked hub that "
+"connects again stops serving data, deletes the tokens it still holds and "
+"sends nothing more."
+
+msgid "Revoke all tokens of this hub"
+msgstr "Revoke all tokens of this hub"
+
+msgid "Revoke all tokens of this hub?"
+msgstr "Revoke all tokens of this hub?"
+
+msgid ""
+"The hub stops working for its facility and cannot be used again. Unsent "
+"saves stay on its disk."
+msgstr ""
+"The hub stops working for its facility and cannot be used again. Unsent "
+"saves stay on its disk."
+
+msgid "Revoke"
+msgstr "Revoke"
+
+msgid "Not revoked"
+msgstr "Not revoked"
+
+msgid "Hub revoked"
+msgstr "Hub revoked"
+
+msgid ""
+"Have the hub's users change their passwords now. Tokens the hub did not "
+"list (made before this release and not yet renewed) or that could not be "
+"deleted cannot be revoked from here, and keep working against central until "
+"they expire."
+msgstr ""
+"Have the hub's users change their passwords now. Tokens the hub did not "
+"list (made before this release and not yet renewed) or that could not be "
+"deleted cannot be revoked from here, and keep working against central until "
+"they expire."
+
+msgid "A mistaken replacement"
+msgstr "A mistaken replacement"
+
+msgid "Undo this replacement"
+msgstr "Undo this replacement"
+
+msgid "Undo this replacement?"
+msgstr "Undo this replacement?"
+
+msgid ""
+"This hub becomes active again and {{- id}}, the hub that replaced it, is "
+"retired. Both pick it up within one sync cycle."
+msgstr ""
+"This hub becomes active again and {{- id}}, the hub that replaced it, is "
+"retired. Both pick it up within one sync cycle."
+
+msgid "Undo"
+msgstr "Undo"
+
+msgid "Not undone"
+msgstr "Not undone"
+
+msgid "Replacement undone"
+msgstr "Replacement undone"
+
+msgid "This hub is active again; the hub that replaced it is retired."
+msgstr "This hub is active again; the hub that replaced it is retired."
+
+msgid "Tokens revoked by {{- by}} on {{- when}}."
+msgstr "Tokens revoked by {{- by}} on {{- when}}."
+
+msgid "Replaced by"
+msgstr "Replaced by"
+
+msgid "({{- by}}, {{- when}})."
+msgstr "({{- by}}, {{- when}})."
+
+msgid "Retired when it was reset ({{- by}}, {{- when}})."
+msgstr "Retired when it was reset ({{- by}}, {{- when}})."
+
+msgid ""
+"Retired because its replacement of an earlier hub was undone ({{- by}}, {{- "
+"when}})."
+msgstr ""
+"Retired because its replacement of an earlier hub was undone ({{- by}}, {{- "
+"when}})."
+
+msgid "Replaces"
+msgstr "Replaces"
+
+msgid "Its replacement by"
+msgstr "Its replacement by"
+
+msgid "was undone ({{- by}}, {{- when}})."
+msgstr "was undone ({{- by}}, {{- when}})."
+
+msgid "Replacements"
+msgstr "Replacements"
 
 msgid "Could not read your user"
 msgstr "Could not read your user"
@@ -173,6 +300,16 @@ msgstr "{{- n}} hours ago"
 msgid "{{- n}} days ago"
 msgstr "{{- n}} days ago"
 
+msgid "This hub was not retired by a replacement."
+msgstr "This hub was not retired by a replacement."
+
+msgid ""
+"The hub that replaced this one ({{- id}}) is no longer active, so there is "
+"nothing to undo here."
+msgstr ""
+"The hub that replaced this one ({{- id}}) is no longer active, so there is "
+"nothing to undo here."
+
 msgid "All hubs"
 msgstr "All hubs"
 
@@ -235,6 +372,12 @@ msgstr "No such hub"
 
 msgid "This hub does not exist, or is not in your org units."
 msgstr "This hub does not exist, or is not in your org units."
+
+msgid "Tokens revoked"
+msgstr "Tokens revoked"
+
+msgid "Retired"
+msgstr "Retired"
 
 msgid "Waiting for its own account"
 msgstr "Waiting for its own account"
@@ -345,6 +488,12 @@ msgstr "working"
 msgid "failing"
 msgstr "failing"
 
+msgid "tokens revoked"
+msgstr "tokens revoked"
+
+msgid "retired"
+msgstr "retired"
+
 msgid "Facility hubs"
 msgstr "Facility hubs"
 
@@ -386,9 +535,6 @@ msgstr "Token of"
 
 msgid "Flags"
 msgstr "Flags"
-
-msgid "retired"
-msgstr "retired"
 
 msgid "Central runs on https - hubs only move to an https address"
 msgstr "Central runs on https - hubs only move to an https address"

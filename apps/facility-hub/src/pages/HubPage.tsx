@@ -9,12 +9,15 @@ import {
     DataTableHead,
     DataTableRow,
     NoticeBox,
+    Tag,
 } from '@dhis2/ui'
 import React, { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import styles from './Pages.module.css'
 import { ApproveDialog } from '@/components/hub/ApproveDialog'
 import { FlagTags } from '@/components/hub/FlagTags'
+import { RevokeTokens, UndoReplacement } from '@/components/hub/HubActions'
+import { HubHistory } from '@/components/hub/HubHistory'
 import { useCanManage } from '@/hooks/useCanManage'
 import { flagSentence } from '@/hubs/flagText'
 import { ago, gb, when } from '@/hubs/format'
@@ -71,6 +74,15 @@ export const HubPage = () => {
                 {facility}{' '}
                 <span className={styles.muted}>{place(hub.orgUnit)}</span>
             </h1>
+            {hub.retired && (
+                <span>
+                    <Tag neutral>
+                        {hub.registry.status === 'revoked'
+                            ? i18n.t('Tokens revoked')
+                            : i18n.t('Retired')}
+                    </Tag>
+                </span>
+            )}
             <FlagTags flags={hub.flags} />
             {hub.flags.length > 0 && (
                 <div className={styles.card}>
@@ -95,6 +107,8 @@ export const HubPage = () => {
                         )}
                 </NoticeBox>
             )}
+            <HubHistory hub={hub} />
+            {canManage && <UndoReplacement hub={hub} />}
             <div className={styles.card}>
                 <h2 className={styles.subtitle}>{i18n.t('Latest report')}</h2>
                 <dl className={styles.facts}>
@@ -291,6 +305,7 @@ export const HubPage = () => {
                     </DataTable>
                 )}
             </div>
+            {canManage && <RevokeTokens hub={hub} />}
             {approving && settings && (
                 <ApproveDialog
                     hub={hub}

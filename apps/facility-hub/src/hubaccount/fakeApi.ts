@@ -28,6 +28,8 @@ export class FakeApi implements Api {
     // The logged-in user, and who created each entry (its owner).
     me = 'MeUser00001'
     creators: Record<string, string> = {}
+    // Personal access tokens the logged-in user may delete (their own, or shared).
+    apiTokens = new Set<string>()
     // A path whose next request fails with this status (tests of failed steps).
     failNext: Record<string, number> = {}
     // Run before the second GET of the registry entry (a change meanwhile).
@@ -96,6 +98,14 @@ export class FakeApi implements Api {
                     delete this.creators[`${ns}/${k}`]
                     return {}
             }
+        }
+        m = /^\/apiToken\/(\w+)$/.exec(p)
+        if (m && method === 'DELETE') {
+            // 404 for a token that is gone or not shared with the user, as on 2.42.
+            if (!this.apiTokens.delete(m[1])) {
+                throw new ApiError(404, 'not found')
+            }
+            return {}
         }
         if (p === '/me' && method === 'GET') {
             return { id: this.me }

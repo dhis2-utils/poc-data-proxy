@@ -38,6 +38,11 @@ const usbText = (h: HubRow) => {
     return usb.writable && !usb.error ? i18n.t('working') : i18n.t('failing')
 }
 
+const retiredText = (h: HubRow) =>
+    h.registry.status === 'revoked'
+        ? i18n.t('tokens revoked')
+        : i18n.t('retired')
+
 const hubVersion = (h: HubRow) =>
     h.heartbeat?.version ?? h.registry.hubVersion ?? ''
 
@@ -183,7 +188,7 @@ export const HubsPage = () => {
                                     <div className={styles.muted}>
                                         {place(h.orgUnit)}
                                         {h.retired
-                                            ? ` · ${i18n.t('retired')}`
+                                            ? ` · ${retiredText(h)}`
                                             : ''}
                                     </div>
                                 </DataTableCell>

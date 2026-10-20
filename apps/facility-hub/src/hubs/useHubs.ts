@@ -2,25 +2,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { writeAdminEntry } from './adminEntry'
 import { Flag, flags, Heartbeat, uid, visible } from './flags'
+import { Registry, retiredEntry } from './registry'
 import { ReleaseChoice } from './stage'
 import { listNamespace, useApi } from '@/api/useApi'
 import { useMe } from '@/hooks/useMe'
 import { ApiError } from '@/hubaccount/api'
 
-/** A hub's registry entry (facility-hub-registry/<hub ID>, written at set-up). */
-export type Registry = {
-    hubId?: string
-    facility?: string
-    facilityName?: string
-    status?: string
-    setupBy?: string
-    setupAt?: string
-    hubVersion?: string
-    hubTokenOwner?: string
-    accountRequested?: boolean
-    account?: unknown
-    boxKey?: string
-}
+export type { Registry } from './registry'
 
 export type OrgUnit = {
     id: string
@@ -42,6 +30,7 @@ export type HubRow = {
     heartbeat?: Heartbeat
     orgUnit?: OrgUnit
     flags: Flag[]
+    /** Retired, or its tokens revoked: left out of rollouts and move codes. */
     retired: boolean
     waiting: boolean
 }
@@ -91,7 +80,7 @@ export const useHubs = () => {
             const now = new Date()
             return registry.map(({ key, value }): HubRow => {
                 const heartbeat = beats.get(key)
-                const retired = value.status === 'retired'
+                const retired = retiredEntry(value)
                 return {
                     id: key,
                     registry: value,
