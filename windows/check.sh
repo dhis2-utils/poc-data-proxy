@@ -36,7 +36,9 @@ sys.exit(0 if struct.unpack_from('<H', b, pe + 24 + 68)[0] == 2 else 1)"
 # What the installer does: its script, installer.nsi next to this file (NSIS compresses
 # the compiled script, and this 7-Zip does not rebuild it). The uninstaller it writes
 # shows the script was compiled in.
-check "it writes an uninstaller" test -e "$WORK/x/uninstall.exe.nsis"
+# p7zip 16 shows the uninstaller the script writes as uninstall.exe.nsis; newer 7-Zip
+# (Homebrew's on macOS) names it differently, or rebuilds the script ([NSIS].nsi).
+check "it writes an uninstaller" sh -c "find '$WORK/x' -iname 'uninstall*' | grep -q . || grep -qs WriteUninstaller '$WORK/x/[NSIS].nsi'"
 STR=$(cat "$HERE/installer.nsi")
 for want in 'DHIS2FacilityHub' 'service install' 'netsh advfirewall firewall add rule' 'certutil' 'dhis2.local' \
   'icacls' 'hub init' 'powercfg' 'Add-MpPreference' 'install.ini' 'CurrentVersion\Uninstall'; do
