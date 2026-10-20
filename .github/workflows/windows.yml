@@ -55,19 +55,26 @@ jobs:
           $svc = Get-Service DHIS2FacilityHub
           for ($i = 0; $i -lt 30 -and $svc.Status -ne 'Running'; $i++) { Start-Sleep 2; $svc.Refresh() }
           if ($svc.Status -ne 'Running') {
-            '--- install.log (what the installer ran, with exit codes)'
+            '--- this step: elevated?'
+            whoami /groups | Select-String 'Mandatory Label'
+            '--- permissions'
+            icacls "$data"
+            icacls "$data\bin\hub.exe"
+            '--- install.log (each command the installer ran, with exit codes)'
             Get-Content "$data\install.log" -ErrorAction SilentlyContinue
-            '--- sc qc / sc start by hand'
+            '--- sc qc, sc qsidtype, sc start by hand'
             sc.exe qc DHIS2FacilityHub
-            sc.exe start DHIS2FacilityHub
+            sc.exe qsidtype DHIS2FacilityHub
+            sc.exe start DHIS2FacilityHub; "sc start exit code: $LASTEXITCODE"
             Start-Sleep 10
             sc.exe query DHIS2FacilityHub
-            '--- events about the hub'
-            Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Service Control Manager'} -MaxEvents 50 -ErrorAction SilentlyContinue |
-              Where-Object { $_.Message -match 'Facility Hub' } | Format-List TimeCreated, Id, Message
-            Get-WinEvent -FilterHashtable @{LogName='Application'} -MaxEvents 50 -ErrorAction SilentlyContinue |
-              Where-Object { $_.Message -match 'hub.exe' } | Format-List TimeCreated, Id, ProviderName, Message
-            Get-Content "$data\hub.log" -ErrorAction SilentlyContinue # readable only when the step runs elevated
+            '--- service manager events since the install'
+            Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Service Control Manager'; StartTime=(Get-Date).AddMinutes(-10)} -ErrorAction SilentlyContinue |
+              Format-List TimeCreated, Id, Message
+            '--- application errors'
+            Get-WinEvent -FilterHashtable @{LogName='Application'; Level=2; StartTime=(Get-Date).AddMinutes(-10)} -ErrorAction SilentlyContinue |
+              Format-List TimeCreated, Id, ProviderName, Message
+            Get-Content "$data\hub.log" -ErrorAction SilentlyContinue
             throw "service: $($svc.Status)"
           }
       - name: The hub answers over HTTPS, trusted through the PC's store

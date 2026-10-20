@@ -53,10 +53,11 @@ Var LogFile
 ; Sets $0 to the exit code.
 !macro Run cmd
   StrCpy $R7 '${cmd}'
+  FileWrite $LogFile "> $R7$\r$\n" ; before running it: a step that dies still shows
   nsExec::ExecToStack '${cmd}'
   Pop $0
   Pop $R9
-  FileWrite $LogFile "> $R7$\r$\n  exit $0: $R9$\r$\n"
+  FileWrite $LogFile "  exit $0: $R9$\r$\n"
 !macroend
 Var Url
 Var CAName
@@ -223,6 +224,8 @@ Section "!The hub" SecHub
     !insertmacro Run 'icacls "$DataDir\install.ini" /grant "*S-1-5-32-545:R"'
     !insertmacro Run 'icacls "$DataDir\ca.crt" /grant "*S-1-5-32-545:R"'
     !insertmacro Run 'sc start ${SERVICE}'
+    Sleep 3000
+    !insertmacro Run 'sc query ${SERVICE}'
   ${Else}
     ; Trust the authority for this user (Windows asks once), and start with their login.
     !insertmacro Run 'certutil -user -f -addstore Root "$DataDir\ca.crt"'

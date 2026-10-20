@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 
@@ -86,6 +87,8 @@ func installService(exe, cfg string, start bool) error {
 		StartType:        mgr.StartAutomatic,
 		DelayedAutoStart: true,
 		ServiceStartName: serviceAccount, // a virtual account: no password to manage
+		// The virtual account is the service's own SID: it needs one (unrestricted).
+		SidType: windows.SERVICE_SID_TYPE_UNRESTRICTED,
 	}, "service", "run", "-config", cfg)
 	if err != nil {
 		return err
