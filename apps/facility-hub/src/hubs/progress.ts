@@ -1,5 +1,6 @@
 import { inStage, ReleaseChoice } from './stage'
 import { HubRow } from './useHubs'
+import { compareVersions } from './versions'
 
 export type Progress = {
     /** Hubs the current stage includes (retired hubs left out). */
@@ -35,18 +36,4 @@ export const progress = (hubs: HubRow[], choice: ReleaseChoice): Progress => {
         }
     }
     return p
-}
-
-/** Compares dotted numeric versions, as the hubs do (upgrade.CompareVersions). */
-export const compareVersions = (a: string, b: string): number => {
-    const pa = a.replace(/^v/, '').split('.')
-    const pb = b.replace(/^v/, '').split('.')
-    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-        const x = parseInt(pa[i] ?? '0', 10) || 0
-        const y = parseInt(pb[i] ?? '0', 10) || 0
-        if (x !== y) {
-            return x < y ? -1 : 1
-        }
-    }
-    return 0
 }

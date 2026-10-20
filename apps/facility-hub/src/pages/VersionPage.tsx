@@ -24,6 +24,7 @@ import { ManagersOnly } from '@/components/hub/ManagersOnly'
 import { progress } from '@/hubs/progress'
 import { nextStage, ReleaseChoice, stageLabel } from '@/hubs/stage'
 import { useHubs, useRelease } from '@/hubs/useHubs'
+import { GitHubRelease, releasedVersions } from '@/hubs/versions'
 
 // The supplier's releases (upgrade.ReleaseBase): offered in a list when GitHub answers.
 const releasesURL =
@@ -39,13 +40,7 @@ const useGitHubVersions = () =>
             if (!res.ok) {
                 return [] as string[]
             }
-            const list = (await res.json()) as {
-                tag_name: string
-                draft?: boolean
-            }[]
-            return list
-                .filter((r) => !r.draft && r.tag_name.startsWith('v'))
-                .map((r) => r.tag_name.slice(1))
+            return releasedVersions((await res.json()) as GitHubRelease[])
         },
     })
 
