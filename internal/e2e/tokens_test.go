@@ -168,3 +168,33 @@ func TestShortTokenLifeNotRenewedEachLogin(t *testing.T) {
 	}
 }
 
+
+// As the Facility Hub app revokes: a hub manager deletes every listed token, the hub's
+// own included, then marks the entry revoked. The hub cannot read its entry any more,
+// but a staff login that would make a new token finds out first, and makes none
+// (bug review 2026-10-20).
+func TestRevokedFromAppMakesNoNewTokens(t *testing.T) {
+	e := newEnv(t)
+	managersGroup(e)
+	e.setup()
+	e.web("nurse_a").login()
+	e.sync()
+	reg := registryEntry(e)
+	for _, uid := range reg["tokens"].([]any) {
+		if st := deleteTokenAs(e, "nurse_b", uid.(string)); st != 200 {
+			t.Fatalf("the manager could not delete %v: %d", uid, st)
+		}
+	}
+	reg = registryEntry(e)
+	reg["status"], reg["revokedBy"] = "revoked", "nurse_b"
+	setRegistry(e, reg)
+	e.app.Worker.Cycle(context.Background()) // its token is gone: it learns nothing here
+	before := e.central.TokensOf("nurse_a")
+	e.web("nurse_a").do("POST", "/api/auth/login", map[string]string{"username": "nurse_a", "password": fc.Password})
+	if !e.app.Hub.Revoked() {
+		t.Fatal("the hub did not find out at the login that it was revoked")
+	}
+	if n := e.central.TokensOf("nurse_a"); n != before {
+		t.Fatalf("a revoked hub made a token at a login: %d -> %d", before, n)
+	}
+}

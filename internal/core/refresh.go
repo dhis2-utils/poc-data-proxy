@@ -280,7 +280,22 @@ func (h *Hub) RenewHubToken(ctx context.Context) error {
 }
 
 // CreatePAT creates a personal access token on central.
+// A revoked hub makes none: the registry entry is read first, with the creating
+// credentials, since the hub's own token may be gone with the revocation (bug review
+// 2026-10-20).
 func (h *Hub) CreatePAT(ctx context.Context, with central.Auth, exp time.Time) (uid, key string, err error) {
+	if h.HubID() != "" && !h.Revoked() {
+		var reg struct {
+			Status string `json:"status"`
+		}
+		if h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-registry/"+url.PathEscape(h.HubID()), nil, with, &reg) == nil && reg.Status == "revoked" {
+			h.SetRevoked()
+			h.DropTokens(ctx)
+		}
+	}
+	if h.Revoked() {
+		return "", "", errors.New("this hub's tokens were revoked on central; reset it before use")
+	}
 	api := h.API()
 	if api == nil {
 		return "", "", fmt.Errorf("unsupported server version %q", h.ServerVersion())
