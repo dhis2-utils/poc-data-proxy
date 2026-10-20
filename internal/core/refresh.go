@@ -239,14 +239,7 @@ func (h *Hub) RenewHubToken(ctx context.Context) error {
 	if rt == nil || rt.HubToken == "" {
 		return nil
 	}
-	exp, err := time.Parse(time.RFC3339, rt.HubTokenExp)
-	if err != nil {
-		setup, err := time.Parse(time.RFC3339, rt.SetupAt)
-		if err != nil {
-			setup = time.Time{} // unknown: renew now
-		}
-		exp = setup.Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
-	}
+	exp, _ := time.Parse(time.RFC3339, rt.HubTokenExp) // unreadable: renew now
 	if !h.renewToken(exp) {
 		return nil
 	}

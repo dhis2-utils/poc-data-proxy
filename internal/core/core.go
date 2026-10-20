@@ -64,7 +64,7 @@ type Runtime struct {
 	DefaultAOC   string          `json:"defaultAttributeOptionCombo"`
 	HubToken     string          `json:"hubToken"`
 	HubTokenUID  string          `json:"hubTokenUid"`
-	HubTokenExp  string          `json:"hubTokenExpires"` // RFC 3339; empty before this field existed
+	HubTokenExp  string          `json:"hubTokenExpires"` // RFC 3339
 	SetupBy      string          `json:"setupBy"`
 	// HubTokenOwner is whose token HubToken is: the setup user, until someone assigned
 	// to the facility takes the hub's housekeeping over (TakeOverHubToken).
