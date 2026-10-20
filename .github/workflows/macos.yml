@@ -49,16 +49,18 @@ jobs:
           echo
           security find-certificate -c "$CA_NAME" /Library/Keychains/System.keychain >/dev/null
           echo "the authority is in the System keychain"
-          dscacheutil -q host -a name dhis2.local || true
-          ok=""
-          for i in $(seq 15); do
-            if curl -fsS --cacert "$DATA/ca.crt" "https://dhis2.local:$PORT/hub/status"; then ok=1; break; fi
-            sleep 2
-          done
-          if [ -z "$ok" ]; then
-            echo "dhis2.local did not answer"
-            timeout 5 dns-sd -G v4 dhis2.local || true
+          # On this Mac, dhis2.local is in /etc/hosts (as on Windows).
+          grep 'DHIS2 Facility Hub' /etc/hosts
+          curl -fsS --cacert "$DATA/ca.crt" "https://dhis2.local:$PORT/hub/status"
+          echo
+          # Other devices ask on the network: the hub's own responder must answer them.
+          ifconfig | grep 'inet '
+          ANS=$(dig @224.0.0.251 -p 5353 +short +tries=3 +time=2 dhis2.local A || true)
+          echo "mDNS answer: $ANS"
+          if [ -z "$ANS" ]; then
+            echo "the hub's mDNS responder did not answer"
             grep -i mdns "$DATA/hub.log" || true
+            tail -40 "$DATA/hub.log" || true
             exit 1
           fi
       - name: Uninstall
@@ -66,3 +68,4 @@ jobs:
           macos/install.sh --uninstall --remove-data
           if launchctl print "gui/$(id -u)/org.dhis2.facility-hub" >/dev/null 2>&1; then echo "the agent is still loaded"; exit 1; fi
           if [ -e "$HOME/Library/LaunchAgents/org.dhis2.facility-hub.plist" ]; then echo "the agent file is still there"; exit 1; fi
+          if grep -q 'DHIS2 Facility Hub' /etc/hosts; then echo "the hosts line is still there"; exit 1; fi

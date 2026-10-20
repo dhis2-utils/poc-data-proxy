@@ -18,6 +18,7 @@ LABEL=org.dhis2.facility-hub
 DATA="$HOME/Library/Application Support/DHIS2 Facility Hub"
 AGENT="$HOME/Library/LaunchAgents/$LABEL.plist"
 KEYCHAIN=/Library/Keychains/System.keychain
+HOSTSMARK="# DHIS2 Facility Hub"
 HUB="" VERSION="" UNINSTALL=0 REMOVE_DATA=0
 
 while [ $# -gt 0 ]; do
@@ -44,6 +45,9 @@ if [ "$UNINSTALL" = 1 ]; then
   CA_NAME=$(ini ca_name)
   if [ -n "$CA_NAME" ]; then
     sudo security delete-certificate -c "$CA_NAME" "$KEYCHAIN" 2>/dev/null || true
+  fi
+  if grep -q "$HOSTSMARK" /etc/hosts; then
+    sudo sed -i '' "/$HOSTSMARK/d" /etc/hosts
   fi
   if [ "$REMOVE_DATA" = 1 ]; then
     rm -rf "$DATA"
@@ -103,10 +107,18 @@ URL=$(ini url)
 CA_NAME=$(ini ca_name)
 
 # Trust the hub's authority on this Mac (limited to the hub's own names and local
-# addresses, so it can vouch for nothing else).
+# addresses, so it can vouch for nothing else), and make dhis2.local this Mac for its
+# own browser, as the Windows installer does; other devices find it through the hub's
+# own mDNS responder.
+if ! security find-certificate -c "$CA_NAME" "$KEYCHAIN" >/dev/null 2>&1 || ! grep -q "$HOSTSMARK" /etc/hosts; then
+  echo "Your password is needed once, to trust the hub's certificate and name on this Mac."
+fi
 if ! security find-certificate -c "$CA_NAME" "$KEYCHAIN" >/dev/null 2>&1; then
-  echo "Your password is needed once, to trust the hub's certificate on this Mac."
   sudo security add-trusted-cert -d -r trustRoot -k "$KEYCHAIN" "$DATA/ca.crt"
+fi
+if ! grep -q "$HOSTSMARK" /etc/hosts; then
+  printf '127.0.0.1 dhis2.local %s\n' "$HOSTSMARK" | sudo tee -a /etc/hosts >/dev/null
+  sudo dscacheutil -flushcache 2>/dev/null || true
 fi
 
 # Start at login, restart if it stops.

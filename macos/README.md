@@ -16,7 +16,9 @@ macos/install.sh --uninstall [--remove-data]
   - `dhis2.local`, answered by the hub itself;
   - set-up only on this Mac;
   - no USB stick copy.
-- It trusts the hub's certificate authority in the System keychain (your password, once). The authority is limited to the hub's own names and local addresses, so it can't vouch for any other site. `--uninstall` removes it.
+- It trusts the hub's certificate authority in the System keychain (your password, once). The authority is limited to the hub's own names and local addresses, so it can't vouch for any other site.
+- It maps `dhis2.local` to this Mac in `/etc/hosts`, as the Windows installer does, so this Mac's own browser always finds it. Other devices on the network find it through the hub's own mDNS responder.
+- `--uninstall` removes the authority and the `hosts` line.
 
 Open the address the script prints (`https://dhis2.local`, with a port if 443 was taken) to set the hub up. The log is `hub.log` in the data folder.
 
