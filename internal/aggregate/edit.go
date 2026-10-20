@@ -92,6 +92,16 @@ func (f Form) Value(de, coc string) (string, bool) {
 	return v, ok
 }
 
+// LastUpdated is when central last changed a cell, by its clock.
+func (f Form) LastUpdated(de, coc string) (string, bool) {
+	_, m := f.find(de, coc)
+	if m == nil {
+		return "", false
+	}
+	v, ok := m["lastUpdated"].(string)
+	return v, ok
+}
+
 // Apply puts an edit into the form as central would show it afterwards. combo and
 // options are the form's attribute ("attribute": {"combo", "options"}), for new cells.
 func (f Form) Apply(e *Edit, combo string, options []string) {

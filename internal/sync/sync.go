@@ -1305,9 +1305,16 @@ func (w *Worker) applyRetries(ctx context.Context) error {
 				blocked[by] = append(blocked[by], is)
 			}
 			for _, r := range todo {
-				if is.Kind == r.Kind && program == r.Program && codes[r.Code] {
-					uids[is.ObjectUID], seqs[is.OutboxSeq] = true, true
+				if is.Kind != r.Kind || program != r.Program || !codes[r.Code] {
+					continue
 				}
+				if is.Kind == store.OutboxAggregate && w.aggregateReplaced(is) {
+					// A later change of the cell reached central: sending this edit
+					// again would undo it. It is done, and its issue closes.
+					h.Store.FinishOutbox(is.OutboxSeq, store.OutboxSynced, "replaced by a later change")
+					continue
+				}
+				uids[is.ObjectUID], seqs[is.OutboxSeq] = true, true
 			}
 		}
 		for queue := slices.Collect(maps.Keys(uids)); len(queue) > 0; queue = queue[1:] {

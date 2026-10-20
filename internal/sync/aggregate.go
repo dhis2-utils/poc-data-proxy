@@ -366,6 +366,29 @@ func refusalNote(msg string) string { return tracker.Redact(msg) }
 
 // applyToStoredForm puts a pushed edit into the stored form, which no longer
 // overlays it once the entry left the outbox, and marks the form for fetching.
+// aggregateReplaced reports whether the cell a refused aggregate edit set has changed
+// on central since the edit was made, by the hub's copy of the form: resending the
+// edit would undo that change.
+func (w *Worker) aggregateReplaced(is *store.Issue) bool {
+	var issue struct {
+		Edit aggregate.Edit `json:"edit"`
+	}
+	if json.Unmarshal(is.Error, &issue) != nil || issue.Edit.At == "" {
+		return false
+	}
+	ed := issue.Edit
+	f, err := w.H.Store.GetAggForm(ed.Form.String())
+	if err != nil || f == nil {
+		return false
+	}
+	var form aggregate.Form
+	if json.Unmarshal(f.Body, &form) != nil {
+		return false
+	}
+	at, _ := form.LastUpdated(ed.DataElement, ed.COC)
+	return centralTime(at) > ed.At
+}
+
 func (w *Worker) applyToStoredForm(ed *aggregate.Edit) {
 	h := w.H
 	f, err := h.Store.GetAggForm(ed.Form.String())

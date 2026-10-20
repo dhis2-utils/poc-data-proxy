@@ -739,3 +739,32 @@ func TestAggregateRetryAfterFix(t *testing.T) {
 		t.Fatalf("after the retry central has %q by %q", val, by)
 	}
 }
+
+// A resend never puts back an edit a later one replaced: the refused 5 stays unsent
+// once the nurse's 7 reached central (bug review 2026-10-20), and its issue closes.
+func TestAggregateRetrySkipsReplacedEdit(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	e.NeedFake()
+	pe := aggPeriod(e, ag)
+	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
+	e.Offline()
+	nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "5"))
+	e.Fake.Approve(ag.DataSet, pe)
+	e.Online()
+	e.Sync()
+	e.Fake.Unapprove(ag.DataSet, pe)
+	nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "7")) // online: straight to central
+	e.Sync()
+	if val, _, _ := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "7" {
+		t.Fatalf("central has %q, want the later 7", val)
+	}
+	e.Fake.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"retries": json.RawMessage(
+		`{"retries":[{"id":"r1","kind":"aggregate","program":"","code":"E2017","at":"` + time.Now().UTC().Format(time.RFC3339) + `","by":"admin"}]}`)}
+	e.Sync()
+	if val, _, _ := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "7" {
+		t.Fatalf("the resend put back the replaced value: central has %q", val)
+	}
+	if n, _ := e.App.Hub.Store.UnresolvedIssues(10); len(n) != 0 {
+		t.Fatalf("the replaced edit's issue stays open: %d", len(n))
+	}
+}

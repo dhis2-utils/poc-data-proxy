@@ -92,6 +92,7 @@ func TestRetryAppliedOnce(t *testing.T) {
 	if dup == nil {
 		t.Fatal("no E1064 refusal")
 	}
+	issues := e.app.Hub.Store.CountIssues()
 	retry(e, "r-1", dup)
 	before := e.central.RequestCount("POST /api/tracker")
 	e.sync() // resent, refused again: central was not fixed
@@ -102,5 +103,8 @@ func TestRetryAppliedOnce(t *testing.T) {
 	}
 	if len(refusedGroups(e)) == 0 {
 		t.Fatal("the save refused again is not reported")
+	}
+	if n := e.app.Hub.Store.CountIssues(); n != issues {
+		t.Fatalf("%d issues after the save was refused again, want the %d it had", n, issues)
 	}
 }

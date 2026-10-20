@@ -124,6 +124,12 @@ func (s *Store) AddIssue(seq int64, uid, kind string, userID int64, errJSON []by
 		return err
 	}
 	defer tx.Rollback()
+	// Refused again after a resend: the issue it already has stands, once.
+	var n int
+	tx.QueryRow(`SELECT count(*) FROM issues WHERE outbox_seq=? AND object_uid=?`, seq, uid).Scan(&n)
+	if n > 0 {
+		return nil
+	}
 	res, err := tx.Exec(`INSERT INTO issues(outbox_seq, object_uid, kind, user_id, error_enc, created_at) VALUES(?,?,?,?,?,?)`,
 		seq, uid, kind, userID, []byte{}, at)
 	if err != nil {
