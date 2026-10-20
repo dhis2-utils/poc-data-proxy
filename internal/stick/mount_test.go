@@ -1,3 +1,7 @@
+//go:build !windows
+
+// The Unix mount check; on Windows a stick is a removable drive (mount_windows.go).
+
 package stick
 
 import "testing"

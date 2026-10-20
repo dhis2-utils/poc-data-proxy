@@ -36,6 +36,8 @@ type env struct {
 	app     *app.App
 	srv     *httptest.Server
 	cfgHook func(*config.Config) // changes the hub's configuration (before start)
+	running bool                 // a hub is started: stopped when the test ends
+	cleanup bool
 }
 
 func newEnv(t *testing.T) *env {
@@ -72,6 +74,16 @@ func (e *env) start() {
 	}
 	e.app = a
 	e.srv = httptest.NewServer(a.Handler)
+	e.running = true
+	if !e.cleanup {
+		// Windows will not delete the test's folder while the hub holds its files.
+		e.t.Cleanup(func() {
+			if e.running {
+				e.stop()
+			}
+		})
+		e.cleanup = true
+	}
 	e.app.Hub.Monitor.Probe(context.Background(), e.cSrv.URL)
 }
 
@@ -79,6 +91,7 @@ func (e *env) start() {
 func (e *env) stop() {
 	e.srv.Close()
 	e.app.Close()
+	e.running = false
 }
 
 func (e *env) offline() {

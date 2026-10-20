@@ -310,3 +310,20 @@ func ClientKind(r *http.Request) string {
 	}
 	return "other"
 }
+
+// Close closes the request log file.
+func (l *RequestLog) Close() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file != nil {
+		l.file.Close()
+		l.file = nil
+	}
+}
+
+// Opened reports whether the request log file is open.
+func (l *RequestLog) Opened() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.file != nil
+}

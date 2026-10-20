@@ -54,7 +54,12 @@ jobs:
           Get-Content "$data\install.ini"
           $svc = Get-Service DHIS2FacilityHub
           for ($i = 0; $i -lt 30 -and $svc.Status -ne 'Running'; $i++) { Start-Sleep 2; $svc.Refresh() }
-          if ($svc.Status -ne 'Running') { Get-Content "$data\hub.log" -ErrorAction SilentlyContinue; throw "service: $($svc.Status)" }
+          if ($svc.Status -ne 'Running') {
+            sc.exe qc DHIS2FacilityHub
+            Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Service Control Manager'} -MaxEvents 15 -ErrorAction SilentlyContinue | Format-List TimeCreated, Message
+            Get-Content "$data\hub.log" -ErrorAction SilentlyContinue # readable only when the step runs elevated
+            throw "service: $($svc.Status)"
+          }
       - name: The hub answers over HTTPS, trusted through the PC's store
         shell: pwsh
         run: |

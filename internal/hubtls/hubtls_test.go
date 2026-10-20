@@ -307,8 +307,8 @@ func TestWideHubHostsRefused(t *testing.T) {
 // Review: a key that cannot be read (permissions, I/O) is not replaced: devices would
 // all have to install a new authority after one transient error.
 func TestUnreadableKeyNotReplaced(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root reads anything")
+	if os.Geteuid() == 0 || runtime.GOOS == "windows" {
+		t.Skip("needs a file its owner cannot read (Unix modes; not root)")
 	}
 	f, dir := newFake(), t.TempDir()
 	c1, err := load(dir, f.env())

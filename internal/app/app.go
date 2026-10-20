@@ -198,7 +198,10 @@ func (a *App) Start(ctx context.Context) {
 	go a.Stick.Run(ctx)
 }
 
-func (a *App) Close() error { return a.Hub.Store.Close() }
+func (a *App) Close() error {
+	a.Hub.ReqLog.Close()
+	return a.Hub.Store.Close()
+}
 
 // Reset pushes the outbox, wipes all data and returns to setup mode (spec 6.2). No
 // sync cycle may run meanwhile: a pull committing after the wipe would leave rows

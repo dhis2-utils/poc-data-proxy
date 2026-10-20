@@ -211,6 +211,12 @@ Section "!The hub" SecHub
     ${EndIf}
     nsExec::ExecToLog 'icacls "$DataDir" /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" "${ACCOUNT}:(OI)(CI)M" /T /Q'
     Pop $0
+    ; The settings for installers and checks, and the authority devices install, are
+    ; public: readable by every user of the PC (nothing secret in either).
+    nsExec::ExecToLog 'icacls "$DataDir\install.ini" /grant "*S-1-5-32-545:R"'
+    Pop $0
+    nsExec::ExecToLog 'icacls "$DataDir\ca.crt" /grant "*S-1-5-32-545:R"'
+    Pop $0
     nsExec::ExecToLog 'sc start ${SERVICE}'
     Pop $0
   ${Else}
