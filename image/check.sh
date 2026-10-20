@@ -86,8 +86,11 @@ check "no login user" test -z "$LOGIN"
 check "polkit lets the hub manage NetworkManager" sh -c "debugfs -R 'cat /etc/polkit-1/rules.d/50-hub-network.rules' '$R' 2>/dev/null | grep -q 'org.freedesktop.NetworkManager'"
 check "nftables is enabled" exists /etc/systemd/system/sysinit.target.wants/nftables.service
 check "nftables opens 80 and 443" sh -c "debugfs -R 'cat /etc/nftables.conf' '$R' 2>/dev/null | grep -q 'tcp dport { 80, 443 }'"
+check "nftables keeps NetworkManager's sharing (no flush ruleset)" sh -c "! debugfs -R 'cat /etc/nftables.conf' '$R' 2>/dev/null | grep -q '^flush ruleset' && debugfs -R 'cat /etc/systemd/system/nftables.service.d/hub.conf' '$R' 2>/dev/null | grep -q '^ExecStop=-/usr/sbin/nft delete table inet hub'"
+check "nftables counts 100.64.0.0/10 (CGNAT) as local" sh -c "debugfs -R 'cat /etc/nftables.conf' '$R' 2>/dev/null | grep -q '100.64.0.0/10'"
 check "the hardware watchdog is on (RuntimeWatchdogSec)" sh -c "debugfs -R 'cat /etc/systemd/system.conf.d/watchdog.conf' '$R' 2>/dev/null | grep -q '^RuntimeWatchdogSec='"
 check "the USB stick is mounted for the hub" sh -c "debugfs -R 'cat /etc/udev/rules.d/90-hub-usb.rules' '$R' 2>/dev/null | grep -q /media/hub-usb"
+check "a USB stick without a partition table is mounted too" sh -c "debugfs -R 'cat /etc/udev/rules.d/90-hub-usb.rules' '$R' 2>/dev/null | grep -qF 'ENV{DEVTYPE}==\"partition|disk\"'"
 check "machine-id is empty (made at first boot)" test -z "$(cat_ /etc/machine-id)"
 check "the setup Wi-Fi's DNS folder is writable by the hub" sh -c "test -n '$HUBGID' && debugfs -R 'stat /etc/NetworkManager/dnsmasq-shared.d' '$R' 2>/dev/null | grep -q 'Group: *$HUBGID '"
 

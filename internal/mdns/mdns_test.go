@@ -212,3 +212,13 @@ func TestAnswersOnTheQueriersNetwork(t *testing.T) {
 		t.Fatalf("%+v", rrs)
 	}
 }
+
+// A LAN numbered from the shared address space (100.64.0.0/10, some mobile routers) is
+// a local network: the hub answers with its address there.
+func TestAnswersOnSharedAddressSpace(t *testing.T) {
+	r := &Responder{Name: "dhis2.local", Nets: nets("100.64.3.20/24")}
+	_, rrs := answers(t, r.Answer(query("dhis2.local", 1, false), net.ParseIP("100.64.3.33"), false))
+	if len(rrs) != 1 || !rrs[0].ip.Equal(net.ParseIP("100.64.3.20")) {
+		t.Fatalf("%+v", rrs)
+	}
+}

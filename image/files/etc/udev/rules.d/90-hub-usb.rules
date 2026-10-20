@@ -1,3 +1,5 @@
 # The box's USB stick (FAT or exFAT), mounted for the hub at /media/hub-usb: the setup
 # code before set-up, then the copy a new disk is restored from (docs/RECOVERY.md, C2).
-ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{DEVTYPE}=="partition", ENV{ID_FS_TYPE}=="vfat|exfat", RUN{program}+="/usr/bin/systemd-mount --no-block --collect --owner=hub --options=flush,umask=0077 /dev/%k /media/hub-usb"
+# Its file system is on a partition, or on the whole stick when it has no partition
+# table (the whole disk of a partitioned stick has no ID_FS_TYPE).
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{DEVTYPE}=="partition|disk", ENV{ID_FS_TYPE}=="vfat|exfat", RUN{program}+="/usr/bin/systemd-mount --no-block --collect --owner=hub --options=flush,umask=0077 /dev/%k /media/hub-usb"

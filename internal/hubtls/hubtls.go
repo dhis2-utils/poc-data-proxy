@@ -45,15 +45,20 @@ const (
 // The files in the data folder. ca.crt is what devices install.
 var files = []string{"ca.crt", "ca.key", "tls.crt", "tls.key"}
 
+// private is what a new authority permits; 100.64.0.0/10 is the shared address space
+// some routers number a LAN from (carrier-grade NAT).
 var private = func() []*net.IPNet {
 	var out []*net.IPNet
 	for _, c := range []string{"127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
-		"169.254.0.0/16", "fc00::/7", "fe80::/10"} {
+		"169.254.0.0/16", "100.64.0.0/10", "fc00::/7", "fe80::/10"} {
 		_, n, _ := net.ParseCIDR(c)
 		out = append(out, n)
 	}
 	return out
 }()
+
+// shared is 100.64.0.0/10, the shared address space (carrier-grade NAT).
+var shared = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
 
 // env is what the certificates depend on, replaced in tests.
 type env struct {
@@ -168,7 +173,8 @@ func (c *Certs) fits(leaf *x509.Certificate, names []string, ips []net.IP) bool 
 }
 
 // wanted is the names and addresses the server certificate covers: the hub's names
-// that the authority permits, and its private addresses.
+// and private addresses that the authority permits (one made before a range was added
+// to private does not).
 func (c *Certs) wanted() ([]string, []net.IP) {
 	var names []string
 	for _, n := range ownNames(c.env.host(), c.env.extra) {
@@ -182,7 +188,7 @@ func (c *Certs) wanted() ([]string, []net.IP) {
 	slices.Sort(names)
 	var ips []net.IP
 	for _, ip := range c.env.addrs() {
-		if slices.ContainsFunc(private, func(n *net.IPNet) bool { return n.Contains(ip) }) &&
+		if slices.ContainsFunc(c.ca.PermittedIPRanges, func(n *net.IPNet) bool { return n.Contains(ip) }) &&
 			!slices.ContainsFunc(ips, ip.Equal) {
 			ips = append(ips, ip)
 		}
@@ -497,12 +503,12 @@ func serial() *big.Int {
 	return n
 }
 
-// Addresses is the hub's private IPv4 addresses, for the heartbeat and the hub's page:
-// what a device uses where dhis2.local does not resolve.
+// Addresses is the hub's private IPv4 addresses (with the shared address space), for
+// the heartbeat and the hub's page: what a device uses where dhis2.local does not resolve.
 func Addresses() []string {
 	var out []string
 	for _, ip := range systemEnv().addrs() {
-		if ip.To4() != nil && ip.IsPrivate() {
+		if ip.To4() != nil && (ip.IsPrivate() || shared.Contains(ip)) {
 			out = append(out, ip.String())
 		}
 	}

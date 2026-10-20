@@ -1,2 +1,3 @@
-# Public NTP; the board's RTC keeps the time across power cuts without internet.
+# Public NTP. Across a power cut without internet, the time comes from the board's RTC
+# only where it has one with a battery (docs/DEPLOYMENT.md, "Clock").
 pool pool.ntp.org iburst

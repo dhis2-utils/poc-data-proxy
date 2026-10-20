@@ -47,6 +47,11 @@ type Manager struct {
 	devs     []Device
 	networks []Network
 	lastErr  string
+
+	// A setup Wi-Fi that failed to start is retried at retryAt, after retryWait: 10
+	// seconds, doubling to 10 minutes. Each attempt scans, which drops phones.
+	retryAt   time.Time
+	retryWait time.Duration
 }
 
 // snapshot is what Status and Captive read, so the pages and every captive-portal
@@ -112,9 +117,6 @@ func (m *Manager) Tick(ctx context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	now := m.now()
-	if m.started.IsZero() {
-		m.started = now
-	}
 	devs, err := Devices(ctx, m.R)
 	if err != nil {
 		slog.Warn("network: reading devices", "err", err)
@@ -124,6 +126,15 @@ func (m *Manager) Tick(ctx context.Context) {
 	defer m.publish()
 	kind, _ := Uplink(devs)
 	setupOn, facilityOn := m.active(SetupConn), m.active(FacilityConn)
+	if m.started.IsZero() {
+		m.started = now
+		// A hub stopped while its setup Wi-Fi ran left every name answered by itself.
+		if !setupOn {
+			if err := m.writeCaptive(false); err != nil {
+				slog.Warn("network: captive DNS", "err", err)
+			}
+		}
+	}
 	switch {
 	case kind != "":
 		m.lastNet = now
@@ -150,7 +161,7 @@ func (m *Manager) Tick(ctx context.Context) {
 		if !m.lastNet.IsZero() {
 			ref, grace = m.lastNet, lostGrace
 		}
-		if now.Sub(ref) >= grace {
+		if now.Sub(ref) >= grace && !now.Before(m.retryAt) {
 			m.startSetup(ctx)
 		}
 	}
@@ -171,8 +182,18 @@ func activeIn(devs []Device, conn string) bool {
 func (m *Manager) Captive() bool { return activeIn(m.current().devs, SetupConn) }
 
 // startSetup scans first (one radio: scanning while it is an access point drops
-// phones), then starts the setup Wi-Fi with every DNS name answered by the hub.
+// phones), then starts the setup Wi-Fi with every DNS name answered by the hub. If
+// that fails, Tick tries again at retryAt.
 func (m *Manager) startSetup(ctx context.Context) {
+	if !m.setupOnce(ctx) {
+		m.retryWait = min(max(2*m.retryWait, 10*time.Second), 10*time.Minute)
+		m.retryAt = m.now().Add(m.retryWait)
+		return
+	}
+	m.retryWait, m.retryAt = 0, time.Time{}
+}
+
+func (m *Manager) setupOnce(ctx context.Context) bool {
 	if nets, err := Scan(ctx, m.R); err == nil {
 		m.networks = nets
 	} else {
@@ -181,7 +202,7 @@ func (m *Manager) startSetup(ctx context.Context) {
 	pw, err := m.setupPassword()
 	if err != nil {
 		slog.Error("network: setup Wi-Fi password", "err", err)
-		return
+		return false
 	}
 	if err := m.writeCaptive(true); err != nil {
 		slog.Warn("network: captive DNS", "err", err)
@@ -191,16 +212,17 @@ func (m *Manager) startSetup(ctx context.Context) {
 		"autoconnect", "no", "ssid", m.setupSSID(), "802-11-wireless.mode", "ap", "802-11-wireless.band", "bg",
 		"ipv4.method", "shared", "ipv4.addresses", setupIP+"/24", "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", pw); err != nil {
 		slog.Error("network: adding the setup Wi-Fi", "err", err)
-		return
+		return false
 	}
 	if _, err := m.R.Run(ctx, "connection", "up", SetupConn); err != nil {
 		slog.Error("network: starting the setup Wi-Fi", "err", err)
-		return
+		return false
 	}
 	m.markUp(SetupConn)
 	m.setupAt = m.now()
 	m.publish()
 	slog.Info("network: no network; setup Wi-Fi on", "ssid", m.setupSSID())
+	return true
 }
 
 func (m *Manager) stopSetup(ctx context.Context) {

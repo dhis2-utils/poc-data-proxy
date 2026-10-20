@@ -5,6 +5,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/netsetup/nmfake"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -286,4 +287,51 @@ func TestStatusDoesNotWaitForSwitch(t *testing.T) {
 	}
 	close(release)
 	<-done
+}
+
+// A setup Wi-Fi that does not start (a radio that is gone or busy) is retried 10
+// seconds later, then after twice as long each time, up to every 10 minutes: each
+// attempt scans first, which drops phones from any Wi-Fi the radio runs.
+func TestSetupRetriedWithBackoff(t *testing.T) {
+	r := newRig(t)
+	r.nm.FailUp[SetupConn] = "Error: Connection activation failed: No suitable device found."
+	r.tick(0)
+	r.tick(61 * time.Second)
+	if r.nm.UpCount[SetupConn] != 1 {
+		t.Fatalf("attempts %d, want 1", r.nm.UpCount[SetupConn])
+	}
+	var at []time.Duration
+	start, n := r.now, 1
+	for range 6 * 30 { // half an hour of ticks
+		r.tick(10 * time.Second)
+		if c := r.nm.UpCount[SetupConn]; c != n {
+			at, n = append(at, r.now.Sub(start)), c
+		}
+	}
+	var want []time.Duration
+	for _, s := range []int{10, 30, 70, 150, 310, 630, 1230} {
+		want = append(want, time.Duration(s)*time.Second)
+	}
+	if !slices.Equal(at, want) {
+		t.Fatalf("retries at %v, want %v", at, want)
+	}
+	delete(r.nm.FailUp, SetupConn) // the radio works again
+	r.tick(10 * time.Minute)
+	if !r.nm.Up[SetupConn] {
+		t.Fatalf("no setup Wi-Fi 10 minutes after the radio came back: up %v", r.nm.Up)
+	}
+}
+
+// A hub that stopped while its setup Wi-Fi ran left dnsmasq answering every name with
+// itself: at start, without the setup Wi-Fi, that is undone.
+func TestCaptiveRemovedAtStart(t *testing.T) {
+	r := newRig(t)
+	r.nm.Cable = true
+	if err := r.m.writeCaptive(true); err != nil {
+		t.Fatal(err)
+	}
+	r.tick(0)
+	if r.captiveFile() {
+		t.Fatal("every name still answered by the hub without its setup Wi-Fi")
+	}
 }

@@ -26,6 +26,10 @@ const (
 
 var group = &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: port}
 
+// shared is 100.64.0.0/10, the shared address space (carrier-grade NAT) some routers
+// number a LAN from: as private as 10.0.0.0/8 for the hub.
+var shared = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
+
 // Responder answers queries for Name.
 type Responder struct {
 	Name string              // e.g. "dhis2.local"
@@ -72,7 +76,7 @@ func (r *Responder) Answer(q []byte, from net.IP, legacy bool) []byte {
 	}
 	var ips, near []net.IP
 	for _, n := range r.Nets() {
-		if v4 := n.IP.To4(); v4 != nil && v4.IsPrivate() {
+		if v4 := n.IP.To4(); v4 != nil && (v4.IsPrivate() || shared.Contains(v4)) {
 			ips = append(ips, v4)
 			if from != nil && n.Contains(from) {
 				near = append(near, v4)

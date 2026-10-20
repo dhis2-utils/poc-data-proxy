@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 )
@@ -338,5 +339,45 @@ func TestCorruptKeyKeptAside(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "ca.key.bad")); err != nil {
 		t.Error("the corrupt key was not kept aside")
+	}
+}
+
+// A LAN numbered from the shared address space (100.64.0.0/10) is a private network: a
+// new authority vouches for the hub's address there. An authority made before permits
+// only the ranges it was made with, so its server certificate leaves that address out
+// rather than becoming invalid for every name.
+func TestSharedAddressSpace(t *testing.T) {
+	f := newFake()
+	f.addrs = append(f.addrs, net.ParseIP("100.64.3.20"))
+	c, err := load(t.TempDir(), f.env())
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, pool := leafOf(t, c)
+	for _, name := range []string{"dhis2.local", "100.64.3.20"} {
+		if err := verify(leaf, pool, name, f.now); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+
+	now := private
+	private = slices.DeleteFunc(slices.Clone(private), func(n *net.IPNet) bool { return n.Contains(net.ParseIP("100.64.0.1")) })
+	dir := t.TempDir()
+	f.addrs = f.addrs[:1]
+	if _, err := load(dir, f.env()); err != nil { // an authority from before
+		t.Fatal(err)
+	}
+	private = now
+	f.addrs = append(f.addrs, net.ParseIP("100.64.3.20"))
+	c, err = load(dir, f.env())
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, pool = leafOf(t, c)
+	if err := verify(leaf, pool, "dhis2.local", f.now); err != nil {
+		t.Errorf("the older authority's certificate: %v", err)
+	}
+	if slices.ContainsFunc(leaf.IPAddresses, net.ParseIP("100.64.3.20").Equal) {
+		t.Error("an address the older authority does not permit")
 	}
 }
