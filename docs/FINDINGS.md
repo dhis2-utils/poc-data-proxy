@@ -508,3 +508,18 @@ Measured 2026-10-19, building the hub's image from Raspberry Pi OS Lite (trixie,
 - **The stock image sets itself up at first boot**, which a hub must not do: cloud-init with a seed on the boot partition, `userconf-pi` asking for a user, a user `pi`, and SSH. The build removes all of them. Pi OS's own first-boot growth of the root file system (`resize` in `cmdline.txt`) is kept.
 - **`proot` crashed in this container** (signal 11, with and without seccomp); a plain `chroot` as root works.
 
+## Tokens outlive their user
+
+Tested on DHIS2 2.42.6 (2026-10-20), with a personal access token of a plain user:
+
+- **Disabling the user, changing their password, or setting their account to expire does not stop the token.** It kept answering `/api/me` and data reads.
+- **Nobody but the owner finds the token.** A superuser gets 404 on `GET` and `DELETE /api/apiToken/{id}`, and does not see it in the list.
+- **Sharing makes it deletable.** The owner can share it with `POST /api/sharing?type=apiToken&id=…` (sharing in the create request is ignored). A plain member of a group it is shared with (`rw------`) can then delete it, and the token stops at once (401). The list still shows only one's own tokens, so the deleter must know the ID.
+
+So a stolen hub's tokens are its users' access to central, for as long as they live, whatever is done to the users. The hub now:
+- shares every token it makes with the hub managers;
+- lists the IDs in its registry entry;
+- takes its life from the country's setting.
+
+The Facility Hub app's "Revoke all tokens of this hub" deletes them (`internal/core/tokens.go`, `TestTokensSharedWithManagersAndListed`, `TestRevokedHubDropsItsTokens`). Through the hub, a disabled user is still refused within minutes: the hub re-checks Basic credentials with central. 2.43 is to check.
+

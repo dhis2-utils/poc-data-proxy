@@ -4,6 +4,7 @@
 package sync
 
 import (
+	"net/url"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -122,7 +123,7 @@ func (w *Worker) Cycle(ctx context.Context) error {
 	if !h.Online() && h.Store.Unlocked() && h.Mode() == core.ModeActive {
 		h.TryCentralMove(ctx) // central may have moved (docs/DEPLOYMENT.md, section 6)
 	}
-	if !h.Online() || !h.Store.Unlocked() || h.Mode() != core.ModeActive || h.Runtime() == nil {
+	if !h.Online() || !h.Store.Unlocked() || h.Mode() != core.ModeActive || h.Runtime() == nil || h.Revoked() {
 		return nil
 	}
 	w.mu.Lock()
@@ -160,10 +161,13 @@ func (w *Worker) cycle(ctx context.Context) error {
 		w.heartbeat(ctx)
 		return fmt.Errorf("hub needs upgrade: central runs %s", h.ServerVersion())
 	}
+	if w.checkRegistry(ctx); h.Revoked() {
+		h.DropTokens(ctx)
+		return nil
+	}
 	if err := h.RenewHubToken(ctx); err != nil {
 		errs = append(errs, err)
 	}
-	w.checkRegistry(ctx)
 	if rt := h.Runtime(); rt != nil && rt.FacilityPath == "" {
 		var ou struct {
 			Path string `json:"path"`
@@ -226,12 +230,16 @@ func (w *Worker) cycle(ctx context.Context) error {
 	if _, err := h.Store.PruneCache(30 * 24 * time.Hour); err != nil {
 		errs = append(errs, fmt.Errorf("cache: %w", err))
 	}
+	if err := w.publishTokens(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("registry tokens: %w", err))
+	}
 	w.heartbeat(ctx)
 	return errors.Join(errs...)
 }
 
 // checkRegistry reads this hub's registry entry and records whether another hub
-// replaced it (FINDINGS item 16, REVIEW-2 F9).
+// replaced it (FINDINGS item 16, REVIEW-2 F9), or the Facility Hub app revoked its
+// tokens.
 func (w *Worker) checkRegistry(ctx context.Context) {
 	h := w.H
 	var reg struct {
@@ -239,6 +247,11 @@ func (w *Worker) checkRegistry(ctx context.Context) {
 	}
 	if err := h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-registry/"+h.HubID(), nil, h.HubAuth(), &reg); err != nil {
 		return // unknown: keep the last answer
+	}
+	if reg.Status == "revoked" {
+		slog.Warn("registry marks this hub's tokens as revoked: dropping them; no longer serving patient data offline")
+		h.SetRevoked()
+		return
 	}
 	retired := reg.Status == "retired"
 	if retired != h.Retired() {
@@ -252,6 +265,29 @@ func (w *Worker) checkRegistry(ctx context.Context) {
 		h.Store.SetMeta(core.MetaRetired, v)
 	}
 }
+
+// publishTokens lists the tokens the hub holds in its registry entry, when they
+// changed, so the Facility Hub app can revoke them (core/tokens.go).
+func (w *Worker) publishTokens(ctx context.Context) error {
+	h := w.H
+	uids := h.TokenUIDs()
+	if strings.Join(uids, ",") == h.Store.Meta(metaRegistryTokens) {
+		return nil
+	}
+	path := "/api/dataStore/facility-hub-registry/" + url.PathEscape(h.HubID())
+	var reg map[string]any
+	if err := h.Central.JSON(ctx, "GET", path, nil, h.HubAuth(), &reg); err != nil {
+		return err
+	}
+	reg["tokens"] = uids
+	if err := h.Central.JSON(ctx, "PUT", path, reg, h.HubAuth(), nil); err != nil {
+		return err
+	}
+	h.Store.SetMeta(metaRegistryTokens, strings.Join(uids, ","))
+	return nil
+}
+
+const metaRegistryTokens = "registry_tokens" // the token IDs last listed in the registry
 
 // --- push (spec 11.1) -------------------------------------------------------------
 

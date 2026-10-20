@@ -34,7 +34,7 @@ const (
 	MetaServerTimeZone = "server_time_zone"
 	MetaPublicKey      = "hub_public_key"
 	MetaUpgrade        = "last_upgrade" // JSON of the last upgrade attempt
-	MetaRetired        = "retired"      // "1" while the registry says another hub replaced this one
+	MetaRetired        = "retired"      // "1" while the registry says another hub replaced this one; "revoked" once its tokens were revoked
 )
 
 // Retired reports whether the registry marks this hub as replaced. A retired hub stops
@@ -42,7 +42,13 @@ const (
 // itself: on 2.42 the registry namespace is writable by any user until protected, so
 // a forged entry must cost at most offline service, and it ends when the entry is
 // active again (REVIEW-2 F9).
-func (h *Hub) Retired() bool { return h.Store.Meta(MetaRetired) == "1" }
+func (h *Hub) Retired() bool { return h.Store.Meta(MetaRetired) != "" }
+
+const retiredRevoked = "revoked"
+
+// SetRevoked records that the Facility Hub app revoked this hub's tokens. It is final:
+// only a reset makes the hub usable again.
+func (h *Hub) SetRevoked() { h.Store.SetMeta(MetaRetired, retiredRevoked) }
 
 const (
 	ModeSetup  = "setup"

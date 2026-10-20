@@ -197,8 +197,11 @@ func (h *Hub) RefreshAccessWith(ctx context.Context, userID int64, auth central.
 // with is the credential to create it with (the user's fresh central session).
 // If central refuses, the encrypted password is stored instead (spec 7.1 fallback).
 func (h *Hub) EnsurePAT(ctx context.Context, u *store.User, with central.Auth, password string) error {
+	if h.Revoked() {
+		return errors.New("this hub's tokens were revoked on central; reset it before use")
+	}
 	if u.HasPAT && !u.NeedsLogin {
-		if exp, err := time.Parse(time.RFC3339, u.PATExpires); err == nil && time.Until(exp) > 7*24*time.Hour {
+		if exp, err := time.Parse(time.RFC3339, u.PATExpires); err == nil && !h.renewToken(exp) {
 			return nil
 		}
 	}
@@ -206,7 +209,7 @@ func (h *Hub) EnsurePAT(ctx context.Context, u *store.User, with central.Auth, p
 	if api == nil {
 		return fmt.Errorf("unsupported server version %q", h.ServerVersion())
 	}
-	exp := time.Now().Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
+	exp := time.Now().Add(h.TokenLife())
 	uid, key, err := h.CreatePAT(ctx, with, exp)
 	if err != nil {
 		if !h.Cfg.PasswordFallback {
@@ -244,10 +247,10 @@ func (h *Hub) RenewHubToken(ctx context.Context) error {
 		}
 		exp = setup.Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
 	}
-	if time.Until(exp) > 7*24*time.Hour {
+	if !h.renewToken(exp) {
 		return nil
 	}
-	newExp := time.Now().Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
+	newExp := time.Now().Add(h.TokenLife())
 	uid, key, err := h.CreatePAT(ctx, h.HubAuth(), newExp)
 	owner := rt.HubTokenOwner
 	if central.Status(err) == http.StatusUnauthorized && rt.HubPassword != "" {
@@ -291,7 +294,10 @@ func (h *Hub) CreatePAT(ctx context.Context, with central.Auth, exp time.Time) (
 	if resp.StatusCode/100 != 2 {
 		return "", "", &central.HTTPError{Status: resp.StatusCode, Body: b}
 	}
-	return api.PATResponse(b)
+	if uid, key, err = api.PATResponse(b); err == nil {
+		h.shareWithManagers(ctx, central.Auth{PAT: key}, uid)
+	}
+	return uid, key, err
 }
 
 // RefreshServerVersion reads central's version (spec 6.2 step 5, refreshed on sync).
@@ -363,6 +369,9 @@ func (h *Hub) RefreshCatalog(ctx context.Context) error {
 	}
 	if rerr := h.refreshRetention(ctx); rerr != nil && central.IsNetwork(rerr) {
 		return rerr
+	}
+	if terr := h.refreshTokenSettings(ctx); terr != nil && central.IsNetwork(terr) {
+		return terr
 	}
 	if err != nil {
 		return fmt.Errorf("catalog with hub token: %w", err)
@@ -585,7 +594,7 @@ func (h *Hub) TakeOverHubToken(ctx context.Context, username, password string) e
 	if !me.Belongs(h.FacilityPath()) {
 		return fmt.Errorf("%s is not assigned to this facility", username)
 	}
-	exp := time.Now().Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
+	exp := time.Now().Add(h.TokenLife())
 	uid, key, err := h.CreatePAT(ctx, with, exp)
 	if err != nil {
 		return fmt.Errorf("creating a token: %w", err)

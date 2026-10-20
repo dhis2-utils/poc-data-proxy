@@ -157,7 +157,7 @@ func (h *Hub) adoptLocked(ctx context.Context, creds hubaccount.Credentials) err
 	if err := h.ownAccount(me); err != nil {
 		return fmt.Errorf("%w: %v", errNotFit, err)
 	}
-	exp := time.Now().Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
+	exp := time.Now().Add(h.TokenLife())
 	uid, key, err := h.CreatePAT(ctx, basic, exp)
 	if err != nil {
 		return fmt.Errorf("creating a token: %w", err)
@@ -251,7 +251,7 @@ func (h *Hub) rotateAccount(ctx context.Context) error {
 	if err := h.UpdateRuntime(func(rt *Runtime) { rt.HubPassword, rt.HubPasswordNext = pw, "" }); err != nil {
 		return err
 	}
-	exp := time.Now().Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
+	exp := time.Now().Add(h.TokenLife())
 	uid, key, err := h.CreatePAT(ctx, central.Auth{Username: h.HubID(), Password: pw}, exp)
 	if err != nil {
 		return fmt.Errorf("creating a token: %w", err)

@@ -87,7 +87,8 @@ type Central struct {
 	teLists        []string       // queries of tracked entity listings
 	mu             sync.Mutex
 	Users          map[string]*User
-	tokens         map[string]string // PAT key -> username
+	tokens         map[string]string   // PAT key -> username
+	tokenShares    map[string][]string // PAT uid -> user groups it is shared with
 	tokenSeq       int
 	tokenIDs       map[string]string // token uid -> key
 	sessions       map[string]string // cookie -> username
@@ -143,7 +144,7 @@ func New() *Central {
 			"district_e": {UID: "HubUsrDistE", Username: "district_e", OrgUnits: []string{District}, ProgramRead: true, StageRead: no3, StageWrite: map[string]bool{}},
 			"outsider_d": {UID: "HubUsrOutsD", Username: "outsider_d", OrgUnits: []string{OtherFacility}, ProgramRead: true, ProgramWrite: true, StageRead: no3, StageWrite: no3},
 		},
-		tokens: map[string]string{}, tokenIDs: map[string]string{}, sessions: map[string]string{},
+		tokens: map[string]string{}, tokenIDs: map[string]string{}, tokenShares: map[string][]string{}, sessions: map[string]string{},
 		objects: map[string]tracker.M{}, kinds: map[string]string{}, DataStore: map[string]map[string]json.RawMessage{},
 		Version: Version, Requests: map[string]int{}, jobs: map[string][]byte{},
 		owners: map[string]string{}, temp: map[string]time.Time{}, TempAccess: time.Hour,
@@ -438,7 +439,17 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 201, map[string]any{"httpStatus": "Created", "httpStatusCode": 201, "status": "OK",
 			"response": map[string]any{"key": key, "uid": id, "responseType": "ObjectReport"}})
 	case strings.HasPrefix(p, "/api/apiToken/") && r.Method == "DELETE":
-		c.RevokeToken(strings.TrimPrefix(p, "/api/apiToken/"))
+		// As DHIS2 2.42: only the owner, or a member of a group the token is shared
+		// with, finds the token; a superuser does not (FINDINGS.md).
+		id := strings.TrimPrefix(p, "/api/apiToken/")
+		c.mu.Lock()
+		ok := c.tokenIDs[id] != "" && (c.tokens[c.tokenIDs[id]] == u.Username || slices.ContainsFunc(c.tokenShares[id], func(g string) bool { return slices.Contains(u.Groups, g) }))
+		c.mu.Unlock()
+		if !ok {
+			webMessage(w, 404, "ApiToken with id "+id+" could not be found.", "E1005")
+			return
+		}
+		c.RevokeToken(id)
 		writeJSON(w, 200, map[string]any{"status": "OK"})
 	case p == "/api/trackedEntityTypes":
 		at := func(id string) map[string]any {
@@ -511,6 +522,8 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		c.patchUser(w, r, strings.TrimPrefix(p, "/api/users/"))
 	case strings.HasPrefix(p, "/api/userGroups/") && r.Method == "POST":
 		c.addToGroup(w, p)
+	case p == "/api/sharing" && r.URL.Query().Get("type") == "apiToken":
+		c.shareToken(w, r, u)
 	case p == "/api/sharing" && r.URL.Query().Get("type") == "dataStore":
 		c.shareEntry(w, r)
 	case strings.HasPrefix(p, "/api/dataStore/"):
@@ -518,6 +531,36 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 	default:
 		webMessage(w, 404, "not found in fake central: "+p, "")
 	}
+}
+
+// shareToken handles POST /api/sharing?type=apiToken&id=…, by the token's owner only.
+func (c *Central) shareToken(w http.ResponseWriter, r *http.Request, u *User) {
+	id := r.URL.Query().Get("id")
+	var req struct {
+		Object struct {
+			UserGroupAccesses []struct{ ID string } `json:"userGroupAccesses"`
+		} `json:"object"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.tokenIDs[id] == "" || c.tokens[c.tokenIDs[id]] != u.Username {
+		webMessage(w, 404, "ApiToken with id "+id+" could not be found.", "E1005")
+		return
+	}
+	var groups []string
+	for _, g := range req.Object.UserGroupAccesses {
+		groups = append(groups, g.ID)
+	}
+	c.tokenShares[id] = groups
+	writeJSON(w, 200, map[string]any{"status": "OK", "message": "Access control set"})
+}
+
+// TokenSharedWith returns the user groups a PAT is shared with.
+func (c *Central) TokenSharedWith(id string) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.tokenShares[id]
 }
 
 // RevokeToken deletes a PAT by uid (to test 401 on push).

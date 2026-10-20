@@ -383,7 +383,7 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (_ *core.Sessio
 	basic := central.Auth{Username: p.Username, Password: p.Password}
 
 	// Hub-level token (spec 6.2 step 8, 11.2). POC: the setup user's PAT.
-	tokExp := time.Now().Add(time.Duration(h.Cfg.PATExpiryDays) * 24 * time.Hour)
+	tokExp := time.Now().Add(h.TokenLife())
 	tokUID, tok, err := h.CreatePAT(ctx, basic, tokExp)
 	if err != nil {
 		return nil, fmt.Errorf("creating hub token: %w", err)
