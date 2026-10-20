@@ -19,7 +19,7 @@ const MetaProxy = "proxy"
 const metaReach = "reach"
 
 // reach is when another device on the LAN last opened the hub by name and by IP
-// address (DEPLOYMENT.md, "Where .local fails"): the admin page's set-up check.
+// address (DEPLOYMENT.md, "Reaching the hub securely": where .local fails): the admin page's set-up check.
 type reach struct {
 	mu      sync.Mutex
 	loaded  bool

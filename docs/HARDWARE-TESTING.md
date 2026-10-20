@@ -15,7 +15,7 @@ Note the exact models used (card, SSD, USB adapter or HAT, power supply, case an
 
 Questions the runs answer:
 
-1. Up to which facility size each combination serves a working day well (DEPLOYMENT.md, "Sizing").
+1. Up to which facility size each combination serves a working day well (PERFORMANCE.md, "Sizing for a busy urban HC IV").
 2. How much of the speed comes from memory and how much from the disk, for the choice between more memory and an SSD.
 3. Whether the SD card's speed and endurance are acceptable for a pilot.
 4. How fast a first pull and an Android or eRegisters first download are on the real thing.

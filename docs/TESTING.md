@@ -76,6 +76,8 @@ Scripted Capture web runs (Playwright) and Android Capture runs (adb and the UI 
 | `go run ./cmd/hubtest provision -profile laos -url https://dhis2.example.org -admin user:password -out manifest.json` | turn a DHIS2 instance into a profile's shape and write its manifest. `synthetic` needs an empty instance; `sierra-leone` and `laos` need the matching demo database |
 | `HUB_MANIFEST=manifest.json HUB_REPORT=oracle.json go test ./internal/live/` | the live suite against that instance |
 
+On GitHub, `.github/workflows/test.yml` runs `go vet`, every Go test, and the race detector on `internal/e2e`, `internal/live`, `internal/tracker` and `internal/store` on every push, with `swtpm` for the TPM tests; `windows.yml` and `macos.yml` add those systems.
+
 The Facility Hub app (`apps/facility-hub`) has its own tests: `pnpm test` there (the codes, sealing and approval steps against the values the hub's Go tests pin, flags, who sees which hub), and `pnpm exec eslint src` and `pnpm exec tsc --noEmit`.
 
 Live runs change their instance: use a disposable one, and restore it (or a fresh demo database) before running again.

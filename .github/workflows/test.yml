@@ -1,0 +1,26 @@
+# The hub's tests on Linux, on every push (AGENTS.md, "Before committing"): vet, every
+# test, and the race detector on the packages where goroutines meet. swtpm lets
+# internal/devkey test the TPM code against a software TPM.
+name: Tests
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Tools
+        run: sudo apt-get update -q && sudo apt-get install -y -q swtpm
+      - name: Vet
+        run: go vet ./... && GOOS=windows go vet ./... && GOOS=darwin go vet ./...
+      - name: Tests
+        run: go test ./...
+      - name: Race detector
+        run: go test -race ./internal/e2e ./internal/live ./internal/tracker ./internal/store

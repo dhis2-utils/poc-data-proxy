@@ -95,6 +95,7 @@ In process on a development machine (unconstrained), with `HUB_PERF_SCALE="tes,e
 - `TestPull`: first pull, heap, disk, reboot to first login.
 - `TestQueries`: working lists, searches, Android pages, dashboards (`HUB_PERF_ONLY` and `HUB_PERF_RUNS` to profile one kind).
 - `TestCentralLoad`: what the hub asks of central.
+- `HUB_PPROF=127.0.0.1:6060` on a running hub serves Go's profiler there (loopback only), for looking into a slow case.
 
 In containers on the Docker host (`perf/pi.sh`, from the repository root):
 
@@ -220,7 +221,7 @@ Still to measure: the same on `pi5`. Pruning a hub that already holds five years
 
 - **Confidentiality unchanged.** The data file is encrypted page by page (AES-256-XTS, key derived from the data key, which exists only in memory), so the index columns are as encrypted at rest as everything else in it.
 - **What changed.** Payloads also carry their own authenticated encryption (AES-GCM); index columns and slim JSON have only the file's encryption, which hides them but does not detect tampering. Someone able to write to the disk could already alter the visibility bitmaps and object columns, so the threat model does not change.
-- **No plaintext on disk.** Sorting stays in memory (`temp_store=memory`); the journal and WAL go through the encrypting layer. The scenario test that greps the disk for plaintext covers it.
+- **No plaintext on disk.** Sorting stays in memory (`temp_store=memory`), except in migrations, which sort through temporary files encrypted like the store ("Upgrading a large hub"); the journal and WAL go through the encrypting layer. The scenario test that greps the disk for plaintext covers it.
 - **Plaintext in memory.** Decrypted pages sit in SQLite's page cache, and up to 4 096 decoded payloads in the hub's payload cache, dropped when the store locks.
 
 ## Aggregate data

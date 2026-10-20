@@ -10,7 +10,7 @@ import (
 )
 
 // The admin page tells whether devices reach the hub by dhis2.local or only by its IP
-// (DEPLOYMENT.md, "Where .local fails"): requests from other devices on the LAN count,
+// (DEPLOYMENT.md, "Reaching the hub securely": where .local fails): requests from other devices on the LAN count,
 // the hub's own and loopback ones do not.
 func TestReach(t *testing.T) {
 	e := newEnv(t)

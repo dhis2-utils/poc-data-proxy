@@ -269,7 +269,7 @@ func (ix *Index) row(r *store.Object, needData bool) *Obj {
 }
 
 // withData returns o with its slim data decoded: o itself, or a decoded copy (o may be
-// shared, through the result cache).
+// shared with other readers).
 func withData(o *Obj) *Obj {
 	if o.Data != nil {
 		return o

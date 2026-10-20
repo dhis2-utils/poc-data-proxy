@@ -378,7 +378,7 @@ func (u *Upgrader) downloadTo(name, dst, sum string) error {
 	return os.Rename(part, dst)
 }
 
-// WaitDownload waits for a running release download (tests, and a clean shutdown).
+// WaitDownload waits for a running release download (tests).
 func (u *Upgrader) WaitDownload() { u.download.Wait() }
 
 // hasSHA256 reports whether the file at path exists with that checksum.

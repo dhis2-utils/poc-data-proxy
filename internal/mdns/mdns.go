@@ -38,9 +38,6 @@ type Responder struct {
 	silenced atomic.Bool
 }
 
-// Silenced reports whether another device answers the name (the hub's page says so).
-func (r *Responder) Silenced() bool { return r.silenced.Load() }
-
 // Answer returns the response to a query from the device at from (nil if unknown), or
 // nil. It answers with the private IPv4 addresses on that device's network (RFC 6762,
 // section 15: not a WSL or VPN adapter's), or all of them when no network of ours holds

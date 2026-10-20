@@ -46,7 +46,15 @@ A small device on a facility LAN that caches the facility's DHIS2 tracker data a
 | `internal/hubaccount` | The hub's own account: the sealed box it arrives in, the account and move codes, the approval steps (the reference the app matches) |
 | `internal/stick` | The USB stick: setup code, the copy a new disk is restored from (docs/RECOVERY.md) |
 | `internal/upgrade` | Signed releases, store migration on a copy, binary swap, health check, rollback (spec 12a) |
-| `internal/compat` | **All DHIS2-version-specific request and response handling**, one file per version (`v42.go`) |
+| `internal/compat` | DHIS2-version-specific requests and responses, one file per version (`v42.go`, `v43.go`). A difference that is simpler to read in both shapes stays in place (the 2.42 and 2.43 `dataValueSets`, 2.43's `enrollmentCategoryCombo`) |
+| `internal/config` | `hub.yaml`, its defaults, and free ports for `hub init` |
+| `internal/hubtls` | The hub's certificate authority and server certificate (`dhis2.local`, its names and private addresses), the start page's file |
+| `internal/devkey` | The device key sealed by the TPM, where there is one: TLS keys and setup files sealed, key slots bound |
+| `internal/atomicfile` | Replacing a file so a power cut leaves the old one or the new one |
+| `internal/mdns` | Answers `dhis2.local` where the system does not (Windows, macOS) |
+| `internal/netsetup` | NetworkManager on the Pi: the setup Wi-Fi, joining a Wi-Fi, the hub as the facility's Wi-Fi (case C); `nmfake` stands in for `nmcli` in tests |
+| `internal/logfile` | A size-capped log file: the hub's log where a service has no console, and `requests.log` |
+| `internal/diskfree` | Free disk space, per system |
 | `internal/central` | HTTP client for central and the connectivity monitor (spec 5.2) |
 | `internal/access` | Per-user access lists and the facility's program catalog (spec 8.1) |
 | `internal/fakecentral` | Fake DHIS2 2.42 shaped after the recorded fixtures, for tests |
@@ -83,6 +91,10 @@ The hub has no facility-specific configuration. It reads one small image-default
 |---|---|
 | `central_url` | Central DHIS2 base URL; optional. Without it (the generic image), set-up asks for central's address and the setup code first (`setup-code.txt` on the USB stick, or `data_dir/setup-token`), checks the server (https, a trusted certificate) and shows its name before anyone logs in. With it and without `central_hosts`, set-up always uses it |
 | `central_hosts` | Hosts setup may point a hub at (`hmis.example.org, *.hmis.example.org`); setup then asks for an `https://` URL on them. With neither key, setup needs the token in `data_dir/setup-token` (printed on the label) |
+| `network` | `networkmanager` (the Pi image): the hub manages its network through NetworkManager, with the setup Wi-Fi and case C (`internal/netsetup`). Empty (default): the machine's network as it is |
+| `mdns` | `true`: the hub answers `dhis2.local` itself (Windows, macOS; the Pi image has avahi). Default `false` |
+| `setup_local_only` | `true`: set-up only from the machine itself, and no setup code (Windows, macOS: being at the PC proves presence at the facility). Default `false` |
+| `uplink_switch` | `true`: "Simulate uplink cut" on the admin page, for demonstrations. Default `false`: in the field a hub that looks offline lets staff type in a new central |
 | `tpm` | Seal the hub's device key with the machine's TPM 2.0 where it has one (`internal/devkey`). Default `true`. `false` keeps a new hub off a TPM that misbehaves; it cannot take a hub that already has `device.key` off its TPM, whose sealed files then cannot be opened |
 | `password_fallback` | Store a user's central password, sealed, when a PAT cannot be created (spec 7.1). Default `false` |
 | `listen` | Listen address, e.g. `:8443`; `:443` on the image, for `https://dhis2.local` |
@@ -93,7 +105,7 @@ The hub has no facility-specific configuration. It reads one small image-default
 | Retention by program and tracked entity type | Central's dataStore key `facility-hub-config/retention`, read by every hub: `{"defaultMonths": 0, "programs": {"<program>": 12}, "trackedEntityTypes": {"<type>": 6}}`. Months of data kept, 0 or no entry keeps everything. Event programs keep events by event date. Tracker programs keep active enrollments in full and closed ones until their last change is older than the window, then as hidden stubs (for the "enrol once" check). Tracked entity types have no default: people are kept unless their type is named; an entity of a type with a window goes when it is old and has nothing left in full |
 | `access_refresh_interval` | How often each user's access list is re-read from central, besides at login (default 1h) |
 | `pat_expiry_days` | Lifetime of the personal access tokens the hub creates |
-| `tls` | `true` (default): at first boot the hub creates a CA limited to its own names and private addresses, issues its server certificate and discards the CA key. `false`: plain HTTP for development |
+| `tls` | `true` (default): at first boot the hub creates a CA limited to its own names and private addresses, issues its server certificate, and keeps the CA's key (`ca.key`) to renew it; both private keys are sealed with the device key where the machine has a TPM. `false`: plain HTTP for development |
 | `reserved_pool_size` | Reserved values kept per generated attribute (default 150) |
 | `usb_dir` | Where the box's USB stick is mounted (none by default; the image uses `/media/hub-usb`). Before set-up the hub writes its setup code there; after, each minute, what a restore needs: the pending saves, the key file and the hub's state (docs/RECOVERY.md, C2). Used only when it is a mount point |
 | `full_pull_interval` | How often a full, non-incremental pull runs per access group (default 168h, a week). A changed access list gives a full pull at the next sync anyway |
@@ -130,7 +142,7 @@ Hub endpoints:
 - `GET /hub/status`: no auth. `{mode, hubId, lastPush, lastPull, pending, rejected, version, locked, setup}`.
 - `/hub/ui`: admin page, for staff assigned to the facility (log in at `/hub/login`). It shows status, outbox, issues and users with their access refresh times, and has these actions:
   - sync now;
-  - **simulate uplink cut**, for demos;
+  - **simulate uplink cut**, for demos, only with `uplink_switch: true`;
   - **use my account** for the hub's own housekeeping (heartbeat, issue reports, generated IDs), when the person whose token it uses leaves;
   - reset hub.
 - `/hub/ui/endpoints`: every endpoint and parameter clients called, and every parameter refused offline (spec 13.1).
@@ -163,10 +175,10 @@ The public key is the repository variable `RELEASE_PUBLIC_KEY`. Tags cannot be m
 
 `out/` holds the release's assets: the binaries (`hub-linux-arm64`, …), the image if given, `release.json` (version, file names and SHA-256 per platform, the image) and `release.json.sig`. A build without a key never upgrades.
 
-Each country chooses the version on central, in the Facility Hub app's "Hub version" page, which writes `facility-hub-admin/release`: `{"version": "0.3.0", "pilotHubs": [...], "percent": 10}`. After each online sync cycle a hub reads it; if the version is newer than its own, has not failed here before, and the hub is a pilot hub or its ID hashes under the percentage, it fetches that release's signed `release.json` and:
+Each country chooses the version on central, in the Facility Hub app's "Hub version" page, which writes `facility-hub-admin/release`: `{"version": "0.3.0", "pilotHubs": [...], "percent": 10}`. After each online sync cycle a hub reads it; if the version is newer than its own, has not failed here before, and the hub is a pilot hub or its ID hashes under the percentage, it fetches that release's signed `release.json`, then:
 
-1. pushes its outbox;
-2. downloads and verifies the binary;
+1. downloads the binary in the background, beside the sync cycle, and verifies it against `release.json`;
+2. at a later cycle, once the binary is there: pushes its outbox;
 3. blocks tracker writes;
 4. runs the new binary's migrations on a copy of the store;
 5. swaps binary and store;
