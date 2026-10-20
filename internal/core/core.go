@@ -360,27 +360,32 @@ func (h *Hub) UpdateRuntime(fn func(*Runtime)) error {
 }
 
 // Unlock installs the data key, loads runtime state and builds the index (spec 9.3).
-func (h *Hub) Unlock(dk hubcrypto.Key) error {
+// If any step fails the store is locked again: a half-unlocked hub would serve cached
+// answers with no runtime (security review 2026-10-20, S14).
+func (h *Hub) Unlock(dk hubcrypto.Key) (err error) {
 	if err := h.Store.SetDK(dk); err != nil {
 		return err
 	}
+	defer func() {
+		if err != nil {
+			h.Lock()
+		}
+	}()
 	// Before the runtime is read: a hub restored from its USB stick puts its state
 	// back first.
 	for _, fn := range h.afterUnlock {
 		if err := fn(); err != nil {
-			h.Store.SetDK(nil)
 			return err
 		}
 	}
 	b, err := h.Store.State("runtime")
 	if err != nil {
-		h.Store.SetDK(nil)
 		return err
 	}
 	if b != nil {
 		rt := &Runtime{}
 		if err := json.Unmarshal(b, rt); err != nil {
-			return err
+			return fmt.Errorf("runtime state: %w", err)
 		}
 		if rt.Catalog != nil {
 			rt.Catalog.Index()
