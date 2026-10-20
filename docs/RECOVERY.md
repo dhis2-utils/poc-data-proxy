@@ -129,6 +129,8 @@ A printed card attached to the device: what the lights mean, who to call, and th
 
 ### I. Push after a reboot without anyone logging in
 
+**Decided against (2026-10-20).** The first login after a restart, from any client, unlocks the hub, and Android's background sync does it unasked; a key that unlocks at boot would hand the data to whoever takes the whole device. The hub's TPM-held device key (DEPLOYMENT.md, section 2) protects the disk, but never unlocks it.
+
 (Added from the review against the code; see "Notes against the current hub".) Keep what is needed to push (the outbox entries and the users' tokens) under a key available at boot without a person, for example derived from a device-unique key; Raspberry Pi 4 and 5 are believed to have one in OTP memory, to be checked. The cache of central's data stays under the data key, as now.
 
 - Covers: power cuts and restarts, the most common failure, which today stop all pushing until a known user logs in.
@@ -157,7 +159,6 @@ A printed card attached to the device: what the lights mean, who to call, and th
 - Who runs the recovery tool on central, and how often would they need to?
 - Is attribution through a recovery account, with `storedBy` set to the author, acceptable for clinical records in this country?
 - What share of facilities have SMS coverage but no usable data? This decides whether option B is worth building.
-- Is a key available at boot without a person (option I) acceptable, given that it trades theft exposure of unsynced entries for automatic recovery?
 
 ## Notes against the current hub
 

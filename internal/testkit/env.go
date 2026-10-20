@@ -92,6 +92,7 @@ func Start(t testing.TB) *Env {
 
 func (e *Env) Config() config.Config {
 	c := config.Default()
+	c.TPM = false // the same files on every machine; internal/devkey tests the TPM
 	c.CentralURL = e.Net.URL()
 	c.DataDir = e.Dir
 	c.TLS = false

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"errors"
+	"github.com/dhis2/facility-hub/internal/devkey"
 	"os"
 	"strings"
 
@@ -38,7 +39,7 @@ func EnsureSetupToken(h *core.Hub) error {
 		}
 		sb.WriteByte(tokenChars[int(c)%len(tokenChars)]) // 256 is a multiple of 32: no bias
 	}
-	return os.WriteFile(setupTokenPath(h), []byte(sb.String()+"\n"), 0o600)
+	return devkey.WriteFile(setupTokenPath(h), []byte(sb.String()+"\n"), 0o600)
 }
 
 // needToken: set-up needs the code from the box's USB stick, unless set-up only
@@ -48,7 +49,7 @@ func needToken(h *core.Hub) bool {
 }
 
 func checkSetupToken(h *core.Hub, given string) error {
-	b, err := os.ReadFile(setupTokenPath(h))
+	b, err := devkey.ReadFile(setupTokenPath(h))
 	if err != nil {
 		return errors.New("this hub has no setup token; restart it to create one")
 	}

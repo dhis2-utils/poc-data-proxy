@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/dhis2/facility-hub/internal/devkey"
 	"log/slog"
 	"net/http"
 	"os"
@@ -58,6 +59,10 @@ func EnsureIdentity(s *store.Store) {
 // upgrader before it re-execs (it must stop serving; New's caller owns the server).
 func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*App, error) {
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
+		return nil, err
+	}
+	// The device key first: what follows reads and writes the secrets it seals.
+	if err := devkey.Start(cfg.DataDir, cfg.TPM); err != nil {
 		return nil, err
 	}
 	storePath := filepath.Join(cfg.DataDir, "hub.db")

@@ -47,6 +47,7 @@ func TestCentralLoad(t *testing.T) {
 	hubs := 500
 	fmt.Sscan(os.Getenv("HUB_PERF_HUBS"), &hubs)
 	cfg := config.Default() // the intervals a deployed hub uses (the test runs cycles by hand)
+	cfg.TPM = false
 	report := []string{fmt.Sprintf("scale: %d TEs, %d enrollments, %d events, %d users, %d programs",
 		s.TEs, s.Enrollments, s.Events, users, s.Programs)}
 	phases := []struct {

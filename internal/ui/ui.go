@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dhis2/facility-hub/internal/devkey"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -111,6 +112,12 @@ func StatusBody(h *core.Hub) map[string]any {
 	if h.Retired() {
 		out["retired"] = true
 		out["message"] = "this hub was replaced by another hub for the facility; it only sends its remaining changes"
+		if h.Revoked() {
+			out["message"] = "this hub's tokens were revoked on central; it serves nothing until it is reset"
+		}
+	}
+	if p := devkey.Problem(); p != "" {
+		out["message"] = p
 	}
 	if n := h.StuckOutbox(); n > 0 {
 		out["stuckOutbox"] = n

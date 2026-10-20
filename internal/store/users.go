@@ -171,6 +171,17 @@ func (s *Store) SetNeedsLogin(id int64, v bool) error {
 	return err
 }
 
+// SetStickSlot keeps the user's key slot with the password alone for the USB stick's
+// copy (CopyKeysTo); nil when the key file's own slot is that.
+func (s *Store) SetStickSlot(id int64, slot []byte) error {
+	var v any // NULL, not an empty blob, for none
+	if len(slot) > 0 {
+		v = slot
+	}
+	_, err := s.write(`UPDATE users SET stick_slot=? WHERE id=?`, v, id)
+	return err
+}
+
 func (s *Store) SetPAT(id int64, key, uid, expires string) error {
 	var ct []byte
 	if key != "" {

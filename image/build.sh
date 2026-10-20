@@ -21,7 +21,7 @@ trap 'rm -rf "$WORK"' EXIT
 
 [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
 [ "$(uname -m)" = aarch64 ] || { echo "run on an arm64 host (the chroot runs the image's programs)" >&2; exit 1; }
-for t in debugfs mkfs.ext4 sfdisk mtype mdel xz python3 curl; do
+for t in debugfs mkfs.ext4 sfdisk mtype mcopy mdel xz python3 curl; do
   command -v "$t" >/dev/null || { echo "missing $t (e2fsprogs, fdisk, mtools, xz-utils)" >&2; exit 1; }
 done
 python3 - "$BIN" <<'PY' || { echo "$BIN is not a linux/arm64 executable" >&2; exit 1; }
@@ -66,6 +66,11 @@ e2fsck -fn "$WORK/root.ext4" >/dev/null
 
 echo "== boot partition"
 for f in user-data meta-data network-config; do mdel -i "$WORK/boot.vfat" "::/$f" 2>/dev/null || true; done
+# A TPM board, where the kit has one (the common Infineon SLB 9670 on SPI): the hub seals
+# its device key there (internal/devkey). Without a board the driver finds nothing.
+mtype -i "$WORK/boot.vfat" ::/config.txt > "$WORK/config.txt"
+printf '\n# The hub: a TPM board on SPI, if fitted\n[all]\ndtparam=spi=on\ndtoverlay=tpm-slb9670\n' >> "$WORK/config.txt"
+mcopy -o -i "$WORK/boot.vfat" "$WORK/config.txt" ::/config.txt
 
 echo "== disk"
 IMG=$OUT/dhis2-hub-$VERSION-arm64.img

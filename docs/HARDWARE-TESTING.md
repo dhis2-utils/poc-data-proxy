@@ -161,6 +161,14 @@ Run the first command with `-setup -fill` the first time only. Keep one confirme
 
 The scripted Capture web, Android and eRegisters runs (TESTING.md) against a board, with the board's hub in place of the test kit's: the same flows, at real speed, with real devices on the LAN.
 
+### 7. The TPM board (when one is fitted)
+
+An Infineon SLB 9670 board on SPI (the image enables its overlay):
+1. `ls -l /dev/tpmrm0` shows group `tss`; the hub's log says "device key made and sealed by the TPM" at the first start.
+2. `tls.key` and `ca.key` in `/var/lib/hub` start with `HUBDEV1`; staff log in, offline too, after a restart.
+3. Take the TPM board off: the start page says the security chip is missing, and nothing else is served. Put it back: the hub works again.
+4. Without a board, the image boots as before, with no TPM driver errors beyond the probe.
+
 ## Results
 
 Keep results under `perf/results/<board>-<storage>-…`, and add a summary to PERFORMANCE.md:

@@ -17,6 +17,9 @@ if id pi >/dev/null 2>&1; then userdel -r pi 2>/dev/null || userdel pi; fi
 # renames it into place) and its data.
 useradd --system --home-dir /var/lib/hub --no-create-home --shell /usr/sbin/nologin hub
 usermod -aG netdev hub
+# The TPM, where the kit has one (60-hub-tpm.rules gives /dev/tpmrm0 to this group).
+groupadd -f --system tss
+usermod -aG tss hub
 chown -R hub:hub /usr/local/lib/hub
 chmod 0755 /usr/local/lib/hub /usr/local/lib/hub/hub
 ln -sf ../lib/hub/hub /usr/local/bin/hub

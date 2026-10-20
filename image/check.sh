@@ -41,6 +41,9 @@ $FSTAB
 X"
 check "root file system is clean (e2fsck)" e2fsck -fn "$R"
 check "no cloud-init seed on the boot partition" sh -c "! mdir -i '$WORK/boot.vfat' ::/user-data"
+check "config.txt enables a TPM board on SPI" sh -c "mtype -i '$WORK/boot.vfat' ::/config.txt | grep -q '^dtoverlay=tpm-slb9670'"
+check "the hub's user may use the TPM (group tss)" sh -c "debugfs -R 'cat /etc/group' '$R' 2>/dev/null | grep -q '^tss:.*hub'"
+check "/dev/tpmrm0 belongs to group tss" sh -c "debugfs -R 'cat /etc/udev/rules.d/60-hub-tpm.rules' '$R' 2>/dev/null | grep -q 'GROUP=\"tss\"'"
 
 # Permissions survived the rebuild.
 [ "$(mode /usr/bin/sudo)" = 04755 ] && ok "sudo is setuid (04755)" || bad "sudo mode $(mode /usr/bin/sudo)"

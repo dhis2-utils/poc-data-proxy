@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"github.com/dhis2/facility-hub/internal/devkey"
 	"log/slog"
 	"math/big"
 	"os"
@@ -395,7 +396,7 @@ func (m *Manager) setupPassword() (string, error) {
 	m.pwMu.Lock()
 	defer m.pwMu.Unlock()
 	p := filepath.Join(m.DataDir, "setup-wifi")
-	if b, err := os.ReadFile(p); err == nil && len(strings.TrimSpace(string(b))) == 12 {
+	if b, err := devkey.ReadFile(p); err == nil && len(strings.TrimSpace(string(b))) == 12 {
 		return strings.TrimSpace(string(b)), nil
 	}
 	b := make([]byte, 12)
@@ -406,7 +407,7 @@ func (m *Manager) setupPassword() (string, error) {
 		}
 		b[i] = setupAlphabet[n.Int64()]
 	}
-	if err := os.WriteFile(p, append(b, '\n'), 0o600); err != nil {
+	if err := devkey.WriteFile(p, append(b, '\n'), 0o600); err != nil {
 		return "", err
 	}
 	return string(b), nil
@@ -414,7 +415,7 @@ func (m *Manager) setupPassword() (string, error) {
 
 func (m *Manager) load() saved {
 	var s saved
-	if b, err := os.ReadFile(filepath.Join(m.DataDir, "network.json")); err == nil {
+	if b, err := devkey.ReadFile(filepath.Join(m.DataDir, "network.json")); err == nil {
 		json.Unmarshal(b, &s)
 	}
 	return s
@@ -424,7 +425,7 @@ func (m *Manager) save(f func(*saved)) {
 	s := m.load()
 	f(&s)
 	b, _ := json.Marshal(s)
-	if err := os.WriteFile(filepath.Join(m.DataDir, "network.json"), b, 0o600); err != nil {
+	if err := devkey.WriteFile(filepath.Join(m.DataDir, "network.json"), b, 0o600); err != nil {
 		slog.Warn("network: saving the choice", "err", err)
 	}
 }

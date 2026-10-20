@@ -91,11 +91,42 @@ func (s *Store) RestoreOutbox(entries []*RawOutbox) (int, error) {
 }
 
 // CopyKeysTo writes a consistent copy of the key file (key slots, identity, settings)
-// to dst.
+// to dst. Slots bound to the device key are replaced by their copies with the password
+// alone, so the copy restores onto new hardware (internal/devkey).
 func (s *Store) CopyKeysTo(dst string) error {
 	os.Remove(dst)
-	_, err := s.Keys.Exec(`VACUUM INTO ?`, dst)
-	return err
+	if _, err := s.Keys.Exec(`VACUUM INTO ?`, dst); err != nil {
+		return err
+	}
+	rows, err := s.DB().Query(`SELECT id, stick_slot FROM users WHERE length(stick_slot) > 0`)
+	if err != nil {
+		return err
+	}
+	type slot struct {
+		id int64
+		b  []byte
+	}
+	var slots []slot
+	err = scanRows(rows, nil, func(r *sql.Rows) error {
+		var sl slot
+		err := r.Scan(&sl.id, &sl.b)
+		slots = append(slots, sl)
+		return err
+	})
+	if err != nil || len(slots) == 0 {
+		return err
+	}
+	db, err := sql.Open("sqlite3", "file:"+(&url.URL{Path: dst}).EscapedPath())
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	for _, sl := range slots {
+		if _, err := db.Exec(`UPDATE key_slots SET wrapped_dk = ? WHERE id = ?`, sl.b, sl.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // KeysChanged reports the key file's (and its write-ahead log's) last change, to copy

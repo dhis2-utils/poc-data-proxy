@@ -5,6 +5,7 @@ package stick
 import (
 	"context"
 	"errors"
+	"github.com/dhis2/facility-hub/internal/devkey"
 	"github.com/dhis2/facility-hub/internal/diskfree"
 	"log/slog"
 	"os"
@@ -213,7 +214,7 @@ func (s *Stick) writeInfo(text string) error {
 }
 
 func (s *Stick) writeSetupCode() error {
-	code, err := os.ReadFile(s.H.SetupCodePath())
+	code, err := devkey.ReadFile(s.H.SetupCodePath())
 	if err != nil {
 		return nil // pinned or allow-list set-up: no code
 	}

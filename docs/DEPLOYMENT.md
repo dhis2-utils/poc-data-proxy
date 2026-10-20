@@ -77,23 +77,28 @@ One generic image per release (built 2026-10-19: `image/`, see image/README.md).
 
 The image holds **no secrets**. Each hub gets its own data key, hub ID and signing key pair at first boot and setup. Patient data on the SSD is encrypted by the hub itself: it is in a data file encrypted with AES-256-XTS under the data key, so full-disk encryption is optional.
 
-**What is not encrypted** (security review 2026-10-20, S1), all in the data folder and readable only by the hub's account:
+**What is not encrypted** (security review 2026-10-20, S1), all in the data folder and readable only by the hub's account. On a machine with a TPM 2.0 (a TPM board on the Pi, most PCs), the hub seals a device key in the TPM and the items marked *sealed* are encrypted with it (`internal/devkey`, built 2026-10-20):
 
-- **The key file:** hub ID, mode, central URL, the proxy, and each user's username and key slot. Each slot lets someone holding the disk test password guesses offline.
-- **The TLS keys:**
+- **The key file:** hub ID, mode, central URL, the proxy, and each user's username and key slot. Each slot lets someone holding the disk test password guesses offline; with a TPM, the slots on the disk are bound to the device key (*sealed*), and only the USB stick's copy opens with a password alone.
+- **The TLS keys** (*sealed*):
   - the server's `tls.key`, which the hub needs before anyone logs in, to serve its login page over HTTPS;
   - the authority's `ca.key`, which renews it.
-- **Before set-up:** the setup code (`setup-token`).
-- **On a Pi:** the setup Wi-Fi's password (`setup-wifi`) and the chosen Wi-Fi's name (`network.json`).
+- **Before set-up:** the setup code (`setup-token`, *sealed*).
+- **On a Pi:** the setup Wi-Fi's password (`setup-wifi`) and the chosen Wi-Fi's name (`network.json`), both *sealed*. The facility Wi-Fi's password is kept by NetworkManager, readable by root only.
 - **The logs:** templates and parameter names only, no values.
 
 The hub's own account password, the move key and the users' tokens are in the encrypted state.
 
 **What a stolen disk or stick gives, then:**
 - **Offline password guessing** against the key slots. The weakest staff password sets the bar.
-- **Impersonation of this hub** (`dhis2.local`, its names, private addresses) **to the devices that trust its authority.** That's enough to collect the passwords staff type at their next login there. `tls.key` alone already allows this, so encrypting `ca.key` too would not close it.
+- **Impersonation of this hub** (`dhis2.local`, its names, private addresses) **to the devices that trust its authority.** That's enough to collect the passwords staff type at their next login there.
 
-Closing both needs the device to hold a secret of its own: TPM (section 6, "Security operations") or secure boot. Until then, a stolen hub is handled as a password leak: its users change their passwords, and its authority is removed from the devices. If it is used, it must unlock without a person present, for example with a key held in TPM-like storage, which the Pi does not have. This is why the POC relies on application-level encryption.
+**With a TPM**, a disk or data folder taken *without* its TPM gives neither: the slots and keys on it need the device key, which only that TPM opens. Three limits:
+- **A stolen whole device** (board and TPM together) is not protected: no measured boot ties the key to the hub's own software (the Pi has none; on Windows a firmware update would lock the hub out), so whoever boots it can unseal the key.
+- **The USB stick** keeps slots with the password alone, so the hub can be restored on new hardware: a stolen stick still allows guessing, and gives the unsent saves and the tokens behind a guessed password, never the patient cache.
+- **A dead TPM or a disk moved to another machine** cannot be opened; the hub says so on its start page and is restored from its stick onto an empty disk, as for a dead disk. Without a stick, its unsent saves are lost.
+
+The device key never unlocks the hub: that still takes a staff login (RECOVERY.md, option I, decided against 2026-10-20). Without a TPM, or with `tpm: false` in hub.yaml, a stolen hub is handled as a password leak: its users change their passwords, its tokens are revoked in the Facility Hub app, and its authority is removed from the devices.
 
 ## Options under consideration (not decided)
 
@@ -118,7 +123,7 @@ Ideas for hardware and the image, recorded with what they would imply for the hu
 - **No hardware: the hub as a Windows service on an existing facility PC** (built 2026-10-20, see "The hub on a Windows PC" below; not yet run on Windows). The alternative to a kit. Same hub, same store, one PC. The notes below are what was known before it was built.
   - *Code:* the hub cross-compiles for Windows except in two places: free disk space for the status page (`statfs`) and the self-upgrade, which replaces the running process and hands it the data key (`internal/upgrade`). Windows cannot replace a running process or overwrite a running `.exe`, so the upgrade needs its own flow: Windows restarts the hub service on the new version (through its Service Control Manager; no person involved), with the data key handed over so the hub does not stay locked. The rest is small: Windows paths (`C:\ProgramData\...`) instead of `/var/lib/hub` and `/etc/hub`, access rules on the data folder instead of `0600`, and answering stop and shutdown from the service manager. Not checked yet: the SQLite driver and the encrypted file layer on Windows (file locking, flushes), and the test suite on a Windows runner.
   - *The PC:* must not sleep or hibernate (power plan); Windows Update reboots it; antivirus must exclude the data folder, or it locks and scans the database and its write-ahead log; it is someone's working PC, with full disks, other software and people switching it off. A desktop has no battery, so a power cut is a hard stop. Resources are not a concern: an old i3 with 4 GB and an SSD is faster than a Pi 5, with no SD card wear.
-  - *After a restart* the hub is locked until a user with a key slot logs in through it (RECOVERY.md, notes). With Windows Update this happens more often than on a Pi. Windows offers what option I in RECOVERY.md needs, a secret held by the machine for a service at boot (DPAPI, the TPM), so pushing after a reboot without a login is easier here than on a Pi.
+  - *After a restart* the hub is locked until a user with a key slot logs in through it (RECOVERY.md, notes). With Windows Update this happens more often than on a Pi. Windows offers what option I in RECOVERY.md would need, a secret held by the machine for a service at boot (DPAPI, the TPM); option I was decided against (2026-10-20): the first login after a restart unlocks the hub.
   - *Network:* the installer adds a firewall rule for the hub's port; a network marked "Public" may still block it. There is no "hub provides the network" mode (section 4, case C): Windows' mobile hotspot takes about 8 devices and expects an uplink to share. A facility needs a working router. A laptop that leaves the building takes the hub with it, so a desktop that stays put is better.
   - *Confidentiality:* data at rest stays encrypted, but anyone with Windows admin rights on the PC, or malware, can read the running hub's memory, and users of the PC can open the hub UI. Run the service under its own restricted account, restrict the data folder to it, and prefer a PC not used for email and browsing.
   - *Rollout:* an installer with admin rights (service, firewall rule, antivirus exclusion, power plan, data folder), signed with the supplier's code-signing certificate and published on GitHub, or SmartScreen and antivirus warn about it. MoH IT installs it through the ministry's software deployment, or the PC's owner does with a USB stick and a one-page guide. Support is harder, because every PC differs.
@@ -423,12 +428,12 @@ A hub only serves its own facility. A community health worker's tablet that visi
     - No golden key, no extra service: the person approving acts in the open, and nothing secret is in the image.
     - *Once, before the first approval,* a superuser creates the hub accounts group (write sharing on the `facility-hub-*` namespaces except `facility-hub-admin`, read on programme metadata) and its role, and the hub managers group and its role (FACILITY-HUB-APP.md, "Hub managers"), and names them on the app's Approvals page. No hub owner need be in the hub accounts group.
 - **PAT hygiene:**
-  - PATs expire after `pat_expiry_days` (default 90) and renew at online login.
-  - Users who leave are disabled on central, so their PATs stop working.
-  - Hubs show those users as "needs online login".
+  - PATs live as long as the country's setting in the Facility Hub app (7–365 days; else `pat_expiry_days`, default 90) and renew while the hub is online.
+  - Users who leave are disabled on central, and the hub refuses them within minutes. Their PATs, though, keep working against central on 2.42 (FINDINGS.md, "Tokens outlive their user"): revoke a lost hub's tokens in the app.
+  - Hubs show users central refuses as "needs online login".
 - **Physical access:** data at rest is encrypted, and the key is only in memory after a staff login. A stolen hub reveals no patient data without a staff password, but a powered-on hub that is moved keeps its key until it loses power.
 - **Passwords protect the disk.** Each key slot can be attacked offline by whoever holds the SSD (Argon2id slows this down; it does not stop weak passwords). Enforce central's password policy for hub users. The hub removes slots of users who have not logged in for `key_slot_max_age`.
-- **TPM (a requirement for a national rollout).** A TPM add-on board (about USD 25 for the Pi) could hold a device secret mixed into every key slot, so an SSD on its own is useless and the TPM limits how fast passwords can be guessed **(to build)**.
+- **TPM (recommended for a national rollout).** A TPM add-on board (about USD 25 for the Pi; the image enables the Infineon SLB 9670 on SPI) holds the hub's device key, mixed into every key slot on the disk and sealing the TLS keys, so a disk taken on its own is useless (built 2026-10-20, `internal/devkey`; see section 2, "What is not encrypted", for its limits). Used wherever present; a hub without one works as before. Not yet tried on a TPM board or a Windows PC.
 - **What the encryption does not cover.** AES-XTS keeps the data file confidential but does not detect tampering outside the sealed rows; someone with write access to the disk can corrupt it. And once a staff member logs in, the whole facility's data is decrypted in the hub's memory: a running hub is a more valuable target than its disk.
 - **Central server address.** Given once at set-up (above). Afterwards it changes only when central moves, and a hub must never be stranded by that, nor follow a server that is not the same DHIS2.
   - A rule in an earlier draft (a hub sends nothing to a new server before it returns a secret from the hub's registry entry) cannot work: reading the dataStore needs a login, so the check itself would send credentials to the unproven server.

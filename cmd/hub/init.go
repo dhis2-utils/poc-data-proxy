@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/dhis2/facility-hub/internal/devkey"
 	"net"
 	"os"
 	"path/filepath"
@@ -63,6 +64,9 @@ setup_local_only: true
 		return r, err
 	}
 	r.HTTPSPort, r.HTTPPort = portOf(c.Listen), portOf(c.HTTPListen)
+	if err := devkey.Start(dir, c.TPM); err != nil {
+		return r, err
+	}
 	if _, err := hubtls.Load(dir, c.HubHosts); err != nil {
 		return r, err
 	}

@@ -19,6 +19,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/dhis2/facility-hub/internal/devkey"
 	"io/fs"
 	"log/slog"
 	"math/big"
@@ -140,7 +141,7 @@ func (c *Certs) Refresh() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	names, ips := c.wanted()
-	pair, err := tls.LoadX509KeyPair(c.path("tls.crt"), c.path("tls.key"))
+	pair, err := loadPair(c.path("tls.crt"), c.path("tls.key"))
 	if err == nil {
 		leaf, perr := x509.ParseCertificate(pair.Certificate[0])
 		if perr == nil && c.fits(leaf, names, ips) {
@@ -259,7 +260,7 @@ func ValidHostName(n string) bool {
 // replaced, since every device would have to install the replacement; a corrupt one
 // (power loss) is kept aside as ca.key.bad and replaced, so the hub still starts.
 func (c *Certs) loadCA() error {
-	keyPEM, err := os.ReadFile(c.path("ca.key"))
+	keyPEM, err := readFile(c.path("ca.key"))
 	if errors.Is(err, fs.ErrNotExist) {
 		if _, err := os.Stat(c.path("ca.crt")); err == nil {
 			slog.Warn("the hub's certificate authority has no key (made by an older version); making a new one, which devices must install")
@@ -420,7 +421,7 @@ func Fingerprint(dir string) string {
 func Bundle(dir string) ([]byte, error) {
 	m := map[string][]byte{}
 	for _, f := range files {
-		b, err := os.ReadFile(filepath.Join(dir, f))
+		b, err := readFile(filepath.Join(dir, f))
 		if err != nil {
 			return nil, err
 		}
@@ -466,9 +467,38 @@ func pemBlock(typ string, b []byte) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: typ, Bytes: b})
 }
 
+// The private keys are sealed with the hub's device key where it has one (devkey): a
+// disk taken without its TPM then cannot pose as the hub.
+
+func readFile(path string) ([]byte, error) {
+	b, err := os.ReadFile(path)
+	if err != nil || !strings.HasSuffix(path, ".key") {
+		return b, err
+	}
+	return devkey.Unprotect(path, b)
+}
+
+func loadPair(crt, key string) (tls.Certificate, error) {
+	crtPEM, err := os.ReadFile(crt)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	keyPEM, err := readFile(key)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	return tls.X509KeyPair(crtPEM, keyPEM)
+}
+
 // writeAtomic replaces path with b, synced, so a power cut leaves the old file or the
 // new one, never an empty one.
 func writeAtomic(path string, b []byte, mode os.FileMode) error {
+	if strings.HasSuffix(path, ".key") {
+		var err error
+		if b, err = devkey.Protect(path, b); err != nil {
+			return err
+		}
+	}
 	tmp := path + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 	if err != nil {

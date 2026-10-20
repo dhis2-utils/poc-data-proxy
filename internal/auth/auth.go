@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/dhis2/facility-hub/internal/devkey"
 	"io"
 	"log/slog"
 	"net/http"
@@ -253,7 +254,7 @@ func (a *Auth) ensureKeySlot(username, userUID, password string) (int64, error) 
 		if u == nil {
 			return 0, errLockedNewUser
 		}
-		dk, err := hubcrypto.UnwrapDK(u.WrappedDK, password, u.KEKSalt)
+		dk, bound, err := hubcrypto.UnwrapSlot(u.WrappedDK, password, u.KEKSalt, devkey.Key())
 		if err != nil {
 			// Password changed on central while the store was locked; the old slot
 			// cannot be opened with the new password.
@@ -265,8 +266,8 @@ func (a *Auth) ensureKeySlot(username, userUID, password string) (int64, error) 
 		if u, err = h.Store.UserByID(u.ID); err != nil {
 			return 0, err
 		}
-		if u.UserUID != userUID {
-			return a.writeSlot(username, userUID, password)
+		if u.UserUID != userUID || (!bound && devkey.Key() != nil) {
+			return a.writeSlot(username, userUID, password) // and bind it to the device
 		}
 		return u.ID, nil
 	}
@@ -277,9 +278,11 @@ func (a *Auth) ensureKeySlot(username, userUID, password string) (int64, error) 
 	return a.writeSlot(username, userUID, password)
 }
 
+// slotOpens reports whether the user's slot opens with password, bound to the device
+// key where the hub has one (otherwise it is written again, bound).
 func slotOpens(u *store.User, password string) bool {
-	_, err := hubcrypto.UnwrapDK(u.WrappedDK, password, u.KEKSalt)
-	return err == nil
+	_, bound, err := hubcrypto.UnwrapSlot(u.WrappedDK, password, u.KEKSalt, devkey.Key())
+	return err == nil && (bound || devkey.Key() == nil)
 }
 
 func (a *Auth) writeSlot(username, userUID, password string) (int64, error) {
@@ -291,11 +294,15 @@ func (a *Auth) writeSlot(username, userUID, password string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	wrapped, err := hubcrypto.WrapDK(dk, password, salt)
+	slot, stick, err := hubcrypto.WrapSlot(dk, password, salt, devkey.Key())
 	if err != nil {
 		return 0, err
 	}
-	return a.H.Store.UpsertCredentials(username, userUID, salt, wrapped)
+	id, err := a.H.Store.UpsertCredentials(username, userUID, salt, slot)
+	if err != nil {
+		return 0, err
+	}
+	return id, a.H.Store.SetStickSlot(id, stick)
 }
 
 func (a *Auth) loginOffline(username, password string) (*core.Session, *Failure) {
@@ -308,7 +315,7 @@ func (a *Auth) loginOffline(username, password string) (*core.Session, *Failure)
 		st, body := a.api().LoginFailure()
 		return nil, &Failure{Status: st, Body: body}
 	}
-	dk, err := hubcrypto.UnwrapDK(u.WrappedDK, password, u.KEKSalt)
+	dk, bound, err := hubcrypto.UnwrapSlot(u.WrappedDK, password, u.KEKSalt, devkey.Key())
 	if err != nil {
 		st, body := a.api().LoginFailure()
 		return nil, &Failure{Status: st, Body: body}
@@ -321,6 +328,11 @@ func (a *Auth) loginOffline(username, password string) (*core.Session, *Failure)
 	if !h.Store.Unlocked() {
 		if err := h.Unlock(dk); err != nil {
 			return nil, &Failure{Status: 500, Body: a.api().WebMessage(500, "unlock failed", "")}
+		}
+	}
+	if !bound && devkey.Key() != nil {
+		if u, err := h.Store.UserByID(u.ID); err == nil {
+			a.writeSlot(username, u.UserUID, password) // bind it to the device
 		}
 	}
 	h.Store.TouchLogin(u.ID)

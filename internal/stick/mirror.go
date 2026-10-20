@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dhis2/facility-hub/internal/devkey"
 	"io"
 	"log/slog"
 	"os"
@@ -254,7 +255,7 @@ func Stage(usbDir, dataDir, id, username, password string) error {
 	if sealed, err := os.ReadFile(filepath.Join(c.Dir, "tls.rec")); err == nil {
 		if plain, err := hubcrypto.Open(dk, sealed, []byte(certsAAD)); err != nil {
 			slog.Error("the certificates on the USB stick do not open: devices will install the new disk's", "err", err)
-		} else if err := writeFileSync(filepath.Join(staging, certsStaged), plain); err != nil {
+		} else if err := devkey.WriteFile(filepath.Join(staging, certsStaged), plain, 0o600); err != nil {
 			os.RemoveAll(staging)
 			return err
 		}
@@ -278,7 +279,7 @@ func Finish(dataDir, storePath string) error {
 	if err := os.Rename(filepath.Join(staging, "hub.db"), storePath); err != nil {
 		return err
 	}
-	if b, err := os.ReadFile(filepath.Join(staging, certsStaged)); err == nil {
+	if b, err := devkey.ReadFile(filepath.Join(staging, certsStaged)); err == nil {
 		if err := hubtls.Restore(dataDir, b); err != nil {
 			slog.Error("restoring the hub's certificates from the USB stick", "err", err)
 		}

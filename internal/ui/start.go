@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/dhis2/facility-hub/internal/devkey"
 	"net"
 	"net/http"
 	"os"
@@ -35,6 +36,10 @@ func (s *Start) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Reached != nil {
 		s.Reached(r.Host, r.RemoteAddr)
+	}
+	if p := devkey.Problem(); p != "" {
+		http.Error(w, p, http.StatusServiceUnavailable)
+		return
 	}
 	if r.URL.Path == "/hub/ca.crt" {
 		serveAuthority(w, r, s.DataDir)

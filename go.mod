@@ -3,6 +3,7 @@ module github.com/dhis2/facility-hub
 go 1.26.0
 
 require (
+	github.com/google/go-tpm v0.9.8
 	github.com/ncruces/go-sqlite3 v0.35.6
 	golang.org/x/crypto v0.57.0
 )

@@ -1,0 +1,3 @@
+# The TPM's resource manager, for the hub's user (group tss): the hub seals its device
+# key there (internal/devkey).
+KERNEL=="tpmrm[0-9]*", SUBSYSTEM=="tpmrm", GROUP="tss", MODE="0660"

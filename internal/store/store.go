@@ -302,6 +302,9 @@ UPDATE objects SET deleted = 1 WHERE json_extract(slim, '$.deleted') = 1;
 	// nothing: rebuilding objects_state with the stub flag instead ran out of SQLite's
 	// memory (4 GB, sorts kept in memory) at 4.6 million objects (docs/PERFORMANCE.md).
 	`CREATE INDEX objects_stubs ON objects(uid) WHERE stub = 1;`,
+	// Each user's key slot with the password alone, for the USB stick's copy of the key
+	// file, where the key file's own slots are bound to the device key (internal/devkey).
+	`ALTER TABLE users ADD COLUMN stick_slot BLOB;`,
 }
 
 // SchemaVersion is the number of key file migrations this binary knows.

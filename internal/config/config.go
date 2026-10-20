@@ -68,6 +68,9 @@ type Config struct {
 	// create a PAT for them (spec 7.1). Off by default: it was never needed on 2.42,
 	// and the password is the most valuable secret the hub could hold (REVIEW-2 F8).
 	PasswordFallback bool
+	// TPM: seal the hub's device key with the machine's TPM 2.0 where it has one
+	// (internal/devkey). Off only to work around a TPM that misbehaves.
+	TPM bool
 	// KeySlotMaxAge removes the key slot of a user who has not logged in for this long.
 	KeySlotMaxAge time.Duration
 	// USBDir is where the box's USB stick is mounted ("" for none): the setup code
@@ -94,6 +97,7 @@ func Default() Config {
 		PingInterval:           15 * time.Second,
 		PingTimeout:            5 * time.Second,
 		PATExpiryDays:          90,
+		TPM:                    true,
 		TLS:                    true,
 		ReservedPoolSize:       150,
 		FullPullInterval:       7 * 24 * time.Hour,
@@ -199,6 +203,8 @@ func (c *Config) set(k, v string) error {
 		c.SessionIdle, err = time.ParseDuration(v)
 	case "session_max":
 		c.SessionMax, err = time.ParseDuration(v)
+	case "tpm":
+		c.TPM, err = strconv.ParseBool(v)
 	case "password_fallback":
 		c.PasswordFallback, err = strconv.ParseBool(v)
 	case "key_slot_max_age":

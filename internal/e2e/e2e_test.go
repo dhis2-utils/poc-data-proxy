@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/dhis2/facility-hub/internal/devkey"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -36,6 +37,7 @@ type env struct {
 	app     *app.App
 	srv     *httptest.Server
 	cfgHook func(*config.Config) // changes the hub's configuration (before start)
+	device  devkey.Device        // the machine's TPM: nil for none
 	running bool                 // a hub is started: stopped when the test ends
 	cleanup bool
 }
@@ -53,6 +55,7 @@ func newEnv(t *testing.T) *env {
 
 func (e *env) cfg() config.Config {
 	c := config.Default()
+	c.TPM = e.device != nil // a fake TPM where a test gives one (device_test.go)
 	c.CentralURL = e.cSrv.URL
 	c.DataDir = e.dir
 	c.TLS = false
@@ -68,6 +71,7 @@ func (e *env) cfg() config.Config {
 
 // start builds a hub on e.dir (a "boot").
 func (e *env) start() {
+	devkey.OpenDevice = func() (devkey.Device, error) { return e.device, nil }
 	a, err := app.New(e.cfg(), "0.1.0", false, nil)
 	if err != nil {
 		e.t.Fatal(err)

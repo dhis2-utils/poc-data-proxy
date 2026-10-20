@@ -12,6 +12,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/dhis2/facility-hub/internal/devkey"
 	"log/slog"
 	"net"
 	"net/http"
@@ -130,32 +131,50 @@ func serveCtx(ctx context.Context, cfgPath string) error {
 	}
 	_, port, _ := net.SplitHostPort(ln.Addr().String())
 	scheme := "http"
+	// The start page on plain HTTP (docs/DEPLOYMENT.md, "Reaching the hub securely").
+	startPage := func() error {
+		if cfg.HTTPListen == "" {
+			return nil
+		}
+		page := &ui.Start{DataDir: cfg.DataDir, HTTPSPort: port, Allowed: a.Hub.HostAllowed, Reached: a.Hub.NoteReach}
+		if a.Net != nil {
+			page.Captive = a.Net.Captive
+		}
+		start := &http.Server{Handler: page,
+			ReadHeaderTimeout: 30 * time.Second, ReadTimeout: time.Minute, IdleTimeout: 2 * time.Minute}
+		hln, err := listen(cfg.HTTPListen, 15*time.Second)
+		if err != nil {
+			return err
+		}
+		go func() { <-ctx.Done(); start.Close() }()
+		go func() {
+			if err := start.Serve(hln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				slog.Error("start page", "err", err)
+			}
+		}()
+		return nil
+	}
 	if cfg.TLS {
 		scheme = "https"
 		certs, err := hubtls.Load(cfg.DataDir, cfg.HubHosts)
+		if errors.Is(err, devkey.ErrNoKey) {
+			// A disk without its TPM: its keys cannot be opened here. The start page says
+			// so, and nothing else is served (devkey.Problem).
+			slog.Error("not serving: " + devkey.Problem())
+			ln.Close()
+			if err := startPage(); err != nil {
+				return err
+			}
+			<-ctx.Done()
+			return nil
+		}
 		if err != nil {
 			return err
 		}
 		srv.TLSConfig, srv.Handler = certs.Config(), hubtls.HSTS(a.Handler)
 		go certs.Run(ctx.Done())
-		if cfg.HTTPListen != "" {
-			// The start page on plain HTTP (docs/DEPLOYMENT.md, "Reaching the hub securely").
-			page := &ui.Start{DataDir: cfg.DataDir, HTTPSPort: port, Allowed: a.Hub.HostAllowed, Reached: a.Hub.NoteReach}
-			if a.Net != nil {
-				page.Captive = a.Net.Captive
-			}
-			start := &http.Server{Handler: page,
-				ReadHeaderTimeout: 30 * time.Second, ReadTimeout: time.Minute, IdleTimeout: 2 * time.Minute}
-			hln, err := listen(cfg.HTTPListen, 15*time.Second)
-			if err != nil {
-				return err
-			}
-			go func() { <-ctx.Done(); start.Close() }()
-			go func() {
-				if err := start.Serve(hln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					slog.Error("start page", "err", err)
-				}
-			}()
+		if err := startPage(); err != nil {
+			return err
 		}
 	}
 	a.Start(ctx)

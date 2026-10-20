@@ -6,7 +6,9 @@ package hubcrypto
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hkdf"
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 
@@ -100,4 +102,45 @@ func WrapDK(dk Key, password string, salt []byte) ([]byte, error) {
 // UnwrapDK opens a key slot. It fails if the password is wrong.
 func UnwrapDK(wrapped []byte, password string, salt []byte) (Key, error) {
 	return Open(DeriveKEK(password, salt), wrapped, []byte("keyslot"))
+}
+
+// A key slot bound to the hub's device key (internal/devkey) opens only with the
+// password and the device key together, so a disk taken without its TPM gives no
+// offline password guessing. The USB stick keeps the slot with the password alone, so
+// the hub can be restored on new hardware.
+
+func boundKEK(kek, dev Key) (Key, error) {
+	return hkdf.Key(sha256.New, append(append([]byte{}, kek...), dev...), nil, "hub key slot bound to the device", KeySize)
+}
+
+// WrapSlot wraps the data key for one user's key slot, bound to the device key dev when
+// there is one. stick is the slot with the password alone, for the USB stick's copy;
+// nil without a device key, when the slot itself is that.
+func WrapSlot(dk Key, password string, salt []byte, dev Key) (slot, stick []byte, err error) {
+	kek := DeriveKEK(password, salt)
+	plain, err := Seal(kek, dk, []byte("keyslot"))
+	if err != nil || dev == nil {
+		return plain, nil, err
+	}
+	bk, err := boundKEK(kek, dev)
+	if err != nil {
+		return nil, nil, err
+	}
+	slot, err = Seal(bk, dk, []byte("keyslot-bound"))
+	return slot, plain, err
+}
+
+// UnwrapSlot opens a key slot, bound to dev or not; bound reports which. It fails if
+// the password is wrong, or the slot is bound to another device key.
+func UnwrapSlot(wrapped []byte, password string, salt []byte, dev Key) (dk Key, bound bool, err error) {
+	kek := DeriveKEK(password, salt)
+	if dev != nil {
+		if bk, err := boundKEK(kek, dev); err == nil {
+			if dk, err := Open(bk, wrapped, []byte("keyslot-bound")); err == nil {
+				return dk, true, nil
+			}
+		}
+	}
+	dk, err = Open(kek, wrapped, []byte("keyslot"))
+	return dk, false, err
 }
