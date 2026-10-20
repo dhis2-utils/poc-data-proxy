@@ -26,7 +26,8 @@ RequestExecutionLevel user ; MultiUser asks for administrator rights for the who
 !define MULTIUSER_INSTALLMODE_COMMANDLINE
 !define MULTIUSER_USE_PROGRAMFILES64
 !define MULTIUSER_INSTALLMODE_INSTDIR "${NAME}"
-!define MULTIUSER_INSTALLMODE_DEFAULT_CURRENTUSER ; without rights the choice is made for them
+; The whole PC is pre-selected when the user can elevate; without rights the choice is
+; made for them (this user only).
 !include MultiUser.nsh
 !include MUI2.nsh
 !include LogicLib.nsh
@@ -214,10 +215,12 @@ Section "!The hub" SecHub
     ; Trust the hub's authority on this PC, and dhis2.local is this PC.
     !insertmacro Run 'certutil -f -addstore Root "$DataDir\ca.crt"'
     Call AddHostsLine
-    ; Devices on the network reach the hub: its two ports and mDNS (dhis2.local).
+    ; Devices on the network reach the hub: its two ports and mDNS (dhis2.local). Any
+    ; profile (a facility's network is often "Public"), but only from the PC's own
+    ; subnets, never from beyond a router.
     !insertmacro Run 'netsh advfirewall firewall delete rule name="${NAME}"'
-    !insertmacro Run 'netsh advfirewall firewall add rule name="${NAME}" dir=in action=allow program="$HubExe" protocol=TCP localport=$4,$5 profile=any'
-    !insertmacro Run 'netsh advfirewall firewall add rule name="${NAME}" dir=in action=allow program="$HubExe" protocol=UDP localport=5353 profile=any'
+    !insertmacro Run 'netsh advfirewall firewall add rule name="${NAME}" dir=in action=allow program="$HubExe" protocol=TCP localport=$4,$5 remoteip=localsubnet profile=any'
+    !insertmacro Run 'netsh advfirewall firewall add rule name="${NAME}" dir=in action=allow program="$HubExe" protocol=UDP localport=5353 remoteip=localsubnet profile=any'
     ; The service, its account's rights on the data folder (and no one else's), then start.
     !insertmacro Run 'sc query ${SERVICE}'
     ${If} $0 != 0
@@ -344,6 +347,8 @@ Function un.StopHub
   Pop $0
 FunctionEnd
 
+; hosts without the hub's line, written to a temporary file first: the original is
+; moved aside, the new one put in its place, and the original put back if that fails.
 Function un.RemoveHostsLine
   StrCpy $6 "$WINDIR\System32\drivers\etc\hosts"
   ClearErrors
@@ -352,6 +357,10 @@ Function un.RemoveHostsLine
     Return
   ${EndIf}
   FileOpen $5 "$6.hub-tmp" w
+  ${If} ${Errors}
+    FileClose $7
+    Return
+  ${EndIf}
   ${Do}
     FileRead $7 $8
     ${If} ${Errors}
@@ -364,6 +373,18 @@ Function un.RemoveHostsLine
   ${Loop}
   FileClose $7
   FileClose $5
-  Delete $6
+  Delete "$6.hub-old"
+  ClearErrors
+  Rename $6 "$6.hub-old"
+  ${If} ${Errors}
+    Delete "$6.hub-tmp"
+    Return
+  ${EndIf}
   Rename "$6.hub-tmp" $6
+  ${If} ${Errors}
+    Rename "$6.hub-old" $6
+    Delete "$6.hub-tmp"
+  ${Else}
+    Delete "$6.hub-old"
+  ${EndIf}
 FunctionEnd

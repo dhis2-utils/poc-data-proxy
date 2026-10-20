@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"github.com/dhis2/facility-hub/internal/config"
 	"github.com/dhis2/facility-hub/internal/hubtls"
@@ -29,6 +30,10 @@ type initResult struct {
 // the installer can add it to the PC's trusted roots. An existing hub.yaml and
 // authority are kept: a reinstall finds the same hub.
 func initData(dir string, perUser bool, free func(int) bool) (initResult, error) {
+	// hub.yaml has the path in quotes, so a " #" in it is not a comment, and no escapes.
+	if strings.Contains(dir, `"`) {
+		return initResult{}, fmt.Errorf("the data folder's name cannot hold a \" (%s)", dir)
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return initResult{}, err
 	}
@@ -43,7 +48,7 @@ func initData(dir string, perUser bool, free func(int) bool) (initResult, error)
 # country-specific: central's address is given at set-up, on this PC.
 listen: ":%d"
 http_listen: ":%d"
-data_dir: %s
+data_dir: "%s"
 %smdns: true
 setup_local_only: true
 `, install, r.HTTPSPort, r.HTTPPort, dir, usbLine())

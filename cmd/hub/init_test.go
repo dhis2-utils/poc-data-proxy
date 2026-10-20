@@ -64,3 +64,22 @@ func TestInitWritesNothingCountrySpecific(t *testing.T) {
 		}
 	}
 }
+
+// The data folder is quoted in hub.yaml: a folder name with " #" in it is not cut off
+// as a comment.
+func TestInitQuotesPaths(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "Clinic #2: hub")
+	if _, err := initData(dir, false, func(int) bool { return true }); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(filepath.Join(dir, "hub.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.DataDir != dir {
+		t.Fatalf("data_dir %q, want %q", c.DataDir, dir)
+	}
+	if _, err := initData(filepath.Join(t.TempDir(), `a"b`), false, func(int) bool { return true }); err == nil {
+		t.Error(`a folder with " in its name accepted`)
+	}
+}

@@ -31,7 +31,9 @@ func service(args []string) error {
 	}
 }
 
-// handler answers the service manager: stop and shutdown end the hub as SIGTERM does.
+// handler answers the service manager: stop, pre-shutdown and shutdown end the hub as
+// SIGTERM does. Pre-shutdown comes before Windows starts stopping services, so the hub
+// finishes its writes while the disk and network are still there.
 type handler struct{ config string }
 
 func (h *handler) Execute(_ []string, req <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
@@ -39,7 +41,7 @@ func (h *handler) Execute(_ []string, req <-chan svc.ChangeRequest, status chan<
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- serveCtx(ctx, h.config) }()
-	status <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
+	status <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown | svc.AcceptPreShutdown}
 	for {
 		select {
 		case err := <-done:
@@ -53,13 +55,11 @@ func (h *handler) Execute(_ []string, req <-chan svc.ChangeRequest, status chan<
 			switch c.Cmd {
 			case svc.Interrogate:
 				status <- c.CurrentStatus
-			case svc.Stop, svc.Shutdown:
-				status <- svc.Status{State: svc.StopPending}
+			case svc.Stop, svc.Shutdown, svc.PreShutdown:
 				cancel()
-				select {
-				case <-done:
-				case <-time.After(25 * time.Second):
-				}
+				waitReporting(done, 25*time.Second, 2*time.Second, func(cp uint32) {
+					status <- svc.Status{State: svc.StopPending, CheckPoint: cp, WaitHint: 5000}
+				})
 				return false, 0
 			}
 		}

@@ -32,11 +32,7 @@ type reach struct {
 // addresses are not other devices; a name counts as by name, an address as by IP.
 // Saved at most once a minute.
 func (h *Hub) NoteReach(host, remoteAddr string) {
-	ip, _, err := net.SplitHostPort(remoteAddr)
-	if err != nil {
-		ip = remoteAddr
-	}
-	rip := net.ParseIP(ip)
+	rip := remoteIP(remoteAddr)
 	if rip == nil || rip.IsLoopback() || h.ownAddress(rip.String()) {
 		return
 	}
@@ -113,12 +109,19 @@ func (h *Hub) SetProxy(p string) error {
 // FromThisMachine reports whether a request comes from the machine the hub runs on:
 // loopback or one of its own addresses.
 func (h *Hub) FromThisMachine(remoteAddr string) bool {
+	rip := remoteIP(remoteAddr)
+	return rip != nil && (rip.IsLoopback() || h.ownAddress(rip.String()))
+}
+
+// remoteIP is a request's address without its port, and without the zone an IPv6
+// link-local address comes with ("fe80::1%eth0"), which the hub's own addresses lack.
+func remoteIP(remoteAddr string) net.IP {
 	ip, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
 		ip = remoteAddr
 	}
-	rip := net.ParseIP(ip)
-	return rip != nil && (rip.IsLoopback() || h.ownAddress(rip.String()))
+	ip, _, _ = strings.Cut(ip, "%")
+	return net.ParseIP(ip)
 }
 
 // DeviceAddresses are the addresses other devices open the hub at, for the hub's page

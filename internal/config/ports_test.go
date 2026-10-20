@@ -32,3 +32,14 @@ func TestPortsMoveTogether(t *testing.T) {
 		t.Fatalf("all four taken: %d/%d", h, p)
 	}
 }
+
+// The last resort holds the first port while asking for the second: the system may hand
+// out a port it just took back (Windows does), and the two ports would be one.
+func TestLastResortPortsDiffer(t *testing.T) {
+	none := func(int) bool { return false }
+	for range 2000 {
+		if h, p := ChoosePorts(none); h == 0 || h == p {
+			t.Fatalf("%d/%d", h, p)
+		}
+	}
+}

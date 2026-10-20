@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"time"
 )
 
 // The Windows service (service_windows.go): `hub service run|install|uninstall`.
@@ -45,4 +46,23 @@ func parseServiceArgs(args []string) (serviceArgs, error) {
 		return a, errors.New("hub service run|install|stop|uninstall")
 	}
 	return serviceArgs{action: args[0], config: *cfg, exe: *exe, noStart: *noStart}, nil
+}
+
+// waitReporting waits up to limit for the hub to stop, calling report with a rising
+// checkpoint at once and then every interval: the Windows service manager takes a stop
+// that reports no progress within its wait hint as hung.
+func waitReporting(done <-chan error, limit, every time.Duration, report func(checkpoint uint32)) bool {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	end := time.After(limit)
+	for cp := uint32(1); ; cp++ {
+		report(cp)
+		select {
+		case <-done:
+			return true
+		case <-end:
+			return false
+		case <-t.C:
+		}
+	}
 }

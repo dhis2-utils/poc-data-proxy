@@ -23,7 +23,7 @@ For the person at the facility, or the district focal point, putting the hub on 
 
 **After a restart** (Windows Update, a power cut), the hub waits for the first staff member to log in through it, which also works offline. Until then it does not send saves to central.
 
-**The firewall** opens the hub's ports on every network profile, including networks Windows calls "Public", because facility networks are often marked that way. On a laptop that leaves the facility, the hub's sign-in still protects it; switch the hub off there if that worries you.
+**The firewall** opens the hub's ports on every network profile, including networks Windows calls "Public", because facility networks are often marked that way, but only to devices on the PC's own subnets (`LocalSubnet`), never from beyond a router. On a laptop that leaves the facility, devices on the same network can still reach the hub's sign-in, which protects it; switch the hub off there if that worries you.
 
 **Other antivirus** than Microsoft Defender: exclude the folder `C:\ProgramData\DHIS2 Facility Hub` from scanning, or the hub slows down.
 

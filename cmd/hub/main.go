@@ -124,7 +124,7 @@ func serveCtx(ctx context.Context, cfgPath string) error {
 	// No WriteTimeout: app downloads over weak facility Wi-Fi can take minutes.
 	srv = &http.Server{Addr: cfg.Listen, Handler: a.Handler, ReadHeaderTimeout: 30 * time.Second,
 		ReadTimeout: 10 * time.Minute, IdleTimeout: 2 * time.Minute}
-	ln, err := net.Listen("tcp", cfg.Listen)
+	ln, err := listen(cfg.Listen, 15*time.Second)
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func serveCtx(ctx context.Context, cfgPath string) error {
 			}
 			start := &http.Server{Handler: page,
 				ReadHeaderTimeout: 30 * time.Second, ReadTimeout: time.Minute, IdleTimeout: 2 * time.Minute}
-			hln, err := net.Listen("tcp", cfg.HTTPListen)
+			hln, err := listen(cfg.HTTPListen, 15*time.Second)
 			if err != nil {
 				return err
 			}

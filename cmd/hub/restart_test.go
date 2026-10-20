@@ -2,8 +2,10 @@ package main
 
 import (
 	"errors"
+	"net"
 	"reflect"
 	"testing"
+	"time"
 )
 
 // Security review S2: restoring from the USB stick asked for a restart that only
@@ -30,4 +32,23 @@ func TestRestartStopsClosesAndReplaces(t *testing.T) {
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("calls %v, want %v", calls, want)
 	}
+}
+
+// A per-user hub on Windows starts its successor (after an upgrade or a restore) before
+// it exits: the successor waits for the ports instead of failing to start.
+func TestListenWaitsForPorts(t *testing.T) {
+	old, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := old.Addr().String()
+	if _, err := listen(addr, 300*time.Millisecond); err == nil {
+		t.Fatal("bound a port another listener holds")
+	}
+	go func() { time.Sleep(300 * time.Millisecond); old.Close() }()
+	ln, err := listen(addr, 5*time.Second)
+	if err != nil {
+		t.Fatalf("the port was released, still: %v", err)
+	}
+	ln.Close()
 }

@@ -11,7 +11,7 @@ func ChoosePorts(free func(port int) bool) (https, http int) {
 			return p[0], p[1]
 		}
 	}
-	return systemPort(), systemPort()
+	return systemPorts()
 }
 
 // PortFree reports whether a TCP port can be bound on every address.
@@ -24,13 +24,19 @@ func PortFree(port int) bool {
 	return true
 }
 
-func systemPort() int {
-	l, err := net.Listen("tcp", ":0")
-	if err != nil {
-		return 0
+// systemPorts holds the first port while asking for the second, so the system cannot
+// hand the same one out twice.
+func systemPorts() (int, int) {
+	var ports [2]int
+	for i := range ports {
+		l, err := net.Listen("tcp", ":0")
+		if err != nil {
+			return 0, 0
+		}
+		defer l.Close()
+		ports[i] = l.Addr().(*net.TCPAddr).Port
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	return ports[0], ports[1]
 }
 
 func itoa(n int) string {

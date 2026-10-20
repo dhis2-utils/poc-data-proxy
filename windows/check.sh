@@ -60,6 +60,13 @@ $STR
 X"
 check "files under the data folder inherit its access list" grep -qF '\*" /reset /T' <<<"$STR"
 check "uninstalling removes the Defender exclusion" grep -q 'Remove-MpPreference' <<<"$STR"
+check "the firewall rules admit only the PC's own subnets" sh -c "! grep 'firewall add rule' <<'X' | grep -v remoteip=localsubnet
+$STR
+X"
+check "the whole PC is the default for a user who can elevate" sh -c "! grep -q '^!define MULTIUSER_INSTALLMODE_DEFAULT_CURRENTUSER' <<'X'
+$STR
+X"
+check "the uninstaller keeps hosts if putting the new one in place fails" grep -qF 'Rename "$6.hub-old" $6' <<<"$STR"
 echo
 if [ "$FAILS" -gt 0 ]; then echo "$FAILS checks failed"; exit 1; fi
 echo "all checks passed"
