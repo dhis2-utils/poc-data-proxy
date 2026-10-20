@@ -24,8 +24,10 @@ jobs:
       version: ${{ steps.v.outputs.version }}
     steps:
       - id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" = push ]; then V="${GITHUB_REF_NAME#v}"; else V="${{ inputs.version }}"; fi
+          if [ "$GITHUB_EVENT_NAME" = push ]; then V="${GITHUB_REF_NAME#v}"; else V="$INPUT_VERSION"; fi
           echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "bad version $V"; exit 1; }
           echo "version=$V" >> "$GITHUB_OUTPUT"
 
@@ -70,7 +72,7 @@ jobs:
           # certificate: people would learn to click through Windows' warning (security
           # review S3). Without a real one the release has everything but the installer;
           # sign it elsewhere (windows/README.md) and attach it.
-          if [ "${{ github.event_name }}" = push ] && [ -z "${SIGN_CERT:-}" ]; then
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ -z "${SIGN_CERT:-}" ]; then
             rm "bin/dhis2-hub-$VERSION-setup.exe"
             echo "No SIGN_CERT/SIGN_KEY secrets: the installer is left out of this release."
           fi
@@ -79,11 +81,13 @@ jobs:
           name: binaries
           path: bin/
 
+  # The image holds the release's own linux/arm64 binary, the one release.json lists.
   image:
-    needs: version
+    needs: [version, binaries]
     uses: ./.github/workflows/image.yml
     with:
       version: ${{ needs.version.outputs.version }}
+      binaries: binaries
     secrets: inherit
 
   publish:
@@ -106,7 +110,7 @@ jobs:
           chmod +x bin/hub-tool
           KEY=$(mktemp); trap 'rm -f "$KEY"' EXIT
           if [ -n "$RELEASE_SIGNING_KEY" ]; then printf '%s\n' "$RELEASE_SIGNING_KEY" > "$KEY";
-          elif [ "${{ github.event_name }}" = push ]; then echo "set the secret RELEASE_SIGNING_KEY"; exit 1;
+          elif [ "$GITHUB_EVENT_NAME" = push ]; then echo "set the secret RELEASE_SIGNING_KEY"; exit 1;
           else bin/hub-tool keygen -out "${KEY%.key}" && mv "${KEY%.key}.key" "$KEY"; fi  # dry run: a throwaway key
           bin/hub-tool release -key "$KEY" -dir out -version "$VERSION" -image "img/dhis2-hub-$VERSION-arm64.img.xz" \
             linux/arm64=bin/hub-linux-arm64 linux/amd64=bin/hub-linux-amd64 windows/amd64=bin/hub-windows-amd64.exe \
@@ -120,4 +124,8 @@ jobs:
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" out/* --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --generate-notes
+        # A draft until every file is attached: hubs upgrade from the published release
+        # and must never see it half uploaded.
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/* --draft --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+          gh release edit "$GITHUB_REF_NAME" --draft=false --repo "$GITHUB_REPOSITORY"

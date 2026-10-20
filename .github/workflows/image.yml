@@ -1,5 +1,6 @@
 # Builds and checks the hub's Raspberry Pi image (image/README.md). Called by
-# release.yml for a release; run by hand for a test image.
+# release.yml for a release, with the release's own linux/arm64 binary; run by hand
+# for a test image, with a binary built here.
 name: Pi image
 
 on:
@@ -9,6 +10,11 @@ on:
         description: Hub version (without the v)
         required: true
         type: string
+      binaries:
+        description: Artifact of this run holding hub-linux-arm64 ("" builds one)
+        required: false
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       version:
@@ -19,24 +25,34 @@ on:
 jobs:
   image:
     runs-on: ubuntu-24.04-arm
+    env:
+      VERSION: ${{ inputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
+        if: inputs.binaries == ''
         with:
           go-version-file: go.mod
       - name: Tools
         run: sudo apt-get update -q && sudo apt-get install -y -q e2fsprogs mtools fdisk xz-utils
+      - name: The release's hub binary
+        if: inputs.binaries != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.binaries }}
+          path: bin
       - name: Hub binary
+        if: inputs.binaries == ''
         env:
-          VERSION: ${{ inputs.version }}
           RELEASE_PUBLIC_KEY: ${{ vars.RELEASE_PUBLIC_KEY }}
         run: |
+          mkdir -p bin
           CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=$VERSION -X github.com/dhis2/facility-hub/internal/upgrade.ReleaseKey=$RELEASE_PUBLIC_KEY" \
-            -o hub-linux-arm64 ./cmd/hub
+            -o bin/hub-linux-arm64 ./cmd/hub
       - name: Build the image
-        run: sudo image/build.sh hub-linux-arm64 "${{ inputs.version }}" out
+        run: sudo image/build.sh bin/hub-linux-arm64 "$VERSION" out
       - name: Check the image
-        run: sudo image/check.sh "out/dhis2-hub-${{ inputs.version }}-arm64.img.xz"
+        run: sudo image/check.sh "out/dhis2-hub-$VERSION-arm64.img.xz"
       - uses: actions/upload-artifact@v4
         with:
           name: image
