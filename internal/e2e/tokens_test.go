@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/app"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 )
 
@@ -196,5 +198,29 @@ func TestRevokedFromAppMakesNoNewTokens(t *testing.T) {
 	}
 	if n := e.central.TokensOf("nurse_a"); n != before {
 		t.Fatalf("a revoked hub made a token at a login: %d -> %d", before, n)
+	}
+}
+
+// A revoked hub can send nothing, so a reset that waits for its outbox would never
+// come: it resets with RESET AND DISCARD, and says so without it (bug review
+// 2026-10-20).
+func TestRevokedHubResets(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	nurse := e.web("nurse_a")
+	nurse.login()
+	e.offline()
+	nurse.json("POST", postSync, newPatient("RevTe000001", "RevEn000001", "Revoked", "NAT-7171", nil), 200)
+	e.online()
+	e.app.Hub.SetRevoked()
+	e.app.Hub.DropTokens(context.Background())
+	if err := app.Reset(e.app.Hub, e.app.Worker, "nurse_a", false); err == nil || !strings.Contains(err.Error(), "RESET AND DISCARD") {
+		t.Fatalf("reset of a revoked hub with unsent saves: %v", err)
+	}
+	if err := app.Reset(e.app.Hub, e.app.Worker, "nurse_a", true); err != nil {
+		t.Fatalf("reset and discard of a revoked hub: %v", err)
+	}
+	if e.app.Hub.Mode() != "setup" || e.app.Hub.Revoked() {
+		t.Fatalf("after the reset: mode %s, revoked %v", e.app.Hub.Mode(), e.app.Hub.Revoked())
 	}
 }

@@ -222,6 +222,14 @@ func Reset(h *core.Hub, w *hubsync.Worker, by string, discard bool) error {
 }
 
 func reset(h *core.Hub, w *hubsync.Worker, by string, discard bool) error {
+	if h.Revoked() {
+		// Its tokens are gone: nothing it holds can reach central any more.
+		if n := h.Store.CountOutbox(store.OutboxPending) + h.Store.CountOutbox(store.OutboxRejected) +
+			h.Store.CountOutbox(store.OutboxPartial); n > 0 && !discard {
+			return fmt.Errorf("this hub's tokens were revoked: its %d unsent changes can no longer be sent; type RESET AND DISCARD to reset it", n)
+		}
+		return wipe(h)
+	}
 	if !h.Online() {
 		return errors.New("the hub must be online to push its outbox before a reset")
 	}
@@ -252,6 +260,11 @@ func reset(h *core.Hub, w *hubsync.Worker, by string, discard bool) error {
 			h.Central.JSON(ctx, "DELETE", "/api/apiToken/"+rt.HubTokenUID, nil, h.HubAuth(), nil)
 		}
 	}
+	return wipe(h)
+}
+
+// wipe forgets all data and returns the hub to setup mode.
+func wipe(h *core.Hub) error {
 	h.Lock()
 	if err := h.Store.Wipe(); err != nil {
 		return err
