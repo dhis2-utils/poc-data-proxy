@@ -34,11 +34,12 @@ func (h *Hub) TokenLife() time.Duration {
 	return time.Duration(days) * 24 * time.Hour
 }
 
-// renewToken reports whether a token expiring at exp is replaced now: within a week of
-// its end, or living longer than the country now allows.
+// renewToken reports whether a token expiring at exp is replaced now: in the last half
+// of its life, at most a week before its end, or when it lives longer than the
+// country now allows.
 func (h *Hub) renewToken(exp time.Time) bool {
-	left := time.Until(exp)
-	return left <= 7*24*time.Hour || left > h.TokenLife()+24*time.Hour
+	left, life := time.Until(exp), h.TokenLife()
+	return left <= min(7*24*time.Hour, life/2) || left > life+24*time.Hour
 }
 
 // refreshTokenSettings reads facility-hub-config/tokens; a missing key means

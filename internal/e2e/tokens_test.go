@@ -144,3 +144,27 @@ func TestTokenLifeFromCentral(t *testing.T) {
 		t.Fatalf("token life %v for a setting below the minimum, want 7 days", got)
 	}
 }
+
+// A short token life is not renewed at every login and cycle: a token is replaced in
+// the last half of its life (at most a week before its end), not as soon as it is made
+// (bug review 2026-10-20).
+func TestShortTokenLifeNotRenewedEachLogin(t *testing.T) {
+	e := newEnv(t)
+	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{"tokens": json.RawMessage(`{"expiryDays":7}`)}
+	e.setup()
+	e.app.Hub.RefreshCatalog(context.Background())
+	e.sync() // the setup's 90-day hub token is replaced by a 7-day one, once
+	e.web("nurse_a").login()
+	u, _ := e.app.Hub.Store.UserByName("nurse_a")
+	hubTok := e.app.Hub.Runtime().HubTokenUID
+	e.web("nurse_a").login()
+	e.sync()
+	e.sync()
+	if u2, _ := e.app.Hub.Store.UserByName("nurse_a"); u2.PATUID != u.PATUID {
+		t.Fatalf("a 7-day token was renewed at the next login: %s -> %s", u.PATUID, u2.PATUID)
+	}
+	if got := e.app.Hub.Runtime().HubTokenUID; got != hubTok {
+		t.Fatalf("a 7-day hub token was renewed at the next cycle: %s -> %s", hubTok, got)
+	}
+}
+
