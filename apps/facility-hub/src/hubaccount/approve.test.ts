@@ -228,5 +228,10 @@ describe('approve', () => {
         expect(fromBase64(key)).toHaveLength(32)
         expect(fromBase64(key.replace(/=+$/, ''))).toHaveLength(0)
         expect(fromBase64(`${key}AAAA!`)).toHaveLength(0)
+        for (const n of [0, 1, 2, 3, 4]) {
+            const bytes = new Uint8Array(n).map((_, i) => 250 + i)
+            expect(toBase64(bytes)).toBe(Buffer.from(bytes).toString('base64'))
+            expect(fromBase64(toBase64(bytes))).toEqual(bytes)
+        }
     })
 })

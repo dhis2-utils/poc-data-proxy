@@ -7,39 +7,15 @@ import { accountCode, normalizeCode } from './codes'
 // (internal/hubaccount/approve.go): the steps, their order and their refusals are the
 // contract with the hub.
 
-const b64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-
-export const toBase64 = (bytes: Uint8Array): string => {
-    let out = ''
-    for (let i = 0; i < bytes.length; i += 3) {
-        const n =
-            (bytes[i] << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0)
-        out += b64[(n >> 18) & 63] + b64[(n >> 12) & 63]
-        out += i + 1 < bytes.length ? b64[(n >> 6) & 63] : '='
-        out += i + 2 < bytes.length ? b64[n & 63] : '='
-    }
-    return out
-}
+export const toBase64 = (bytes: Uint8Array): string =>
+    btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''))
 
 /** Standard base64 with padding, strictly (as Go's base64.StdEncoding): anything else is empty. */
-export const fromBase64 = (s: string): Uint8Array => {
-    if (s.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(s)) {
-        return new Uint8Array(0)
-    }
-    const clean = s.replace(/=+$/, '')
-    const out: number[] = []
-    let bits = 0
-    let value = 0
-    for (const c of clean) {
-        value = (value << 6) | b64.indexOf(c)
-        bits += 6
-        if (bits >= 8) {
-            out.push((value >> (bits - 8)) & 255)
-            bits -= 8
-        }
-    }
-    return new Uint8Array(out)
-}
+export const fromBase64 = (s: string): Uint8Array =>
+    // atob would also take it unpadded, with spaces, or with = inside.
+    s.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(s)
+        ? Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
+        : new Uint8Array(0)
 
 const alnum = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 const token = (n: number) =>
