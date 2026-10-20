@@ -408,7 +408,7 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (_ *core.Sessio
 	// writes the facility-hub namespaces with this token, and countries protect them for
 	// a "hub owners" group (docs/DEPLOYMENT.md). Someone outside it is told so, and the
 	// hub stays as it was.
-	if err := h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-registry/"+url.PathEscape(h.HubID()), reg, hubAuth, nil); err != nil {
+	if err := h.Central.JSON(ctx, "PUT", core.RegistryPath(h.HubID()), reg, hubAuth, nil); err != nil {
 		h.Central.JSON(ctx, "DELETE", "/api/apiToken/"+url.PathEscape(tokUID), nil, hubAuth, nil)
 		if central.Status(err) == http.StatusForbidden {
 			return nil, core.ErrNotHubOwner
@@ -420,7 +420,7 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (_ *core.Sessio
 		// A set-up that fails from here, before the hub goes active, leaves nothing
 		// behind on central; once active, the hub keeps both.
 		if err != nil && !committed {
-			h.Central.JSON(context.WithoutCancel(ctx), "DELETE", "/api/dataStore/facility-hub-registry/"+url.PathEscape(h.HubID()), nil, hubAuth, nil)
+			h.Central.JSON(context.WithoutCancel(ctx), "DELETE", core.RegistryPath(h.HubID()), nil, hubAuth, nil)
 			h.Central.JSON(context.WithoutCancel(ctx), "DELETE", "/api/apiToken/"+url.PathEscape(tokUID), nil, hubAuth, nil)
 		}
 	}()
@@ -464,7 +464,7 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (_ *core.Sessio
 	if len(replaces) > 0 {
 		reg["replaces"] = replaces
 	}
-	if err := h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-registry/"+url.PathEscape(h.HubID()), reg, hubAuth, nil); err != nil {
+	if err := h.Central.JSON(ctx, "PUT", core.RegistryPath(h.HubID()), reg, hubAuth, nil); err != nil {
 		return nil, fmt.Errorf("registering hub: %w", err)
 	}
 	h.Store.SetMeta(core.MetaMode, core.ModeActive)
@@ -474,7 +474,7 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (_ *core.Sessio
 		o.Value["retiredAt"] = store.Now()
 		o.Value["retiredBy"] = h.HubID()
 		o.Value["retiredByUser"] = p.Username
-		if err := h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-registry/"+url.PathEscape(o.Key), o.Value, hubAuth, nil); err != nil {
+		if err := h.Central.JSON(ctx, "PUT", core.RegistryPath(o.Key), o.Value, hubAuth, nil); err != nil {
 			slog.Warn("the hub this one replaces is not marked retired; mark it on central", "hub", o.Key, "err", err)
 		}
 	}

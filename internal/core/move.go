@@ -22,7 +22,7 @@ import (
 //     redirect to another host.
 //
 // The hub switches when the current address has not answered as central for
-// central_move_after (an hour by default: a brief outage during a planned move must not
+// Config.CentralMoveAfter (an hour: a brief outage during a planned move must not
 // move it early), the announcement's time has come, and the candidate holds this
 // hub's registry entry. A hub whose hub.yaml pins the address never moves; one limited
 // to central_hosts moves only within them. Only then does the hub talk to it as
@@ -70,7 +70,7 @@ func (h *Hub) movable(raw string) bool {
 	return u.Scheme == "https" || (cur != nil && cur.Scheme == "http" && u.Scheme == "http")
 }
 
-// downLongEnough reports whether central has not answered for central_move_after. A
+// downLongEnough reports whether central has not answered for Config.CentralMoveAfter. A
 // hub that started while central did not answer saw no switch to offline: the
 // outage counts from the first time it asks.
 func (h *Hub) downLongEnough() bool {
@@ -116,7 +116,7 @@ func (h *Hub) TryCentralMove(ctx context.Context) bool {
 func (h *Hub) sameCentral(ctx context.Context, base string) bool {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", base+"/api/dataStore/facility-hub-registry/"+url.PathEscape(h.HubID()), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", base+RegistryPath(h.HubID()), nil)
 	if err != nil {
 		return false
 	}

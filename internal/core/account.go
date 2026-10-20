@@ -61,7 +61,7 @@ func (h *Hub) refreshAccount(ctx context.Context) {
 		}
 		return
 	}
-	path := "/api/dataStore/facility-hub-registry/" + url.PathEscape(h.HubID())
+	path := RegistryPath(h.HubID())
 	var reg map[string]any
 	if err := h.Central.JSON(ctx, "GET", path, nil, h.HubAuth(), &reg); err != nil {
 		return
@@ -163,16 +163,12 @@ func (h *Hub) adoptLocked(ctx context.Context, creds hubaccount.Credentials) err
 		return fmt.Errorf("creating a token: %w", err)
 	}
 	newAuth := central.Auth{PAT: key}
-	path := "/api/dataStore/facility-hub-registry/" + url.PathEscape(h.HubID())
-	var reg map[string]any
-	err = h.Central.JSON(ctx, "GET", path, nil, newAuth, &reg)
-	if err == nil {
-		// The credentials stay in the entry until the hub has saved them: if this
-		// answer is lost, the next refresh takes them up again (rotateAccount removes
-		// them).
+	// The credentials stay in the entry until the hub has saved them: if this answer is
+	// lost, the next refresh takes them up again (rotateAccount removes them).
+	err = h.EditRegistry(ctx, newAuth, func(reg map[string]any) bool {
 		reg["hubTokenOwner"] = h.HubID()
-		err = h.Central.JSON(ctx, "PUT", path, reg, newAuth, nil)
-	}
+		return true
+	})
 	if err != nil {
 		h.Central.JSON(ctx, "DELETE", "/api/apiToken/"+url.PathEscape(uid), nil, newAuth, nil)
 		return fmt.Errorf("the account cannot write the hub's records: %w", err)
@@ -277,17 +273,15 @@ func (h *Hub) rotateAccount(ctx context.Context) error {
 		}
 	}
 	// The handed-over credentials leave the registry.
-	path := "/api/dataStore/facility-hub-registry/" + url.PathEscape(h.HubID())
-	var reg map[string]any
-	if err := h.Central.JSON(ctx, "GET", path, nil, h.HubAuth(), &reg); err != nil {
-		return err
-	}
-	if reg["account"] != nil || reg["accountRequested"] != nil {
+	if err := h.EditRegistry(ctx, h.HubAuth(), func(reg map[string]any) bool {
+		if reg["account"] == nil && reg["accountRequested"] == nil {
+			return false
+		}
 		delete(reg, "account")
 		delete(reg, "accountRequested")
-		if err := h.Central.JSON(ctx, "PUT", path, reg, h.HubAuth(), nil); err != nil {
-			return fmt.Errorf("removing the handed-over account from the registry: %w", err)
-		}
+		return true
+	}); err != nil {
+		return fmt.Errorf("removing the handed-over account from the registry: %w", err)
 	}
 	h.Store.SetMeta(MetaAccountRotate, "")
 	slog.Info("the hub's own account has a new password and token")

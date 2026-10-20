@@ -39,7 +39,6 @@ mkdir -p "$WORK/channel" "$WORK/run/bin"
 cp "$WORK/hub-0.1.0" "$WORK/run/bin/hub"
 cat > "$WORK/hub.yaml" <<EOF
 central_url: http://127.0.0.1:$FC_PORT
-setup_user_group: HubGrpSetup
 listen: "127.0.0.1:$HUB_PORT"
 data_dir: $WORK/run/data
 sync_interval: 1h

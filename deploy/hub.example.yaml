@@ -18,7 +18,6 @@ pat_expiry_days: 90
 # ownership_check_interval: 1h  # check that the facility still owns what the hub holds (transfers out)
 # access_refresh_interval: 1h   # re-read users' access and the program catalog (logins refresh at once)
 # reconnect_delay: 5m       # after an outage, wait a random time up to this before syncing
-# aggregate_retention_periods: 12  # periods of each aggregate data set kept, unless central's dataStore says (facility-hub-config/aggregate)
 # log_requests: false       # log every request and write data_dir/requests.log (spec 13.1)
 # session_idle: 1h          # end a hub session after this long without requests
 # session_max: 12h          # end a hub session this long after login

@@ -51,10 +51,7 @@ type Config struct {
 	// ReconnectDelay: after an outage, wait a random time up to this before the first
 	// sync, so hubs do not all reach central in the same second when it returns.
 	ReconnectDelay time.Duration
-	// AggregateRetention: how many periods of each aggregate data set the hub keeps
-	// when central's dataStore does not say (facility-hub-config/aggregate).
-	AggregateRetention int
-	LogRequests        bool // log every request with method, path and query (spec 13.1)
+	LogRequests    bool // log every request with method, path and query (spec 13.1)
 	// OfflineSearchFacility answers orgUnitMode=ACCESSIBLE/CAPTURE searches offline from
 	// the facility's data (spec 10.1 says refuse; Capture needs it, see FINDINGS.md).
 	OfflineSearchFacility bool
@@ -107,7 +104,6 @@ func Default() Config {
 		OwnershipCheckInterval: time.Hour,
 		AccessRefreshInterval:  time.Hour,
 		ReconnectDelay:         5 * time.Minute,
-		AggregateRetention:     12,
 		OfflineSearchFacility:  true,
 		SessionIdle:            time.Hour,
 		SessionMax:             12 * time.Hour,
@@ -152,9 +148,6 @@ func (c *Config) set(k, v string) error {
 		c.CentralURL = strings.TrimRight(v, "/")
 	case "central_hosts":
 		c.CentralHosts = splitList(v)
-	case "setup_user_group":
-		// No longer used: staff assigned to the facility set the hub up. Accepted so that
-		// existing hub.yaml files still load.
 	case "listen":
 		c.Listen = v
 	case "http_listen":
@@ -164,8 +157,6 @@ func (c *Config) set(k, v string) error {
 			return fmt.Errorf("network: %q (only networkmanager)", v)
 		}
 		c.Network = v
-	case "nm_dnsmasq_dir":
-		c.NMDnsmasqDir = v
 	case "mdns":
 		c.MDNS, err = strconv.ParseBool(v)
 	case "setup_local_only":
@@ -178,8 +169,6 @@ func (c *Config) set(k, v string) error {
 		c.PingInterval, err = time.ParseDuration(v)
 	case "ping_timeout":
 		c.PingTimeout, err = time.ParseDuration(v)
-	case "central_move_after":
-		c.CentralMoveAfter, err = time.ParseDuration(v)
 	case "usb_dir":
 		c.USBDir = v
 	case "full_pull_interval":
@@ -190,8 +179,6 @@ func (c *Config) set(k, v string) error {
 		c.AccessRefreshInterval, err = time.ParseDuration(v)
 	case "reconnect_delay":
 		c.ReconnectDelay, err = time.ParseDuration(v)
-	case "aggregate_retention_periods":
-		c.AggregateRetention, err = strconv.Atoi(v)
 	case "pat_expiry_days":
 		c.PATExpiryDays, err = strconv.Atoi(v)
 	case "reserved_pool_size":

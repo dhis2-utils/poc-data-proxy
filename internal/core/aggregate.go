@@ -138,32 +138,16 @@ func AggPulledKey(dataSet string) string { return "agg_pulled:" + dataSet }
 
 const aggRetentionKey = "agg_retention"
 
-// AggRetention is the retention table read from central at the last catalog refresh,
-// with the configured default.
+// AggRetention is the retention table read from central (facility-hub-config/
+// aggregate) at the last catalog refresh, with aggregate.DefaultRetention periods where
+// it names none.
 func (h *Hub) AggRetention() aggregate.Retention {
 	r := aggregate.Retention{}
-	if b, err := h.Store.State(aggRetentionKey); err == nil && b != nil {
-		json.Unmarshal(b, &r)
-	}
+	h.configState(aggRetentionKey, &r)
 	if r.Default <= 0 {
-		r.Default = h.Cfg.AggregateRetention
+		r.Default = aggregate.DefaultRetention
 	}
 	return r
-}
-
-// refreshAggRetention reads facility-hub-config/aggregate from central's dataStore;
-// a missing key keeps the configured default.
-func (h *Hub) refreshAggRetention(ctx context.Context) error {
-	var r aggregate.Retention
-	err := h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-config/aggregate", nil, h.HubAuth(), &r)
-	if central.Status(err) == http.StatusNotFound {
-		r, err = aggregate.Retention{}, nil
-	}
-	if err != nil {
-		return err
-	}
-	b, _ := json.Marshal(r)
-	return h.Store.SetState(aggRetentionKey, b)
 }
 
 // AggLabel names an aggregate outbox cell ("agg:ds|pe|ou|aoc|de|coc|field") for people:

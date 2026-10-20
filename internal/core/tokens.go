@@ -1,10 +1,9 @@
 package core
 
 import (
+	"cmp"
 	"context"
-	"encoding/json"
 	"log/slog"
-	"net/http"
 	"net/url"
 	"slices"
 	"time"
@@ -24,14 +23,12 @@ const tokenSettingsKey = "token_settings"
 // TokenLife is how long new tokens live: facility-hub-config/tokens on central, kept
 // within 7–365 days, else pat_expiry_days.
 func (h *Hub) TokenLife() time.Duration {
-	days := h.Cfg.PATExpiryDays
 	var s struct {
 		ExpiryDays int `json:"expiryDays"`
 	}
-	if b, err := h.Store.State(tokenSettingsKey); err == nil && b != nil && json.Unmarshal(b, &s) == nil && s.ExpiryDays > 0 {
-		days = min(max(s.ExpiryDays, 7), 365)
-	}
-	return time.Duration(days) * 24 * time.Hour
+	h.configState(tokenSettingsKey, &s)
+	days := cmp.Or(s.ExpiryDays, h.Cfg.PATExpiryDays)
+	return time.Duration(min(max(days, 7), 365)) * 24 * time.Hour
 }
 
 // renewToken reports whether a token expiring at exp is replaced now: in the last half
@@ -40,20 +37,6 @@ func (h *Hub) TokenLife() time.Duration {
 func (h *Hub) renewToken(exp time.Time) bool {
 	left, life := time.Until(exp), h.TokenLife()
 	return left <= min(7*24*time.Hour, life/2) || left > life+24*time.Hour
-}
-
-// refreshTokenSettings reads facility-hub-config/tokens; a missing key means
-// pat_expiry_days.
-func (h *Hub) refreshTokenSettings(ctx context.Context) error {
-	var raw json.RawMessage
-	err := h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-config/tokens", nil, h.HubAuth(), &raw)
-	if central.Status(err) == http.StatusNotFound {
-		raw, err = json.RawMessage(`{}`), nil
-	}
-	if err != nil {
-		return err
-	}
-	return h.Store.SetState(tokenSettingsKey, raw)
 }
 
 // shareWithManagers shares a new token with the hub managers group named in

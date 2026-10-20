@@ -253,7 +253,7 @@ func reset(h *core.Hub, w *hubsync.Worker, by string, discard bool) error {
 	if rt := h.Runtime(); rt != nil {
 		reg := map[string]any{"hubId": h.HubID(), "facility": rt.Facility, "status": "retired", "retiredAt": store.Now(),
 			"retiredBy": "reset", "retiredByUser": by}
-		if err := h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-registry/"+h.HubID(), reg, h.HubAuth(), nil); err != nil {
+		if err := h.Central.JSON(ctx, "PUT", core.RegistryPath(h.HubID()), reg, h.HubAuth(), nil); err != nil {
 			slog.Warn("reset: registry update", "err", err)
 		}
 		if rt.HubTokenUID != "" {

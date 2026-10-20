@@ -16,7 +16,6 @@ import (
 	"maps"
 	"math/rand/v2"
 	"net/http"
-	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -248,7 +247,7 @@ func (w *Worker) checkRegistry(ctx context.Context) {
 	var reg struct {
 		Status string `json:"status"`
 	}
-	if err := h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-registry/"+h.HubID(), nil, h.HubAuth(), &reg); err != nil {
+	if err := h.Central.JSON(ctx, "GET", core.RegistryPath(h.HubID()), nil, h.HubAuth(), &reg); err != nil {
 		return // unknown: keep the last answer
 	}
 	if reg.Status == "revoked" {
@@ -277,13 +276,10 @@ func (w *Worker) publishTokens(ctx context.Context) error {
 	if strings.Join(uids, ",") == h.Store.Meta(metaRegistryTokens) {
 		return nil
 	}
-	path := "/api/dataStore/facility-hub-registry/" + url.PathEscape(h.HubID())
-	var reg map[string]any
-	if err := h.Central.JSON(ctx, "GET", path, nil, h.HubAuth(), &reg); err != nil {
-		return err
-	}
-	reg["tokens"] = uids
-	if err := h.Central.JSON(ctx, "PUT", path, reg, h.HubAuth(), nil); err != nil {
+	if err := h.EditRegistry(ctx, h.HubAuth(), func(reg map[string]any) bool {
+		reg["tokens"] = uids
+		return true
+	}); err != nil {
 		return err
 	}
 	h.Store.SetMeta(metaRegistryTokens, strings.Join(uids, ","))

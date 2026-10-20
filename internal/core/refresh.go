@@ -288,7 +288,7 @@ func (h *Hub) CreatePAT(ctx context.Context, with central.Auth, exp time.Time) (
 		var reg struct {
 			Status string `json:"status"`
 		}
-		if h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-registry/"+url.PathEscape(h.HubID()), nil, with, &reg) == nil && reg.Status == "revoked" {
+		if h.Central.JSON(ctx, "GET", RegistryPath(h.HubID()), nil, with, &reg) == nil && reg.Status == "revoked" {
 			h.SetRevoked()
 			h.DropTokens(ctx)
 		}
@@ -379,14 +379,11 @@ func (h *Hub) RefreshCatalog(ctx context.Context) error {
 	if uerr := h.UpdateRuntime(func(rt *Runtime) { rt.Catalog = cat }); uerr != nil {
 		return uerr
 	}
-	if aerr := h.refreshAggRetention(ctx); aerr != nil && central.IsNetwork(aerr) {
-		return aerr
-	}
-	if rerr := h.refreshRetention(ctx); rerr != nil && central.IsNetwork(rerr) {
-		return rerr
-	}
-	if terr := h.refreshTokenSettings(ctx); terr != nil && central.IsNetwork(terr) {
-		return terr
+	// The country's settings from the Facility Hub app (facility-hub-config).
+	for key, state := range map[string]string{"aggregate": aggRetentionKey, "retention": retentionKey, "tokens": tokenSettingsKey} {
+		if cerr := h.refreshConfig(ctx, key, state); cerr != nil && central.IsNetwork(cerr) {
+			return cerr
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("catalog with hub token: %w", err)
@@ -618,12 +615,10 @@ func (h *Hub) TakeOverHubToken(ctx context.Context, username, password string) e
 	// the facility-hub-* namespaces, and a token that cannot write them would leave the
 	// hub silent. Writing the registry entry, with its new owner, is the test.
 	newAuth := central.Auth{PAT: key}
-	var reg map[string]any
-	err = h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-registry/"+url.PathEscape(h.HubID()), nil, newAuth, &reg)
-	if err == nil {
+	err = h.EditRegistry(ctx, newAuth, func(reg map[string]any) bool {
 		reg["hubTokenOwner"] = me.Username
-		err = h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-registry/"+url.PathEscape(h.HubID()), reg, newAuth, nil)
-	}
+		return true
+	})
 	if err != nil {
 		h.Central.JSON(ctx, "DELETE", "/api/apiToken/"+url.PathEscape(uid), nil, newAuth, nil)
 		if central.Status(err) == http.StatusForbidden {
