@@ -91,13 +91,22 @@ func lastUpgrade(e *env) map[string]any {
 	return r
 }
 
+// downloaded waits for the release download a cycle started in the background.
+func (e *env) downloaded() { e.app.Upgrader.WaitDownload() }
+
 // The country's choice on central names the version; the hub fetches that release from
-// the release source, checks it, and goes on to upgrade. (The test binary is not a hub,
-// so the upgrade stops at the migration, which shows the download and checks passed.)
+// the release source in the background, checks it, and upgrades at the next cycle.
+// (The test binary is not a hub, so the upgrade stops at the migration, which shows the
+// download and checks passed.)
 func TestChoiceUpgrades(t *testing.T) {
 	e, rs := upgradeEnv(t)
 	rs.publish("0.3.0", "0.3.0")
 	e.choose(`{"version":"0.3.0","pilotHubs":[],"percent":100}`)
+	e.sync()
+	e.downloaded()
+	if r := lastUpgrade(e); r != nil {
+		t.Fatalf("upgraded in the cycle that started the download: %v", r)
+	}
 	e.sync()
 	got := strings.Join(rs.requested(), " ")
 	if !strings.Contains(got, "v0.3.0/release.json") || !strings.Contains(got, "v0.3.0/hub-") {
@@ -118,6 +127,7 @@ func TestNotInStage(t *testing.T) {
 	}
 	e.choose(`{"version":"0.3.0","pilotHubs":["` + e.app.Hub.HubID() + `"],"percent":0}`)
 	e.sync()
+	e.downloaded()
 	if len(rs.requested()) == 0 {
 		t.Fatal("a pilot hub did not fetch the release")
 	}
@@ -189,7 +199,12 @@ func TestChecksumMismatchNotRetried(t *testing.T) {
 	}
 	e.choose(`{"version":"0.3.0","percent":100}`)
 	e.sync()
+	e.downloaded()
 	e.sync()
+	e.downloaded()
+	if r := lastUpgrade(e); r["result"] != "ignored" {
+		t.Fatalf("last upgrade %v", r)
+	}
 	n := 0
 	for _, p := range rs.requested() {
 		if strings.Contains(p, "/hub-") {
@@ -202,7 +217,8 @@ func TestChecksumMismatchNotRetried(t *testing.T) {
 }
 
 // Review: a slow link that keeps delivering finishes; one that stops is given up on
-// after the idle time, not after a fixed total.
+// after the idle time, not after a fixed total. Neither holds the sync cycle (security
+// review 2026-10-20, S13): the download runs beside it.
 func TestDownloadIdleTimeout(t *testing.T) {
 	restore := upgrade.SetDownloadIdle(300 * time.Millisecond)
 	t.Cleanup(restore)
@@ -227,17 +243,29 @@ func TestDownloadIdleTimeout(t *testing.T) {
 	t.Cleanup(slow.Close)
 	e.app.Upgrader.Base = slow.URL
 	e.choose(`{"version":"0.3.0","percent":100}`)
+	start := time.Now()
+	e.sync()
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("the download held the cycle for %v", d)
+	}
+	e.downloaded()
 	e.sync()
 	if r := lastUpgrade(e); r["to"] != "0.3.0" || !strings.Contains(fmt.Sprint(r["reason"]), "migration") {
 		t.Fatalf("slow but steady download did not finish: %v", r)
 	}
 	e.app.Hub.Store.SetMeta("upgrade_skip", "")
 	e.app.Hub.Store.SetMeta(core.MetaUpgrade, "")
+	os.RemoveAll(filepath.Join(e.dir, "bin"))
 	stall = true
-	start := time.Now()
 	e.sync()
+	start = time.Now()
+	e.downloaded()
 	if d := time.Since(start); d > 1500*time.Millisecond {
-		t.Fatalf("a stalled download held the cycle for %v", d)
+		t.Fatalf("a stalled download was kept for %v", d)
+	}
+	e.sync()
+	if r := lastUpgrade(e); r != nil {
+		t.Fatalf("upgraded from a stalled download: %v", r)
 	}
 }
 

@@ -15,6 +15,8 @@
 package upgrade
 
 import (
+	"bytes"
+	"cmp"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -34,6 +36,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/central"
@@ -103,6 +107,9 @@ type Upgrader struct {
 	StorePath string
 	// HealthFail forces the health check to fail (test builds, spec 13.3 scenario 11).
 	HealthFail bool
+
+	downloading atomic.Bool // one release download at a time, beside the sync cycle
+	download    sync.WaitGroup
 }
 
 func (u *Upgrader) dir(p string) string { return filepath.Join(u.H.Cfg.DataDir, p) }
@@ -154,7 +161,16 @@ func (u *Upgrader) check(ctx context.Context) error {
 	if m.Files[plat] == "" || m.SHA256[plat] == "" {
 		return fmt.Errorf("release %s has no binary for %s", m.Version, plat)
 	}
-	// 1. Push the outbox until empty (or only rejected entries remain). Entries whose
+	// 1. The binary is downloaded beside the sync cycle, never inside it: a slow link
+	// may take as long as it needs without holding the cycle (security review
+	// 2026-10-20, S13). A later cycle finds it verified and upgrades.
+	binDir := u.dir("bin")
+	newBin := filepath.Join(binDir, binaryName(m.Version, runtime.GOOS))
+	if !hasSHA256(newBin, m.SHA256[plat]) {
+		u.startDownload("v"+m.Version+"/"+m.Files[plat], newBin, m.Version, m.SHA256[plat])
+		return nil
+	}
+	// 2. Push the outbox until empty (or only rejected entries remain). Entries whose
 	// author must log in online again may never push; they carry over in the store
 	// copy, so they do not hold back the upgrade, which may be a security fix
 	// (REVIEW-2 F3). The status page and heartbeat report them as stuck.
@@ -166,23 +182,6 @@ func (u *Upgrader) check(ctx context.Context) error {
 		return fmt.Errorf("outbox not drained (%d pending)", pending)
 	} else if stuck > 0 {
 		slog.Warn("upgrading with stuck outbox entries; their authors must log in online", "entries", stuck)
-	}
-	// 2. Download and verify.
-	bin, err := u.get(ctx, "v"+m.Version+"/"+m.Files[plat], 512<<20)
-	if err != nil {
-		return err
-	}
-	sum := sha256.Sum256(bin)
-	if hex.EncodeToString(sum[:]) != strings.ToLower(m.SHA256[plat]) {
-		u.record(Result{Result: "ignored", From: u.H.Version, To: m.Version, Reason: "binary checksum does not match signed manifest"})
-		u.H.Store.SetMeta("upgrade_skip", m.Version) // not downloaded again every cycle
-		return errors.New("checksum mismatch")
-	}
-	binDir := u.dir("bin")
-	os.MkdirAll(binDir, 0o755)
-	newBin := filepath.Join(binDir, binaryName(m.Version, runtime.GOOS))
-	if err := os.WriteFile(newBin, bin, 0o755); err != nil {
-		return err
 	}
 	// Refuse local writes from here on, so the store copy is complete.
 	u.H.FreezeLocalWrites()
@@ -291,33 +290,108 @@ func (u *Upgrader) fetchManifest(ctx context.Context, version string) (*Manifest
 	return m, nil
 }
 
-// get fetches a file from the release source, refusing more than limit bytes.
+// get fetches a small file from the release source, refusing more than limit bytes.
 func (u *Upgrader) get(ctx context.Context, name string, limit int64) ([]byte, error) {
-	// The check runs inside the sync cycle: a download that stops delivering is given up
-	// after downloadIdle, while a slow one that keeps going may take as long as it needs.
+	var b bytes.Buffer
+	err := u.fetch(ctx, name, limit, &b)
+	return b.Bytes(), err
+}
+
+// fetch copies a file from the release source to w, refusing more than limit bytes. A
+// download that stops delivering is given up after downloadIdle, while a slow one that
+// keeps going may take as long as it needs.
+func (u *Upgrader) fetch(ctx context.Context, name string, limit int64, w io.Writer) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	idle := time.AfterFunc(downloadIdle, cancel)
 	defer idle.Stop()
 	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(u.Base, "/")+"/"+name, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.Proxy = central.Proxy
 	resp, err := (&http.Client{Transport: tr}).Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("release source %s: HTTP %d", name, resp.StatusCode)
+		return fmt.Errorf("release source %s: HTTP %d", name, resp.StatusCode)
 	}
-	b, err := io.ReadAll(io.LimitReader(progressReader{resp.Body, idle}, limit+1))
-	if err == nil && int64(len(b)) > limit {
-		return nil, fmt.Errorf("release source %s: larger than %d bytes", name, limit)
+	n, err := io.Copy(w, io.LimitReader(progressReader{resp.Body, idle}, limit+1))
+	if err == nil && n > limit {
+		return fmt.Errorf("release source %s: larger than %d bytes", name, limit)
 	}
-	return b, err
+	return err
+}
+
+// startDownload fetches a release binary to dst in the background, unless a download
+// is already running. dst appears only once its checksum matches the signed manifest;
+// a mismatch is recorded and that version is not downloaded again.
+func (u *Upgrader) startDownload(name, dst, version, sum string) {
+	if !u.downloading.CompareAndSwap(false, true) {
+		return
+	}
+	u.download.Add(1)
+	go func() {
+		defer u.download.Done()
+		defer u.downloading.Store(false)
+		err := u.downloadTo(name, dst, sum)
+		if errors.Is(err, errChecksum) {
+			u.record(Result{Result: "ignored", From: u.H.Version, To: version, Reason: "binary checksum does not match signed manifest"})
+			u.H.Store.SetMeta("upgrade_skip", version) // not downloaded again every cycle
+		}
+		if err != nil {
+			slog.Warn("upgrade download", "version", version, "err", err)
+			return
+		}
+		slog.Info("upgrade downloaded", "version", version)
+		u.H.TriggerSync() // upgrade now rather than at the next cycle
+	}()
+}
+
+var errChecksum = errors.New("checksum mismatch")
+
+func (u *Upgrader) downloadTo(name, dst, sum string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	part := dst + ".part"
+	f, err := os.OpenFile(part, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(part)
+	h := sha256.New()
+	err = u.fetch(context.Background(), name, 512<<20, io.MultiWriter(f, h))
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
+	if hex.EncodeToString(h.Sum(nil)) != strings.ToLower(sum) {
+		return errChecksum
+	}
+	return os.Rename(part, dst)
+}
+
+// WaitDownload waits for a running release download (tests, and a clean shutdown).
+func (u *Upgrader) WaitDownload() { u.download.Wait() }
+
+// hasSHA256 reports whether the file at path exists with that checksum.
+func hasSHA256(path, sum string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return false
+	}
+	return hex.EncodeToString(h.Sum(nil)) == strings.ToLower(sum)
 }
 
 // Verify checks a base64 ed25519 signature with a base64 public key.
@@ -345,25 +419,66 @@ func InStage(c Choice, hubID string) bool {
 	return int(h.Sum32()%100) < c.Percent
 }
 
-// CompareVersions compares dotted numeric versions ("0.2.10" > "0.2.9").
+// CompareVersions compares versions by semantic versioning's precedence: dotted
+// numbers ("0.2.10" > "0.2.9"), and a pre-release before its release ("0.3.0-rc1" <
+// "0.3.0"), so a hub on a release candidate takes the release.
 func CompareVersions(a, b string) int {
-	pa, pb := strings.Split(strings.TrimPrefix(a, "v"), "."), strings.Split(strings.TrimPrefix(b, "v"), ".")
-	for i := 0; i < max(len(pa), len(pb)); i++ {
-		var x, y int
-		if i < len(pa) {
-			x, _ = strconv.Atoi(strings.SplitN(pa[i], "-", 2)[0])
-		}
-		if i < len(pb) {
-			y, _ = strconv.Atoi(strings.SplitN(pb[i], "-", 2)[0])
-		}
-		if x != y {
-			if x < y {
-				return -1
+	ca, pa, _ := strings.Cut(strings.TrimPrefix(a, "v"), "-")
+	cb, pb, _ := strings.Cut(strings.TrimPrefix(b, "v"), "-")
+	if c := compareFields(strings.Split(ca, "."), strings.Split(cb, "."), true); c != 0 {
+		return c
+	}
+	switch {
+	case pa == pb:
+		return 0
+	case pa == "":
+		return 1
+	case pb == "":
+		return -1
+	}
+	return compareFields(strings.Split(pa, "."), strings.Split(pb, "."), false)
+}
+
+// compareFields compares dot-separated fields: numbers as numbers, below words, which
+// compare as text. Missing release fields count as 0; a pre-release with fewer fields
+// comes first.
+func compareFields(fa, fb []string, release bool) int {
+	for i := 0; i < max(len(fa), len(fb)); i++ {
+		if i >= len(fa) || i >= len(fb) {
+			if release {
+				x, y := "0", "0"
+				if i < len(fa) {
+					x = fa[i]
+				}
+				if i < len(fb) {
+					y = fb[i]
+				}
+				if c := compareField(x, y); c != 0 {
+					return c
+				}
+				continue
 			}
-			return 1
+			return cmp.Compare(len(fa), len(fb))
+		}
+		if c := compareField(fa[i], fb[i]); c != 0 {
+			return c
 		}
 	}
 	return 0
+}
+
+func compareField(x, y string) int {
+	nx, ex := strconv.Atoi(x)
+	ny, ey := strconv.Atoi(y)
+	switch {
+	case ex == nil && ey == nil:
+		return cmp.Compare(nx, ny)
+	case ex == nil:
+		return -1
+	case ey == nil:
+		return 1
+	}
+	return strings.Compare(x, y)
 }
 
 // --- boot side ------------------------------------------------------------------------

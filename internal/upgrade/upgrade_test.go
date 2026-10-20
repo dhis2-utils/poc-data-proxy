@@ -26,7 +26,10 @@ func TestCompareVersions(t *testing.T) {
 	for _, c := range []struct {
 		a, b string
 		want int
-	}{{"0.2.0", "0.1.9", 1}, {"0.2.10", "0.2.9", 1}, {"1.0", "1.0.0", 0}, {"v0.1.0", "0.2.0", -1}} {
+	}{{"0.2.0", "0.1.9", 1}, {"0.2.10", "0.2.9", 1}, {"1.0", "1.0.0", 0}, {"v0.1.0", "0.2.0", -1},
+		// Pre-releases come before their release (semantic versioning, section 11).
+		{"0.3.0-rc1", "0.3.0", -1}, {"0.3.0", "0.3.0-rc1", 1}, {"0.3.0-rc.2", "0.3.0-rc.10", -1},
+		{"0.3.0-alpha", "0.3.0-alpha.1", -1}, {"0.3.0-1", "0.3.0-alpha", -1}, {"0.3.0-rc1", "0.2.9", 1}} {
 		if got := CompareVersions(c.a, c.b); got != c.want {
 			t.Errorf("%s vs %s = %d", c.a, c.b, got)
 		}

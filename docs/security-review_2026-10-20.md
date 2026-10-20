@@ -213,6 +213,6 @@ Each finding was checked against the code. Fixed on the branch `security-review-
 | S10 | Accepted, deliberate. | Facility networks are often marked "Public" on Windows; private-only rules would cut those hubs off. Noted in WINDOWS-INSTALL.md. |
 | S11 | Accepted. | A cross-site page cannot make a browser send `Sec-Fetch-Site: none` on a form post, so it's no attack path. |
 | S12 | **The comment was wrong; the behaviour stays.** | Clearing the per-device counter on any success would let one working account reset it and keep guessing others. The comment now says what happens and why. |
-| S13 | Accepted for now; to do. | A hard cap would stop a slow link from ever finishing. The right fix is downloading in the background and upgrading at the next cycle, a change of its own. |
-| S14 | Noted. | `Unlock`'s two rare error paths leaving the store open: a small consistency fix for later, with a test. The other items are inventory, now in DEPLOYMENT.md. |
+| S13 | **Fixed** (2026-10-20, branch `hardening-and-settings`). | A hard cap would stop a slow link from ever finishing. The binary now downloads in the background, beside the sync cycle, and a cycle upgrades once it is there and matches the signed release. `TestDownloadIdleTimeout`, `TestChoiceUpgrades`. |
+| S14 | **Fixed** (`Unlock`, 2026-10-20). | Every failed step of `Unlock` locks the store again. `TestUnlockFailureLeavesStoreLocked`. The other items are inventory, now in DEPLOYMENT.md. |
 
