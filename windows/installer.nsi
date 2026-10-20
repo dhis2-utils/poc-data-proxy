@@ -124,7 +124,12 @@ Function TakeOverDataDir
   CreateDirectory "$DataDir"
   nsExec::ExecToLog 'icacls "$DataDir" /setowner *S-1-5-32-544 /T /C /Q'
   Pop $0
-  nsExec::ExecToLog 'icacls "$DataDir" /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" /T /C /Q'
+  ; The folder's own access list, not recursive: with /T, /inheritance:r strips each
+  ; file's inherited entries while (OI)(CI) grants do not apply to files, leaving them
+  ; with empty access lists (CI, 2026-10-20). Everything under it inherits instead.
+  nsExec::ExecToLog 'icacls "$DataDir" /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" /C /Q'
+  Pop $0
+  nsExec::ExecToLog 'icacls "$DataDir\*" /reset /T /C /Q'
   Pop $0
 FunctionEnd
 
@@ -218,7 +223,8 @@ Section "!The hub" SecHub
     ${If} $0 != 0
       !insertmacro Run '"$HubExe" service install -config "$DataDir\hub.yaml" -exe "$HubExe" -nostart'
     ${EndIf}
-    !insertmacro Run 'icacls "$DataDir" /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" "${ACCOUNT}:(OI)(CI)M" /T /Q'
+    !insertmacro Run 'icacls "$DataDir" /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" "${ACCOUNT}:(OI)(CI)M" /Q'
+    !insertmacro Run 'icacls "$DataDir\*" /reset /T /C /Q'
     ; The settings for installers and checks, and the authority devices install, are
     ; public: readable by every user of the PC (nothing secret in either).
     !insertmacro Run 'icacls "$DataDir\install.ini" /grant "*S-1-5-32-545:R"'

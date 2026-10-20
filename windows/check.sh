@@ -52,6 +52,12 @@ check "the per-user move reads the user's own folder" grep -q 'UserAppDataLocal'
 check "the installer waits for the service to stop" grep -q 'service stop' <<<"$STR"
 check "install.ini and ca.crt stay readable (public; the CI check reads them)" grep -q 'install.ini" /grant "\*S-1-5-32-545:R"' <<<"$STR"
 check "the installer records what it ran (install.log)" grep -q 'FileOpen $LogFile "$DataDir\\install.log"' <<<"$STR"
+# The CI run of 2026-10-20: /inheritance:r with /T left every file with an empty access
+# list ((OI)(CI) grants do not apply to files), so the service could not run hub.exe.
+check "no recursive /inheritance:r (files would get empty access lists)" sh -c "! grep -E 'inheritance:r.*/T' <<'X'
+$STR
+X"
+check "files under the data folder inherit its access list" grep -qF '\*" /reset /T' <<<"$STR"
 check "uninstalling removes the Defender exclusion" grep -q 'Remove-MpPreference' <<<"$STR"
 echo
 if [ "$FAILS" -gt 0 ]; then echo "$FAILS checks failed"; exit 1; fi

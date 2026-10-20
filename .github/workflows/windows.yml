@@ -53,6 +53,10 @@ jobs:
           $data = 'C:\ProgramData\DHIS2 Facility Hub'
           Get-Content "$data\install.ini"
           $svc = Get-Service DHIS2FacilityHub
+          # hub.exe must be readable by the service's account (inherited from the folder).
+          $acl = icacls "$data\bin\hub.exe" | Out-String
+          $acl
+          if ($acl -notmatch 'DHIS2FacilityHub') { throw "hub.exe does not grant the service account" }
           for ($i = 0; $i -lt 30 -and $svc.Status -ne 'Running'; $i++) { Start-Sleep 2; $svc.Refresh() }
           if ($svc.Status -ne 'Running') {
             '--- this step: elevated?'
