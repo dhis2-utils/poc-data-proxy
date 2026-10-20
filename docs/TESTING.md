@@ -118,7 +118,7 @@ It runs after every image build, in `image.yml` too (image/README.md). The hub's
   7. check Defender's exclusion, the sleep setting, and the firewall on a network marked Public;
   8. move a per-user hub to a whole-PC install;
   9. uninstall, with and without removing the data;
-  10. on a PC with a TPM: `device.key` appears in the data folder and `tls.key` starts with `HUBDEV1`; the service (a virtual account) still starts after a restart, and staff log in (Windows TPM Base Services, `internal/devkey`). With `tpm: false` in hub.yaml the hub works as before.
+  10. on a PC with a TPM: `device.key` appears in the data folder and `tls.key` starts with `HUBDEV1`; the service (a virtual account) still starts after a restart, and staff log in (Windows TPM Base Services, `internal/devkey`). A fresh install with `tpm: false` in hub.yaml makes no `device.key` and works as before.
 
 ### macOS
 

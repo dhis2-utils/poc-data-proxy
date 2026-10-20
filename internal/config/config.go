@@ -69,7 +69,8 @@ type Config struct {
 	// and the password is the most valuable secret the hub could hold (REVIEW-2 F8).
 	PasswordFallback bool
 	// TPM: seal the hub's device key with the machine's TPM 2.0 where it has one
-	// (internal/devkey). Off only to work around a TPM that misbehaves.
+	// (internal/devkey). Off keeps a new hub off a TPM that misbehaves; a hub that has a
+	// device key already needs its TPM, whatever this says.
 	TPM bool
 	// KeySlotMaxAge removes the key slot of a user who has not logged in for this long.
 	KeySlotMaxAge time.Duration

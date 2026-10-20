@@ -170,7 +170,6 @@ func TestShortTokenLifeNotRenewedEachLogin(t *testing.T) {
 	}
 }
 
-
 // As the Facility Hub app revokes: a hub manager deletes every listed token, the hub's
 // own included, then marks the entry revoked. The hub cannot read its entry any more,
 // but a staff login that would make a new token finds out first, and makes none

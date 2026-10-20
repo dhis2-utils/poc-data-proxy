@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"net"
 	"reflect"
@@ -51,4 +52,17 @@ func TestListenWaitsForPorts(t *testing.T) {
 		t.Fatalf("the port was released, still: %v", err)
 	}
 	ln.Close()
+}
+
+// A hub whose device key does not open exits after a while, so it is started again and
+// tries the TPM again; stopped meanwhile, it ends without an error.
+func TestRetryLater(t *testing.T) {
+	if err := retryLater(context.Background(), 10*time.Millisecond); err == nil {
+		t.Fatal("no error to be restarted with")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := retryLater(ctx, time.Hour); err != nil {
+		t.Fatalf("stopped: %v", err)
+	}
 }

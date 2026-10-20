@@ -165,8 +165,7 @@ func serveCtx(ctx context.Context, cfgPath string) error {
 			if err := startPage(); err != nil {
 				return err
 			}
-			<-ctx.Done()
-			return nil
+			return retryLater(ctx, devkeyRetry)
 		}
 		if err != nil {
 			return err
