@@ -130,6 +130,10 @@ For facilities without a Pi kit: the same hub on a PC they already have. That ca
 - **Upgrades.** The same releases and staging as the Pi. The hub runs from its data folder, replaces its own `hub.exe` (the running one is renamed), and the service manager starts the new one. The data key is handed over in a file sealed to the hub's account (DPAPI), read once and refused after 2 minutes.
 - **Not checked until a Windows machine runs it:** everything in docs/TESTING.md, "Windows".
 
+## The hub on a Mac (for the DHIS2 team)
+
+Not for facilities. `macos/install.sh` runs the same hub on a Mac, so the core team can try it against a test DHIS2, with the same app, staging and upgrades: as a launchd agent for the logged-in user, answering `dhis2.local` itself, its authority trusted in the System keychain. Releases carry `hub-darwin-arm64` and `hub-darwin-amd64`; macos/README.md.
+
 ## 3. From depot to facility
 
 ### At the depot (bulk)

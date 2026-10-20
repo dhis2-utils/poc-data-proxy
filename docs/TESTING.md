@@ -119,6 +119,15 @@ It runs after every image build, in `image.yml` too (image/README.md). The hub's
   8. move a per-user hub to a whole-PC install;
   9. uninstall, with and without removing the data.
 
+### macOS
+
+`.github/workflows/macos.yml` runs on every push:
+- the Go tests on `macos-latest`;
+- `macos/install.sh` with a binary built there, checked: the launchd agent runs and answers over HTTPS at `localhost` and `dhis2.local` (the hub's own responder next to macOS's), and the authority is in the System keychain;
+- the uninstall.
+
+A Mac is a test hub for the DHIS2 team, not a facility hub (macos/README.md).
+
 ### What the live suite contains
 
 | Test | What it checks |

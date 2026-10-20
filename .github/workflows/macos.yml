@@ -1,0 +1,68 @@
+# The hub on a Mac, as the DHIS2 team runs it to try it (macos/install.sh): the Go
+# tests on macOS, then an install from a binary built here, checked (the agent runs,
+# answers over HTTPS with its own authority, dhis2.local resolves to it) and removed.
+name: macOS
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Go tests on macOS
+        run: go vet ./... && go test $(go list ./... | grep -v /internal/live)
+
+  install:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: CGO_ENABLED=0 go build -ldflags "-X main.version=0.0.0-ci" -o hub ./cmd/hub
+      - name: Install (the runner's sudo needs no password)
+        run: macos/install.sh --hub ./hub
+      - name: The hub runs and answers over HTTPS, at localhost and dhis2.local
+        run: |
+          DATA="$HOME/Library/Application Support/DHIS2 Facility Hub"
+          cat "$DATA/install.ini"
+          PORT=$(sed -n 's/^https_port=//p' "$DATA/install.ini" | tr -d '\r')
+          CA_NAME=$(sed -n 's/^ca_name=//p' "$DATA/install.ini" | tr -d '\r')
+          ok=""
+          for i in $(seq 30); do
+            if curl -fsS --cacert "$DATA/ca.crt" "https://localhost:$PORT/hub/status"; then ok=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then
+            launchctl print "gui/$(id -u)/org.dhis2.facility-hub" || true
+            cat "$DATA/hub.log" "$DATA/launchd.log" 2>/dev/null || true
+            exit 1
+          fi
+          echo
+          security find-certificate -c "$CA_NAME" /Library/Keychains/System.keychain >/dev/null
+          echo "the authority is in the System keychain"
+          dscacheutil -q host -a name dhis2.local || true
+          ok=""
+          for i in $(seq 15); do
+            if curl -fsS --cacert "$DATA/ca.crt" "https://dhis2.local:$PORT/hub/status"; then ok=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then
+            echo "dhis2.local did not answer"
+            timeout 5 dns-sd -G v4 dhis2.local || true
+            grep -i mdns "$DATA/hub.log" || true
+            exit 1
+          fi
+      - name: Uninstall
+        run: |
+          macos/install.sh --uninstall --remove-data
+          if launchctl print "gui/$(id -u)/org.dhis2.facility-hub" >/dev/null 2>&1; then echo "the agent is still loaded"; exit 1; fi
+          if [ -e "$HOME/Library/LaunchAgents/org.dhis2.facility-hub.plist" ]; then echo "the agent file is still there"; exit 1; fi

@@ -27,6 +27,16 @@ func mountPoint(dir string) bool {
 		}
 		return false
 	}
+	return mountPointByDevice(abs)
+}
+
+// mountPointByDevice is the check without a mount table (macOS): a folder on another
+// device than its parent, or the root, which is its own parent.
+func mountPointByDevice(abs string) bool {
+	abs = filepath.Clean(abs)
+	if filepath.Dir(abs) == abs {
+		return true
+	}
 	var a, p syscall.Stat_t
 	if syscall.Stat(abs, &a) != nil || syscall.Stat(filepath.Dir(abs), &p) != nil {
 		return false

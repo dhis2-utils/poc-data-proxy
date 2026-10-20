@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -46,7 +47,13 @@ func TestInitWritesNothingCountrySpecific(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.MDNS || !c.SetupLocalOnly || c.USBDir != "auto" || c.DataDir != dir || r.HTTPSPort != 8443 {
+	// A USB stick copy is chosen among removable drives on Windows; a Mac (a test
+	// hub for the DHIS2 team) keeps none, so the app does not flag a missing stick.
+	wantUSB := ""
+	if runtime.GOOS == "windows" {
+		wantUSB = "auto"
+	}
+	if !c.MDNS || !c.SetupLocalOnly || c.USBDir != wantUSB || c.DataDir != dir || r.HTTPSPort != 8443 {
 		t.Fatalf("config %+v, result %+v", c, r)
 	}
 	// install.ini: what the NSIS installer reads (ReadINIStr).

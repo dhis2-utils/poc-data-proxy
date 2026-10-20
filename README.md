@@ -136,6 +136,8 @@ Hub endpoints:
   - reset hub.
 - `/hub/ui/endpoints`: every endpoint and parameter clients called, and every parameter refused offline (spec 13.1).
 
+**macOS** (for the DHIS2 team to try the hub): `macos/install.sh` ([macos/README.md](macos/README.md)).
+
 **Windows.** `windows/build.sh <version> out/` builds the installer on Linux (`windows/README.md`); the guide for the person at the PC is [docs/WINDOWS-INSTALL.md](docs/WINDOWS-INSTALL.md).
 
 **Raspberry Pi.** Use 64-bit Raspberry Pi OS. Install the binary at `/usr/local/lib/hub/hub` (a folder the `hub` user owns, for self-upgrade), the defaults at `/etc/hub/hub.yaml`, and [`deploy/hub.service`](deploy/hub.service) as a systemd unit. Set the host name to `dhis2` (`hostnamectl set-hostname dhis2`), so `avahi-daemon` announces `dhis2.local`. The full image, hardware and network set-ups, and how devices reach the hub securely, are in [DEPLOYMENT.md](docs/DEPLOYMENT.md).

@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 
 	"github.com/dhis2/facility-hub/internal/config"
@@ -43,10 +44,9 @@ func initData(dir string, perUser bool, free func(int) bool) (initResult, error)
 listen: ":%d"
 http_listen: ":%d"
 data_dir: %s
-usb_dir: auto
-mdns: true
+%smdns: true
 setup_local_only: true
-`, install, r.HTTPSPort, r.HTTPPort, dir)
+`, install, r.HTTPSPort, r.HTTPPort, dir, usbLine())
 		if err := os.WriteFile(r.Config, []byte(text), 0o600); err != nil {
 			return r, err
 		}
@@ -87,6 +87,15 @@ func writeInstallINI(dir string, r initResult) error {
 	ini := fmt.Sprintf("[hub]\r\nhttps_port=%d\r\nhttp_port=%d\r\nca=%s\r\nca_name=%s\r\nurl=%s\r\n",
 		r.HTTPSPort, r.HTTPPort, r.CA, ca.Subject.CommonName, url)
 	return os.WriteFile(filepath.Join(dir, "install.ini"), []byte(ini), 0o600)
+}
+
+// usbLine: on Windows the hub keeps its copy on a removable drive a person chooses;
+// elsewhere hub init makes a test hub (a Mac), which keeps none.
+func usbLine() string {
+	if runtime.GOOS == "windows" {
+		return "usb_dir: auto\n"
+	}
+	return ""
 }
 
 func portOf(listen string) int {
