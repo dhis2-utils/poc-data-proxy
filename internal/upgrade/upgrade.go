@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dhis2/facility-hub/internal/atomicfile"
 	"hash/fnv"
 	"io"
 	"log/slog"
@@ -222,7 +223,7 @@ func (u *Upgrader) check(ctx context.Context) error {
 	}
 	exe, _ = filepath.EvalSymlinks(exe)
 	prevBin := filepath.Join(binDir, "hub.prev")
-	if err := copyFile(exe, prevBin, 0o755); err != nil {
+	if err := atomicfile.Copy(exe, prevBin, 0o755); err != nil {
 		return fmt.Errorf("saving previous binary: %w", err)
 	}
 	mk := Marker{State: "swapped", From: u.H.Version, To: m.Version, ExePath: exe, PrevBinary: prevBin,
@@ -589,18 +590,6 @@ func (u *Upgrader) healthCheck(ctx context.Context, statusURL string) string {
 func writeMarker(path string, mk Marker) error {
 	b, _ := json.MarshalIndent(mk, "", "  ")
 	return os.WriteFile(path, b, 0o600)
-}
-
-func copyFile(src, dst string, mode os.FileMode) error {
-	b, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	tmp := dst + ".tmp"
-	if err := os.WriteFile(tmp, b, mode); err != nil {
-		return err
-	}
-	return os.Rename(tmp, dst)
 }
 
 // swapStore moves live -> saveAs and incoming -> live, for the key file and its data

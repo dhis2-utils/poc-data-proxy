@@ -17,9 +17,6 @@ func mustJSON(v any) []byte {
 	return b
 }
 
-// MustJSON marshals v and panics on error (only used for values the hub builds).
-func MustJSON(v any) []byte { return mustJSON(v) }
-
 // ReadBody reads a request body up to limit bytes.
 // ErrTooLarge is returned by ReadBody for a body over the limit.
 var ErrTooLarge = errors.New("request body too large")

@@ -41,8 +41,6 @@ func (a Auth) Apply(h http.Header) {
 	}
 }
 
-func (a Auth) Empty() bool { return a.PAT == "" && a.Username == "" && a.Cookie == "" }
-
 // Client talks to central and reports network failures to the monitor.
 type Client struct {
 	mu      sync.RWMutex

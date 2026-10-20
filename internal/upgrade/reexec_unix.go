@@ -5,12 +5,13 @@ package upgrade
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/dhis2/facility-hub/internal/atomicfile"
 	"os"
 	"syscall"
 )
 
 // replaceBinary atomically puts src at dst (copy next to dst, then rename).
-func replaceBinary(src, dst string) error { return copyFile(src, dst, 0o755) }
+func replaceBinary(src, dst string) error { return atomicfile.Copy(src, dst, 0o755) }
 
 // dkPipe returns the read end of a pipe that yields the data key, hex encoded.
 func dkPipe(dk []byte) (*os.File, error) {

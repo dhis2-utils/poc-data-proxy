@@ -5,6 +5,7 @@ package stick
 import (
 	"context"
 	"errors"
+	"github.com/dhis2/facility-hub/internal/atomicfile"
 	"github.com/dhis2/facility-hub/internal/devkey"
 	"github.com/dhis2/facility-hub/internal/diskfree"
 	"log/slog"
@@ -186,7 +187,7 @@ func (s *Stick) check() Status {
 	}
 	probe := filepath.Join(s.root(), ".probe")
 	want := []byte(store.Now())
-	if err := writeFileSync(probe, want); err != nil {
+	if err := atomicfile.Write(probe, want, 0o600); err != nil {
 		st.Error = err.Error()
 		return st
 	}
@@ -210,7 +211,7 @@ func (s *Stick) writeInfo(text string) error {
 	if b, err := os.ReadFile(path); err == nil && string(b) == text {
 		return nil
 	}
-	return writeFileSync(path, []byte(text))
+	return atomicfile.Write(path, []byte(text), 0o600)
 }
 
 func (s *Stick) writeSetupCode() error {
@@ -224,27 +225,5 @@ func (s *Stick) writeSetupCode() error {
 		return nil
 	}
 	slog.Info("setup code written to the USB stick", "hub", s.H.HubID())
-	return writeFileSync(path, []byte(text))
-}
-
-// writeFileSync writes through a temporary file, synced and renamed, so a stick pulled
-// out midway never holds half a file.
-func writeFileSync(path string, b []byte) error {
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(b); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return atomicfile.Write(path, []byte(text), 0o600)
 }

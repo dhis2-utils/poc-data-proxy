@@ -3,7 +3,6 @@
 package core
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -520,9 +519,4 @@ func (h *Hub) WebError(w http.ResponseWriter, status int, msg, code string) {
 // NeedsConnection is the fail-closed answer (spec 2).
 func (h *Hub) NeedsConnection(w http.ResponseWriter, what string) {
 	h.WebError(w, http.StatusServiceUnavailable, "needs connection: "+what, "")
-}
-
-// Ctx returns a context for background calls to central.
-func Ctx() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), 2*time.Minute)
 }

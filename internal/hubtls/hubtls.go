@@ -19,6 +19,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/dhis2/facility-hub/internal/atomicfile"
 	"github.com/dhis2/facility-hub/internal/devkey"
 	"io/fs"
 	"log/slog"
@@ -490,8 +491,7 @@ func loadPair(crt, key string) (tls.Certificate, error) {
 	return tls.X509KeyPair(crtPEM, keyPEM)
 }
 
-// writeAtomic replaces path with b, synced, so a power cut leaves the old file or the
-// new one, never an empty one.
+// writeAtomic replaces path with b (internal/atomicfile), the private keys sealed.
 func writeAtomic(path string, b []byte, mode os.FileMode) error {
 	if strings.HasSuffix(path, ".key") {
 		var err error
@@ -499,33 +499,7 @@ func writeAtomic(path string, b []byte, mode os.FileMode) error {
 			return err
 		}
 	}
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(b)
-	if err == nil {
-		err = f.Chmod(mode)
-	}
-	if err == nil {
-		err = f.Sync()
-	}
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return err
-	}
-	if d, err := os.Open(filepath.Dir(path)); err == nil {
-		d.Sync()
-		d.Close()
-	}
-	return nil
+	return atomicfile.Write(path, b, mode)
 }
 
 func serial() *big.Int {

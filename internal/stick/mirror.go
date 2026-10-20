@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dhis2/facility-hub/internal/atomicfile"
 	"github.com/dhis2/facility-hub/internal/devkey"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -102,7 +102,7 @@ func (s *Stick) mirror() error {
 		if err != nil {
 			return err
 		}
-		if err := writeFileSync(path, sealed); err != nil {
+		if err := atomicfile.Write(path, sealed, 0o600); err != nil {
 			return fmt.Errorf("save %d: %w", e.Seq, err)
 		}
 		s.sums[e.Seq] = sum
@@ -131,7 +131,7 @@ func (s *Stick) copyState(path string) error {
 	if err != nil {
 		return err
 	}
-	if err := writeFileSync(path, sealed); err != nil {
+	if err := atomicfile.Write(path, sealed, 0o600); err != nil {
 		return err
 	}
 	s.stateSum = sum
@@ -156,7 +156,7 @@ func (s *Stick) copyCerts(path string) error {
 	if err != nil {
 		return err
 	}
-	if err := writeFileSync(path, sealed); err != nil {
+	if err := atomicfile.Write(path, sealed, 0o600); err != nil {
 		return err
 	}
 	s.certsSum = sum
@@ -245,7 +245,7 @@ func Stage(usbDir, dataDir, id, username, password string) error {
 		copies[r] = filepath.Join(staging, "outbox", filepath.Base(r))
 	}
 	for src, dst := range copies {
-		if err := copyFile(src, dst); err != nil {
+		if err := atomicfile.Copy(src, dst, 0o600); err != nil {
 			os.RemoveAll(staging)
 			return err
 		}
@@ -260,7 +260,7 @@ func Stage(usbDir, dataDir, id, username, password string) error {
 			return err
 		}
 	}
-	return writeFileSync(filepath.Join(dataDir, restoreReady), []byte(staging))
+	return atomicfile.Write(filepath.Join(dataDir, restoreReady), []byte(staging), 0o600)
 }
 
 // Finish, at start before the store opens: puts a staged restore in place of the new
@@ -285,7 +285,7 @@ func Finish(dataDir, storePath string) error {
 		}
 		os.Remove(filepath.Join(staging, certsStaged))
 	}
-	if err := writeFileSync(filepath.Join(dataDir, restoreReplay), []byte(staging)); err != nil {
+	if err := atomicfile.Write(filepath.Join(dataDir, restoreReplay), []byte(staging), 0o600); err != nil {
 		return err
 	}
 	os.Remove(filepath.Join(dataDir, restoreReady))
@@ -350,31 +350,6 @@ func modTime(p string) time.Time {
 	return time.Time{}
 }
 
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	tmp := dst + ".tmp"
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		return err
-	}
-	if err := out.Sync(); err != nil {
-		out.Close()
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp, dst)
-}
-
 func syncFile(p string) error {
 	f, err := os.OpenFile(p, os.O_RDWR, 0)
 	if err != nil {
@@ -382,11 +357,4 @@ func syncFile(p string) error {
 	}
 	defer f.Close()
 	return f.Sync()
-}
-
-func syncDir(p string) {
-	if f, err := os.Open(p); err == nil {
-		f.Sync()
-		f.Close()
-	}
 }

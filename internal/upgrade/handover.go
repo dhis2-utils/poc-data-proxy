@@ -2,6 +2,7 @@ package upgrade
 
 import (
 	"encoding/json"
+	"github.com/dhis2/facility-hub/internal/atomicfile"
 	"os"
 	"path/filepath"
 	"time"
@@ -32,11 +33,7 @@ func WriteHandover(dir string, dk []byte, now time.Time, seal func([]byte) ([]by
 		return err
 	}
 	b, _ := json.Marshal(handover{At: now, Sealed: sealed})
-	tmp := filepath.Join(dir, handoverFile+".tmp")
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, filepath.Join(dir, handoverFile))
+	return atomicfile.Write(filepath.Join(dir, handoverFile), b, 0o600)
 }
 
 // ReadHandover returns the handed-over key once and deletes the file; nil when there

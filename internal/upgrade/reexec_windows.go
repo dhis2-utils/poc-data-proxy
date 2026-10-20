@@ -1,6 +1,7 @@
 package upgrade
 
 import (
+	"github.com/dhis2/facility-hub/internal/atomicfile"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -21,7 +22,7 @@ func replaceBinary(src, dst string) error {
 	if err := os.Rename(dst, old); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	if err := copyFile(src, dst, 0o755); err != nil {
+	if err := atomicfile.Copy(src, dst, 0o755); err != nil {
 		os.Rename(old, dst)
 		return err
 	}

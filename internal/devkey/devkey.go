@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/dhis2/facility-hub/internal/atomicfile"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -83,7 +84,7 @@ func Load(dir string, d Device) error {
 			set(nil, "")
 			return nil
 		}
-		if err := writeSynced(path, sealed, 0o600); err != nil {
+		if err := atomicfile.Write(path, sealed, 0o600); err != nil {
 			return err
 		}
 		slog.Info("device key made and sealed by the TPM")
@@ -147,7 +148,7 @@ func WriteFile(path string, data []byte, perm os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	return writeSynced(path, b, perm)
+	return atomicfile.Write(path, b, perm)
 }
 
 // ReadFile reads a file written by WriteFile, sealed or not.
@@ -222,26 +223,4 @@ func SealExisting(dir string, names ...string) error {
 		}
 	}
 	return nil
-}
-
-// writeSynced replaces path with b, synced, so a power cut leaves the old file or the
-// new one.
-func writeSynced(path string, b []byte, mode os.FileMode) error {
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(b); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }
