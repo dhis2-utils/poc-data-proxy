@@ -88,7 +88,7 @@ Both hubs pick it up within one cycle. Their housekeeping already reads only `st
     - new and renewed tokens take it, and a token with more life left than the setting is renewed early.
 - **Refusals page (managers).** It adds up the heartbeats' `refusedGroups` (kind, programme, error code) across hubs.
   - **Resend** on a group appends `{id, kind, program, code, at, by}` to `facility-hub-admin/retries` (the last 50 kept).
-  - At each cycle a hub applies each retry it has not applied yet: its refused saves of that kind, programme and code go back to pending, and are pushed as their authors. Central's new answer stands; a save refused again is a fresh issue.
+  - At each cycle a hub applies each retry it has not applied yet, once, when it first sees it: its refused saves of that kind, programme and code, and what they blocked, go back to pending, and are pushed as their authors. On a resend, items central already accepted are skipped. Central's new answer stands; a save refused again is a fresh issue.
 
 ## 5. S13 and S14
 

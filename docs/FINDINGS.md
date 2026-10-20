@@ -471,9 +471,9 @@ What the hub does with a change central refuses (tested in `internal/e2e`: `Test
   - An unrelated change on central after the refusal also replaces the hub's copy. An example is another user editing a different field of the same event. The refused values then disappear from offline reads; they remain in the refused outbox entry, and in the issue on central with values masked.
   - A change on central within a second of the refusal does not count, so the hub keeps its copy until central's next change.
   - Wrong clocks on the hub do not matter: the comparison uses only central's times.
-- **Still open:**
-  - a refused change that can never pass as it is (repair);
-  - the retry instruction for refusals in bulk after central is fixed (docs/DEPLOYMENT.md, "Refused in bulk").
+- **Still open:** a refused change that can never pass as it is (repair).
+- **Resent in bulk** once central is fixed: a hub manager presses "Resend" on a group in the Facility Hub app (docs/DEPLOYMENT.md, "Refused in bulk").
+
 
 ## Devices trusting the hub's certificate
 

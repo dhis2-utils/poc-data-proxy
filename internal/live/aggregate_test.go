@@ -716,3 +716,26 @@ func TestAggregatePullCompactValueSets(t *testing.T) {
 		t.Fatalf("offline: %q, want 6", got)
 	}
 }
+
+// A refused aggregate edit is sent again when a hub manager resends its group from the
+// Facility Hub app after central was fixed (facility-hub-admin/retries), as its author.
+func TestAggregateRetryAfterFix(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	e.NeedFake()
+	pe := aggPeriod(e, ag)
+	e.Offline()
+	nurse.PostDataValue("/api/"+e.App.Hub.APIMinor()+"/dataValues", cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "5"))
+	e.Fake.Approve(ag.DataSet, pe)
+	e.Online()
+	e.Sync()
+	if _, _, ok := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); ok {
+		t.Fatal("approved period: central must not have the value")
+	}
+	e.Fake.Unapprove(ag.DataSet, pe)
+	e.Fake.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"retries": json.RawMessage(
+		`{"retries":[{"id":"r1","kind":"aggregate","program":"","code":"E2017","at":"` + time.Now().UTC().Format(time.RFC3339) + `","by":"admin"}]}`)}
+	e.Sync()
+	if val, by, _ := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "5" || by != nurse.User {
+		t.Fatalf("after the retry central has %q by %q", val, by)
+	}
+}

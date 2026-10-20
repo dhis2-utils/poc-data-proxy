@@ -422,6 +422,13 @@ func (c *Central) Approve(ds, pe string) {
 	c.approved[ds+"|"+pe] = true
 }
 
+// Unapprove withdraws an approval (central was fixed).
+func (c *Central) Unapprove(ds, pe string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.approved, ds+"|"+pe)
+}
+
 // Complete reports whether the form is registered complete.
 func (c *Central) Complete(ds, pe, aoc string) bool {
 	c.mu.Lock()

@@ -4,7 +4,6 @@
 package sync
 
 import (
-	"net/url"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -17,6 +16,7 @@ import (
 	"maps"
 	"math/rand/v2"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -188,6 +188,9 @@ func (w *Worker) cycle(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("key slots: %w", err))
 	} else if len(pruned) > 0 {
 		slog.Info("removed unused key slots", "users", pruned)
+	}
+	if err := w.applyRetries(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("retries: %w", err))
 	}
 	before := h.Store.CountOutbox(store.OutboxPending)
 	if err := w.Push(ctx); err != nil {
@@ -378,6 +381,9 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 	blocked := map[string]bool{}
 	var send []*tracker.Item
 	for _, it := range items {
+		if o := h.Index.Get(it.UID); o != nil && o.SyncState == store.SyncSynced && e.Attempts > 0 {
+			continue // accepted when the entry was sent before (a retry of a partial entry)
+		}
 		var by string
 		for _, p := range parents(it) {
 			if blocked[p] {
@@ -395,6 +401,9 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 			continue
 		}
 		send = append(send, it)
+	}
+	if len(send) == 0 && len(blocked) == 0 {
+		return pushResult{}, h.Store.FinishOutbox(e.Seq, store.OutboxSynced, "")
 	}
 	if len(send) == 0 {
 		return pushResult{}, h.Store.FinishOutbox(e.Seq, store.OutboxRejected, "all objects blocked")
@@ -1208,23 +1217,7 @@ func refusedCounts(h *core.Hub) ([]map[string]any, int) {
 	}
 	counts := map[[3]string]int{}
 	for _, is := range issues {
-		var e struct {
-			Reports []struct {
-				ErrorCode string `json:"errorCode"`
-			} `json:"errorReports"`
-		}
-		json.Unmarshal(is.Error, &e)
-		program := ""
-		if o := h.Index.Get(is.ObjectUID); o != nil {
-			program = o.Program
-		}
-		codes := map[string]bool{}
-		for _, r := range e.Reports {
-			codes[cmp.Or(r.ErrorCode, "none")] = true
-		}
-		if len(codes) == 0 {
-			codes["none"] = true // blocked by an earlier refusal, or no report
-		}
+		program, codes, _ := issueGroup(h, is)
 		for c := range codes {
 			counts[[3]string{is.Kind, program, c}]++
 		}
@@ -1237,6 +1230,102 @@ func refusedCounts(h *core.Hub) ([]map[string]any, int) {
 		out = append(out, map[string]any{"kind": k[0], "program": k[1], "code": k[2], "count": counts[k]})
 	}
 	return out, len(keys)
+}
+
+// issueGroup returns what a refusal is grouped by, in the heartbeat and for retries:
+// the object's programme and central's error codes ("none" when it was blocked by an
+// earlier refusal, or central gave no report), and the object that blocked it.
+func issueGroup(h *core.Hub, is *store.Issue) (program string, codes map[string]bool, blockedBy string) {
+	var e struct {
+		Message string `json:"message"`
+		Reports []struct {
+			ErrorCode string `json:"errorCode"`
+		} `json:"errorReports"`
+	}
+	json.Unmarshal(is.Error, &e)
+	if o := h.Index.Get(is.ObjectUID); o != nil {
+		program = o.Program
+	}
+	codes = map[string]bool{}
+	for _, r := range e.Reports {
+		codes[cmp.Or(r.ErrorCode, "none")] = true
+	}
+	if len(codes) == 0 {
+		codes["none"] = true
+	}
+	blockedBy, _ = strings.CutPrefix(e.Message, "blocked by ")
+	if blockedBy == e.Message {
+		blockedBy = ""
+	}
+	return program, codes, blockedBy
+}
+
+// retry is a resend instruction from the Facility Hub app (facility-hub-admin/retries).
+type retry struct {
+	ID, Kind, Program, Code, At string
+}
+
+const metaRetriesApplied = "retries_applied" // the retry IDs this hub has applied
+
+// applyRetries takes up the resend instructions a hub manager gave in the Facility Hub
+// app after central was fixed: this hub's saves refused with that kind, programme and
+// error code, and what they blocked, are sent again as their authors, once per
+// instruction, when the hub first sees it. Central's new answer stands.
+func (w *Worker) applyRetries(ctx context.Context) error {
+	h := w.H
+	var v struct {
+		Retries []retry `json:"retries"`
+	}
+	err := h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-admin/retries", nil, h.HubAuth(), &v)
+	if central.Status(err) == http.StatusNotFound {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	applied := strings.Split(h.Store.Meta(metaRetriesApplied), ",")
+	var todo []retry
+	var ids []string
+	for _, r := range v.Retries {
+		ids = append(ids, r.ID)
+		if !slices.Contains(applied, r.ID) {
+			todo = append(todo, r)
+		}
+	}
+	if len(todo) > 0 {
+		issues, err := h.Store.UnresolvedIssues(100000)
+		if err != nil {
+			return err
+		}
+		uids, seqs := map[string]bool{}, map[int64]bool{}
+		blocked := map[string][]*store.Issue{} // by the object that blocked them
+		for _, is := range issues {
+			program, codes, by := issueGroup(h, is)
+			if by != "" {
+				blocked[by] = append(blocked[by], is)
+			}
+			for _, r := range todo {
+				if is.Kind == r.Kind && program == r.Program && codes[r.Code] {
+					uids[is.ObjectUID], seqs[is.OutboxSeq] = true, true
+				}
+			}
+		}
+		for queue := slices.Collect(maps.Keys(uids)); len(queue) > 0; queue = queue[1:] {
+			for _, is := range blocked[queue[0]] {
+				if !uids[is.ObjectUID] {
+					uids[is.ObjectUID], seqs[is.OutboxSeq] = true, true
+					queue = append(queue, is.ObjectUID)
+				}
+			}
+		}
+		n, err := h.Store.Requeue(slices.Collect(maps.Keys(uids)), slices.Collect(maps.Keys(seqs)))
+		if err != nil {
+			return err
+		}
+		slog.Info("retry from the Facility Hub app", "instructions", len(todo), "objects", len(uids), "entries", n)
+	}
+	h.Store.SetMeta(metaRetriesApplied, strings.Join(ids, ","))
+	return nil
 }
 
 func usbStatus(h *core.Hub) any {

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -205,4 +206,35 @@ func (s *Store) CountOutbox(state string) int {
 	var n int
 	s.DB().QueryRow(`SELECT count(*) FROM outbox WHERE state=?`, state).Scan(&n)
 	return n
+}
+
+// Requeue sends refused saves again (a retry from the Facility Hub app): the refused
+// objects go back to pending, and so do the refused or partly refused outbox entries
+// holding them, or named by seq (aggregate edits). It returns the entries requeued.
+func (s *Store) Requeue(uids []string, seqs []int64) (int, error) {
+	var n int
+	err := s.Tx(context.Background(), func(tx *sql.Tx) error {
+		for _, uid := range uids {
+			if _, err := tx.Exec(`UPDATE objects SET sync_state=? WHERE uid=? AND sync_state=?`, SyncPending, uid, SyncRejected); err != nil {
+				return err
+			}
+			res, err := tx.Exec(`UPDATE outbox SET state=? WHERE state IN (?,?) AND seq IN (SELECT seq FROM outbox_objects WHERE uid=?)`,
+				OutboxPending, OutboxRejected, OutboxPartial, uid)
+			if err != nil {
+				return err
+			}
+			k, _ := res.RowsAffected()
+			n += int(k)
+		}
+		for _, seq := range seqs {
+			res, err := tx.Exec(`UPDATE outbox SET state=? WHERE state IN (?,?) AND seq=?`, OutboxPending, OutboxRejected, OutboxPartial, seq)
+			if err != nil {
+				return err
+			}
+			k, _ := res.RowsAffected()
+			n += int(k)
+		}
+		return nil
+	})
+	return n, err
 }
