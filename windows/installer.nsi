@@ -45,6 +45,19 @@ VIAddVersionKey "LegalCopyright" "BSD-3-Clause, University of Oslo"
 Var DataDir
 Var HubExe
 Var UserAppDataLocal
+
+Var LogFile
+
+; Run a command and record it, its exit code and its output in install.log (the data
+; folder; readable by every user): what a silent install did, for support and CI.
+; Sets $0 to the exit code.
+!macro Run cmd
+  StrCpy $R7 '${cmd}'
+  nsExec::ExecToStack '${cmd}'
+  Pop $0
+  Pop $R9
+  FileWrite $LogFile "> $R7$\r$\n  exit $0: $R9$\r$\n"
+!macroend
 Var Url
 Var CAName
 
@@ -137,6 +150,9 @@ Section "!The hub" SecHub
     StrCpy $UserAppDataLocal "$LOCALAPPDATA"
     SetShellVarContext all
   ${EndIf}
+  CreateDirectory "$DataDir"
+  FileOpen $LogFile "$DataDir\install.log" a
+  FileWrite $LogFile "$\r$\n== ${NAME} ${VERSION}, $MultiUser.InstallMode$\r$\n"
   Call StopHub
 
   ; From a per-user hub to the whole PC: the installing user's hub moves along, so it
@@ -146,13 +162,11 @@ Section "!The hub" SecHub
   ${AndIfNot} ${FileExists} "$DataDir\ca.key"
     MessageBox MB_YESNO "Your own hub on this PC (installed for you only) can move to the whole-PC install, keeping its set-up. Move it?" /SD IDYES IDNO nomove
       ReadEnvStr $R0 USERNAME
-    nsExec::Exec 'taskkill /F /FI "USERNAME eq $R0" /IM hub.exe'
-      Pop $0
+    !insertmacro Run 'taskkill /F /FI "USERNAME eq $R0" /IM hub.exe'
       DeleteRegValue HKCU "${RUNKEY}" "${NAME}"
       CreateDirectory "$DataDir"
       Delete "$UserAppDataLocal\${NAME}\hub.yaml" ; written again for the new place
-      nsExec::Exec 'robocopy "$UserAppDataLocal\${NAME}" "$DataDir" /E /MOVE /NFL /NDL /NJH /NJS'
-      Pop $0
+      !insertmacro Run 'robocopy "$UserAppDataLocal\${NAME}" "$DataDir" /E /MOVE /NFL /NDL /NJH /NJS'
     nomove:
   ${EndIf}
 
@@ -176,9 +190,9 @@ Section "!The hub" SecHub
 
   ; Settings, ports and the hub's certificate authority (hub init keeps existing ones).
   ${If} $MultiUser.InstallMode == "AllUsers"
-    nsExec::ExecToLog '"$HubExe" init -data "$DataDir"'
+    !insertmacro Run '"$HubExe" init -data "$DataDir"'
   ${Else}
-    nsExec::ExecToLog '"$HubExe" init -data "$DataDir" -per-user'
+    !insertmacro Run '"$HubExe" init -data "$DataDir" -per-user'
   ${EndIf}
   Pop $0
   ${If} $0 != 0
@@ -192,37 +206,26 @@ Section "!The hub" SecHub
 
   ${If} $MultiUser.InstallMode == "AllUsers"
     ; Trust the hub's authority on this PC, and dhis2.local is this PC.
-    nsExec::ExecToLog 'certutil -f -addstore Root "$DataDir\ca.crt"'
-    Pop $0
+    !insertmacro Run 'certutil -f -addstore Root "$DataDir\ca.crt"'
     Call AddHostsLine
     ; Devices on the network reach the hub: its two ports and mDNS (dhis2.local).
-    nsExec::Exec 'netsh advfirewall firewall delete rule name="${NAME}"'
-    Pop $0
-    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${NAME}" dir=in action=allow program="$HubExe" protocol=TCP localport=$4,$5 profile=any'
-    Pop $0
-    nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${NAME}" dir=in action=allow program="$HubExe" protocol=UDP localport=5353 profile=any'
-    Pop $0
+    !insertmacro Run 'netsh advfirewall firewall delete rule name="${NAME}"'
+    !insertmacro Run 'netsh advfirewall firewall add rule name="${NAME}" dir=in action=allow program="$HubExe" protocol=TCP localport=$4,$5 profile=any'
+    !insertmacro Run 'netsh advfirewall firewall add rule name="${NAME}" dir=in action=allow program="$HubExe" protocol=UDP localport=5353 profile=any'
     ; The service, its account's rights on the data folder (and no one else's), then start.
-    nsExec::Exec 'sc query ${SERVICE}'
-    Pop $0
+    !insertmacro Run 'sc query ${SERVICE}'
     ${If} $0 != 0
-      nsExec::ExecToLog '"$HubExe" service install -config "$DataDir\hub.yaml" -exe "$HubExe" -nostart'
-      Pop $0
+      !insertmacro Run '"$HubExe" service install -config "$DataDir\hub.yaml" -exe "$HubExe" -nostart'
     ${EndIf}
-    nsExec::ExecToLog 'icacls "$DataDir" /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" "${ACCOUNT}:(OI)(CI)M" /T /Q'
-    Pop $0
+    !insertmacro Run 'icacls "$DataDir" /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" "${ACCOUNT}:(OI)(CI)M" /T /Q'
     ; The settings for installers and checks, and the authority devices install, are
     ; public: readable by every user of the PC (nothing secret in either).
-    nsExec::ExecToLog 'icacls "$DataDir\install.ini" /grant "*S-1-5-32-545:R"'
-    Pop $0
-    nsExec::ExecToLog 'icacls "$DataDir\ca.crt" /grant "*S-1-5-32-545:R"'
-    Pop $0
-    nsExec::ExecToLog 'sc start ${SERVICE}'
-    Pop $0
+    !insertmacro Run 'icacls "$DataDir\install.ini" /grant "*S-1-5-32-545:R"'
+    !insertmacro Run 'icacls "$DataDir\ca.crt" /grant "*S-1-5-32-545:R"'
+    !insertmacro Run 'sc start ${SERVICE}'
   ${Else}
     ; Trust the authority for this user (Windows asks once), and start with their login.
-    nsExec::ExecToLog 'certutil -user -f -addstore Root "$DataDir\ca.crt"'
-    Pop $0
+    !insertmacro Run 'certutil -user -f -addstore Root "$DataDir\ca.crt"'
     WriteRegStr HKCU "${RUNKEY}" "${NAME}" '"$HubExe" serve -config "$DataDir\hub.yaml"'
     Exec '"$HubExe" serve -config "$DataDir\hub.yaml"'
   ${EndIf}
@@ -242,6 +245,11 @@ Section "!The hub" SecHub
   WriteRegStr SHCTX "${UNINSTKEY}" "CAName" "$CAName"
   WriteRegDWORD SHCTX "${UNINSTKEY}" "NoModify" 1
   WriteRegDWORD SHCTX "${UNINSTKEY}" "NoRepair" 1
+  FileClose $LogFile
+  ${If} $MultiUser.InstallMode == "AllUsers"
+    nsExec::Exec 'icacls "$DataDir\install.log" /grant "*S-1-5-32-545:R"'
+    Pop $0
+  ${EndIf}
 SectionEnd
 
 Section "Keep this PC awake while plugged in" SecAwake

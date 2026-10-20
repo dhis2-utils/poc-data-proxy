@@ -51,6 +51,7 @@ PY
 check "the per-user move reads the user's own folder" grep -q 'UserAppDataLocal' <<<"$STR"
 check "the installer waits for the service to stop" grep -q 'service stop' <<<"$STR"
 check "install.ini and ca.crt stay readable (public; the CI check reads them)" grep -q 'install.ini" /grant "\*S-1-5-32-545:R"' <<<"$STR"
+check "the installer records what it ran (install.log)" grep -q 'FileOpen $LogFile "$DataDir\\install.log"' <<<"$STR"
 check "uninstalling removes the Defender exclusion" grep -q 'Remove-MpPreference' <<<"$STR"
 echo
 if [ "$FAILS" -gt 0 ]; then echo "$FAILS checks failed"; exit 1; fi
