@@ -1,4 +1,5 @@
-import { useApiDataQuery } from '@/utils/useApiDataQuery'
+import { useQuery } from '@tanstack/react-query'
+import { useApi } from '@/api/useApi'
 
 type MeResponse = {
     id: string
@@ -29,21 +30,21 @@ const toMe = (m: MeResponse): Me => ({
 })
 
 export const useMe = () => {
+    const api = useApi()
     const {
         data: me,
         isLoading,
         error,
-    } = useApiDataQuery<MeResponse, Error, Me>({
+    } = useQuery({
         queryKey: ['me'],
-        query: {
-            resource: 'me',
-            params: {
-                fields: 'id,username,authorities,organisationUnits[id,path],userGroups[id]',
-            },
-        },
+        queryFn: () =>
+            api.request(
+                'GET',
+                '/me?fields=id,username,authorities,organisationUnits[id,path],userGroups[id]'
+            ) as Promise<MeResponse>,
         select: toMe,
         cacheTime: Infinity,
         staleTime: Infinity,
     })
-    return { me, isLoading, error }
+    return { me, isLoading, error: error as Error | null }
 }

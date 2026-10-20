@@ -3,10 +3,9 @@ import { useMemo } from 'react'
 import { writeAdminEntry } from './adminEntry'
 import { Flag, flags, Heartbeat, uid, visible } from './flags'
 import { Registry, retiredEntry } from './registry'
-import { ReleaseChoice } from './stage'
 import { listNamespace, useApi } from '@/api/useApi'
 import { useMe } from '@/hooks/useMe'
-import { ApiError } from '@/hubaccount/api'
+import { Api, getOrNull } from '@/hubaccount/api'
 
 export type { Registry } from './registry'
 
@@ -132,33 +131,22 @@ export const useHub = (id: string) => {
         queryKey: ['hub', id],
         staleTime: 60e3,
         queryFn: async () => {
-            let heartbeat: Heartbeat | undefined
-            try {
-                heartbeat = (await api.request(
-                    'GET',
+            const heartbeat =
+                (await getOrNull<Heartbeat>(
+                    api,
                     `/dataStore/facility-hub-status/${encodeURIComponent(id)}`
-                )) as Heartbeat
-            } catch (e) {
-                if (!(e instanceof ApiError && e.status === 404)) {
-                    throw e
-                }
-            }
-            let issues: Issue[] = []
-            try {
-                const res = (await api.request(
-                    'GET',
-                    `/dataStore/facility-hub-issues?fields=.&filter=hub_id:eq:${encodeURIComponent(id)}&pageSize=200`
-                )) as { entries?: { key: string; value: Omit<Issue, 'key'> }[] }
-                issues = (res.entries ?? [])
-                    .map((e) => ({ key: e.key, ...e.value }))
-                    .sort((a, b) =>
-                        (b.createdAt ?? '').localeCompare(a.createdAt ?? '')
-                    )
-            } catch (e) {
-                if (!(e instanceof ApiError && e.status === 404)) {
-                    throw e
-                }
-            }
+                )) ?? undefined
+            const res = await getOrNull<{
+                entries?: { key: string; value: Omit<Issue, 'key'> }[]
+            }>(
+                api,
+                `/dataStore/facility-hub-issues?fields=.&filter=hub_id:eq:${encodeURIComponent(id)}&pageSize=200`
+            )
+            const issues: Issue[] = (res?.entries ?? [])
+                .map((e) => ({ key: e.key, ...e.value }))
+                .sort((a, b) =>
+                    (b.createdAt ?? '').localeCompare(a.createdAt ?? '')
+                )
             return { heartbeat, issues }
         },
     })
@@ -172,111 +160,49 @@ export type AccountsSettings = {
     managers?: string
 }
 
-export const getOrNull = async <T>(
-    api: ReturnType<typeof useApi>,
-    path: string
-): Promise<T | null> => {
-    try {
-        return (await api.request('GET', path)) as T
-    } catch (e) {
-        if (e instanceof ApiError && e.status === 404) {
-            return null
-        }
-        throw e
-    }
-}
-
-const accountsPath = '/dataStore/facility-hub-admin/accounts'
-
-export const useAccountsSettings = () => {
-    const api = useApi()
-    const client = useQueryClient()
-    const query = useQuery({
-        queryKey: ['accountsSettings'],
-        queryFn: () => getOrNull<AccountsSettings>(api, accountsPath),
-    })
-    const save = useMutation(
-        // Written by superusers only: not shared with the hub managers.
-        (s: AccountsSettings) =>
-            writeAdminEntry(api, { key: 'accounts', value: s }),
-        {
-            onSuccess: () => client.invalidateQueries(['accountsSettings']),
-        }
-    )
-    return {
-        settings: query.data,
-        isLoading: query.isLoading,
-        error: query.error as Error | null,
-        save,
-    }
-}
-
 /** A planned move of central (facility-hub-admin/central-move), read by every hub. */
 export type CentralMove = { url: string; from?: string }
 
-const movePath = '/dataStore/facility-hub-admin/central-move'
+type AdminNamespace = 'facility-hub-admin' | 'facility-hub-config'
 
-export const useCentralMove = () => {
+const adminEntryQuery = <T>(
+    api: Api,
+    namespace: AdminNamespace,
+    key: string
+) => ({
+    queryKey: ['adminEntry', namespace, key],
+    queryFn: () =>
+        getOrNull<T>(api, `/dataStore/${namespace}/${encodeURIComponent(key)}`),
+})
+
+/**
+ * An entry of facility-hub-admin (accounts, central-move, release) or facility-hub-config
+ * (the country's settings for every hub: retention, aggregate, tokens): its value, or
+ * null if it is not set, and save, which writes it as writeAdminEntry does. Every entry
+ * but accounts is writable by the hub managers group that accounts names; accounts
+ * itself is written by superusers only.
+ */
+export const useAdminEntry = <T>(namespace: AdminNamespace, key: string) => {
     const api = useApi()
     const client = useQueryClient()
-    const { settings } = useAccountsSettings()
-    const managers = settings?.managers
-    const query = useQuery({
-        queryKey: ['centralMove'],
-        queryFn: () => getOrNull<CentralMove>(api, movePath),
-    })
-    const done = { onSuccess: () => client.invalidateQueries(['centralMove']) }
-    const set = useMutation(
-        (m: CentralMove) =>
-            writeAdminEntry(api, {
-                key: 'central-move',
-                value: m,
-                managers: managers,
-            }),
-        done
+    const entry = adminEntryQuery<T>(api, namespace, key)
+    const query = useQuery(entry)
+    const accounts = useQuery(
+        adminEntryQuery<AccountsSettings>(api, 'facility-hub-admin', 'accounts')
     )
-    // Withdrawn by writing it empty (hubs ignore a move without an address): deleting it
-    // would let anyone create it again.
-    const clear = useMutation(
-        () =>
-            writeAdminEntry(api, {
-                key: 'central-move',
-                value: {},
-                managers: managers,
-            }),
-        done
-    )
-    return {
-        move: query.data,
-        isLoading: query.isLoading,
-        error: query.error as Error | null,
-        set,
-        clear,
-    }
-}
-
-/** The country's choice of hub version (facility-hub-admin/release), read by every hub. */
-const releasePath = '/dataStore/facility-hub-admin/release'
-
-export const useRelease = () => {
-    const api = useApi()
-    const client = useQueryClient()
-    const { settings } = useAccountsSettings()
-    const query = useQuery({
-        queryKey: ['release'],
-        queryFn: () => getOrNull<ReleaseChoice>(api, releasePath),
-    })
+    const shared = !(namespace === 'facility-hub-admin' && key === 'accounts')
     const save = useMutation(
-        (c: ReleaseChoice) =>
+        (value: T) =>
             writeAdminEntry(api, {
-                key: 'release',
-                value: c,
-                managers: settings?.managers,
+                namespace,
+                key,
+                value,
+                managers: shared ? accounts.data?.managers : undefined,
             }),
-        { onSuccess: () => client.invalidateQueries(['release']) }
+        { onSuccess: () => client.invalidateQueries(entry.queryKey) }
     )
     return {
-        choice: query.data,
+        value: query.data,
         isLoading: query.isLoading,
         error: query.error as Error | null,
         save,
@@ -302,34 +228,4 @@ export const useMoveKeys = (enabled: boolean) => {
                 ).map((k) => [k.key, k.value.moveKey])
             ),
     })
-}
-
-/** A key of the country's settings for every hub (facility-hub-config), or null. */
-export const useConfigEntry = <T>(
-    key: 'retention' | 'aggregate' | 'tokens'
-) => {
-    const api = useApi()
-    const client = useQueryClient()
-    const { settings } = useAccountsSettings()
-    const query = useQuery({
-        queryKey: ['config', key],
-        queryFn: () =>
-            getOrNull<T>(api, `/dataStore/facility-hub-config/${key}`),
-    })
-    const save = useMutation(
-        (value: T) =>
-            writeAdminEntry(api, {
-                namespace: 'facility-hub-config',
-                key,
-                value,
-                managers: settings?.managers,
-            }),
-        { onSuccess: () => client.invalidateQueries(['config', key]) }
-    )
-    return {
-        value: query.data,
-        isLoading: query.isLoading,
-        error: query.error as Error | null,
-        save,
-    }
 }

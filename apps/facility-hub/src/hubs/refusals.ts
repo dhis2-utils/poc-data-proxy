@@ -1,7 +1,7 @@
 import { writeAdminEntry } from './adminEntry'
 import { Heartbeat } from './flags'
 import { HubRow } from './useHubs'
-import { Api, ApiError } from '@/hubaccount/api'
+import { Api, getOrNull } from '@/hubaccount/api'
 
 /** Refused saves of one kind, programme ("" for none) and error code on one hub. */
 export type RefusedGroup = {
@@ -84,17 +84,8 @@ const retriesPath = '/dataStore/facility-hub-admin/retries'
 
 /** The retries asked for so far (facility-hub-admin/retries), oldest first. */
 export const readRetries = async (api: Api): Promise<Retry[]> => {
-    try {
-        const v = (await api.request('GET', retriesPath)) as {
-            retries?: Retry[]
-        } | null
-        return Array.isArray(v?.retries) ? v.retries : []
-    } catch (e) {
-        if (e instanceof ApiError && e.status === 404) {
-            return []
-        }
-        throw e
-    }
+    const v = await getOrNull<{ retries?: Retry[] }>(api, retriesPath)
+    return Array.isArray(v?.retries) ? v.retries : []
 }
 
 /**

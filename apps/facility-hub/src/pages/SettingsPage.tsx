@@ -27,7 +27,7 @@ import {
     tokensValue,
     wholeNumber,
 } from '@/hubs/settings'
-import { useConfigEntry } from '@/hubs/useHubs'
+import { useAdminEntry } from '@/hubs/useHubs'
 
 const rangeText = (l: Limits) =>
     i18n.t('A whole number from {{- min}} to {{- max}}', l)
@@ -188,7 +188,10 @@ const SaveBar = ({
 )
 
 const TrackerRetention = ({ stored }: { stored: Retention | null }) => {
-    const { save } = useConfigEntry<Retention>('retention')
+    const { save } = useAdminEntry<Retention>(
+        'facility-hub-config',
+        'retention'
+    )
     const programs = useNamed('programs')
     const types = useNamed('trackedEntityTypes')
     const [form, setForm] = useState(() => retentionForm(stored))
@@ -243,7 +246,10 @@ const AggregateRetentionCard = ({
 }: {
     stored: AggregateRetention | null
 }) => {
-    const { save } = useConfigEntry<AggregateRetention>('aggregate')
+    const { save } = useAdminEntry<AggregateRetention>(
+        'facility-hub-config',
+        'aggregate'
+    )
     const dataSets = useNamed('dataSets')
     const [form, setForm] = useState(() => aggregateForm(stored))
     const value = aggregateValue(form, stored)
@@ -282,7 +288,10 @@ const AggregateRetentionCard = ({
 }
 
 const TokenLifetime = ({ stored }: { stored: TokenSettings | null }) => {
-    const { save } = useConfigEntry<TokenSettings>('tokens')
+    const { save } = useAdminEntry<TokenSettings>(
+        'facility-hub-config',
+        'tokens'
+    )
     const [days, setDays] = useState(() => tokensForm(stored))
     const value = tokensValue(days, stored)
     return (
@@ -309,9 +318,15 @@ const TokenLifetime = ({ stored }: { stored: TokenSettings | null }) => {
 }
 
 const Settings = () => {
-    const retention = useConfigEntry<Retention>('retention')
-    const aggregate = useConfigEntry<AggregateRetention>('aggregate')
-    const tokens = useConfigEntry<TokenSettings>('tokens')
+    const retention = useAdminEntry<Retention>(
+        'facility-hub-config',
+        'retention'
+    )
+    const aggregate = useAdminEntry<AggregateRetention>(
+        'facility-hub-config',
+        'aggregate'
+    )
+    const tokens = useAdminEntry<TokenSettings>('facility-hub-config', 'tokens')
     if (retention.isLoading || aggregate.isLoading || tokens.isLoading) {
         return (
             <div className={styles.loading}>

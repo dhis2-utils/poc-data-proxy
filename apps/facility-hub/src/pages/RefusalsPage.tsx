@@ -27,7 +27,7 @@ import {
     Retry,
     retryId,
 } from '@/hubs/refusals'
-import { useAccountsSettings, useHubs } from '@/hubs/useHubs'
+import { AccountsSettings, useAdminEntry, useHubs } from '@/hubs/useHubs'
 
 const sameGroup = (a: Retry, b: RefusalRow) =>
     a.kind === b.kind && a.program === b.program && a.code === b.code
@@ -36,7 +36,10 @@ const Refusals = () => {
     const api = useApi()
     const client = useQueryClient()
     const { me } = useMe()
-    const { settings } = useAccountsSettings()
+    const { value: settings } = useAdminEntry<AccountsSettings>(
+        'facility-hub-admin',
+        'accounts'
+    )
     const { hubs, isLoading, error } = useHubs()
     const programs = useNamed('programs')
     const retries = useQuery({

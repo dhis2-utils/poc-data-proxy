@@ -19,13 +19,30 @@ import { ManagersOnly } from '@/components/hub/ManagersOnly'
 import { fromBase64 } from '@/hubaccount/approve'
 import { checkAddress, moveCode, normalizeAddress } from '@/hubaccount/codes'
 import { when } from '@/hubs/format'
-import { useCentralMove, useHubs, useMoveKeys, place } from '@/hubs/useHubs'
+import {
+    CentralMove,
+    useAdminEntry,
+    useHubs,
+    useMoveKeys,
+    place,
+} from '@/hubs/useHubs'
 
 // A planned move: hubs read it from the current central and switch once the old
 // address has stopped answering (docs/DEPLOYMENT.md, section 6).
 const PlannedMove = () => {
     const { baseUrl } = useConfig()
-    const { move, isLoading, error, set, clear } = useCentralMove()
+    // Withdrawn by writing it empty (hubs ignore a move without an address): deleting it
+    // would let anyone create it again.
+    const {
+        value: move,
+        isLoading,
+        error,
+        save,
+    } = useAdminEntry<Partial<CentralMove>>(
+        'facility-hub-admin',
+        'central-move'
+    )
+    const announcing = !!save.variables?.url
     const [url, setUrl] = useState('')
     const [from, setFrom] = useState('')
     if (isLoading) {
@@ -66,8 +83,8 @@ const PlannedMove = () => {
                     <Button
                         small
                         destructive
-                        onClick={() => clear.mutate()}
-                        loading={clear.isLoading}
+                        onClick={() => save.mutate({})}
+                        loading={save.isLoading && !announcing}
                     >
                         {i18n.t('Withdraw')}
                     </Button>
@@ -97,9 +114,9 @@ const PlannedMove = () => {
                 <Button
                     primary
                     disabled={!url.trim() || !!problem}
-                    loading={set.isLoading}
+                    loading={save.isLoading && announcing}
                     onClick={() =>
-                        set.mutate({
+                        save.mutate({
                             url: normalizeAddress(url),
                             ...(from && { from: new Date(from).toISOString() }),
                         })
@@ -108,9 +125,9 @@ const PlannedMove = () => {
                     {i18n.t('Announce')}
                 </Button>
             </div>
-            {(set.error || clear.error) && (
+            {save.error && (
                 <NoticeBox error title={i18n.t('Not saved')}>
-                    {((set.error ?? clear.error) as Error).message}
+                    {(save.error as Error).message}
                 </NoticeBox>
             )}
         </div>

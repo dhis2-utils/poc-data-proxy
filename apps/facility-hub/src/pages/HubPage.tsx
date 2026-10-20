@@ -21,14 +21,23 @@ import { HubHistory } from '@/components/hub/HubHistory'
 import { useCanManage } from '@/hooks/useCanManage'
 import { flagSentence } from '@/hubs/flagText'
 import { ago, gb, when } from '@/hubs/format'
-import { useAccountsSettings, useHub, useHubs, place } from '@/hubs/useHubs'
+import {
+    AccountsSettings,
+    useAdminEntry,
+    useHub,
+    useHubs,
+    place,
+} from '@/hubs/useHubs'
 
 export const HubPage = () => {
     const { id = '' } = useParams()
     const { hubs, isLoading, error } = useHubs()
     const { canManage } = useCanManage()
     const detail = useHub(id)
-    const { settings } = useAccountsSettings()
+    const { value: settings } = useAdminEntry<AccountsSettings>(
+        'facility-hub-admin',
+        'accounts'
+    )
     const [approving, setApproving] = useState(false)
 
     if (isLoading || detail.isLoading) {

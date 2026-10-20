@@ -21,7 +21,13 @@ import { ApproveDialog } from '@/components/hub/ApproveDialog'
 import { ManagersOnly } from '@/components/hub/ManagersOnly'
 import { useCanManage } from '@/hooks/useCanManage'
 import { when } from '@/hubs/format'
-import { HubRow, useAccountsSettings, useHubs, place } from '@/hubs/useHubs'
+import {
+    AccountsSettings,
+    HubRow,
+    useAdminEntry,
+    useHubs,
+    place,
+} from '@/hubs/useHubs'
 
 type Named = { id: string; displayName: string }
 
@@ -29,7 +35,11 @@ type Named = { id: string; displayName: string }
 // (managers read them but do not change them).
 const AccountsSettingsCard = () => {
     const api = useApi()
-    const { settings, isLoading, save } = useAccountsSettings()
+    const {
+        value: settings,
+        isLoading,
+        save,
+    } = useAdminEntry<AccountsSettings>('facility-hub-admin', 'accounts')
     const { superuser } = useCanManage()
     const choices = useQuery({
         queryKey: ['groupsAndRoles'],
@@ -149,7 +159,10 @@ const AccountsSettingsCard = () => {
 
 const Approvals = () => {
     const { hubs, isLoading, error } = useHubs()
-    const { settings } = useAccountsSettings()
+    const { value: settings } = useAdminEntry<AccountsSettings>(
+        'facility-hub-admin',
+        'accounts'
+    )
     const [approving, setApproving] = useState<HubRow | null>(null)
 
     if (isLoading) {

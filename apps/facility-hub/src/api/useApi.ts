@@ -1,6 +1,6 @@
 import { useConfig } from '@dhis2/app-runtime'
 import { useMemo } from 'react'
-import { Api, ApiError } from '@/hubaccount/api'
+import { Api, ApiError, getOrNull } from '@/hubaccount/api'
 
 /**
  * Central's API for the user logged in to the app: fetch with their session. Used for
@@ -56,22 +56,13 @@ export const listNamespace = async <T>(
     ns: string,
     fields: string
 ): Promise<{ key: string; value: T }[]> => {
-    try {
-        const res = (await api.request(
-            'GET',
-            `/dataStore/${ns}?fields=${fields}&paging=false`
-        )) as {
-            entries?: Record<string, unknown>[]
-        }
-        // With fields=. each entry is {key, value}; with named fields, {key, <field>...}.
-        return (res.entries ?? []).map((e) => {
-            const { key, value, ...rest } = e as { key: string; value?: T }
-            return { key, value: (value ?? rest) as T }
-        })
-    } catch (e) {
-        if (e instanceof ApiError && e.status === 404) {
-            return []
-        }
-        throw e
-    }
+    const res = await getOrNull<{ entries?: Record<string, unknown>[] }>(
+        api,
+        `/dataStore/${ns}?fields=${fields}&paging=false`
+    )
+    // With fields=. each entry is {key, value}; with named fields, {key, <field>...}.
+    return (res?.entries ?? []).map((e) => {
+        const { key, value, ...rest } = e as { key: string; value?: T }
+        return { key, value: (value ?? rest) as T }
+    })
 }

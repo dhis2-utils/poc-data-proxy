@@ -23,7 +23,7 @@ import styles from './Pages.module.css'
 import { ManagersOnly } from '@/components/hub/ManagersOnly'
 import { progress } from '@/hubs/progress'
 import { nextStage, ReleaseChoice, stageLabel } from '@/hubs/stage'
-import { useHubs, useRelease } from '@/hubs/useHubs'
+import { useAdminEntry, useHubs } from '@/hubs/useHubs'
 import { GitHubRelease, releasedVersions } from '@/hubs/versions'
 
 // The supplier's releases (upgrade.ReleaseBase): offered in a list when GitHub answers.
@@ -48,7 +48,12 @@ const versionPattern = /^\d+\.\d+\.\d+$/
 
 const Version = () => {
     const { hubs, isLoading: hubsLoading } = useHubs()
-    const { choice, isLoading, error, save } = useRelease()
+    const {
+        value: choice,
+        isLoading,
+        error,
+        save,
+    } = useAdminEntry<ReleaseChoice>('facility-hub-admin', 'release')
     const github = useGitHubVersions()
     const [version, setVersion] = useState('')
     const [pilots, setPilots] = useState<string[]>([])
