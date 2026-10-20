@@ -108,3 +108,7 @@
 .versionFilter {
     min-width: 160px;
 }
+
+.picker {
+    max-inline-size: 420px;
+}

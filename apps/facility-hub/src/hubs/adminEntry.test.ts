@@ -60,3 +60,33 @@ describe('writeAdminEntry', () => {
         })
     })
 })
+
+// The country's settings (facility-hub-config) are written by managers with the same
+// sharing (spec 2026-10-20, section 4).
+describe('writeAdminEntry in facility-hub-config', () => {
+    it('writes the entry with the same sharing as facility-hub-admin', async () => {
+        const api = new FakeApi()
+        api.store['facility-hub-config'] = {
+            retention: { defaultMonths: 99 },
+        }
+        api.creators['facility-hub-config/retention'] = 'AHubOwner01'
+        await writeAdminEntry(api, {
+            namespace: 'facility-hub-config',
+            key: 'retention',
+            value: { defaultMonths: 12 },
+            managers: 'HubGrpMgrs',
+        })
+        expect(api.entry('facility-hub-config', 'retention')).toEqual({
+            defaultMonths: 12,
+        })
+        expect(api.creators['facility-hub-config/retention']).toBe(api.me)
+        expect(api.sharing['meta-facility-hub-config-retention']).toEqual({
+            object: {
+                publicAccess: 'r-------',
+                userAccesses: [],
+                userGroupAccesses: [{ id: 'HubGrpMgrs', access: 'rw------' }],
+            },
+        })
+        expect(api.store['facility-hub-admin']).toBeUndefined()
+    })
+})

@@ -1,0 +1,371 @@
+import i18n from '@dhis2/d2-i18n'
+import {
+    Button,
+    ButtonStrip,
+    CircularLoader,
+    InputField,
+    NoticeBox,
+    SingleSelectField,
+    SingleSelectOption,
+} from '@dhis2/ui'
+import React, { useState } from 'react'
+import styles from './Pages.module.css'
+import { ManagersOnly } from '@/components/hub/ManagersOnly'
+import {
+    aggregateForm,
+    aggregateValue,
+    AggregateRetention,
+    Limits,
+    limits,
+    Retention,
+    retentionForm,
+    retentionValue,
+    Row,
+    TokenSettings,
+    tokensForm,
+    tokensValue,
+    wholeNumber,
+} from '@/hubs/settings'
+import { useConfigEntry } from '@/hubs/useHubs'
+import { useApiDataQuery } from '@/utils/useApiDataQuery'
+
+type Named = { id: string; displayName: string }
+
+/** Programmes, person types or data sets, by display name. */
+const useNamed = (resource: 'programs' | 'trackedEntityTypes' | 'dataSets') => {
+    const q = useApiDataQuery<Record<string, Named[]>, Error, Named[]>({
+        queryKey: ['named', resource],
+        query: {
+            resource,
+            params: {
+                fields: 'id,displayName',
+                paging: false,
+                order: 'displayName:asc',
+            },
+        },
+        select: (r) => r[resource] ?? [],
+        staleTime: 10 * 60e3,
+    })
+    return { list: q.data ?? [], isLoading: q.isLoading, error: q.error }
+}
+
+const rangeText = (l: Limits) =>
+    i18n.t('A whole number from {{- min}} to {{- max}}', l)
+
+const NumberField = ({
+    label,
+    value,
+    onChange,
+    l,
+    help,
+}: {
+    label: string
+    value: string
+    onChange: (v: string) => void
+    l: Limits
+    help?: string
+}) => {
+    const bad = wholeNumber(value, l) === null
+    return (
+        <InputField
+            label={label}
+            value={value}
+            inputWidth="120px"
+            onChange={({ value }) => onChange(value ?? '')}
+            error={bad}
+            validationText={bad ? rangeText(l) : undefined}
+            helpText={help}
+        />
+    )
+}
+
+/** A number for each chosen programme, person type or data set. */
+const RowsEditor = ({
+    title,
+    addLabel,
+    options,
+    rows,
+    onChange,
+    l,
+    initial,
+}: {
+    title: string
+    addLabel: string
+    options: { list: Named[]; isLoading: boolean; error: Error | null }
+    rows: Row[]
+    onChange: (rows: Row[]) => void
+    l: Limits
+    initial: string
+}) => {
+    const names = new Map(options.list.map((o) => [o.id, o.displayName]))
+    const chosen = new Set(rows.map((r) => r.id))
+    return (
+        <div className={styles.page}>
+            <h3 className={styles.subtitle}>{title}</h3>
+            {options.error && (
+                <NoticeBox error title={i18n.t('Could not load the list')}>
+                    {options.error.message}
+                </NoticeBox>
+            )}
+            {rows.map((r) => (
+                <div key={r.id} className={styles.row}>
+                    <NumberField
+                        label={names.get(r.id) ?? r.id}
+                        value={r.value}
+                        l={l}
+                        onChange={(value) =>
+                            onChange(
+                                rows.map((x) =>
+                                    x.id === r.id ? { ...x, value } : x
+                                )
+                            )
+                        }
+                    />
+                    <Button
+                        small
+                        secondary
+                        onClick={() =>
+                            onChange(rows.filter((x) => x.id !== r.id))
+                        }
+                    >
+                        {i18n.t('Remove')}
+                    </Button>
+                </div>
+            ))}
+            {options.isLoading ? (
+                <CircularLoader small />
+            ) : (
+                <SingleSelectField
+                    className={styles.picker}
+                    placeholder={addLabel}
+                    filterable
+                    noMatchText={i18n.t('No match')}
+                    selected=""
+                    onChange={({ selected }) =>
+                        selected &&
+                        onChange([...rows, { id: selected, value: initial }])
+                    }
+                >
+                    {options.list
+                        .filter((o) => !chosen.has(o.id))
+                        .map((o) => (
+                            <SingleSelectOption
+                                key={o.id}
+                                value={o.id}
+                                label={o.displayName}
+                            />
+                        ))}
+                </SingleSelectField>
+            )}
+        </div>
+    )
+}
+
+/** Save button and outcome for one settings key. */
+const SaveBar = ({
+    valid,
+    unset,
+    save,
+}: {
+    valid: boolean
+    unset: boolean
+    save: {
+        isLoading: boolean
+        isSuccess: boolean
+        error: unknown
+        mutate: () => void
+    }
+}) => (
+    <>
+        {unset && !save.isSuccess && (
+            <div className={styles.muted}>
+                {i18n.t(
+                    'Not set yet, so the values shown are the defaults the hubs use.'
+                )}
+            </div>
+        )}
+        {save.error ? (
+            <NoticeBox error title={i18n.t('Could not save')}>
+                {(save.error as Error).message}
+            </NoticeBox>
+        ) : null}
+        {save.isSuccess && (
+            <NoticeBox valid title={i18n.t('Saved')}>
+                {i18n.t('Hubs take it up at their next hourly refresh.')}
+            </NoticeBox>
+        )}
+        <ButtonStrip>
+            <Button
+                primary
+                disabled={!valid || save.isLoading}
+                loading={save.isLoading}
+                onClick={() => save.mutate()}
+            >
+                {i18n.t('Save')}
+            </Button>
+        </ButtonStrip>
+    </>
+)
+
+const TrackerRetention = ({ stored }: { stored: Retention | null }) => {
+    const { save } = useConfigEntry<Retention>('retention')
+    const programs = useNamed('programs')
+    const types = useNamed('trackedEntityTypes')
+    const [form, setForm] = useState(() => retentionForm(stored))
+    const value = retentionValue(form, stored)
+    return (
+        <div className={styles.card}>
+            <h2 className={styles.subtitle}>{i18n.t('Tracker retention')}</h2>
+            <div className={styles.muted}>
+                {i18n.t(
+                    'Months of data each hub keeps for offline use. 0 keeps everything. Event programmes keep events by event date; tracker programmes keep active enrollments in full and closed ones until their last change is older. Persons are kept unless their type has a number of months here.'
+                )}
+            </div>
+            <NumberField
+                label={i18n.t('Months kept by default')}
+                value={form.defaultMonths}
+                l={limits.months}
+                onChange={(defaultMonths) =>
+                    setForm({ ...form, defaultMonths })
+                }
+            />
+            <RowsEditor
+                title={i18n.t('By programme')}
+                addLabel={i18n.t('Add a programme')}
+                options={programs}
+                rows={form.programs}
+                onChange={(rows) => setForm({ ...form, programs: rows })}
+                l={limits.months}
+                initial={form.defaultMonths}
+            />
+            <RowsEditor
+                title={i18n.t('By person type')}
+                addLabel={i18n.t('Add a person type')}
+                options={types}
+                rows={form.trackedEntityTypes}
+                onChange={(rows) =>
+                    setForm({ ...form, trackedEntityTypes: rows })
+                }
+                l={limits.months}
+                initial="0"
+            />
+            <SaveBar
+                valid={!!value}
+                unset={!stored}
+                save={{ ...save, mutate: () => value && save.mutate(value) }}
+            />
+        </div>
+    )
+}
+
+const AggregateRetentionCard = ({
+    stored,
+}: {
+    stored: AggregateRetention | null
+}) => {
+    const { save } = useConfigEntry<AggregateRetention>('aggregate')
+    const dataSets = useNamed('dataSets')
+    const [form, setForm] = useState(() => aggregateForm(stored))
+    const value = aggregateValue(form, stored)
+    return (
+        <div className={styles.card}>
+            <h2 className={styles.subtitle}>{i18n.t('Aggregate retention')}</h2>
+            <div className={styles.muted}>
+                {i18n.t(
+                    'Periods of each data set a hub keeps for offline use, the current one included.'
+                )}
+            </div>
+            <NumberField
+                label={i18n.t('Periods kept by default')}
+                value={form.retentionPeriods}
+                l={limits.periods}
+                onChange={(retentionPeriods) =>
+                    setForm({ ...form, retentionPeriods })
+                }
+            />
+            <RowsEditor
+                title={i18n.t('By data set')}
+                addLabel={i18n.t('Add a data set')}
+                options={dataSets}
+                rows={form.dataSets}
+                onChange={(rows) => setForm({ ...form, dataSets: rows })}
+                l={limits.periods}
+                initial={form.retentionPeriods}
+            />
+            <SaveBar
+                valid={!!value}
+                unset={!stored}
+                save={{ ...save, mutate: () => value && save.mutate(value) }}
+            />
+        </div>
+    )
+}
+
+const TokenLifetime = ({ stored }: { stored: TokenSettings | null }) => {
+    const { save } = useConfigEntry<TokenSettings>('tokens')
+    const [days, setDays] = useState(() => tokensForm(stored))
+    const value = tokensValue(days, stored)
+    return (
+        <div className={styles.card}>
+            <h2 className={styles.subtitle}>{i18n.t('Token lifetime')}</h2>
+            <div className={styles.muted}>
+                {i18n.t(
+                    "Days that the tokens hubs make for their users and themselves stay valid. New and renewed tokens take it; a token with more life left is renewed early. Without a setting here, each hub uses its own configuration's value."
+                )}
+            </div>
+            <NumberField
+                label={i18n.t('Days')}
+                value={days}
+                l={limits.expiryDays}
+                onChange={setDays}
+            />
+            <SaveBar
+                valid={!!value}
+                unset={!stored}
+                save={{ ...save, mutate: () => value && save.mutate(value) }}
+            />
+        </div>
+    )
+}
+
+const Settings = () => {
+    const retention = useConfigEntry<Retention>('retention')
+    const aggregate = useConfigEntry<AggregateRetention>('aggregate')
+    const tokens = useConfigEntry<TokenSettings>('tokens')
+    if (retention.isLoading || aggregate.isLoading || tokens.isLoading) {
+        return (
+            <div className={styles.loading}>
+                <CircularLoader />
+            </div>
+        )
+    }
+    const error = retention.error ?? aggregate.error ?? tokens.error
+    if (error) {
+        return (
+            <NoticeBox error title={i18n.t('Could not read the settings')}>
+                {error.message}
+            </NoticeBox>
+        )
+    }
+    return (
+        <>
+            <div className={styles.muted}>
+                {i18n.t(
+                    'These settings apply to every hub. Anyone can read them; only hub managers and superusers change them.'
+                )}
+            </div>
+            <TrackerRetention stored={retention.value ?? null} />
+            <AggregateRetentionCard stored={aggregate.value ?? null} />
+            <TokenLifetime stored={tokens.value ?? null} />
+        </>
+    )
+}
+
+export const SettingsPage = () => (
+    <div className={styles.page}>
+        <h1 className={styles.title}>{i18n.t('Settings')}</h1>
+        <ManagersOnly>
+            <Settings />
+        </ManagersOnly>
+    </div>
+)

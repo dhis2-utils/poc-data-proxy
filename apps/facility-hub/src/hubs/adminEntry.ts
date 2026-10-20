@@ -7,7 +7,8 @@ type Meta = {
 }
 
 /**
- * Writes facility-hub-admin/<key>, which must be writable by administrators only
+ * Writes facility-hub-admin/<key> (or <namespace>/<key>: facility-hub-config, the
+ * country's settings, is written the same way), which must be writable by administrators only
  * (docs/DEPLOYMENT.md, section 6: a planned move there moves every hub). A new
  * dataStore entry is public (read and write) until its sharing is set, and its owner
  * (who created it) keeps write access whatever the sharing says. So an entry created by
@@ -16,9 +17,19 @@ type Meta = {
  */
 export const writeAdminEntry = async (
     api: Api,
-    { key, value, managers }: { key: string; value: unknown; managers?: string }
+    {
+        namespace = 'facility-hub-admin',
+        key,
+        value,
+        managers,
+    }: {
+        namespace?: 'facility-hub-admin' | 'facility-hub-config'
+        key: string
+        value: unknown
+        managers?: string
+    }
 ) => {
-    const path = `/dataStore/facility-hub-admin/${encodeURIComponent(key)}`
+    const path = `/dataStore/${namespace}/${encodeURIComponent(key)}`
     const metaOf = async () =>
         (await api.request('GET', `${path}/metaData`)) as Meta
     try {

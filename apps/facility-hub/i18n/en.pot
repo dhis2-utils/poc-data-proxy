@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-10-20T19:40:06.090Z\n"
-"PO-Revision-Date: 2026-10-20T19:40:06.091Z\n"
+"POT-Creation-Date: 2026-10-20T19:42:41.326Z\n"
+"PO-Revision-Date: 2026-10-20T19:42:41.326Z\n"
 
 msgid "Approve the hub of {{- facility}}"
 msgstr "Approve the hub of {{- facility}}"
@@ -195,6 +195,9 @@ msgstr "Central moves"
 
 msgid "Hub version"
 msgstr "Hub version"
+
+msgid "Settings"
+msgstr "Settings"
 
 msgid "Collapse menu"
 msgstr "Collapse menu"
@@ -611,11 +614,105 @@ msgstr "Print"
 msgid "Download CSV"
 msgstr "Download CSV"
 
-msgid "Could not read the choice"
-msgstr "Could not read the choice"
+msgid "A whole number from {{- min}} to {{- max}}"
+msgstr "A whole number from {{- min}} to {{- max}}"
+
+msgid "Could not load the list"
+msgstr "Could not load the list"
+
+msgid "Remove"
+msgstr "Remove"
+
+msgid "No match"
+msgstr "No match"
+
+msgid "Not set yet, so the values shown are the defaults the hubs use."
+msgstr "Not set yet, so the values shown are the defaults the hubs use."
 
 msgid "Could not save"
 msgstr "Could not save"
+
+msgid "Saved"
+msgstr "Saved"
+
+msgid "Hubs take it up at their next hourly refresh."
+msgstr "Hubs take it up at their next hourly refresh."
+
+msgid "Tracker retention"
+msgstr "Tracker retention"
+
+msgid ""
+"Months of data each hub keeps for offline use. 0 keeps everything. Event "
+"programmes keep events by event date; tracker programmes keep active "
+"enrollments in full and closed ones until their last change is older. "
+"Persons are kept unless their type has a number of months here."
+msgstr ""
+"Months of data each hub keeps for offline use. 0 keeps everything. Event "
+"programmes keep events by event date; tracker programmes keep active "
+"enrollments in full and closed ones until their last change is older. "
+"Persons are kept unless their type has a number of months here."
+
+msgid "Months kept by default"
+msgstr "Months kept by default"
+
+msgid "By programme"
+msgstr "By programme"
+
+msgid "Add a programme"
+msgstr "Add a programme"
+
+msgid "By person type"
+msgstr "By person type"
+
+msgid "Add a person type"
+msgstr "Add a person type"
+
+msgid "Aggregate retention"
+msgstr "Aggregate retention"
+
+msgid ""
+"Periods of each data set a hub keeps for offline use, the current one "
+"included."
+msgstr ""
+"Periods of each data set a hub keeps for offline use, the current one "
+"included."
+
+msgid "Periods kept by default"
+msgstr "Periods kept by default"
+
+msgid "By data set"
+msgstr "By data set"
+
+msgid "Add a data set"
+msgstr "Add a data set"
+
+msgid "Token lifetime"
+msgstr "Token lifetime"
+
+msgid ""
+"Days that the tokens hubs make for their users and themselves stay valid. "
+"New and renewed tokens take it; a token with more life left is renewed "
+"early. Without a setting here, each hub uses its own configuration's value."
+msgstr ""
+"Days that the tokens hubs make for their users and themselves stay valid. "
+"New and renewed tokens take it; a token with more life left is renewed "
+"early. Without a setting here, each hub uses its own configuration's value."
+
+msgid "Days"
+msgstr "Days"
+
+msgid "Could not read the settings"
+msgstr "Could not read the settings"
+
+msgid ""
+"These settings apply to every hub. Anyone can read them; only hub managers "
+"and superusers change them."
+msgstr ""
+"These settings apply to every hub. Anyone can read them; only hub managers "
+"and superusers change them."
+
+msgid "Could not read the choice"
+msgstr "Could not read the choice"
 
 msgid "Current choice"
 msgstr "Current choice"

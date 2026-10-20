@@ -67,6 +67,12 @@ export const Sidebar = ({
                             label={i18n.t('Hub version')}
                         />
                     )}
+                    {canManage && (
+                        <SidebarNavLink
+                            to="/settings"
+                            label={i18n.t('Settings')}
+                        />
+                    )}
                 </SidenavItems>
             </Sidenav>
             <button

@@ -172,7 +172,7 @@ export type AccountsSettings = {
     managers?: string
 }
 
-const getOrNull = async <T>(
+export const getOrNull = async <T>(
     api: ReturnType<typeof useApi>,
     path: string
 ): Promise<T | null> => {
@@ -302,4 +302,34 @@ export const useMoveKeys = (enabled: boolean) => {
                 ).map((k) => [k.key, k.value.moveKey])
             ),
     })
+}
+
+/** A key of the country's settings for every hub (facility-hub-config), or null. */
+export const useConfigEntry = <T>(
+    key: 'retention' | 'aggregate' | 'tokens'
+) => {
+    const api = useApi()
+    const client = useQueryClient()
+    const { settings } = useAccountsSettings()
+    const query = useQuery({
+        queryKey: ['config', key],
+        queryFn: () =>
+            getOrNull<T>(api, `/dataStore/facility-hub-config/${key}`),
+    })
+    const save = useMutation(
+        (value: T) =>
+            writeAdminEntry(api, {
+                namespace: 'facility-hub-config',
+                key,
+                value,
+                managers: settings?.managers,
+            }),
+        { onSuccess: () => client.invalidateQueries(['config', key]) }
+    )
+    return {
+        value: query.data,
+        isLoading: query.isLoading,
+        error: query.error as Error | null,
+        save,
+    }
 }
