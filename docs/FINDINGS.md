@@ -514,6 +514,7 @@ Tested on DHIS2 2.42.6 (2026-10-20), with a personal access token of a plain use
 
 - **Disabling the user, changing their password, or setting their account to expire does not stop the token.** It kept answering `/api/me` and data reads.
 - **Nobody but the owner finds the token.** A superuser gets 404 on `GET` and `DELETE /api/apiToken/{id}`, and does not see it in the list.
+- **Deleting the user fails** (HTTP 500) while they have tokens; it works once the tokens are deleted.
 - **Sharing makes it deletable.** The owner can share it with `POST /api/sharing?type=apiToken&id=…` (sharing in the create request is ignored). A plain member of a group it is shared with (`rw------`) can then delete it, and the token stops at once (401). The list still shows only one's own tokens, so the deleter must know the ID.
 
 So a stolen hub's tokens are its users' access to central, for as long as they live, whatever is done to the users. The hub now:
