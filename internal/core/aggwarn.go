@@ -38,8 +38,7 @@ func (h *Hub) AggWarnings(within time.Duration) []AggWarning {
 			continue
 		}
 		at, ok := aggregate.LocksAt(ds, per)
-		naiveNow := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), 0, time.UTC)
-		if !ok || at.Sub(naiveNow) > within {
+		if !ok || at.Sub(aggregate.Naive(now)) > within {
 			continue
 		}
 		w := byForm[ed.Form.String()]

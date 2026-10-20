@@ -60,7 +60,7 @@ func LocksAt(ds *DataSet, p Period) (time.Time, bool) {
 // Expired: expiry days have locked the period at now.
 func Expired(ds *DataSet, p Period, now time.Time) bool {
 	at, ok := LocksAt(ds, p)
-	return ok && naive(now).After(at)
+	return ok && Naive(now).After(at)
 }
 
 // InputOpen: data input periods, if the data set has any, allow writes to p at now.
@@ -68,7 +68,7 @@ func InputOpen(ds *DataSet, p Period, now time.Time) bool {
 	if len(ds.InputPeriods) == 0 {
 		return true
 	}
-	n := naive(now)
+	n := Naive(now)
 	for _, ip := range ds.InputPeriods {
 		if ip.Period != p.ID {
 			continue
@@ -102,8 +102,9 @@ func LockStatus(ds *DataSet, p Period, now time.Time, bypass bool, central strin
 	return Open
 }
 
-// naive is now's wall clock in its own time zone, as UTC: periods are dates.
-func naive(t time.Time) time.Time {
+// Naive is t's wall clock in its own time zone, as UTC: how central's offset-free
+// times and periods compare.
+func Naive(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, time.UTC)
 }
 
@@ -112,7 +113,7 @@ func naive(t time.Time) time.Time {
 func parseDHIS2Time(s string) (time.Time, error) {
 	for _, layout := range []string{"2006-01-02T15:04:05.000", "2006-01-02T15:04:05.000-0700", "2006-01-02T15:04:05", time.DateOnly} {
 		if t, err := time.Parse(layout, s); err == nil {
-			return naive(t), nil
+			return Naive(t), nil
 		}
 	}
 	return time.Parse(time.RFC3339, s)

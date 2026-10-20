@@ -227,7 +227,10 @@ func mergeList(old, incoming any, key string) []any {
 // DHIS2Time formats t like DHIS2 does in tracker payloads.
 // DHIS2Time formats t as DHIS2 writes times: without an offset, in t's own location
 // (pass it in central's time zone: core.Hub.CentralTime).
-func DHIS2Time(t time.Time) string { return t.Format("2006-01-02T15:04:05.000") }
+func DHIS2Time(t time.Time) string { return t.Format(DHIS2Layout) }
+
+// DHIS2Layout is how DHIS2 writes times: milliseconds, no offset.
+const DHIS2Layout = "2006-01-02T15:04:05.000"
 
 // shallow copies the top level of a payload for rendering, which only replaces
 // top-level fields: the payload belongs to this request, and nothing below the top

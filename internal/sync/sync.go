@@ -105,7 +105,7 @@ func (w *Worker) refreshAccess(ctx context.Context, errs *[]error) error {
 		return err
 	}
 	for _, u := range users {
-		if u.NeedsLogin || (!u.HasPAT && !u.HasPassword) {
+		if u.CannotPush() {
 			continue
 		}
 		if err := h.RefreshAccess(ctx, u.ID); err != nil {
@@ -609,7 +609,7 @@ func (w *Worker) Pull(ctx context.Context) error {
 	groups := map[string][]*puller{}
 	var order []string
 	for _, u := range users {
-		if u.NeedsLogin || (!u.HasPAT && !u.HasPassword) {
+		if u.CannotPush() {
 			continue
 		}
 		acc := h.Access(u.ID)
@@ -1168,7 +1168,7 @@ func (w *Worker) RefillPool(ctx context.Context) error {
 
 func (w *Worker) heartbeat(ctx context.Context) {
 	h := w.H
-	h.NoteCycle(h.Store.CountObjects(store.SyncPending), diskFree(h.Cfg.DataDir))
+	h.NoteCycle(h.Store.CountObjects(store.SyncPending), diskfree.Free(h.Cfg.DataDir))
 	if err := h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-status/"+h.HubID(), Status(h), h.HubAuth(), nil); err != nil {
 		slog.Warn("heartbeat", "err", err)
 	}
@@ -1187,7 +1187,7 @@ func Status(h *core.Hub) map[string]any {
 		"lastSync": lastSync, "lastError": lastErr, "pending": h.Store.CountObjects(store.SyncPending),
 		"rejected": h.Store.CountObjects(store.SyncRejected), "pendingOutbox": h.Store.CountOutbox(store.OutboxPending),
 		"stuckOutbox": h.StuckOutbox(), "retired": h.Retired(),
-		"issues": h.Store.CountIssues(), "diskFreeBytes": diskFree(h.Cfg.DataDir), "lastUpgrade": upgrade,
+		"issues": h.Store.CountIssues(), "diskFreeBytes": diskfree.Free(h.Cfg.DataDir), "lastUpgrade": upgrade,
 		"needsUpgrade": h.API() == nil && h.ServerVersion() != "", "time": time.Now().UTC().Format(time.RFC3339),
 		// Whose token the hub's housekeeping uses, so the Facility Hub app can list the
 		// hubs that depend on a user who is being disabled.
@@ -1346,5 +1346,3 @@ func hubTokenExpires(h *core.Hub) any {
 	}
 	return nil
 }
-
-func diskFree(dir string) uint64 { return diskfree.Free(dir) }

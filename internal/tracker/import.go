@@ -578,5 +578,5 @@ func NormaliseDate(v string) string {
 	if !ok {
 		return v
 	}
-	return t.Format("2006-01-02T15:04:05.000")
+	return DHIS2Time(t)
 }

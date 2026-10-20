@@ -3,6 +3,8 @@
 package compat
 
 import (
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -63,7 +65,7 @@ type API interface {
 	ProgramFields(attrFields string) string
 }
 
-// Supported lists the DHIS2 majors this hub release handles (current and next).
+// registry holds the DHIS2 majors this hub release handles (current and next).
 var registry = map[int]API{
 	42: v42{},
 	// 2.43: the 2.42 shapes, with the differences the live suite found on 2.43 (v43.go).
@@ -84,4 +86,5 @@ func ParseMajor(version string) int {
 // For returns the API for a server version string, or nil if unsupported.
 func For(version string) API { return registry[ParseMajor(version)] }
 
-func SupportedMajors() []int { return []int{42, 43} }
+// SupportedMajors lists the DHIS2 majors this hub release handles, in order.
+func SupportedMajors() []int { return slices.Sorted(maps.Keys(registry)) }

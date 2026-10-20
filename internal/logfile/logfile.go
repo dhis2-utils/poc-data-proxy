@@ -1,5 +1,6 @@
-// Package logfile is the hub's log on Windows, where a service has no console: one
-// file, moved to <file>.1 when it reaches its cap, so at most two files are kept.
+// Package logfile is a size-capped log: the hub's log where a service has no console
+// (Windows, macOS), and the request log (log_requests). One file, moved to <file>.1
+// when it reaches its cap, so at most two files are kept.
 package logfile
 
 import (

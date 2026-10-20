@@ -154,7 +154,7 @@ func paging(q url.Values) (page, size int, paged, totals bool, err *APIError) {
 // parseTime accepts the date forms DHIS2 accepts in query parameters.
 func parseTime(s string) (time.Time, bool) {
 	// DHIS2's own form first: stored values use it.
-	for _, l := range []string{"2006-01-02T15:04:05.000", time.RFC3339Nano, "2006-01-02T15:04:05", "2006-01-02T15:04", "2006-01-02"} {
+	for _, l := range []string{DHIS2Layout, time.RFC3339Nano, "2006-01-02T15:04:05", "2006-01-02T15:04", "2006-01-02"} {
 		if t, err := time.Parse(l, s); err == nil {
 			return t, true
 		}

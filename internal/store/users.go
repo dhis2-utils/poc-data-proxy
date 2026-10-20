@@ -29,6 +29,10 @@ type User struct {
 	patEnc, pwEnc, accessEnc []byte
 }
 
+// CannotPush reports whether the hub cannot send this user's saves until they log in
+// online again: central refused their token or password, or the hub has neither.
+func (u *User) CannotPush() bool { return u.NeedsLogin || (!u.HasPAT && !u.HasPassword) }
+
 const slotCols = `id, username, kek_salt, wrapped_dk, needs_login`
 
 func scanSlot(sc interface{ Scan(...any) error }) (*User, error) {

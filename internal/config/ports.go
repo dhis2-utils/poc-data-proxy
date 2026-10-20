@@ -1,5 +1,8 @@
 package config
 
+import (
+	"strconv"
+)
 import "net"
 
 // ChoosePorts picks the hub's HTTPS and HTTP ports on a PC that may run other web
@@ -16,7 +19,7 @@ func ChoosePorts(free func(port int) bool) (https, http int) {
 
 // PortFree reports whether a TCP port can be bound on every address.
 func PortFree(port int) bool {
-	l, err := net.Listen("tcp", net.JoinHostPort("", itoa(port)))
+	l, err := net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(port)))
 	if err != nil {
 		return false
 	}
@@ -37,15 +40,4 @@ func systemPorts() (int, int) {
 		ports[i] = l.Addr().(*net.TCPAddr).Port
 	}
 	return ports[0], ports[1]
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b []byte
-	for ; n > 0; n /= 10 {
-		b = append([]byte{byte('0' + n%10)}, b...)
-	}
-	return string(b)
 }

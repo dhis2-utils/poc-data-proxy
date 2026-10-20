@@ -5,9 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/dhis2/facility-hub/internal/logfile"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -205,7 +205,7 @@ type RequestLog struct {
 	mu      sync.Mutex
 	counts  map[string]int
 	unsupp  map[string]int
-	file    *os.File
+	file    *logfile.File
 	enabled bool
 }
 
@@ -215,7 +215,8 @@ func NewRequestLog() *RequestLog {
 
 // Open starts appending one line per request to dir/requests.log.
 func (l *RequestLog) Open(dir string) {
-	f, err := os.OpenFile(filepath.Join(dir, "requests.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	// Capped like hub.log (internal/logfile): log_requests may stay on for months.
+	f, err := logfile.Open(filepath.Join(dir, "requests.log"), 10<<20)
 	if err != nil {
 		slog.Warn("request log", "err", err)
 		return

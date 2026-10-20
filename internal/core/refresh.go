@@ -355,7 +355,7 @@ func (h *Hub) RefreshCatalog(ctx context.Context) error {
 		return uerr
 	}
 	for _, u := range users {
-		if u.NeedsLogin || (!u.HasPAT && !u.HasPassword) {
+		if u.CannotPush() {
 			continue
 		}
 		auth, aerr := h.UpstreamAuth(u.ID)

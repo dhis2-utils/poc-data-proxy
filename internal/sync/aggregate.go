@@ -44,7 +44,7 @@ func (w *Worker) pullAggregate(ctx context.Context) error {
 	}
 	groups := map[string]*aggGroup{}
 	for _, u := range users {
-		if u.NeedsLogin || (!u.HasPAT && !u.HasPassword) || !h.Access(u.ID).InFacility(h.FacilityPath()) {
+		if u.CannotPush() || !h.Access(u.ID).InFacility(h.FacilityPath()) {
 			continue
 		}
 		acc := h.AggAccess(u.ID)
@@ -412,8 +412,8 @@ func (w *Worker) applyToStoredForm(ed *aggregate.Edit) {
 // centralTime is a dataValueSets timestamp ("2026-10-15T08:15:46.399+0000") as the
 // lastUpdated filter takes it: central's wall clock, without the offset.
 func centralTime(s string) string {
-	if len(s) > len("2006-01-02T15:04:05.000") {
-		return s[:len("2006-01-02T15:04:05.000")]
+	if len(s) > len(tracker.DHIS2Layout) {
+		return s[:len(tracker.DHIS2Layout)]
 	}
 	return s
 }

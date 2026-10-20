@@ -8,6 +8,7 @@
 package hubtls
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -146,7 +147,7 @@ func (c *Certs) Refresh() error {
 	if err == nil {
 		leaf, perr := x509.ParseCertificate(pair.Certificate[0])
 		if perr == nil && c.fits(leaf, names, ips) {
-			if cur := c.cur.Load(); cur == nil || !slices.EqualFunc(cur.Certificate, pair.Certificate, bytesEqual) {
+			if cur := c.cur.Load(); cur == nil || !slices.EqualFunc(cur.Certificate, pair.Certificate, bytes.Equal) {
 				c.cur.Store(&pair)
 			}
 			return nil
@@ -154,8 +155,6 @@ func (c *Certs) Refresh() error {
 	}
 	return c.issue(names, ips)
 }
-
-func bytesEqual(a, b []byte) bool { return string(a) == string(b) }
 
 func (c *Certs) fits(leaf *x509.Certificate, names []string, ips []net.IP) bool {
 	if leaf.CheckSignatureFrom(c.ca) != nil || leaf.NotAfter.Sub(c.env.now()) < renewLeft {

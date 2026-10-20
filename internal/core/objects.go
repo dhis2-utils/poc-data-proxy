@@ -449,7 +449,7 @@ func (h *Hub) changedSinceRefused(uid string, data tracker.M) bool {
 	if err != nil {
 		return false
 	}
-	upd, err := time.ParseInLocation("2006-01-02T15:04:05.000", tracker.Str(data, "updatedAt"), h.centralZone())
+	upd, err := time.ParseInLocation(tracker.DHIS2Layout, tracker.Str(data, "updatedAt"), h.centralZone())
 	if err != nil {
 		return false
 	}
