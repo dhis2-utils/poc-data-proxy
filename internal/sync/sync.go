@@ -57,14 +57,16 @@ const (
 
 // Run loops until ctx ends.
 func (w *Worker) Run(ctx context.Context) {
-	w.H.Monitor.OnChange(func(online bool) {
+	w.H.Monitor.OnChange(func(online, _ bool) {
 		if online {
 			// A random wait first: after an outage of central, every hub reconnects
 			// at once.
-			if d := w.H.Cfg.ReconnectDelay; d > 0 {
-				time.Sleep(rand.N(d))
-			}
-			w.H.TriggerSync()
+			go func() {
+				if d := w.H.Cfg.ReconnectDelay; d > 0 {
+					time.Sleep(rand.N(d))
+				}
+				w.H.TriggerSync()
+			}()
 		}
 	})
 	// Each wait is the interval ±10 %, so hubs started together drift apart.

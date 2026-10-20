@@ -78,7 +78,11 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 	st.NewDataFile = stick.RestorePending(cfg.DataDir) // a restored hub's cache is pulled again
 	EnsureIdentity(st)
 	h := core.New(cfg, version, st)
-	h.Monitor.OnChangeInOrder(h.NoteConnectivity)
+	h.Monitor.OnChange(func(online, forced bool) {
+		if !forced { // a simulated cut is no outage
+			h.NoteConnectivity(online)
+		}
+	})
 	if cfg.LogRequests {
 		h.ReqLog.Open(cfg.DataDir)
 	}

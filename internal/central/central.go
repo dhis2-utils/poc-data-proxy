@@ -220,14 +220,14 @@ func Q(path string, kv ...string) string {
 
 // Monitor tracks whether central is reachable (spec 5.2).
 type Monitor struct {
-	mu        sync.Mutex
-	online    bool
-	failures  int
-	listeners []func(online bool)
-	// inOrder are called synchronously, in the order of the switches (notifyMu): for
-	// records that need them in order, such as the hub's history of outages.
-	inOrder  []func(online bool)
-	notifyMu sync.Mutex
+	mu       sync.Mutex
+	online   bool
+	failures int
+	// listeners are called synchronously, in the order of the switches (notifyMu), so
+	// records such as the hub's history of outages see them in order. forced is true
+	// for a switch by Force (the admin page's simulated uplink cut).
+	listeners []func(online, forced bool)
+	notifyMu  sync.Mutex
 	// Client probes central (nil: one that follows no redirects; tests give one that
 	// trusts their test certificate).
 	Client *http.Client
@@ -256,17 +256,11 @@ func (m *Monitor) Online() bool {
 	return m.online
 }
 
-// OnChange registers a callback for state switches.
-func (m *Monitor) OnChange(fn func(online bool)) {
+// OnChange registers a callback for state switches, called synchronously and in
+// order: one that takes time starts its own goroutine.
+func (m *Monitor) OnChange(fn func(online, forced bool)) {
 	m.mu.Lock()
 	m.listeners = append(m.listeners, fn)
-	m.mu.Unlock()
-}
-
-// OnChangeInOrder registers a callback called synchronously, in order, on each switch.
-func (m *Monitor) OnChangeInOrder(fn func(online bool)) {
-	m.mu.Lock()
-	m.inOrder = append(m.inOrder, fn)
 	m.mu.Unlock()
 }
 
@@ -276,17 +270,13 @@ func (m *Monitor) set(online bool) {
 	m.mu.Lock()
 	changed := m.online != online
 	m.online = online
-	ls := append([]func(bool){}, m.listeners...)
-	ordered := append([]func(bool){}, m.inOrder...)
+	ls := append([]func(bool, bool){}, m.listeners...)
 	forced := m.forced != nil
 	m.mu.Unlock()
 	if changed && !forced {
 		slog.Info("connectivity", "online", online)
-		for _, fn := range ordered {
-			fn(online)
-		}
 		for _, fn := range ls {
-			go fn(online)
+			fn(online, false)
 		}
 	}
 }
@@ -305,7 +295,7 @@ func (m *Monitor) Force(online *bool) {
 	m.mu.Lock()
 	was := m.forced
 	m.forced = online
-	ls := append([]func(bool){}, m.listeners...)
+	ls := append([]func(bool, bool){}, m.listeners...)
 	before := m.online
 	if was != nil {
 		before = *was
@@ -317,8 +307,10 @@ func (m *Monitor) Force(online *bool) {
 	m.mu.Unlock()
 	if before != after {
 		slog.Info("connectivity (forced)", "online", after)
+		m.notifyMu.Lock()
+		defer m.notifyMu.Unlock()
 		for _, fn := range ls {
-			go fn(after)
+			fn(after, true)
 		}
 	}
 }
