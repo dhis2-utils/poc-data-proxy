@@ -56,10 +56,24 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
           RELEASE_PUBLIC_KEY: ${{ vars.RELEASE_PUBLIC_KEY }}
+          SIGN_CERT_PEM: ${{ secrets.SIGN_CERT }}
+          SIGN_KEY_PEM: ${{ secrets.SIGN_KEY }}
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q nsis osslsigncode p7zip-full
+          if [ -n "$SIGN_CERT_PEM" ] && [ -n "$SIGN_KEY_PEM" ]; then
+            D=$(mktemp -d); printf '%s\n' "$SIGN_CERT_PEM" > "$D/cert.pem"; printf '%s\n' "$SIGN_KEY_PEM" > "$D/key.pem"
+            export SIGN_CERT=$D/cert.pem SIGN_KEY=$D/key.pem
+          fi
           windows/build.sh "$VERSION" bin
-          windows/check.sh "bin/dhis2-hub-$VERSION-setup.exe"
+          windows/check.sh "bin/dhis2-hub-$VERSION-setup.exe" ${SIGN_CERT:+/etc/ssl/certs/ca-certificates.crt}
+          # A tagged release never ships an installer signed with the throwaway test
+          # certificate: people would learn to click through Windows' warning (security
+          # review S3). Without a real one the release has everything but the installer;
+          # sign it elsewhere (windows/README.md) and attach it.
+          if [ "${{ github.event_name }}" = push ] && [ -z "${SIGN_CERT:-}" ]; then
+            rm "bin/dhis2-hub-$VERSION-setup.exe"
+            echo "No SIGN_CERT/SIGN_KEY secrets: the installer is left out of this release."
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: binaries
@@ -97,9 +111,9 @@ jobs:
           bin/hub-tool release -key "$KEY" -dir out -version "$VERSION" -image "img/dhis2-hub-$VERSION-arm64.img.xz" \
             linux/arm64=bin/hub-linux-arm64 linux/amd64=bin/hub-linux-amd64 windows/amd64=bin/hub-windows-amd64.exe \
             darwin/arm64=bin/hub-darwin-arm64 darwin/amd64=bin/hub-darwin-amd64
-          cp "bin/dhis2-hub-$VERSION-setup.exe" out/
+          if [ -e "bin/dhis2-hub-$VERSION-setup.exe" ]; then cp "bin/dhis2-hub-$VERSION-setup.exe" out/; fi
           ls -l out
-          for f in release.json release.json.sig hub-linux-arm64 hub-linux-amd64 hub-windows-amd64.exe hub-darwin-arm64 hub-darwin-amd64 "dhis2-hub-$VERSION-setup.exe" "dhis2-hub-$VERSION-arm64.img.xz"; do
+          for f in release.json release.json.sig hub-linux-arm64 hub-linux-amd64 hub-windows-amd64.exe hub-darwin-arm64 hub-darwin-amd64 "dhis2-hub-$VERSION-arm64.img.xz"; do
             test -s "out/$f" || { echo "missing out/$f"; exit 1; }
           done
       - name: Publish

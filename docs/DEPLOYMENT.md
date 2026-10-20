@@ -75,7 +75,25 @@ One generic image per release (built 2026-10-19: `image/`, see image/README.md).
 - the watchdog, the RTC with `chrony`, and the USB stick mount;
 - an upgrade on a Pi.
 
-The image holds **no secrets**. Each hub gets its own data key, hub ID and signing key pair at first boot and setup. Patient data on the SSD is encrypted by the hub itself: everything except a small key file (hub ID, mode, central URL, and each user's username and key slot) is in a data file encrypted with AES-256-XTS under the data key, so full-disk encryption is optional. If it is used, it must unlock without a person present, for example with a key held in TPM-like storage, which the Pi does not have. This is why the POC relies on application-level encryption.
+The image holds **no secrets**. Each hub gets its own data key, hub ID and signing key pair at first boot and setup. Patient data on the SSD is encrypted by the hub itself: it is in a data file encrypted with AES-256-XTS under the data key, so full-disk encryption is optional.
+
+**What is not encrypted** (security review 2026-10-20, S1), all in the data folder and readable only by the hub's account:
+
+- **The key file:** hub ID, mode, central URL, the proxy, and each user's username and key slot. Each slot lets someone holding the disk test password guesses offline.
+- **The TLS keys:**
+  - the server's `tls.key`, which the hub needs before anyone logs in, to serve its login page over HTTPS;
+  - the authority's `ca.key`, which renews it.
+- **Before set-up:** the setup code (`setup-token`).
+- **On a Pi:** the setup Wi-Fi's password (`setup-wifi`) and the chosen Wi-Fi's name (`network.json`).
+- **The logs:** templates and parameter names only, no values.
+
+The hub's own account password, the move key and the users' tokens are in the encrypted state.
+
+**What a stolen disk or stick gives, then:**
+- **Offline password guessing** against the key slots. The weakest staff password sets the bar.
+- **Impersonation of this hub** (`dhis2.local`, its names, private addresses) **to the devices that trust its authority.** That's enough to collect the passwords staff type at their next login there. `tls.key` alone already allows this, so encrypting `ca.key` too would not close it.
+
+Closing both needs the device to hold a secret of its own: TPM (section 6, "Security operations") or secure boot. Until then, a stolen hub is handled as a password leak: its users change their passwords, and its authority is removed from the devices. If it is used, it must unlock without a person present, for example with a key held in TPM-like storage, which the Pi does not have. This is why the POC relies on application-level encryption.
 
 ## Options under consideration (not decided)
 

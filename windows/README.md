@@ -8,6 +8,12 @@ windows/build.sh 0.3.0 out/          # out/dhis2-hub-0.3.0-setup.exe and out/hub
 windows/check.sh out/dhis2-hub-0.3.0-setup.exe
 ```
 
+**Releases** never ship an installer signed with the test certificate (security review S3). Without the repository secrets `SIGN_CERT` and `SIGN_KEY` (PEM), a tagged release has everything but the installer. To ship one, build and sign it where the certificate is, and attach it to the release. That works on Linux or a Mac (`brew install makensis osslsigncode sevenzip`):
+
+```bash
+SIGN_CERT=cert.pem SIGN_KEY=key.pem windows/build.sh 0.3.0 out/
+```
+
 **Signing.** No supplier code-signing certificate exists yet. Without `SIGN_CERT` and `SIGN_KEY` (PEM files), `sign.sh` signs with a self-signed test certificate. It makes the certificate once in `~/.cache/hub-signing`. Windows does not trust it, so SmartScreen warns. The real certificate's key must sit in hardware or a cloud signing service (docs/DEPLOYMENT.md, "Signing"): `sign.sh` is the one place to change for that.
 
 **What the installer does** (installer.nsi). It installs either for the whole PC (`/AllUsers`, needs administrator rights) or for the current user (`/CurrentUser`). `/S` makes it silent.

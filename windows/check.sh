@@ -8,6 +8,7 @@
 set -uo pipefail
 SETUP=$1
 CA=${2:-${SIGN_CA:-$HOME/.cache/hub-signing/test-ca.crt}}
+HERE=$(cd "$(dirname "$0")" && pwd)
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 FAILS=0
@@ -17,7 +18,8 @@ check() { local what=$1; shift; if "$@" >/dev/null 2>&1; then ok "$what"; else b
 
 check "the installer exists" test -s "$SETUP"
 check "the installer is signed" osslsigncode verify -CAfile "$CA" -in "$SETUP"
-7z x -y -o"$WORK/x" "$SETUP" >/dev/null 2>&1
+SEVENZ=$(command -v 7z || command -v 7zz || true) # p7zip on Linux, Homebrew's sevenzip on macOS
+"$SEVENZ" x -y -o"$WORK/x" "$SETUP" >/dev/null 2>&1
 HUB=$(find "$WORK/x" -iname hub.exe | head -1)
 check "it carries hub.exe" test -n "$HUB"
 check "hub.exe is signed" osslsigncode verify -CAfile "$CA" -in "$HUB"
@@ -35,14 +37,14 @@ sys.exit(0 if struct.unpack_from('<H', b, pe + 24 + 68)[0] == 2 else 1)"
 # the compiled script, and this 7-Zip does not rebuild it). The uninstaller it writes
 # shows the script was compiled in.
 check "it writes an uninstaller" test -e "$WORK/x/uninstall.exe.nsis"
-STR=$(cat "$(dirname "$(realpath "$0")")/installer.nsi")
+STR=$(cat "$HERE/installer.nsi")
 for want in 'DHIS2FacilityHub' 'service install' 'netsh advfirewall firewall add rule' 'certutil' 'dhis2.local' \
   'icacls' 'hub init' 'powercfg' 'Add-MpPreference' 'install.ini' 'CurrentVersion\Uninstall'; do
   check "the installer script: $want" grep -qF -- "$want" <<<"$STR"
 done
 # Review fixes: an elevated installer must not run or trust anything an ordinary user
 # could have put in ProgramData first.
-check "the data folder is taken over before anything in it runs" python3 - "$(dirname "$(realpath "$0")")/installer.nsi" <<'PY'
+check "the data folder is taken over before anything in it runs" python3 - "$HERE/installer.nsi" <<'PY'
 import sys
 s = open(sys.argv[1]).read()
 own, run = s.find("/setowner *S-1-5-32-544"), s.find('"$HubExe" version')

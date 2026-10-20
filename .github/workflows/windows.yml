@@ -100,3 +100,9 @@ jobs:
           Start-Process -Wait -FilePath "$dir\uninstall.exe" -ArgumentList '/AllUsers','/S',"_?=$dir"
           if (Get-Service DHIS2FacilityHub -ErrorAction SilentlyContinue) { throw "the service is still installed" }
           if (Select-String -Path "$env:windir\System32\drivers\etc\hosts" -Pattern 'DHIS2 Facility Hub' -Quiet) { throw "the hosts line is still there" }
+          # Security review S8: the uninstaller rewrites hosts line by line; the other
+          # lines must survive intact, each on its own line.
+          $hosts = Get-Content "$env:windir\System32\drivers\etc\hosts"
+          $hosts.Count
+          if ($hosts.Count -lt 2) { throw "the hosts file lost its line breaks" }
+          if (-not ($hosts | Select-String -Pattern 'localhost' -Quiet)) { throw "the hosts file lost its other lines" }

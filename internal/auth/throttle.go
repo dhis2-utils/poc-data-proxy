@@ -71,7 +71,11 @@ func (t *throttle) fail(src, user string) {
 	}
 }
 
-// ok clears the per-user counters after a successful login from src.
+// ok clears the counter of this user from this device after a successful login. The
+// per-device and per-account counters keep counting: clearing them on any success would
+// let someone with one working account reset them and keep guessing others; on a shared
+// device mistyped logins by several staff can therefore delay everyone's for a while
+// (security review S12).
 func (t *throttle) ok(src, user string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()

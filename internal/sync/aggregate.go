@@ -17,6 +17,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/central"
 	"github.com/dhis2/facility-hub/internal/core"
 	"github.com/dhis2/facility-hub/internal/store"
+	"github.com/dhis2/facility-hub/internal/tracker"
 )
 
 // aggFullEvery is how often every held form is fetched again, for lock and min-max
@@ -355,8 +356,13 @@ func (w *Worker) pushAggregate(ctx context.Context, e *store.OutboxEntry) (pushR
 	}
 	slog.Warn("aggregate edit refused", "seq", e.Seq, "cell", ed.CellKey(), "code", msg.ErrorCode)
 	h.Store.MarkAggFormStale(ed.Form.String())
-	return pushResult{}, h.Store.FinishOutbox(e.Seq, store.OutboxRejected, msg.Message)
+	return pushResult{}, h.Store.FinishOutbox(e.Seq, store.OutboxRejected, refusalNote(msg.Message))
 }
+
+// refusalNote is the outbox entry's error for a refused aggregate edit, shown on the
+// hub's admin page: central's message with quoted values hidden (it may quote what was
+// entered), identifiers kept, as for tracker refusals (security review S7).
+func refusalNote(msg string) string { return tracker.Redact(msg) }
 
 // applyToStoredForm puts a pushed edit into the stored form, which no longer
 // overlays it once the entry left the outbox, and marks the form for fetching.

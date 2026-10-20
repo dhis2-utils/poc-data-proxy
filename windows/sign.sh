@@ -13,9 +13,9 @@ if [ -z "$CERT" ] || [ -z "$KEY" ]; then
   CERT=$D/test-ca.crt KEY=$D/test-ca.key
   if [ ! -s "$CERT" ]; then
     mkdir -p "$D" && chmod 700 "$D"
-    openssl req -x509 -newkey rsa:3072 -sha256 -days 3650 -nodes -keyout "$KEY" -out "$CERT" \
-      -subj "/CN=DHIS2 Facility Hub TEST signing/O=TEST ONLY" \
-      -addext "keyUsage=critical,digitalSignature" -addext "extendedKeyUsage=codeSigning" 2>/dev/null
+    # A config file rather than -addext: macOS's LibreSSL may lack it.
+    printf '[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=DHIS2 Facility Hub TEST signing\nO=TEST ONLY\n[ext]\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=codeSigning\n' >"$D/req.cnf"
+    openssl req -x509 -newkey rsa:3072 -sha256 -days 3650 -nodes -keyout "$KEY" -out "$CERT" -config "$D/req.cnf" 2>/dev/null
   fi
 fi
 osslsigncode sign -certs "$CERT" -key "$KEY" -h sha256 -n "DHIS2 Facility Hub" \

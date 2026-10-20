@@ -159,6 +159,10 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 	return a2, nil
 }
 
+// SetRestart sets how the hub restarts itself after staging a restore from the USB
+// stick (main: replace the process). Without it, as in tests, it only stops serving.
+func (a *App) SetRestart(fn func()) { a.ui.Restart = fn }
+
 // SetNet hands the hub's network to m: the pages' network section and hub.txt on the
 // USB stick.
 func (a *App) SetNet(m *netsetup.Manager) {

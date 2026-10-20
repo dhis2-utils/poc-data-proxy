@@ -6,8 +6,10 @@
 # Without a hub.exe it builds one here; RELEASE_PUBLIC_KEY (base64) goes into it as
 # the release key, as for the Linux binaries.
 set -euo pipefail
-VERSION=$1 OUT=$(realpath -m "$2") HUB=${3:-}
-HERE=$(dirname "$(realpath "$0")")
+# Works on Linux and macOS (Homebrew: makensis, osslsigncode).
+VERSION=$1 HUB=${3:-}
+mkdir -p "$2" && OUT=$(cd "$2" && pwd)
+HERE=$(cd "$(dirname "$0")" && pwd)
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$OUT"

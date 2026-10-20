@@ -114,6 +114,7 @@ func serveCtx(ctx context.Context, cfgPath string) error {
 	if err != nil {
 		return err
 	}
+	a.SetRestart(restartFunc(shutdown, a.Close, os.Executable, upgrade.Reexec, os.Exit))
 	defer a.Close()
 	if dk := upgrade.HandedOverDK(); dk != nil {
 		if err := a.Hub.Unlock(dk); err != nil {

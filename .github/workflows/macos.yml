@@ -19,6 +19,21 @@ jobs:
       - name: Go tests on macOS
         run: go vet ./... && go test $(go list ./... | grep -v /internal/live)
 
+  windows-installer:
+    # The Windows installer can be built and signed on a Mac too (windows/README.md).
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Tools
+        run: brew install makensis osslsigncode sevenzip
+      - name: Build and check the installer on macOS
+        run: |
+          windows/build.sh 0.0.0-ci out
+          windows/check.sh out/dhis2-hub-0.0.0-ci-setup.exe
+
   install:
     runs-on: macos-latest
     steps:
