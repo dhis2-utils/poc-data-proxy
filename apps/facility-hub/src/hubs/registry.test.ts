@@ -121,24 +121,21 @@ describe('revokeTokens', () => {
         )
     })
 
-    it('keeps a change written to the entry while tokens were deleted', async () => {
+    it('marks the hub revoked before deleting its tokens, so a hub that syncs meanwhile learns it with its own', async () => {
         const api = new FakeApi()
         api.apiTokens.add('tok1')
         api.store['facility-hub-registry'] = {
             'hub-a': { hubId: 'hub-a', status: 'active', tokens: ['tok1'] },
         }
-        api.beforeReread = () => {
-            ;(
-                api.store['facility-hub-registry']['hub-a'] as {
-                    hubVersion?: string
-                }
-            ).hubVersion = '0.4.0'
-        }
         await revokeTokens(api, 'hub-a', { by: 'manager', at })
-        expect(api.entry('facility-hub-registry', 'hub-a')).toMatchObject({
-            hubVersion: '0.4.0',
-            status: 'revoked',
-        })
+        const put = api.log.findIndex(
+            (l) => l.startsWith('PUT') && l.includes('facility-hub-registry')
+        )
+        const del = api.log.findIndex(
+            (l) => l.startsWith('DELETE') && l.includes('apiToken')
+        )
+        expect(put).toBeGreaterThanOrEqual(0)
+        expect(del).toBeGreaterThan(put)
     })
 })
 

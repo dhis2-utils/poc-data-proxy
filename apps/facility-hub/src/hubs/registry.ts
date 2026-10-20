@@ -98,17 +98,19 @@ export type RevokeResult = {
 }
 
 /**
- * Revokes a hub's tokens (spec 2026-10-20, section 2): deletes each token its entry
- * lists, then marks the entry revoked, read again just before writing so nothing
- * written meanwhile is lost. Central answers 404 for a token that is gone or not
- * shared with the user: such tokens are counted, not fatal.
+ * Revokes a hub's tokens (spec 2026-10-20, section 2): marks the entry revoked, then
+ * deletes each token it lists. Revoked first, so a hub that syncs meanwhile still
+ * reads it with its own token and drops what it holds. Central answers 404 for a
+ * token that is gone or not shared with the user: such tokens are counted, not fatal.
  */
 export const revokeTokens = async (
     api: Api,
     hubId: string,
     { by, at }: { by: string; at: string }
 ): Promise<RevokeResult> => {
-    const tokens = (await read(api, hubId)).tokens ?? []
+    const entry = await read(api, hubId)
+    await api.request('PUT', entryPath(hubId), revokedEntry(entry, by, at))
+    const tokens = entry.tokens ?? []
     const failed: string[] = []
     for (const t of tokens) {
         try {
@@ -120,8 +122,6 @@ export const revokeTokens = async (
             failed.push(t)
         }
     }
-    const entry = await read(api, hubId)
-    await api.request('PUT', entryPath(hubId), revokedEntry(entry, by, at))
     return {
         listed: tokens.length,
         deleted: tokens.length - failed.length,
