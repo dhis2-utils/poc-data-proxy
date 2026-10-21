@@ -370,31 +370,6 @@ func (s *Store) SlotOrigins(slots []int64) (map[int64][2]string, error) {
 	return out, err
 }
 
-// UnfilledObjects returns up to limit objects, with payloads, whose query columns
-// were never filled (rows stored before schema 3).
-func (s *Store) UnfilledObjects(limit int) ([]*Object, error) {
-	rows, err := s.DB().Query(`SELECT uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at,
- origin, sync_state, payload_enc, slot FROM objects WHERE slim IS NULL LIMIT ?`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []*Object
-	for rows.Next() {
-		o := &Object{}
-		var ct []byte
-		if err := rows.Scan(&o.UID, &o.Kind, &o.TE, &o.Enrollment, &o.Program, &o.Stage, &o.TET, &o.OwnerOrgUnit,
-			&o.UpdatedAt, &o.Origin, &o.SyncState, &ct, &o.Slot); err != nil {
-			return nil, err
-		}
-		if o.Payload, err = s.OpenBlob(objAAD(o.UID), ct); err != nil {
-			return nil, err
-		}
-		out = append(out, o)
-	}
-	return out, rows.Err()
-}
-
 // CountKind is how many objects there are, of one kind or ("") all.
 func (s *Store) CountKind(kind string) int {
 	var n int
@@ -436,12 +411,8 @@ func (s *Store) AllObjects(fn func(*Object) error) error {
 const VisibilityChunkBits = 4096
 
 // VisibilityChunks returns each user's visibility bitmap chunks: user -> chunk -> bits
-// (little-endian 64-bit words). Rows of the per-object table that schema 1 kept are
-// converted first.
+// (little-endian 64-bit words).
 func (s *Store) VisibilityChunks() (map[int64]map[int64][]byte, error) {
-	if err := s.convertLegacyVisibility(); err != nil {
-		return nil, fmt.Errorf("visibility: %w", err)
-	}
 	rows, err := s.DB().Query(`SELECT user_id, chunk, bits FROM visibility_bits`)
 	if err != nil {
 		return nil, err
@@ -511,46 +482,6 @@ func (s *Store) MaxSlot() int64 {
 	s.DB().QueryRow(`SELECT max(coalesce((SELECT max(slot) FROM objects), 0),
  coalesce((SELECT CAST(value AS INTEGER) FROM kv WHERE key = 'slot_floor'), 0))`).Scan(&n)
 	return n.Int64
-}
-
-// convertLegacyVisibility moves the rows of the per-object visibility table into the
-// bitmaps and empties it.
-func (s *Store) convertLegacyVisibility() error {
-	var n int
-	if err := s.DB().QueryRow(`SELECT count(*) FROM visibility`).Scan(&n); err != nil || n == 0 {
-		return err
-	}
-	return s.Tx(context.Background(), func(tx *sql.Tx) error {
-		rows, err := tx.Query(`SELECT o.slot, v.user_id FROM visibility v JOIN objects o ON o.uid = v.object_uid`)
-		if err != nil {
-			return err
-		}
-		chunks := map[[2]int64][]byte{}
-		for rows.Next() {
-			var slot, user int64
-			if err := rows.Scan(&slot, &user); err != nil {
-				rows.Close()
-				return err
-			}
-			k := [2]int64{user, slot / VisibilityChunkBits}
-			if chunks[k] == nil {
-				var old []byte
-				tx.QueryRow(`SELECT bits FROM visibility_bits WHERE user_id=? AND chunk=?`, k[0], k[1]).Scan(&old)
-				chunks[k] = make([]byte, VisibilityChunkBits/8)
-				copy(chunks[k], old)
-			}
-			bit := slot % VisibilityChunkBits
-			chunks[k][bit/8] |= 1 << (bit % 8)
-		}
-		rows.Close()
-		for k, b := range chunks {
-			if err := s.PutVisibilityChunk(tx, k[0], k[1], b); err != nil {
-				return err
-			}
-		}
-		_, err = tx.Exec(`DELETE FROM visibility`)
-		return err
-	})
 }
 
 // stmtCache holds statements prepared once on the data file: a pull stores thousands

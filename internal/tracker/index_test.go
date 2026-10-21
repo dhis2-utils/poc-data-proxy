@@ -33,9 +33,9 @@ func testStore(t *testing.T) *store.Store {
 	return s
 }
 
-// Rows stored before the query columns existed (schema 2) are filled from their
-// payloads on the first unlock, and are then found by searches.
-func TestLoadFillsQueryColumns(t *testing.T) {
+// Storing an object fills its query columns from its payload, including an
+// enrollment's te_created from a person stored after it, and searches find it.
+func TestStoreFillsQueryColumns(t *testing.T) {
 	s := testStore(t)
 	ix := NewStoreIndex(s)
 	te := &Obj{UID: "TeAaaaaaaa1", Kind: store.KindTrackedEntity, TET: "TetAaaaaaa1", OwnerOrgUnit: "OuAaaaaaaa1",
@@ -61,29 +61,7 @@ func TestLoadFillsQueryColumns(t *testing.T) {
 		t.Fatalf("enrollment's te_created = %q, want its person's createdAt", created)
 	}
 
-	// Back to how schema 2 left them.
-	if _, err := s.DB().Exec(`UPDATE objects SET slim = NULL, created_at = '', status = '', te_created = '';
-DELETE FROM te_attrs`); err != nil {
-		t.Fatal(err)
-	}
-	if err := ix.Load(s); err != nil {
-		t.Fatal(err)
-	}
-	if o := ix.Get(te.UID); o == nil || Str(o.Data, "createdAt") == "" || len(anyList(o.Data["attributes"])) != 1 {
-		t.Fatalf("slim data not filled: %+v", o)
-	}
-	if e := ix.Get(enr.UID); e == nil || Str(e.Data, "status") != "ACTIVE" {
-		t.Fatalf("enrollment not filled: %+v", e)
-	}
-	if !ix.AttributeValueTaken("AtAaaaaaaa1", "Amina", "TeOther0001") {
-		t.Fatal("attribute values not filled")
-	}
-	s.DB().QueryRow(`SELECT te_created FROM objects WHERE uid = ?`, enr.UID).Scan(&created)
-	if created == "" {
-		t.Fatal("te_created not filled")
-	}
-
-	// And a search finds the person by name.
+	// A search finds the person by name.
 	acc := &access.List{}
 	v := &Viewer{UserID: 1, Access: acc, Facility: "OuAaaaaaaa1", SearchScope: true}
 	p, apiErr := ix.searchTEs(v, url.Values{"trackedEntityType": {"TetAaaaaaa1"}, "orgUnits": {"OuAaaaaaaa1"},

@@ -1,8 +1,6 @@
 package tracker
 
 import (
-	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -10,7 +8,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/dhis2/facility-hub/internal/access"
 	"github.com/dhis2/facility-hub/internal/store"
@@ -69,12 +66,8 @@ func (ix *Index) AddScopes(tes []string, scope string) {
 	}
 }
 
-// Load reads what the index keeps in memory from the store, which must be unlocked,
-// after filling the query columns of rows stored before they existed.
+// Load reads what the index keeps in memory from the store, which must be unlocked.
 func (ix *Index) Load(s *store.Store) error {
-	if err := fillQueryColumns(s); err != nil {
-		return fmt.Errorf("filling query columns: %w", err)
-	}
 	chunks, err := s.VisibilityChunks()
 	if err != nil {
 		return err
@@ -98,37 +91,6 @@ func (ix *Index) Load(s *store.Store) error {
 	ix.payloads.clear()
 	ix.pages.clear()
 	return nil
-}
-
-// fillQueryColumns rewrites the rows of schema 2, whose query columns are empty, from
-// their payloads (once, on the first unlock after the upgrade).
-func fillQueryColumns(s *store.Store) error {
-	start, n := time.Now(), 0
-	for {
-		objs, err := s.UnfilledObjects(1000)
-		if err != nil || len(objs) == 0 {
-			if n > 0 {
-				slog.Info("query columns filled", "objects", n, "ms", time.Since(start).Milliseconds())
-			}
-			return err
-		}
-		err = s.Tx(context.Background(), func(tx *sql.Tx) error {
-			for _, so := range objs {
-				o, err := FromStore(so)
-				if err != nil {
-					return err
-				}
-				if err := s.PutObject(tx, o.ToStore()); err != nil {
-					return err
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-		n += len(objs)
-	}
 }
 
 // Clear forgets what the index holds in memory (on lock or reset).

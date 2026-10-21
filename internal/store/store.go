@@ -58,83 +58,9 @@ type Store struct {
 // keyMigrations are applied to the key file in order; PRAGMA user_version records
 // how many ran. Never edit a released migration; append a new one.
 var keyMigrations = []string{
-	// 1: the original single-file schema. Its data tables move to the data file on
-	// the first unlock after an upgrade (moveLegacy).
+	// 1: identity and mode, and a key slot per user (the slot itself verifies a password).
 	`
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE state(key TEXT PRIMARY KEY, value_enc BLOB NOT NULL);
-CREATE TABLE users(
-  id INTEGER PRIMARY KEY,
-  username TEXT NOT NULL UNIQUE,
-  user_uid TEXT NOT NULL DEFAULT '',
-  pw_hash TEXT NOT NULL,
-  kek_salt BLOB NOT NULL,
-  wrapped_dk BLOB,
-  pat_enc BLOB,
-  pat_uid TEXT NOT NULL DEFAULT '',
-  pat_expires TEXT NOT NULL DEFAULT '',
-  pw_enc BLOB,
-  access_json_enc BLOB,
-  access_refreshed_at TEXT NOT NULL DEFAULT '',
-  last_login_at TEXT NOT NULL DEFAULT '',
-  needs_login INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE objects(
-  uid TEXT PRIMARY KEY,
-  kind TEXT NOT NULL,
-  te_uid TEXT NOT NULL DEFAULT '',
-  enrollment_uid TEXT NOT NULL DEFAULT '',
-  program TEXT NOT NULL DEFAULT '',
-  stage TEXT NOT NULL DEFAULT '',
-  tet TEXT NOT NULL DEFAULT '',
-  owner_org_unit TEXT NOT NULL DEFAULT '',
-  updated_at TEXT NOT NULL DEFAULT '',
-  origin TEXT NOT NULL,
-  sync_state TEXT NOT NULL,
-  payload_enc BLOB NOT NULL
-);
-CREATE INDEX objects_te ON objects(te_uid);
-CREATE TABLE visibility(object_uid TEXT NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY(object_uid, user_id));
-CREATE TABLE outbox(
-  seq INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL,
-  payload_enc BLOB NOT NULL,
-  created_at TEXT NOT NULL,
-  state TEXT NOT NULL,
-  attempts INTEGER NOT NULL DEFAULT 0,
-  last_error_enc BLOB,
-  depends_on_seq INTEGER
-);
-CREATE TABLE outbox_objects(seq INTEGER NOT NULL, uid TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY(seq, uid));
-CREATE INDEX outbox_objects_uid ON outbox_objects(uid);
-CREATE TABLE http_cache(
-  user_id INTEGER NOT NULL,
-  method TEXT NOT NULL,
-  url TEXT NOT NULL,
-  status INTEGER NOT NULL,
-  headers_enc BLOB NOT NULL,
-  body_enc BLOB NOT NULL,
-  fetched_at TEXT NOT NULL,
-  PRIMARY KEY(user_id, method, url)
-);
-CREATE TABLE issues(
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  outbox_seq INTEGER NOT NULL,
-  object_uid TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  user_id INTEGER NOT NULL,
-  error_enc BLOB NOT NULL,
-  created_at TEXT NOT NULL,
-  reported_central_at TEXT NOT NULL DEFAULT ''
-);
-CREATE TABLE pull_state(user_id INTEGER NOT NULL, program TEXT NOT NULL, last_pull_at TEXT NOT NULL DEFAULT '',
-  last_full_at TEXT NOT NULL DEFAULT '', PRIMARY KEY(user_id, program));
-CREATE TABLE reserved_values(id INTEGER PRIMARY KEY AUTOINCREMENT, attribute TEXT NOT NULL, value_enc BLOB NOT NULL,
-  expires_at TEXT NOT NULL DEFAULT '');
-CREATE INDEX reserved_values_attr ON reserved_values(attribute);
-`,
-	// 2: key slots without the password hash (the slot itself verifies a password).
-	`
 CREATE TABLE key_slots(
   id INTEGER PRIMARY KEY,
   username TEXT NOT NULL UNIQUE,
@@ -142,13 +68,39 @@ CREATE TABLE key_slots(
   wrapped_dk BLOB,
   needs_login INTEGER NOT NULL DEFAULT 0
 );
-INSERT INTO key_slots(id, username, kek_salt, wrapped_dk, needs_login)
-  SELECT id, username, kek_salt, wrapped_dk, needs_login FROM users;
 `,
 }
 
-// dataMigrations are applied to the data file, the same way.
+// dataMigrations are applied to the data file, the same way. A migration that
+// touches existing rows (a new index, a rewritten column) is timed at the hc4-5y
+// size before it is committed (TestMigrationOnFullStore, AGENTS.md).
 var dataMigrations = []string{
+	// 1: each user's visibility is a bitmap over objects' slots (visibility_bits).
+	// Queries read the indexed columns, each object's slim JSON (what the remaining
+	// filters read) and a tracked entity's attribute values (te_attrs) instead of an
+	// in-memory copy of every object (docs/PERFORMANCE.md, "The query index in SQLite").
+	//
+	// The list indexes are not partial: a query with a bound value cannot use an index
+	// restricted to non-empty values. A person's and an enrollment's children are
+	// indexed with their kind, so that index wins over the list indexes, which also
+	// start with kind (without statistics the planner chose those, and storing a person
+	// walked every enrollment). Event lists come in the orders the apps ask for,
+	// Android's download (creation) and working lists (event date, newest first): with
+	// 150 000 events in a program, sorting per page cost 0.5 to 1.6 s.
+	//
+	// deleted: a tombstone of what central deleted, for Android's download
+	// (includeDeleted=true). stub: an enrollment pruned by tracker retention, hidden
+	// from reads and kept for the enrol-once check. objects_stubs is partial so that
+	// building it on an existing hub sorts nothing: rebuilding objects_state with the
+	// stub flag instead ran out of SQLite's memory (4 GB, sorts in memory) at 4.6
+	// million objects (docs/PERFORMANCE.md).
+	//
+	// outbox.params: the import flags a client sent with an offline write, sent along
+	// on push. agg_forms: central's answer per aggregate form
+	// (docs/superpowers/specs/2026-10-15-aggregate-data-entry-design.md).
+	// users.stick_slot: each user's key slot with the password alone, for the USB
+	// stick's copy of the key file, whose own slots are bound to the device key
+	// (internal/devkey).
 	`
 CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE state(key TEXT PRIMARY KEY, value_enc BLOB NOT NULL);
@@ -162,7 +114,8 @@ CREATE TABLE users(
   pw_enc BLOB,
   access_json_enc BLOB,
   access_refreshed_at TEXT NOT NULL DEFAULT '',
-  last_login_at TEXT NOT NULL DEFAULT ''
+  last_login_at TEXT NOT NULL DEFAULT '',
+  stick_slot BLOB
 );
 CREATE TABLE objects(
   uid TEXT PRIMARY KEY,
@@ -176,10 +129,38 @@ CREATE TABLE objects(
   updated_at TEXT NOT NULL DEFAULT '',
   origin TEXT NOT NULL,
   sync_state TEXT NOT NULL,
-  payload_enc BLOB NOT NULL
+  payload_enc BLOB NOT NULL,
+  slot INTEGER,
+  created_at TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT '',
+  te_created TEXT NOT NULL DEFAULT '',
+  rel_from TEXT NOT NULL DEFAULT '',
+  rel_to TEXT NOT NULL DEFAULT '',
+  slim TEXT,
+  occurred_at TEXT NOT NULL DEFAULT '',
+  deleted INTEGER NOT NULL DEFAULT 0,
+  stub INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX objects_te ON objects(te_uid);
-CREATE TABLE visibility(object_uid TEXT NOT NULL, user_id INTEGER NOT NULL, PRIMARY KEY(object_uid, user_id));
+CREATE UNIQUE INDEX objects_slot ON objects(slot);
+CREATE INDEX objects_te ON objects(te_uid, kind);
+CREATE INDEX objects_enrollment ON objects(enrollment_uid, kind);
+CREATE INDEX objects_rel_from ON objects(rel_from);
+CREATE INDEX objects_rel_to ON objects(rel_to);
+CREATE INDEX objects_type ON objects(kind, tet, owner_org_unit, created_at, uid);
+CREATE INDEX objects_program ON objects(kind, program, owner_org_unit, te_created, te_uid);
+CREATE INDEX objects_program_desc ON objects(kind, program, owner_org_unit, te_created DESC, te_uid);
+CREATE INDEX objects_events ON objects(kind, program, owner_org_unit, created_at, uid);
+CREATE INDEX objects_events_occurred ON objects(kind, program, owner_org_unit, occurred_at DESC, uid);
+CREATE INDEX objects_updated ON objects(updated_at, kind, uid, te_uid);
+CREATE INDEX objects_state ON objects(uid, updated_at, slot);
+CREATE INDEX objects_local ON objects(kind, uid, te_uid) WHERE origin = 'local';
+CREATE INDEX objects_stubs ON objects(uid) WHERE stub = 1;
+CREATE TABLE visibility_bits(user_id INTEGER NOT NULL, chunk INTEGER NOT NULL, bits BLOB NOT NULL,
+  PRIMARY KEY(user_id, chunk));
+CREATE TABLE te_scopes(te_uid TEXT NOT NULL, scope TEXT NOT NULL, PRIMARY KEY(te_uid, scope));
+CREATE TABLE te_attrs(te_uid TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT NULL, value_lc TEXT NOT NULL,
+  PRIMARY KEY(te_uid, attr));
+CREATE INDEX te_attrs_value ON te_attrs(attr, value);
 CREATE TABLE outbox(
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
@@ -188,7 +169,9 @@ CREATE TABLE outbox(
   state TEXT NOT NULL,
   attempts INTEGER NOT NULL DEFAULT 0,
   last_error_enc BLOB,
-  depends_on_seq INTEGER
+  depends_on_seq INTEGER,
+  params TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL DEFAULT 'tracker'
 );
 CREATE TABLE outbox_objects(seq INTEGER NOT NULL, uid TEXT NOT NULL, kind TEXT NOT NULL, PRIMARY KEY(seq, uid));
 CREATE INDEX outbox_objects_uid ON outbox_objects(uid);
@@ -217,54 +200,6 @@ CREATE TABLE pull_state(user_id INTEGER NOT NULL, program TEXT NOT NULL, last_pu
 CREATE TABLE reserved_values(id INTEGER PRIMARY KEY AUTOINCREMENT, attribute TEXT NOT NULL, value_enc BLOB NOT NULL,
   expires_at TEXT NOT NULL DEFAULT '');
 CREATE INDEX reserved_values_attr ON reserved_values(attribute);
-`,
-	// Visibility as per-user bitmaps over object slots instead of a row per object and
-	// user (docs/PERFORMANCE.md). Rows of the old table are converted on first load.
-	`
-ALTER TABLE objects ADD COLUMN slot INTEGER;
-UPDATE objects SET slot = rowid;
-CREATE UNIQUE INDEX objects_slot ON objects(slot);
-CREATE TABLE visibility_bits(user_id INTEGER NOT NULL, chunk INTEGER NOT NULL, bits BLOB NOT NULL,
-  PRIMARY KEY(user_id, chunk));
-CREATE TABLE te_scopes(te_uid TEXT NOT NULL, scope TEXT NOT NULL, PRIMARY KEY(te_uid, scope));
-`,
-	// Queries read the data file instead of an in-memory copy of every object
-	// (docs/PERFORMANCE.md, "The query index in SQLite"): the columns lists filter and
-	// sort on, each object's slim JSON (what the remaining filters read), and a tracked
-	// entity's attribute values. Rows of schema 2 have slim NULL until the first unlock
-	// fills them (tracker.Index.Load). The indexes are not partial: a query with a
-	// bound value cannot use an index restricted to non-empty values. A person's and an
-	// enrollment's children are indexed with their kind, so that index wins over the
-	// list indexes, which also start with kind (without statistics the planner chose
-	// those, and storing a person walked every enrollment).
-	`
-ALTER TABLE objects ADD COLUMN created_at TEXT NOT NULL DEFAULT '';
-ALTER TABLE objects ADD COLUMN status TEXT NOT NULL DEFAULT '';
-ALTER TABLE objects ADD COLUMN te_created TEXT NOT NULL DEFAULT '';
-ALTER TABLE objects ADD COLUMN rel_from TEXT NOT NULL DEFAULT '';
-ALTER TABLE objects ADD COLUMN rel_to TEXT NOT NULL DEFAULT '';
-ALTER TABLE objects ADD COLUMN slim TEXT;
-DROP INDEX objects_te;
-CREATE INDEX objects_te ON objects(te_uid, kind);
-CREATE INDEX objects_enrollment ON objects(enrollment_uid, kind);
-CREATE INDEX objects_rel_from ON objects(rel_from);
-CREATE INDEX objects_rel_to ON objects(rel_to);
-CREATE INDEX objects_type ON objects(kind, tet, owner_org_unit, created_at, uid);
-CREATE INDEX objects_program ON objects(kind, program, owner_org_unit, te_created, te_uid);
-CREATE INDEX objects_program_desc ON objects(kind, program, owner_org_unit, te_created DESC, te_uid);
-CREATE INDEX objects_unfilled ON objects(uid) WHERE slim IS NULL;
-CREATE INDEX objects_updated ON objects(updated_at, kind, uid, te_uid);
-CREATE INDEX objects_state ON objects(uid, updated_at, slot);
-CREATE INDEX objects_local ON objects(kind, uid, te_uid) WHERE origin = 'local';
-CREATE TABLE te_attrs(te_uid TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT NULL, value_lc TEXT NOT NULL,
-  PRIMARY KEY(te_uid, attr));
-CREATE INDEX te_attrs_value ON te_attrs(attr, value);
-`,
-	// The import flags a client sent with an offline write, sent along on push.
-	`ALTER TABLE outbox ADD COLUMN params TEXT NOT NULL DEFAULT '';`,
-	// Aggregate data entry (docs/superpowers/specs/2026-10-15-aggregate-data-entry-design.md):
-	// central's answer per form, and the kind of each outbox entry.
-	`
 CREATE TABLE agg_forms(
   key TEXT PRIMARY KEY,
   data_set TEXT NOT NULL,
@@ -277,34 +212,7 @@ CREATE TABLE agg_forms(
   stale INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX agg_forms_ds ON agg_forms(data_set, fetched_at);
-ALTER TABLE outbox ADD COLUMN kind TEXT NOT NULL DEFAULT 'tracker';
 `,
-	// Event lists in the orders the apps ask for, read in index order: Android's
-	// download (creation) and working lists (event date, newest first). With 150 000
-	// events in a program, sorting per page cost 0.5 to 1.6 s (docs/PERFORMANCE.md).
-	`
-ALTER TABLE objects ADD COLUMN occurred_at TEXT NOT NULL DEFAULT '';
-UPDATE objects SET occurred_at = coalesce(json_extract(slim, '$.occurredAt'), '') WHERE kind = 'event' AND slim IS NOT NULL;
-CREATE INDEX objects_events ON objects(kind, program, owner_org_unit, created_at, uid);
-CREATE INDEX objects_events_occurred ON objects(kind, program, owner_org_unit, occurred_at DESC, uid);
-`,
-	// Tombstones: what central deleted stays as a row marked deleted, for Android's
-	// download (includeDeleted=true); everything else leaves it out.
-	`
-ALTER TABLE objects ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;
-UPDATE objects SET deleted = 1 WHERE json_extract(slim, '$.deleted') = 1;
-`,
-	// Stubs of pruned enrollments (tracker retention): hidden from reads, kept for the
-	// enrol-once check.
-	`ALTER TABLE objects ADD COLUMN stub INTEGER NOT NULL DEFAULT 0;`,
-	// The stubs, for the pull's stale check and for pruning the events under them,
-	// without reading table rows. Partial, so building it on an existing hub sorts
-	// nothing: rebuilding objects_state with the stub flag instead ran out of SQLite's
-	// memory (4 GB, sorts kept in memory) at 4.6 million objects (docs/PERFORMANCE.md).
-	`CREATE INDEX objects_stubs ON objects(uid) WHERE stub = 1;`,
-	// Each user's key slot with the password alone, for the USB stick's copy of the key
-	// file, where the key file's own slots are bound to the device key (internal/devkey).
-	`ALTER TABLE users ADD COLUMN stick_slot BLOB;`,
 }
 
 // SchemaVersion is the number of key file migrations this binary knows.
@@ -379,10 +287,9 @@ func (s *Store) DB() *sql.DB {
 	return s.empty
 }
 
-// migrate applies pending migrations in one transaction each.
-// migrate runs the migrations not yet applied, on one connection. With spill (the
-// data file), that connection sorts through temporary files instead of memory while it
-// migrates: a migration over millions of existing rows (a new index) needs more than
+// migrate runs the migrations not yet applied, one transaction each, on one
+// connection. With spill (the data file), that connection sorts through temporary
+// files instead of memory while it migrates: a migration over millions of existing rows (a new index) needs more than
 // SQLite's 4 GB of memory otherwise, and a hub that cannot migrate cannot upgrade
 // (docs/PERFORMANCE.md, "Upgrading a large hub"). The xts VFS encrypts temporary files
 // with a random key, so no plaintext reaches the disk either way.
@@ -503,7 +410,7 @@ func (s *Store) SetDK(k hubcrypto.Key) error {
 		return nil
 	}
 	path := DataPath(s.Path)
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) && s.hasSlots() && !s.hasLegacy() && !s.NewDataFile {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) && s.hasSlots() && !s.NewDataFile {
 		return fmt.Errorf("data file %s is missing", path)
 	}
 	db, err := openData(path, k)
@@ -514,10 +421,6 @@ func (s *Store) SetDK(k hubcrypto.Key) error {
 	if err := db.QueryRow(`SELECT count(*) FROM users`).Scan(&n); err != nil {
 		db.Close()
 		return fmt.Errorf("data file does not open with this key: %w", err)
-	}
-	if err := s.moveLegacy(db); err != nil {
-		db.Close()
-		return fmt.Errorf("moving data out of the key file: %w", err)
 	}
 	if err := s.prepareWrites(db); err != nil {
 		db.Close()
@@ -543,79 +446,6 @@ func (s *Store) hasSlots() bool {
 	var n int
 	s.Keys.QueryRow(`SELECT count(*) FROM key_slots`).Scan(&n)
 	return n > 0
-}
-
-// legacyTables held data in the key file before it was split (key migration 1).
-var legacyTables = []string{"state", "objects", "visibility", "outbox", "outbox_objects", "http_cache", "issues",
-	"pull_state", "reserved_values"}
-
-func (s *Store) hasLegacy() bool {
-	var n int
-	s.Keys.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='objects'`).Scan(&n)
-	return n > 0
-}
-
-// moveLegacy copies the data tables of a key file from before the split into the data
-// file, then drops them from the key file and vacuums it, so no plaintext stays
-// behind. It is idempotent: a crash between the two steps repeats the copy.
-func (s *Store) moveLegacy(data *sql.DB) error {
-	if !s.hasLegacy() {
-		return nil
-	}
-	ctx := context.Background()
-	conn, err := data.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	// The key file uses the default VFS, not the data file's.
-	if _, err := conn.ExecContext(ctx, `ATTACH DATABASE ? AS legacy`,
-		"file:"+(&url.URL{Path: s.Path}).EscapedPath()+"?vfs=os"); err != nil {
-		return err
-	}
-	defer conn.ExecContext(ctx, `DETACH DATABASE legacy`)
-	stmts := []string{`INSERT OR REPLACE INTO main.users(id, username, user_uid, pat_enc, pat_uid, pat_expires, pw_enc,
- access_json_enc, access_refreshed_at, last_login_at) SELECT id, username, user_uid, pat_enc, pat_uid, pat_expires,
- pw_enc, access_json_enc, access_refreshed_at, last_login_at FROM legacy.users`,
-		`INSERT OR REPLACE INTO main.kv(key, value) SELECT key, value FROM legacy.meta WHERE key IN ('last_push', 'last_pull')`}
-	for _, t := range legacyTables {
-		if t == "objects" { // the data file's objects table has the slot column too
-			stmts = append(stmts, `INSERT OR REPLACE INTO main.objects(uid, kind, te_uid, enrollment_uid, program, stage, tet,
- owner_org_unit, updated_at, origin, sync_state, payload_enc) SELECT uid, kind, te_uid, enrollment_uid, program, stage, tet,
- owner_org_unit, updated_at, origin, sync_state, payload_enc FROM legacy.objects`,
-				`UPDATE main.objects SET slot = rowid WHERE slot IS NULL`)
-			continue
-		}
-		if t == "outbox" { // the data file's outbox has the params column too
-			stmts = append(stmts, `INSERT OR REPLACE INTO main.outbox(seq, user_id, payload_enc, created_at, state, attempts,
- last_error_enc, depends_on_seq) SELECT seq, user_id, payload_enc, created_at, state, attempts, last_error_enc,
- depends_on_seq FROM legacy.outbox`)
-			continue
-		}
-		stmts = append(stmts, fmt.Sprintf(`INSERT OR REPLACE INTO main.%s SELECT * FROM legacy.%s`, t, t))
-	}
-	tx, err := conn.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	for _, q := range stmts {
-		if _, err := tx.Exec(q); err != nil {
-			tx.Rollback()
-			return err
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	conn.ExecContext(ctx, `DETACH DATABASE legacy`)
-	drop := `DELETE FROM meta WHERE key IN ('last_push', 'last_pull'); DROP TABLE users;`
-	for _, t := range legacyTables {
-		drop += ` DROP TABLE ` + t + `;`
-	}
-	if _, err := s.Keys.Exec(drop); err != nil {
-		return err
-	}
-	return s.vacuumKeys()
 }
 
 // vacuumKeys rebuilds the key file and checkpoints at once: in WAL mode the

@@ -12,10 +12,11 @@ import (
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
-// TestRetentionMigration times, on a data file of HUB_PERF_MIGRATION objects, what the
-// tracker retention migration does to an existing hub at upgrade: the partial index of
-// stubs (adding the stub column takes no time in SQLite). Rebuilding objects_state
-// with the stub flag, as first written, ran out of SQLite's memory at 4.6 million.
+// TestRetentionMigration times, on a data file of HUB_PERF_MIGRATION objects, building
+// the partial index of stubs: what the tracker retention migration did to existing
+// hubs before the migrations were squashed, and what a migration adding a partial
+// index costs. Rebuilding objects_state with the stub flag, as first written, ran out
+// of SQLite's memory at 4.6 million.
 func TestRetentionMigration(t *testing.T) {
 	n, _ := strconv.Atoi(os.Getenv("HUB_PERF_MIGRATION"))
 	if n == 0 {

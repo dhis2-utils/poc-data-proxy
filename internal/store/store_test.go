@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -35,83 +36,34 @@ func filesContain(t *testing.T, dir, needle string) []string {
 	return out
 }
 
-// Review H1: a key file from before the split (schema 1, everything in plaintext
-// index columns) moves its data into the encrypted data file on the first unlock, and
-// keeps nothing of it.
-func TestLegacyStoreMovesToDataFile(t *testing.T) {
+// Review H1: what the hub stores is in the encrypted data file only, which opens with
+// its key alone; a backup is encrypted the same way.
+func TestDataFileEncrypted(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "hub.db")
 	dk := mustKey(t)
-
-	// Build a schema-1 store as the previous release wrote it.
-	db, err := sql.Open("sqlite3", "file:"+path+"?_pragma=journal_mode(WAL)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := migrate(db, keyMigrations[:1], false); err != nil {
-		t.Fatal(err)
-	}
-	salt, _ := hubcrypto.RandomBytes(16)
-	wrapped, _ := hubcrypto.WrapDK(dk, "pw", salt)
-	payload, _ := hubcrypto.Seal(dk, []byte(`{"trackedEntity":"LegacyTe001"}`), []byte(objAAD("LegacyTe001")))
-	for _, q := range []struct {
-		sql  string
-		args []any
-	}{
-		{`INSERT INTO meta(key, value) VALUES('hub_id','H1'), ('last_push','2026-01-01T00:00:00Z')`, nil},
-		{`INSERT INTO users(id, username, user_uid, pw_hash, kek_salt, wrapped_dk, last_login_at) VALUES(7,'nurse','UserUid0001','x',?,?,'2026-01-02')`,
-			[]any{salt, wrapped}},
-		{`INSERT INTO objects(uid, kind, program, owner_org_unit, origin, sync_state, payload_enc)
- VALUES('LegacyTe001','trackedEntity','HivProgram1','FacilityOu1','central','synced',?)`, []any{payload}},
-		{`INSERT INTO visibility(object_uid, user_id) VALUES('LegacyTe001', 7)`, nil},
-	} {
-		if _, err := db.Exec(q.sql, q.args...); err != nil {
-			t.Fatal(q.sql, err)
-		}
-	}
-	db.Close()
-
 	s, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	u, err := s.UserByName("nurse")
-	if err != nil || u == nil || u.ID != 7 || u.UserUID != "" {
-		t.Fatalf("slot before unlock: %+v %v", u, err)
-	}
 	if err := s.SetDK(dk); err != nil {
 		t.Fatal(err)
 	}
-	o, err := s.GetObject("LegacyTe001")
-	if err != nil || o == nil || o.Program != "HivProgram1" || !bytes.Contains(o.Payload, []byte("LegacyTe001")) {
-		t.Fatalf("object after move: %+v %v", o, err)
-	}
-	// The per-object visibility row became a bit in the user's bitmap.
-	chunks, err := s.VisibilityChunks()
-	if err != nil || o.Slot <= 0 {
-		t.Fatalf("visibility: %v, slot %d", err, o.Slot)
-	}
-	bits := chunks[7][o.Slot/VisibilityChunkBits]
-	if bit := o.Slot % VisibilityChunkBits; len(bits) == 0 || bits[bit/8]&(1<<(bit%8)) == 0 {
-		t.Fatalf("visibility of user 7 not converted: %v", chunks)
-	}
-	var left int
-	s.DB().QueryRow(`SELECT count(*) FROM visibility`).Scan(&left)
-	if left != 0 {
-		t.Fatalf("%d old visibility rows left", left)
-	}
-	if u, _ := s.UserByName("nurse"); u.UserUID != "UserUid0001" || u.LastLoginAt != "2026-01-02" {
-		t.Fatalf("user after move: %+v", u)
-	}
-	if s.Private("last_push") == "" || s.Meta("last_push") != "" || s.Meta("hub_id") != "H1" {
-		t.Fatal("meta not split")
+	s.SetMeta("hub_id", "H1")
+	err = s.Tx(context.Background(), func(tx *sql.Tx) error {
+		return s.PutObject(tx, &Object{UID: "SecretTe001", Kind: KindTrackedEntity, Program: "HivProgram1",
+			OwnerOrgUnit: "FacilityOu1", Origin: OriginCentral, SyncState: SyncSynced, Slot: 1,
+			Slim: []byte(`{}`), Payload: []byte(`{"trackedEntity":"SecretTe001"}`)})
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 	// Checked while the store is open: closing checkpoints the WAL and would hide
-	// old pages left in the main file.
-	for _, needle := range []string{"LegacyTe001", "HivProgram1", "FacilityOu1", "UserUid0001", "2026-01-02"} {
+	// pages written only there.
+	for _, needle := range []string{"SecretTe001", "HivProgram1", "FacilityOu1"} {
 		if f := filesContain(t, dir, needle); len(f) > 0 {
-			t.Fatalf("%q still in plain text in %v", needle, f)
+			t.Fatalf("%q in plain text in %v", needle, f)
 		}
 	}
 	s.SetDK(nil)
@@ -128,7 +80,7 @@ func TestLegacyStoreMovesToDataFile(t *testing.T) {
 	if err := s.SetDK(dk); err != nil {
 		t.Fatal(err)
 	}
-	if o, _ := s.GetObject("LegacyTe001"); o == nil {
+	if o, _ := s.GetObject("SecretTe001"); o == nil || !bytes.Contains(o.Payload, []byte("SecretTe001")) {
 		t.Fatal("object lost on reopen")
 	}
 
@@ -137,7 +89,7 @@ func TestLegacyStoreMovesToDataFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Close()
-	if f := filesContain(t, dir, "LegacyTe001"); len(f) > 0 {
+	if f := filesContain(t, dir, "SecretTe001"); len(f) > 0 {
 		t.Fatalf("backup in plain text: %v", f)
 	}
 	c, err := Open(filepath.Join(dir, "copy.db"))
@@ -148,7 +100,7 @@ func TestLegacyStoreMovesToDataFile(t *testing.T) {
 	if err := c.SetDK(dk); err != nil {
 		t.Fatal(err)
 	}
-	if o, _ := c.GetObject("LegacyTe001"); o == nil || c.Meta("hub_id") != "H1" {
+	if o, _ := c.GetObject("SecretTe001"); o == nil || c.Meta("hub_id") != "H1" {
 		t.Fatal("backup incomplete")
 	}
 }
