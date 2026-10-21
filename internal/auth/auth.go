@@ -195,10 +195,16 @@ func (a *Auth) registerOnline(ctx context.Context, username, password string, wi
 		slog.Info("login: user is not facility staff; pass-through only", "user", username)
 		return h.Sessions.New(0, username, with)
 	}
+	known, _ := h.Store.UserByName(username)
 	userID, err := a.ensureKeySlot(username, me.ID, password)
 	if err != nil {
 		slog.Warn("login: user not registered on hub", "user", username, "err", err)
 		return h.Sessions.New(0, username, with)
+	}
+	if known == nil {
+		// Their first pull now: until it runs the hub has nothing of theirs offline,
+		// and the next cycle can be 15 minutes away.
+		defer h.TriggerSync()
 	}
 	u, _ := h.Store.UserByID(userID)
 	if _, err := h.RefreshServerVersion(ctx, with); err != nil {
@@ -353,10 +359,7 @@ func centralCookie(resp *http.Response) string {
 }
 
 func (a *Auth) relative(u string) string {
-	if base := a.H.Central.BaseURL(); base != "" && strings.HasPrefix(u, base) {
-		u = strings.TrimPrefix(u, base)
-	}
-	if u == "" {
+	if u = a.H.Central.Local(u); u == "" {
 		return "/"
 	}
 	return u

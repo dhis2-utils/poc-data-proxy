@@ -42,3 +42,33 @@ func TestProbeTellsCentralFromPortal(t *testing.T) {
 		}
 	}
 }
+
+// Central's answers name it in more forms than its configured address: behind a TLS
+// proxy that does not say so it redirects to http://, and DHIS2 under a context path
+// (https://x.org/dhis) redirects to /dhis/login/ and answers a login with /dhis/.
+// Each form is a path on the hub; anything else is left alone.
+func TestLocal(t *testing.T) {
+	for _, tc := range []struct{ base, in, want string }{
+		{"https://x.org/facility-hub", "https://x.org/facility-hub/login/", "/login/"},
+		{"https://x.org/facility-hub", "http://x.org/facility-hub/login/", "/login/"},
+		{"https://x.org/facility-hub", "/facility-hub/login/", "/login/"},
+		{"https://x.org/facility-hub", "/facility-hub/", "/"},
+		{"https://x.org/facility-hub", "/facility-hub", "/"},
+		{"https://x.org/facility-hub", "https://x.org/facility-hub", "/"},
+		{"https://x.org/facility-hub", "/facility-hub?x=1", "/?x=1"},
+		{"https://x.org/facility-hub", "/facility-hubx/a", "/facility-hubx/a"},
+		{"https://x.org/facility-hub", "https://x.org/facility-hubx", "https://x.org/facility-hubx"},
+		{"https://x.org/facility-hub", "https://other.org/facility-hub/a", "https://other.org/facility-hub/a"},
+		{"https://x.org", "http://x.org/a", "/a"},
+		{"https://x.org", "/login/", "/login/"},
+		{"https://x.org", "https://x.org", "/"},
+	} {
+		c := NewClient(tc.base, nil)
+		if got := c.Local(tc.in); got != tc.want {
+			t.Errorf("base %s: Local(%q) = %q, want %q", tc.base, tc.in, got, tc.want)
+		}
+	}
+	if got := NewClient("https://x.org/dhis", nil).BaseURLs(); len(got) != 2 || got[0] != "https://x.org/dhis" || got[1] != "http://x.org/dhis" {
+		t.Errorf("BaseURLs = %v", got)
+	}
+}

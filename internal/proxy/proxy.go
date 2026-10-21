@@ -97,14 +97,16 @@ func (p *Proxy) Localize(r *http.Request, res *Result) *Result {
 	if loc := out.Header.Get("Location"); loc != "" {
 		// Absolute, on the hub's origin: the Android SDK resolves a relative Location
 		// as a new server URL ("/api/..." became host "api").
-		if rel := p.relative(loc); strings.HasPrefix(rel, "/") {
+		if rel := p.H.Central.Local(loc); strings.HasPrefix(rel, "/") {
 			out.Header.Set("Location", Origin(r)+rel)
 		}
 	}
 	// Absolute central URLs (pager nextPage, job locations, the app shell's
 	// <meta name="dhis2-base-url">) point clients past the hub; rewrite them to the hub.
-	if base := p.H.Central.BaseURL(); base != "" && rewritable(out.Header.Get("Content-Type")) {
-		out.Body = bytes.ReplaceAll(res.Body, []byte(base), []byte(Origin(r)))
+	if rewritable(out.Header.Get("Content-Type")) {
+		for _, base := range p.H.Central.BaseURLs() {
+			out.Body = bytes.ReplaceAll(out.Body, []byte(base), []byte(Origin(r)))
+		}
 	}
 	return &out
 }
@@ -116,15 +118,6 @@ func Origin(r *http.Request) string {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host
-}
-
-func (p *Proxy) relative(u string) string {
-	if base := p.H.Central.BaseURL(); base != "" && strings.HasPrefix(u, base) {
-		if u = strings.TrimPrefix(u, base); u == "" {
-			u = "/"
-		}
-	}
-	return u
 }
 
 func Write(w http.ResponseWriter, res *Result) {

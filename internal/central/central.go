@@ -85,6 +85,52 @@ func (c *Client) BaseURL() string {
 	return c.baseURL
 }
 
+// BaseURLs are central's address as its answers may name it: as configured, and with
+// the other scheme (a central behind a TLS proxy that does not tell it so redirects to
+// http://).
+func (c *Client) BaseURLs() []string {
+	base := c.BaseURL()
+	if base == "" {
+		return nil
+	}
+	if rest, ok := strings.CutPrefix(base, "https://"); ok {
+		return []string{base, "http://" + rest}
+	}
+	if rest, ok := strings.CutPrefix(base, "http://"); ok {
+		return []string{base, "https://" + rest}
+	}
+	return []string{base}
+}
+
+// Local returns u as a path on the hub when it points at central: at one of its
+// BaseURLs, or at an absolute path under its context path (DHIS2 at https://x.org/dhis
+// redirects to /dhis/login/). Anything else comes back unchanged.
+func (c *Client) Local(u string) string {
+	under := func(u, prefix string) (string, bool) {
+		rest, ok := strings.CutPrefix(u, prefix)
+		if !ok || (rest != "" && !strings.ContainsAny(rest[:1], "/?#")) {
+			return u, false
+		}
+		if rest == "" || rest[0] != '/' {
+			rest = "/" + rest
+		}
+		return rest, true
+	}
+	for _, b := range c.BaseURLs() {
+		if rest, ok := under(u, b); ok {
+			return rest
+		}
+	}
+	if strings.HasPrefix(u, "/") {
+		if pu, err := url.Parse(c.BaseURL()); err == nil && pu.Path != "" && pu.Path != "/" {
+			if rest, ok := under(u, strings.TrimRight(pu.Path, "/")); ok {
+				return rest
+			}
+		}
+	}
+	return u
+}
+
 func (c *Client) SetBaseURL(u string) {
 	c.mu.Lock()
 	c.baseURL = strings.TrimRight(u, "/")
