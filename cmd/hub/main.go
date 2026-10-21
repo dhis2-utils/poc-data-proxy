@@ -33,7 +33,7 @@ import (
 
 // Set with -ldflags "-X main.version=0.2.0 -X main.healthFail=true".
 var (
-	version    = "0.1.0"
+	version    = "0.0.0-dev" // builds set it: VERSION, or VERSION-ci.<run> on CI
 	healthFail = "false"
 )
 
@@ -58,7 +58,11 @@ func main() {
 	case "release":
 		err = release(args)
 	case "version":
-		fmt.Println(version)
+		if len(args) > 0 {
+			fmt.Println(versionAgainst(version, args[0])) // the Windows installer's question
+		} else {
+			fmt.Println(version)
+		}
 	default:
 		err = fmt.Errorf("unknown command %q", cmd)
 	}
@@ -66,6 +70,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "hub:", err)
 		os.Exit(1)
 	}
+}
+
+// versionAgainst says whether this hub's version is "newer", "same" or "older" than
+// other, by release precedence (upgrade.CompareVersions).
+func versionAgainst(own, other string) string {
+	return [...]string{"older", "same", "newer"}[upgrade.CompareVersions(own, other)+1]
 }
 
 func migrate(args []string) error {

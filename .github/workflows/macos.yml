@@ -31,8 +31,9 @@ jobs:
         run: brew install makensis osslsigncode sevenzip
       - name: Build and check the installer on macOS
         run: |
-          windows/build.sh 0.0.0-ci out
-          windows/check.sh out/dhis2-hub-0.0.0-ci-setup.exe
+          V="$(cat VERSION)-ci.$GITHUB_RUN_NUMBER"
+          windows/build.sh "$V" out
+          windows/check.sh "out/dhis2-hub-$V-setup.exe"
 
   install:
     runs-on: macos-latest
@@ -42,7 +43,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Build
-        run: CGO_ENABLED=0 go build -ldflags "-X main.version=0.0.0-ci" -o hub ./cmd/hub
+        run: CGO_ENABLED=0 go build -ldflags "-X main.version=$(cat VERSION)-ci.$GITHUB_RUN_NUMBER" -o hub ./cmd/hub
       - name: Install (the runner's sudo needs no password)
         run: macos/install.sh --hub ./hub
       - name: The hub runs and answers over HTTPS, at localhost and dhis2.local

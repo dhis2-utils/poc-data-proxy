@@ -21,12 +21,15 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q nsis osslsigncode p7zip-full
       - name: Build and check the installer
         run: |
-          windows/build.sh 0.0.0-ci out
-          windows/check.sh out/dhis2-hub-0.0.0-ci-setup.exe
+          # The next release's version (VERSION), as a pre-release of this run:
+          # each run's installer installs over the one before.
+          V="$(cat VERSION)-ci.$GITHUB_RUN_NUMBER"
+          windows/build.sh "$V" out
+          windows/check.sh "out/dhis2-hub-$V-setup.exe"
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: out/dhis2-hub-0.0.0-ci-setup.exe
+          path: out/dhis2-hub-*-setup.exe
 
   test:
     runs-on: windows-latest
@@ -49,7 +52,8 @@ jobs:
       - name: Install for the whole PC, silently
         shell: pwsh
         run: |
-          Start-Process -Wait -FilePath .\dhis2-hub-0.0.0-ci-setup.exe -ArgumentList '/S','/AllUsers'
+          $setup = (Get-ChildItem dhis2-hub-*-setup.exe | Select-Object -First 1).FullName
+          Start-Process -Wait -FilePath $setup -ArgumentList '/S','/AllUsers'
           $data = 'C:\ProgramData\DHIS2 Facility Hub'
           Get-Content "$data\install.ini"
           $svc = Get-Service DHIS2FacilityHub

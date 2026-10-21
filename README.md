@@ -164,6 +164,13 @@ go build -ldflags "-X github.com/dhis2/facility-hub/internal/upgrade.ReleaseKey=
     linux/arm64=hub-linux-arm64 linux/amd64=hub-linux-amd64 windows/amd64=hub-windows-amd64.exe
 ```
 
+**The version** is in `VERSION`: the next release, like an app's `package.json`. Every build reads it:
+- a release is `VERSION` itself, tagged `v<VERSION>`; the release workflow refuses any other tag;
+- CI builds (the Windows installer, macOS, a Pi image run by hand) are `<VERSION>-ci.<run number>`, which sort above the previous release and below this one, so each installs over the one before;
+- a plain `go build` is `0.0.0-dev`, older than all of them.
+
+After a release, the next commit raises `VERSION`.
+
 **On GitHub**, `.github/workflows/release.yml` does this for a tag `v<version>`:
 1. tests;
 2. builds `linux/arm64` and `linux/amd64` (`windows/amd64` joins with the Windows service);

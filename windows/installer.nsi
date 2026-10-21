@@ -184,8 +184,15 @@ Section "!The hub" SecHub
     Pop $0
     Pop $2
     ${WordFind} "$2" "$\n" "+1" $2
-    ${VersionCompare} "$2" "${VERSION}" $3
-    ${If} $3 == 1
+    ; The new hub.exe compares, by release precedence: NSIS's VersionCompare reads
+    ; dotted numbers only, and would take 0.2.0 for older than 0.2.0-ci.57.
+    InitPluginsDir
+    File "/oname=$PLUGINSDIR\hub-new.exe" "${HUBEXE}"
+    nsExec::ExecToStack '"$PLUGINSDIR\hub-new.exe" version "$2"'
+    Pop $0
+    Pop $3
+    ${WordFind} "$3" "$\n" "+1" $3
+    ${If} $3 == "older"
       DetailPrint "Keeping the newer hub $2 already installed."
       StrCpy $1 "keep"
     ${EndIf}
