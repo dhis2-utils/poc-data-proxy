@@ -28,7 +28,7 @@ func TestSealOpen(t *testing.T) {
 func TestKeySlot(t *testing.T) {
 	dk, _ := NewKey()
 	salt, _ := RandomBytes(16)
-	w, err := WrapDK(dk, "pw", salt)
+	w, _, err := WrapSlot(dk, "pw", salt, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

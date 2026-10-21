@@ -118,3 +118,28 @@ func BenchmarkCommitOne(b *testing.B) {
 		}
 	}
 }
+
+// AllObjects decrypts every object (the storage benchmarks).
+func (s *Store) AllObjects(fn func(*Object) error) error {
+	rows, err := s.DB().Query(`SELECT uid, kind, te_uid, enrollment_uid, program, stage, tet, owner_org_unit, updated_at,
+ origin, sync_state, payload_enc, slot FROM objects`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		o := &Object{}
+		var ct []byte
+		if err := rows.Scan(&o.UID, &o.Kind, &o.TE, &o.Enrollment, &o.Program, &o.Stage, &o.TET, &o.OwnerOrgUnit,
+			&o.UpdatedAt, &o.Origin, &o.SyncState, &ct, &o.Slot); err != nil {
+			return err
+		}
+		if o.Payload, err = s.OpenBlob(objAAD(o.UID), ct); err != nil {
+			return err
+		}
+		if err := fn(o); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}

@@ -78,7 +78,7 @@ var dataMigrations = []string{
 	// 1: each user's visibility is a bitmap over objects' slots (visibility_bits).
 	// Queries read the indexed columns, each object's slim JSON (what the remaining
 	// filters read) and a tracked entity's attribute values (te_attrs) instead of an
-	// in-memory copy of every object (docs/PERFORMANCE.md, "The query index in SQLite").
+	// in-memory copy of every object (docs/PERFORMANCE.md, "How the hub scales").
 	//
 	// The list indexes are not partial: a query with a bound value cannot use an index
 	// restricted to non-empty values. A person's and an enrollment's children are
@@ -214,9 +214,6 @@ CREATE TABLE agg_forms(
 CREATE INDEX agg_forms_ds ON agg_forms(data_set, fetched_at);
 `,
 }
-
-// SchemaVersion is the number of key file migrations this binary knows.
-func SchemaVersion() int { return len(keyMigrations) }
 
 // DataPath is the data file that belongs to the key file at path.
 func DataPath(path string) string { return path + ".data" }

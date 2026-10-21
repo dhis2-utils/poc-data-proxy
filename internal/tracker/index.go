@@ -17,7 +17,7 @@ import (
 // live only in the store's data file: queries read its indexed columns and each
 // object's slim JSON (slim.go), and rendering reads full payloads. An in-memory copy of
 // every object took about 2 KB each, beyond a Pi at a busy facility's size
-// (docs/PERFORMANCE.md, "The query index in SQLite"). What stays in memory is small:
+// (docs/PERFORMANCE.md, "How the hub scales"). What stays in memory is small:
 // the visibility bitmaps and the pull scopes.
 //
 // Objects handed out are immutable: writers store a new version and call Put.
@@ -230,25 +230,8 @@ func (ix *Index) eventsFor(v *Viewer, enrollment string) []*Obj {
 	return v.memo("ev:"+enrollment, func() []*Obj { return ix.EventsOf(enrollment) })
 }
 
-func (ix *Index) eventsOfTEFor(v *Viewer, te string) []*Obj {
-	return v.memo("evte:"+te, func() []*Obj { return ix.EventsOfTE(te) })
-}
-
 func (ix *Index) relationshipsFor(v *Viewer, uid string) []*Obj {
 	return v.memo("rel:"+uid, func() []*Obj { return ix.RelationshipsOf(uid) })
-}
-
-// byUIDs returns the objects of kind among uids, in that order.
-func (ix *Index) byUIDs(kind string, uids []string) []*Obj {
-	got := ix.GetMany(uids)
-	var out []*Obj
-	for _, uid := range uids {
-		if o := got[uid]; o != nil && o.Kind == kind {
-			out = append(out, o)
-			delete(got, uid)
-		}
-	}
-	return out
 }
 
 // Len is how many objects the hub holds.

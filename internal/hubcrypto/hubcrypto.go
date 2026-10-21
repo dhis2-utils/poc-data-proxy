@@ -94,11 +94,6 @@ func DeriveKEK(password string, salt []byte) Key {
 	return idKey([]byte(password), salt, ArgonTime, ArgonMemory, ArgonThreads, KeySize)
 }
 
-// WrapDK wraps the data key for one user's key slot.
-func WrapDK(dk Key, password string, salt []byte) ([]byte, error) {
-	return Seal(DeriveKEK(password, salt), dk, []byte("keyslot"))
-}
-
 // UnwrapDK opens a key slot. It fails if the password is wrong.
 func UnwrapDK(wrapped []byte, password string, salt []byte) (Key, error) {
 	return Open(DeriveKEK(password, salt), wrapped, []byte("keyslot"))

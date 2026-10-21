@@ -134,7 +134,7 @@ func TestPruneKeySlots(t *testing.T) {
 	}
 	for i, name := range []string{"a", "b", "c", "d"} {
 		salt, _ := hubcrypto.RandomBytes(16)
-		wrapped, _ := hubcrypto.WrapDK(dk, name, salt)
+		wrapped, _, _ := hubcrypto.WrapSlot(dk, name, salt, nil)
 		id, err := s.UpsertCredentials(name, "", salt, wrapped)
 		if err != nil {
 			t.Fatal(err)
