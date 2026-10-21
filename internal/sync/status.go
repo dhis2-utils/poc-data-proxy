@@ -20,9 +20,14 @@ import (
 func (w *Worker) heartbeat(ctx context.Context) {
 	h := w.H
 	h.NoteCycle(h.Store.CountObjects(store.SyncPending), diskfree.Free(h.Cfg.DataDir))
+	if !w.lastBeat.IsZero() && time.Since(w.lastBeat) < h.Cfg.HeartbeatInterval {
+		return
+	}
 	if err := h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-status/"+h.HubID(), Status(h), h.HubAuth(), nil); err != nil {
 		slog.Warn("heartbeat", "err", err)
+		return
 	}
+	w.lastBeat = time.Now()
 }
 
 // Status is the heartbeat payload. It holds no patient data.

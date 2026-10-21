@@ -93,6 +93,7 @@ func Start(t testing.TB) *Env {
 func (e *Env) Config() config.Config {
 	c := config.Default()
 	c.TPM = false // the same files on every machine; internal/devkey tests the TPM
+	c.HeartbeatInterval = 0 // tests read the heartbeat after each sync
 	c.CentralURL = e.Net.URL()
 	c.DataDir = e.Dir
 	c.TLS = false

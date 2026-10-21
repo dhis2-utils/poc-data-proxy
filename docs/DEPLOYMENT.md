@@ -358,7 +358,7 @@ A hub only serves its own facility. A community health worker's tablet that visi
 
 ### Monitoring
 
-- Every hub writes a heartbeat to `facility-hub-status/<hub_id>` on central each sync. It holds:
+- Every hub writes a heartbeat to `facility-hub-status/<hub_id>` on central once an hour, at the end of a sync cycle, and at its first cycle after a start. It holds:
   - the latest status: version, uptime, last push and pull, pending count, issue count, free disk and last upgrade result;
   - a history (built), one summary per day for the last 90 days:
     - sync cycles;
@@ -382,7 +382,7 @@ A hub only serves its own facility. A community health worker's tablet that visi
   - repairing changes that can never pass as they are is open. Ideas considered and dropped: exporting them encrypted to a national key (a golden key), per-export codes sent by SMS (a person on site relays them), a remote repair session (needs remote access).
 - **Before tightening metadata** (a new compulsory field, a removed option, a closed stage), check what hubs and tablets have captured offline under the old rules: those changes will be refused.
 - **dataStore volume.** Measured on 2.42 (docs/FINDINGS.md): single-key reads and writes stay at 0.1 s up to a million entries in a namespace. Browsing slows as a namespace grows, because filters have no index on the values and deep pages read all rows before them: 0.3–0.6 s for a filter that matches little, 1.7 s for a deep page at a million. Only the issues namespace could grow without bound, hence the clean-up above.
-- **Heartbeat volume:** one key per hub, overwritten each sync, with its 90-day history inside, so the namespace does not grow. dataStore writes are not audited (measured on 2.42 and 2.43: 5 500 heartbeat writes from 500 hubs left every audit table unchanged). 500 hubs need 0.6 writes per second; reading all their heartbeats takes about 0.1 s (docs/FINDINGS.md). No archiving is needed.
+- **Heartbeat volume:** one key per hub, overwritten hourly, with its 90-day history inside, so the namespace does not grow. A heartbeat is about 14 KB with that history (20 KB with 100 refusal groups): sent every cycle it was 1.3 MB a day per hub, much of it over 4G, and 650 MB a day into central for 500 hubs; hourly it is a quarter of that (measured 2026-10-21, docs/reviews/KISS-2026-10-20.md). dataStore writes are not audited (measured on 2.42 and 2.43: 5 500 heartbeat writes from 500 hubs left every audit table unchanged). 500 hubs need 0.14 writes per second; reading all their heartbeats takes about 0.1 s (docs/FINDINGS.md). No archiving is needed.
 
 ### Upgrades
 

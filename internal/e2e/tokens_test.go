@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/app"
+	"github.com/dhis2/facility-hub/internal/config"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 )
 
@@ -221,5 +222,35 @@ func TestRevokedHubResets(t *testing.T) {
 	}
 	if e.app.Hub.Mode() != "setup" || e.app.Hub.Revoked() {
 		t.Fatalf("after the reset: mode %s, revoked %v", e.app.Hub.Mode(), e.app.Hub.Revoked())
+	}
+}
+
+// The heartbeat goes to central once an hour, not with every sync (13.6 KB with its
+// 90-day history: 1.3 MB a day per hub at every 15 minutes, docs/reviews/KISS-
+// 2026-10-20.md), and at the first sync after a start. Every cycle still counts in the
+// history.
+func TestHeartbeatHourly(t *testing.T) {
+	e := newEnv(t)
+	e.cfgHook = func(c *config.Config) { c.HeartbeatInterval = time.Hour }
+	e.stop()
+	e.start()
+	key := "PUT /api/dataStore/facility-hub-status/" + e.app.Hub.HubID()
+	before := e.central.RequestCount(key)
+	e.setup() // its first cycle sends one
+	e.sync()
+	e.sync()
+	e.sync()
+	if n := e.central.RequestCount(key) - before; n != 1 {
+		t.Fatalf("%d heartbeats in four cycles within an hour, want 1", n)
+	}
+	if h := e.app.Hub.History(); len(h) == 0 || h[len(h)-1].Syncs < 4 {
+		t.Fatalf("the history does not count every cycle: %+v", h)
+	}
+	e.stop()
+	e.start()
+	e.web("hub_admin").login()
+	e.sync()
+	if n := e.central.RequestCount(key) - before; n != 2 {
+		t.Fatalf("no heartbeat at the first sync after a start: %d", n)
 	}
 }

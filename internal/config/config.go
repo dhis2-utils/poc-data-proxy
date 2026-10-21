@@ -48,6 +48,11 @@ type Config struct {
 	// Re-reading them in every cycle was a third of what a hub asked of central
 	// (docs/PERFORMANCE.md, "Load on central").
 	AccessRefreshInterval time.Duration
+	// HeartbeatInterval: how often the heartbeat goes to central (facility-hub-status),
+	// at most once per sync cycle, and at the first cycle after a start. Hourly: with
+	// its 90-day history it is about 14 KB (docs/reviews/KISS-2026-10-20.md). 0: every
+	// cycle (tests).
+	HeartbeatInterval time.Duration
 	// ReconnectDelay: after an outage, wait a random time up to this before the first
 	// sync, so hubs do not all reach central in the same second when it returns.
 	ReconnectDelay time.Duration
@@ -95,6 +100,7 @@ func Default() Config {
 		PingInterval:           15 * time.Second,
 		PingTimeout:            5 * time.Second,
 		PATExpiryDays:          90,
+		HeartbeatInterval:      time.Hour,
 		TPM:                    true,
 		TLS:                    true,
 		ReservedPoolSize:       150,

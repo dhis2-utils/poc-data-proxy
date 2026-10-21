@@ -56,6 +56,7 @@ func newEnv(t *testing.T) *env {
 func (e *env) cfg() config.Config {
 	c := config.Default()
 	c.TPM = e.device != nil // a fake TPM where a test gives one (device_test.go)
+	c.HeartbeatInterval = 0 // tests read the heartbeat after each sync
 	c.CentralURL = e.cSrv.URL
 	c.DataDir = e.dir
 	c.TLS = false

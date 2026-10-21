@@ -28,6 +28,7 @@ type Worker struct {
 	pushMu stdsync.Mutex // one push at a time: Cycle, the upgrade drain and reset all push
 
 	lastRefresh time.Time // last access and catalog refresh (Config.AccessRefreshInterval)
+	lastBeat    time.Time // last heartbeat sent (Config.HeartbeatInterval)
 }
 
 // Exclusive runs f while no sync cycle runs, and keeps cycles out until f returns.
