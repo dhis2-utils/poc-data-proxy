@@ -68,7 +68,13 @@ func TestInitWritesNothingCountrySpecific(t *testing.T) {
 // The data folder is quoted in hub.yaml: a folder name with " #" in it is not cut off
 // as a comment.
 func TestInitQuotesPaths(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "Clinic #2: hub")
+	// " #" starts a YAML comment, ": " a mapping. Windows allows no ":" in a folder
+	// name, but every Windows path has one (C:\...).
+	name := "Clinic #2: hub"
+	if runtime.GOOS == "windows" {
+		name = "Clinic #2 hub"
+	}
+	dir := filepath.Join(t.TempDir(), name)
 	if _, err := initData(dir, false, func(int) bool { return true }); err != nil {
 		t.Fatal(err)
 	}
@@ -78,6 +84,9 @@ func TestInitQuotesPaths(t *testing.T) {
 	}
 	if c.DataDir != dir {
 		t.Fatalf("data_dir %q, want %q", c.DataDir, dir)
+	}
+	if runtime.GOOS == "windows" {
+		return // Windows allows no " in a folder name
 	}
 	if _, err := initData(filepath.Join(t.TempDir(), `a"b`), false, func(int) bool { return true }); err == nil {
 		t.Error(`a folder with " in its name accepted`)
