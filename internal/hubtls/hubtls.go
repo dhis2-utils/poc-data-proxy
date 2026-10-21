@@ -254,17 +254,15 @@ func ValidHostName(n string) bool {
 	return len(labels) >= 3
 }
 
-// loadCA reads the authority and its key, or makes a new one. A hub from before the
-// key was kept has only ca.crt: it gets a new authority, and devices install it again.
-// A key that cannot be read (permissions, I/O) stops the hub rather than being
-// replaced, since every device would have to install the replacement; a corrupt one
-// (power loss) is kept aside as ca.key.bad and replaced, so the hub still starts.
+// loadCA reads the authority and its key, or makes a new one when there is no key
+// (newCA writes the key first, so a ca.crt alone means the key was lost, and devices
+// install the new authority again). A key that cannot be read (permissions, I/O)
+// stops the hub rather than being replaced, since every device would have to install
+// the replacement; a corrupt one (power loss) is kept aside as ca.key.bad and
+// replaced, so the hub still starts.
 func (c *Certs) loadCA() error {
 	keyPEM, err := readFile(c.path("ca.key"))
 	if errors.Is(err, fs.ErrNotExist) {
-		if _, err := os.Stat(c.path("ca.crt")); err == nil {
-			slog.Warn("the hub's certificate authority has no key (made by an older version); making a new one, which devices must install")
-		}
 		return c.newCA()
 	}
 	if err != nil {

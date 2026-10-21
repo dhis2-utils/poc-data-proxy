@@ -181,8 +181,8 @@ func TestRenewsBeforeExpiry(t *testing.T) {
 	}
 }
 
-// A hub from before the authority's key was kept makes a new authority once.
-func TestOldLayoutGetsNewAuthority(t *testing.T) {
+// An authority whose key is gone is replaced by a new one.
+func TestLostKeyGetsNewAuthority(t *testing.T) {
 	f, dir := newFake(), t.TempDir()
 	c1, err := load(dir, f.env())
 	if err != nil {
