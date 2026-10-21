@@ -543,9 +543,13 @@ type Execer interface {
 	Exec(query string, args ...any) (sql.Result, error)
 }
 
+// sqlCountObjects counts the objects in an unsynced state (pending, rejected) from the
+// partial index objects_unsynced; the second condition is what lets SQLite use it.
+const sqlCountObjects = `SELECT count(*) FROM objects WHERE sync_state=? AND sync_state <> 'synced'`
+
 func (s *Store) CountObjects(state string) int {
 	var n int
-	s.DB().QueryRow(`SELECT count(*) FROM objects WHERE sync_state=?`, state).Scan(&n)
+	s.DB().QueryRow(sqlCountObjects, state).Scan(&n)
 	return n
 }
 

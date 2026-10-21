@@ -213,6 +213,10 @@ CREATE TABLE agg_forms(
 );
 CREATE INDEX agg_forms_ds ON agg_forms(data_set, fetched_at);
 `,
+	// 2: the unsynced objects alone, for counting pending and refused ones (status page,
+	// heartbeat, each sync cycle) without reading every object (stress test on Windows,
+	// 2026-10-21). Only unsynced rows are in it, so it stays small.
+	`CREATE INDEX objects_unsynced ON objects(sync_state) WHERE sync_state <> 'synced';`,
 }
 
 // DataPath is the data file that belongs to the key file at path.
