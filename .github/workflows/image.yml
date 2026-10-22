@@ -52,8 +52,10 @@ jobs:
         run: sudo image/build.sh bin/hub-linux-arm64 "$VERSION" out
       - name: Check the image
         run: sudo image/check.sh "out/dhis2-hub-$VERSION-arm64.img.xz"
+      # Named after the image, with its version: GitHub offers it as a zip of that
+      # name (the release fetches it by the same name).
       - uses: actions/upload-artifact@v4
         with:
-          name: image
+          name: dhis2-hub-${{ env.VERSION }}-arm64.img
           path: out/dhis2-hub-${{ env.VERSION }}-arm64.img.xz
           compression-level: 0
