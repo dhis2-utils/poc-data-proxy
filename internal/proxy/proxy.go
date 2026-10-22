@@ -198,19 +198,18 @@ func splitTop(s string) []string {
 	return append(out, s[start:])
 }
 
-// sharedPrefixes are metadata and app configuration paths: the same for every user of
-// the facility and free of patient data. Tracked entity filters and working lists are
-// not here: their sharing differs per user (REVIEW-2 F4). Offline, a user who never fetched one online
-// is served another user's copy. Anything user-specific (/api/me, userSettings,
-// userDataStore, tracker data) stays strictly per user.
-var sharedPrefixes = []string{"programs", "programStages", "trackedEntityTypes", "trackedEntityAttributes", "dataElements",
-	"optionSets", "optionGroups", "options", "categoryOptions", "categoryCombos", "categoryOptionCombos", "constants",
-	"programRules", "programRuleVariables", "programRuleActions", "programIndicators", "relationshipTypes",
-	"organisationUnits", "organisationUnitGroups", "organisationUnitLevels", "systemSettings", "system/info", "loginConfig", "locales", "staticContent", "icons",
-	"apps", "dataStore/capture", "dataStore/ANDROID_SETTINGS_APP", "dataStore/ANDROID_SETTING_APP",
-	"dataStore/APK_DISTRIBUTION", "dataStore/USE_CASES", "attributes", "legendSets"}
+// sharedPrefixes are the API answers that do not depend on who asks: the login page's
+// settings and logo, and the server's language lists. Offline, a user who never fetched
+// one online is served another user's copy. Everything else stays per user, metadata
+// included: central answers programs, option sets, data elements, org units and the
+// rest per user (metadata sharing, from public, group and individual sharing; display
+// names in the user's language), and the hub does not evaluate that (REVIEW-2 F4,
+// FINDINGS "Shared metadata cache"). A user who never loaded them online gets "needs
+// connection" for them offline.
+var sharedPrefixes = []string{"loginConfig", "staticContent", "locales"}
 
-// shared reports whether a path's cached response may be served to any user.
+// shared reports whether a path's cached response may be served to any user: the
+// answers above, and the apps' static files.
 func shared(path string) bool {
 	rest, ok := strings.CutPrefix(path, "/api/")
 	if !ok {
@@ -218,11 +217,6 @@ func shared(path string) bool {
 	}
 	if m := regexp.MustCompile(`^[0-9]{2}/`).FindString(rest); m != "" {
 		rest = rest[len(m):]
-	}
-	// The org unit list answers per user (withinUserHierarchy, userDataViewFallback)
-	// at the same URL; one org unit by UID does not (REVIEW-2 F4).
-	if rest == "organisationUnits" || rest == "organisationUnits.json" {
-		return false
 	}
 	for _, p := range sharedPrefixes {
 		if rest == p || strings.HasPrefix(rest, p+"/") || strings.HasPrefix(rest, p+".") || strings.HasPrefix(rest, p+"?") {

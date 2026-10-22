@@ -336,8 +336,11 @@ func TestOutsiderNotRegistered(t *testing.T) {
 	}
 }
 
-// REVIEW-2 F4: per-user metadata is not served from another user's cache offline;
-// offline answers say so in X-Hub-Mode, and narrowed searches in X-Hub-Scope.
+// REVIEW-2 F4: metadata is not served from another user's copy offline: central
+// answers it per user (metadata sharing, from public, group and individual sharing;
+// display names in the user's language), and the hub does not evaluate that. Only
+// answers that do not depend on who asks are shared. Offline answers say so in
+// X-Hub-Mode, and narrowed searches in X-Hub-Scope.
 func TestPerUserMetadataNotShared(t *testing.T) {
 	e := newEnv(t)
 	e.setup()
@@ -345,15 +348,24 @@ func TestPerUserMetadataNotShared(t *testing.T) {
 	a.login()
 	b := e.web("nurse_b")
 	b.login()
-	tree := "/api/42/organisationUnits?fields=id&withinUserHierarchy=true"
-	a.do("GET", tree, nil)
-	a.do("GET", "/api/organisationUnits/"+fc.Facility+"?fields=id", nil)
-	e.offline()
-	if st, _ := b.do("GET", tree, nil); st != 503 {
-		t.Fatalf("nurse_b got nurse_a's org unit tree offline: %d", st)
+	perUser := []string{
+		"/api/42/organisationUnits?fields=id&withinUserHierarchy=true",
+		"/api/organisationUnits/" + fc.Facility + "?fields=id,displayName",
+		"/api/programs?fields=id,displayName&paging=false",
+		"/api/system/info?fields=version",
 	}
-	if st, _ := b.do("GET", "/api/organisationUnits/"+fc.Facility+"?fields=id", nil); st != 200 {
-		t.Fatalf("one org unit by UID not shared: %d", st)
+	for _, p := range perUser {
+		a.do("GET", p, nil)
+	}
+	a.do("GET", "/api/loginConfig", nil)
+	e.offline()
+	for _, p := range perUser {
+		if st, _ := b.do("GET", p, nil); st != 503 {
+			t.Errorf("nurse_b got nurse_a's copy of %s offline: %d", p, st)
+		}
+	}
+	if st, _ := b.do("GET", "/api/loginConfig", nil); st != 200 {
+		t.Errorf("the login page's settings, the same for everyone, not shared: %d", st)
 	}
 	req, _ := http.NewRequest("GET", e.srv.URL+"/api/tracker/trackedEntities?orgUnitMode=ACCESSIBLE&program="+fc.Program, nil)
 	req.SetBasicAuth("nurse_a", fc.Password)

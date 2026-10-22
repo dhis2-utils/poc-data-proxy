@@ -916,7 +916,7 @@ func TestOfflineStaticCache(t *testing.T) {
 	if st, _ := a.do("GET", "/dhis-web-capture/index.html", nil); st != 200 {
 		t.Fatal(st)
 	}
-	a.do("GET", "/api/programs/"+fc.Program+"?fields=id", nil) // metadata, cached under nurse_a
+	a.do("GET", "/api/programs/"+fc.Program+"?fields=id", nil) // metadata: nurse_a's own
 	a.do("GET", "/api/me?fields=id", nil)                      // user-specific, never shared
 	e.offline()
 	b := e.web("nurse_b")
@@ -925,8 +925,10 @@ func TestOfflineStaticCache(t *testing.T) {
 	if st != 200 || !strings.Contains(string(body), "capture app") {
 		t.Fatalf("static file offline: %d %s", st, body)
 	}
-	if st, _ := b.do("GET", "/api/programs/"+fc.Program+"?fields=id", nil); st != 200 {
-		t.Fatalf("shared metadata offline for nurse_b: %d", st)
+	// Metadata is answered per user on central (sharing, language): never another
+	// user's copy (TestPerUserMetadataNotShared).
+	if st, _ := b.do("GET", "/api/programs/"+fc.Program+"?fields=id", nil); st != 503 {
+		t.Fatalf("nurse_b got nurse_a's metadata offline: %d", st)
 	}
 	if st, _ := b.do("GET", "/api/apps?fields=id", nil); st != 503 {
 		t.Fatalf("uncached API offline should need connection, got %d", st)
