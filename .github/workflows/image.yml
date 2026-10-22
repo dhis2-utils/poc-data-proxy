@@ -15,12 +15,9 @@ on:
         required: false
         type: string
         default: ""
+  # By hand, a test image: the version is VERSION as a pre-release of the run
+  # (0.1.5-ci.42), so there is nothing to type.
   workflow_dispatch:
-    inputs:
-      version:
-        description: Hub version (without the v); empty for VERSION as a pre-release of this run
-        required: false
-        default: ""
 
 jobs:
   image:
