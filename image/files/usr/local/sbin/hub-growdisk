@@ -1,0 +1,22 @@
+#!/bin/sh
+# Grows the system partition, then its file system, to fill the disk: at the first start
+# on a new disk (hub-growdisk.service). Raspberry Pi OS does this in its start-up stage
+# when cmdline.txt says "resize", together with a new disk ID; on this image those
+# steps stopped half-way and left the disk unbootable (two Pis, 2026-10-22). So the
+# image leaves them out and grows the disk here, in the running system, where the log
+# (and bootfs/hub-diag.txt) shows any failure. The disk keeps the image's ID: it only
+# has to differ from another disk's when two made from this image are plugged into one
+# Pi, which a hub never has.
+set -eu
+root=$(findmnt -n -o SOURCE /)
+name=$(basename "$root")
+disk=/dev/$(lsblk -no PKNAME "$root")
+part=$(cat "/sys/class/block/$name/partition")
+echo "growing partition $part of $disk ($root)"
+# A mounted partition: sfdisk writes the table without asking the kernel to re-read
+# it, and partx tells the kernel the partition's new size.
+echo ", +" | sfdisk --no-reread --force -N "$part" "$disk"
+partx -u -n "$part" "$disk"
+resize2fs "$root"
+touch /var/lib/hub-growdisk.done
+echo "done: $(lsblk -no SIZE "$root") partition, file system $(df -h --output=size / | tail -1 | tr -d ' ')"

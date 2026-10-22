@@ -1,0 +1,14 @@
+# The system partition and file system fill the disk, once per disk
+# (/usr/local/sbin/hub-growdisk); before the hub, which stores its data there.
+[Unit]
+Description=Grow the system partition to fill the disk
+After=local-fs.target
+Before=hub.service
+ConditionPathExists=!/var/lib/hub-growdisk.done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hub-growdisk
+
+[Install]
+WantedBy=multi-user.target

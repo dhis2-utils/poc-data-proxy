@@ -71,6 +71,11 @@ for f in user-data meta-data network-config; do mdel -i "$WORK/boot.vfat" "::/$f
 mtype -i "$WORK/boot.vfat" ::/config.txt > "$WORK/config.txt"
 printf '\n# The hub: a TPM board on SPI, if fitted\n[all]\ndtparam=spi=on\ndtoverlay=tpm-slb9670\n' >> "$WORK/config.txt"
 mcopy -o -i "$WORK/boot.vfat" "$WORK/config.txt" ::/config.txt
+# No "resize": Raspberry Pi OS's start-up stage would grow the partition and give the
+# disk a new ID, steps that stopped half-way on this image and left it unbootable
+# (2026-10-22); hub-growdisk.service grows the disk in the running system instead.
+mtype -i "$WORK/boot.vfat" ::/cmdline.txt | sed 's/ resize\b//' > "$WORK/cmdline.txt"
+mcopy -o -i "$WORK/boot.vfat" "$WORK/cmdline.txt" ::/cmdline.txt
 
 echo "== disk"
 IMG=$OUT/dhis2-hub-$VERSION-arm64.img

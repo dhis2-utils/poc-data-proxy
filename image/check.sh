@@ -33,6 +33,8 @@ masked() { debugfs -R "stat /etc/systemd/system/$1" "$R" 2>/dev/null | grep -q '
 # Partitions: the disk identifier the boot configuration names.
 CMDLINE=$(mtype -i "$WORK/boot.vfat" ::/cmdline.txt)
 check "cmdline.txt boots root=PARTUUID=$LABEL-02" grep -q "root=PARTUUID=$LABEL-02 " <<<"$CMDLINE "
+no_resize() { ! grep -qw resize <<<"$CMDLINE"; }
+check "cmdline.txt leaves out Raspberry Pi OS's first-start resize" no_resize
 FSTAB=$(cat_ /etc/fstab)
 check "fstab mounts PARTUUID=$LABEL-01 and -02" sh -c "grep -q 'PARTUUID=$LABEL-01' <<'X'
 $FSTAB
@@ -67,6 +69,9 @@ check "rfkill does not block the Wi-Fi (setup Wi-Fi)" exists /etc/systemd/system
 check "hub.service is enabled" exists /etc/systemd/system/multi-user.target.wants/hub.service
 check "diagnostics for support are written to the boot partition" exists /etc/systemd/system/timers.target.wants/hub-diag.timer
 check "no first-boot prompt waits for a console nobody has" masked systemd-firstboot.service
+check "the disk is grown at the first start" exists /etc/systemd/system/multi-user.target.wants/hub-growdisk.service
+wifi_on() { cat_ /var/lib/NetworkManager/NetworkManager.state | grep -q '^WirelessEnabled=true'; }
+check "NetworkManager starts with the Wi-Fi on" wifi_on
 check "hub.service may bind ports 80 and 443" sh -c "debugfs -R 'cat /etc/systemd/system/hub.service' '$R' 2>/dev/null | grep -q CAP_NET_BIND_SERVICE"
 YAML=$(cat_ /etc/hub/hub.yaml)
 check "hub.yaml has no central_url (one image for every country)" sh -c "! grep -q '^central_url' <<'X'

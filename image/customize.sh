@@ -32,7 +32,7 @@ echo dhis2 > /etc/hostname
 sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tdhis2/' /etc/hosts
 grep -q '^127\.0\.1\.1' /etc/hosts || printf '127.0.1.1\tdhis2\n' >> /etc/hosts
 
-systemctl enable hub.service hub-wifi-unblock.service hub-diag.timer nftables.service chrony.service avahi-daemon.service NetworkManager.service
+systemctl enable hub.service hub-wifi-unblock.service hub-diag.timer hub-growdisk.service nftables.service chrony.service avahi-daemon.service NetworkManager.service
 systemctl disable userconfig.service sshswitch.service 2>/dev/null || true
 # A new machine ID at first boot, so cloned images do not share one. An empty one also
 # makes systemd treat that boot as a first boot, when systemd-firstboot asks on the
@@ -40,6 +40,11 @@ systemctl disable userconfig.service sshswitch.service 2>/dev/null || true
 # keyboard, the hub never started (two Pis, 2026-10-22). The image sets what it would
 # ask for, or needs none of it.
 systemctl mask systemd-firstboot.service
-chmod 0755 /usr/local/sbin/hub-diag
+chmod 0755 /usr/local/sbin/hub-diag /usr/local/sbin/hub-growdisk
+# NetworkManager keeps the Wi-Fi off, and blocks the radio, while its saved state says
+# so: the base image ships WirelessEnabled=false (Pi OS, until a country is set), which
+# overrode hub-wifi-unblock and kept the setup Wi-Fi from starting (rpi5, 2026-10-22).
+mkdir -p /var/lib/NetworkManager
+printf '[main]\nWirelessEnabled=true\n' > /var/lib/NetworkManager/NetworkManager.state
 : > /etc/machine-id
 rm -f /var/lib/dbus/machine-id
