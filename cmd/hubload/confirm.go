@@ -52,6 +52,10 @@ func confirm(user string, status int, body []byte, objs ...[2]string) {
 	for _, o := range objs {
 		fmt.Fprintf(confirmed.f, "%s\t%s\t%s\t%s\n", time.Now().UTC().Format(time.RFC3339Nano), user, o[0], o[1])
 	}
+	// On disk before the next write: when the load runs on the machine whose power is
+	// cut, an unflushed tail would drop exactly the last confirmed writes, the ones most
+	// at risk, from the check.
+	confirmed.f.Sync()
 }
 
 // verify reads back every confirmed object from the hub, with central down so that the

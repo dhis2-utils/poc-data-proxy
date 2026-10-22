@@ -47,6 +47,27 @@ The 1 GB knee is between 30 k and 60 k people; the incremental syncs at 60 k ran
 - Calibration on a real Pi (`perf/pi.sh bench`).
 - Tracker retention on `pi5` (measured in process at 100 k and at the HC IV size: "Retention for tracker programs" below).
 
+## On a Windows PC (2026-10-22)
+
+The hub as a Windows program, on a small PC: a Windows 11 VM with **2 CPUs and 4 GB**, on an NVMe disk, no TPM. `perf/windows/stress.ps1` runs the ladder's two runs there with 20 users: a second hub beside the installed one, the fake central and `hubload` on the same PC (they take CPU from the hub; on the Pis they run elsewhere), the data folder excluded from Defender as the installer does. Hub `0.1.5` (`376ce5a`); latencies offline, p50 / p95.
+
+| Windows VM, 20 users | 10 k | 30 k | 100 k |
+|---|---|---|---|
+| First pull of all users | 1 min 49 s | 4 min 0 s | 14 min 18 s |
+| Working day: dashboard, person | 10 ms / 37 ms | 8 ms / 19 ms | 13 ms / 94 ms |
+| Working day: working list | 23 ms / 261 ms | 22 ms / 243 ms | 33 ms / 205 ms |
+| Working day: Android incremental sync (p50) | 7.2 s | 22 s | 1 min 38 s |
+| Hammer: web pages (p50 / p95) | 69–228 ms / 243–614 ms | 75–212 ms / 199–577 ms | 90–258 ms / 236–643 ms |
+| Hammer: 6 Android first downloads at once (3 000 people each) | 28 s | 21 s | 22 s |
+| Reconnect: online after the uplink returns; outbox empty after | 29–32 s; 11–13 s | 4–12 s; 0–2 s | 4–10 s; 0–2 s |
+| Peak memory of `hub.exe` (working set) | 225 MB | 228 MB | 300 MB |
+| Data folder | 0.3 GB | 0.7 GB | 2.2 GB |
+| Errors, warnings in the hub's log | none | none | none |
+
+The 10 k column ran before the index on unsynced objects (History, 2026-10-22); its reconnect includes the slow status count. Against `pi4` (1 GB, the ladder above) the VM is about the same in the first pull, a little slower at the median and faster at the tail; it serves 100 k people well for web users. As on the Pis, Android incremental syncs are the slow part from 30 k on (open above).
+
+Power cuts on Windows: `perf/windows/powercut.ps1` (hard resets under load, then every confirmed save is read back); results to come.
+
 ## How the hub scales
 
 - **One store.** Objects live only in the encrypted SQLite data file: each row has the columns lists filter and sort on, its slim JSON, and its sealed payload; attribute values are in `te_attrs`. Searches put every condition columns decide into SQL, read in growing chunks in the requested order where SQL can give it (creation date) and stop at a full page; other orders sort in Go. `TestQueryPlansUseIndexes` fails if a query scans a table.
@@ -256,3 +277,4 @@ Each page read and sorted the program's events; `objects_events` (creation order
 - **2026-10-15, event programs.** Held offline with retention by program; two indexes for event lists (the numbers above).
 - **2026-10-16, tracker retention.** Old closed enrollments are kept as stubs, with windows by program and by tracked entity type. With a 12-month window, at the HC IV size kept for five years, the data file went from 16.2 to 6.5 GB and the first fill from 35 to 20 minutes. Central's bytes did not shrink on this data, where nearly everyone had a recent enrollment somewhere.
 - **2026-10-17, migrations at the HC IV size.** Rebuilding an index over 4.6 million objects at upgrade ran out of SQLite's memory; the retention migration builds a partial index instead (5.8 s).
+- **2026-10-22, Windows; counting unsynced objects.** The ladder on a 2-CPU Windows VM (section "On a Windows PC"). It found the status page, the heartbeat and each sync cycle counting pending and refused objects by reading every object: at 30 k a `/hub/status` took 9–15 s here and about a minute on the VM, and the data folder reached 1.8 GB, probably a write-ahead log that the long reads kept from being checkpointed (not checked). A partial index of the unsynced objects: 1–8 ms, the 30 k first pull 5 min 48 s → 4 min, the data folder 0.7 GB; built at the HC IV size in 15 s.
