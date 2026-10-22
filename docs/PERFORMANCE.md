@@ -66,7 +66,7 @@ The hub as a Windows program, on a small PC: a Windows 11 VM with **2 CPUs and 4
 
 The 10 k column ran before the index on unsynced objects (History, 2026-10-22); its reconnect includes the slow status count. Against `pi4` (1 GB, the ladder above) the VM is about the same in the first pull, a little slower at the median and faster at the tail; it serves 100 k people well for web users. As on the Pis, Android incremental syncs are the slow part from 30 k on (open above).
 
-Power cuts on Windows: `perf/windows/powercut.ps1` on the VM with `powercut-host.sh` on the Mac, which kills the VM at random moments (hard resets under load; at each start-up every confirmed save is read back); results to come.
+**Power cuts on Windows** (2026-10-22): `perf/windows/powercut.ps1` on the same VM with `powercut-host.sh` on the Mac, which cut the VM 4–8 minutes after each start, 10 times (8 times UTM's "Force kill" of the VM's process, twice "Force shut down"), while 20 users saved offline with no pauses. At each start-up every save the hub had confirmed so far was read back, offline, as its author: **9 759 confirmed saves, none missing**, in every one of the 10 verifies. The log of confirmed saves stayed on the VM's own disk, written through with each save (on the Mac's shared folder a killed VM lost what it had last written there). A VM's cut is milder than a real one: what the Mac had already received from the VM survives it. Real power cuts are for the Pis and a physical PC (HARDWARE-TESTING.md, "Power cuts").
 
 ## How the hub scales
 
