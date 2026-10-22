@@ -389,7 +389,9 @@ func (m *Manager) Status() Status {
 	return st
 }
 
-func (m *Manager) setupSSID() string { return "Hub-" + m.HubID }
+// setupSSID is "Hub-" and the hub ID without its own "hub-" (Hub-Zvc7xMnFcVg, not
+// Hub-hub-Zvc7xMnFcVg).
+func (m *Manager) setupSSID() string { return "Hub-" + strings.TrimPrefix(m.HubID, "hub-") }
 
 // setupPassword is made once, at first use, and kept in the data folder.
 func (m *Manager) setupPassword() (string, error) {

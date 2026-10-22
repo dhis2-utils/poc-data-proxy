@@ -48,14 +48,14 @@ func TestBootWithoutNetworkStartsSetup(t *testing.T) {
 		t.Fatalf("no setup Wi-Fi after 61 s: %v", r.nm.Calls)
 	}
 	add := strings.Join(r.nm.Conns[SetupConn], " ")
-	for _, want := range []string{"ssid Hub-hub-abc123", "802-11-wireless.mode ap", "ipv4.method shared",
+	for _, want := range []string{"ssid Hub-abc123", "802-11-wireless.mode ap", "ipv4.method shared",
 		"ipv4.addresses 10.42.0.1/24", "wifi-sec.key-mgmt wpa-psk", "autoconnect no"} {
 		if !strings.Contains(add, want) {
 			t.Errorf("setup connection lacks %q: %s", want, add)
 		}
 	}
 	st := r.m.Status()
-	if st.Mode != "setup" || st.SetupSSID != "Hub-hub-abc123" || len(st.Networks) != 2 || st.Networks[0].SSID != "Clinic" {
+	if st.Mode != "setup" || st.SetupSSID != "Hub-abc123" || len(st.Networks) != 2 || st.Networks[0].SSID != "Clinic" {
 		t.Fatalf("status %+v", st)
 	}
 	if !strings.Contains(add, "wifi-sec.psk "+st.SetupPassword) {

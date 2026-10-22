@@ -93,7 +93,7 @@ func TestHubTxtOnStick(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "Facility hub " + id + "\nOpen: http://dhis2.local\nAddresses: 10.42.0.1\nSetup Wi-Fi: Hub-" + id +
+	want := "Facility hub " + id + "\nOpen: http://dhis2.local\nAddresses: 10.42.0.1\nSetup Wi-Fi: Hub-" + strings.TrimPrefix(id, "hub-") +
 		"\nSetup Wi-Fi password: " + st.SetupPassword + "\n"
 	if string(b) != want {
 		t.Fatalf("hub.txt:\n%s\nwant:\n%s", b, want)
