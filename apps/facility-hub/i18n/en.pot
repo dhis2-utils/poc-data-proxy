@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-10-20T19:45:39.359Z\n"
-"PO-Revision-Date: 2026-10-20T19:45:39.360Z\n"
+"POT-Creation-Date: 2026-10-22T11:19:14.066Z\n"
+"PO-Revision-Date: 2026-10-22T11:19:14.066Z\n"
 
 msgid "Approve the hub of {{- facility}}"
 msgstr "Approve the hub of {{- facility}}"
@@ -462,6 +462,21 @@ msgstr "Pending peak"
 
 msgid "Lowest free disk"
 msgstr "Lowest free disk"
+
+msgid "Not available offline"
+msgstr "Not available offline"
+
+msgid "Times"
+msgstr "Times"
+
+msgid "Request"
+msgstr "Request"
+
+msgid "Parameters"
+msgstr "Parameters"
+
+msgid "Client"
+msgstr "Client"
 
 msgid ""
 "Values are masked (***) – central staff see which field caused it, not what "

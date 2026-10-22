@@ -441,6 +441,11 @@ func (u *UI) handleEndpoints(w http.ResponseWriter, r *http.Request) {
 	for _, k := range keys {
 		fmt.Fprintf(w, "%s\t%d\n", k, counts[k])
 	}
+	misses, total := u.H.ReqLog.OfflineMisses(1000)
+	fmt.Fprintf(w, "\n# Reads answered \"needs connection\" offline, since the hub started (%d)\n", total)
+	for _, m := range misses {
+		fmt.Fprintf(w, "%s\t%d\n", m["request"], m["count"])
+	}
 	fmt.Fprintln(w, "\n# Parameters not supported offline")
 	ukeys := make([]string, 0, len(unsupp))
 	for k := range unsupp {

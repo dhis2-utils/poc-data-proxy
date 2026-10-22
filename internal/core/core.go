@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -509,12 +510,19 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 
 // WebError writes an error in the target version's format (falls back to 2.42).
 func (h *Hub) WebError(w http.ResponseWriter, status int, msg, code string) {
+	if strings.HasPrefix(msg, "needs connection") {
+		w.Header().Set(NeedsConnectionHeader, "true") // counted by the app (RequestLog.Miss)
+	}
 	api := h.API()
 	if api == nil {
 		api = compat.For("2.42")
 	}
 	WriteJSON(w, status, api.WebMessage(status, msg, code))
 }
+
+// NeedsConnectionHeader marks the hub's own "needs connection" answers: what it could
+// not answer offline, counted per endpoint for the heartbeat (RequestLog.Miss).
+const NeedsConnectionHeader = "X-Hub-Needs-Connection"
 
 // NeedsConnection is the fail-closed answer (spec 2).
 func (h *Hub) NeedsConnection(w http.ResponseWriter, what string) {

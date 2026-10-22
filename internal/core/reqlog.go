@@ -1,9 +1,11 @@
 package core
 
 import (
+	"cmp"
 	"fmt"
 	"github.com/dhis2/facility-hub/internal/logfile"
 	"log/slog"
+	"maps"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -25,12 +27,13 @@ type RequestLog struct {
 	mu      sync.Mutex
 	counts  map[string]int
 	unsupp  map[string]int
+	misses  map[string]int
 	file    *logfile.File
 	enabled bool
 }
 
 func NewRequestLog() *RequestLog {
-	return &RequestLog{counts: map[string]int{}, unsupp: map[string]int{}}
+	return &RequestLog{counts: map[string]int{}, unsupp: map[string]int{}, misses: map[string]int{}}
 }
 
 // Open starts appending one line per request to dir/requests.log.
@@ -72,15 +75,52 @@ func (l *RequestLog) Record(r *http.Request, client, servedBy string, status int
 		params = append(params, k)
 	}
 	slices.Sort(params)
-	key := fmt.Sprintf("%s %s ?%s [%s]", r.Method, Template(r.URL.Path), strings.Join(params, ","), client)
+	k := key(r, client)
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.counts[key]++
+	l.counts[k]++
 	if l.enabled {
 		// Parameter names only: values can hold search terms (patient names).
 		fmt.Fprintf(l.file, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n", time.Now().UTC().Format(time.RFC3339), client, r.Method,
 			Template(r.URL.Path), status, servedBy, strings.Join(params, ","))
 	}
+}
+
+// key is a request as the log and its page show it: method, path template, parameter
+// names (values can hold search terms) and client.
+func key(r *http.Request, client string) string {
+	var params []string
+	for k := range r.URL.Query() {
+		params = append(params, k)
+	}
+	slices.Sort(params)
+	return fmt.Sprintf("%s %s ?%s [%s]", r.Method, Template(r.URL.Path), strings.Join(params, ","), client)
+}
+
+// Miss counts a read the hub answered "needs connection" offline: a screen nobody had
+// opened online, an unsupported query. Since the hub started; the heartbeat carries
+// the top ones (OfflineMisses).
+func (l *RequestLog) Miss(r *http.Request) {
+	k := key(r, ClientKind(r))
+	l.mu.Lock()
+	l.misses[k]++
+	l.mu.Unlock()
+}
+
+// OfflineMisses returns the n most frequent misses, most first, and how many there
+// were in all.
+func (l *RequestLog) OfflineMisses(n int) (top []map[string]any, total int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	keys := slices.Collect(maps.Keys(l.misses))
+	slices.SortFunc(keys, func(a, b string) int { return cmp.Or(cmp.Compare(l.misses[b], l.misses[a]), cmp.Compare(a, b)) })
+	for i, k := range keys {
+		total += l.misses[k]
+		if i < n {
+			top = append(top, map[string]any{"request": k, "count": l.misses[k]})
+		}
+	}
+	return top, total
 }
 
 // Unsupported records an offline parameter the hub could not serve (spec 10.1).

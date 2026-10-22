@@ -156,7 +156,7 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 			px.ServeHTTP(w, r)
 		}
 	})
-	a2 := &App{Hub: h, Handler: logRequests(cfg, recoverer(root)), Worker: worker, Upgrader: up, Stick: stick.New(h),
+	a2 := &App{Hub: h, Handler: logRequests(cfg, recoverer(countMisses(h, root))), Worker: worker, Upgrader: up, Stick: stick.New(h),
 		StorePath: storePath, ui: u}
 	u.ChooseUSB = a2.Stick.Choose
 	if cfg.MDNS {
@@ -300,6 +300,17 @@ func recoverer(next http.Handler) http.Handler {
 			}
 		}()
 		next.ServeHTTP(w, r)
+	})
+}
+
+// countMisses counts the reads the hub answered "needs connection" (the header
+// core.WebError sets), whichever part of the hub answered.
+func countMisses(h *core.Hub, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+		if r.Method == http.MethodGet && w.Header().Get(core.NeedsConnectionHeader) != "" {
+			h.ReqLog.Miss(r)
+		}
 	})
 }
 

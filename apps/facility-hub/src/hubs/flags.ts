@@ -38,6 +38,12 @@ export type Heartbeat = {
         | null
     /** How many such groups there are in all. */
     refusedGroups?: number
+    /**
+     * Reads the hub answered "needs connection" offline since it started (a screen
+     * nobody opened online): the 10 most frequent, by endpoint, and how many in all.
+     */
+    offlineMisses?: { request: string; count: number }[] | null
+    offlineMissesTotal?: number
     /** The hub's private IPv4 addresses: for devices where dhis2.local does not work. */
     addresses?: string[] | null
     /** SHA-256 of the certificate authority devices install, colon-separated hex. */

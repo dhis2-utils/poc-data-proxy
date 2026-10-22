@@ -21,6 +21,7 @@ import { HubHistory } from '@/components/hub/HubHistory'
 import { useCanManage } from '@/hooks/useCanManage'
 import { flagSentence } from '@/hubs/flagText'
 import { ago, gb, when } from '@/hubs/format'
+import { parseMiss } from '@/hubs/misses'
 import {
     AccountsSettings,
     useAdminEntry,
@@ -236,6 +237,66 @@ export const HubPage = () => {
                             ))}
                         </DataTableBody>
                     </DataTable>
+                )}
+            </div>
+            <div className={styles.card}>
+                <h2 className={styles.subtitle}>
+                    {i18n.t('Not available offline')}
+                </h2>
+                <div className={styles.muted}>
+                    {i18n.t(
+                        'What staff asked for while the hub was offline that it could not answer ("needs connection"), since the hub last started: mostly screens nobody had opened online. Each staff member opens Capture, and each programme\'s working list, once online.'
+                    )}
+                </div>
+                {(hb?.offlineMissesTotal ?? 0) === 0 ? (
+                    <div className={styles.muted}>{i18n.t('None.')}</div>
+                ) : (
+                    <>
+                        <div className={styles.muted}>
+                            {i18n.t('{{- total}} in all; the most frequent:', {
+                                total: hb?.offlineMissesTotal,
+                            })}
+                        </div>
+                        <DataTable>
+                            <DataTableHead>
+                                <DataTableRow>
+                                    <DataTableColumnHeader>
+                                        {i18n.t('Times')}
+                                    </DataTableColumnHeader>
+                                    <DataTableColumnHeader>
+                                        {i18n.t('Request')}
+                                    </DataTableColumnHeader>
+                                    <DataTableColumnHeader>
+                                        {i18n.t('Parameters')}
+                                    </DataTableColumnHeader>
+                                    <DataTableColumnHeader>
+                                        {i18n.t('Client')}
+                                    </DataTableColumnHeader>
+                                </DataTableRow>
+                            </DataTableHead>
+                            <DataTableBody>
+                                {(hb?.offlineMisses ?? []).map((m) => {
+                                    const r = parseMiss(m.request)
+                                    return (
+                                        <DataTableRow key={m.request}>
+                                            <DataTableCell>
+                                                {m.count}
+                                            </DataTableCell>
+                                            <DataTableCell>
+                                                {r.method} {r.path}
+                                            </DataTableCell>
+                                            <DataTableCell>
+                                                {r.params.join(', ')}
+                                            </DataTableCell>
+                                            <DataTableCell>
+                                                {r.client}
+                                            </DataTableCell>
+                                        </DataTableRow>
+                                    )
+                                })}
+                            </DataTableBody>
+                        </DataTable>
+                    </>
                 )}
             </div>
             <div className={styles.card}>

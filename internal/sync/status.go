@@ -34,6 +34,7 @@ func (w *Worker) heartbeat(ctx context.Context) {
 func Status(h *core.Hub) map[string]any {
 	refused, refusedGroups := refusedCounts(h)
 	_, _, lastSync, lastErr := h.Stats.Get()
+	misses, missTotal := h.ReqLog.OfflineMisses(10)
 	lastPush, lastPull := h.LastPushPull()
 	var upgrade any
 	json.Unmarshal([]byte(h.Store.Meta(core.MetaUpgrade)), &upgrade)
@@ -49,6 +50,10 @@ func Status(h *core.Hub) map[string]any {
 		// hubs that depend on a user who is being disabled.
 		"hubTokenOwner": h.Runtime().TokenOwner(), "hubTokenExpires": hubTokenExpires(h),
 		"refused": refused, "refusedGroups": refusedGroups,
+		// What staff asked for offline that the hub could not answer ("needs connection":
+		// a screen nobody opened online), since the hub started: the 10 most frequent,
+		// by endpoint (identifiers as {uid}, parameter names without values).
+		"offlineMisses": misses, "offlineMissesTotal": missTotal,
 		// The USB stick (docs/RECOVERY.md, C2): central sees a hub without a working one.
 		"usb": usbStatus(h),
 		// How devices reach the hub (docs/DEPLOYMENT.md, "Reaching the hub securely"): its
