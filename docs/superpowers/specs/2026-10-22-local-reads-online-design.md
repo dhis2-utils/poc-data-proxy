@@ -1,117 +1,103 @@
 # Answering facility reads from the hub while online (proposed)
 
-Status: proposed, from the conversation of 2026-10-21/22. Not decided and not built. AGENTS.md asks for a measured problem before a new mechanism: section 8 says what to measure first, and the decision to build follows from those numbers.
+Status: proposed, from the conversation of 2026-10-21/22; revised after a review on 2026-10-22 to keep it small (AGENTS.md). Not decided and not built. AGENTS.md asks for a measured problem before a new mechanism: section 7 says what to measure first, and the decision to build follows from those numbers.
 
 ## Intent
 
-Today the hub answers clients itself only offline, and online while saves from an outage are still waiting (`core.PassThrough`). Every other online request goes to central, and the hub learns from the answer.
+The hub already answers tracker reads itself while online, but only in one case: after an outage, until its outbox is pushed (`core.PassThrough`, `trackerapi.go`: one decision between central and `serveLocal`). Every other online request goes to central, and the hub learns from the answer (`learn` stores central's version of what users read).
 
-The proposal: an **optional mode** in which the hub also answers, while online, the reads it can answer *completely* from what it holds: the facility's working lists, a person's page, aggregate forms, and searches by staff whose search scope is the facility. Everything else goes to central as now.
+The proposal: an **optional mode** in which, at that same decision, the hub also answers the facility's most common reads when it knows its answer is central's: **working lists, and a person, an enrollment or an event by ID**. Everything else goes to central as now.
 
-Expected gains, to be measured (section 8):
-1. **Faster clients.** A working list over the LAN instead of across the facility's uplink: from hundreds of milliseconds to the hub's 10–30 ms on a slow link.
+Expected gains, to be measured (section 7):
+1. **Faster clients**, on two counts: the facility's link (hundreds of milliseconds to seconds on a 4G stick), and central's own time to build a working list, which on a large national instance can be seconds even on good broadband. The hub answers in 10–30 ms.
 2. **Less load on central.** Working lists and person pages are most of a facility's reads.
 3. **Less bandwidth** on slow or metered links.
 
-App files are not part of this: browsers already cache them per device, and Capture keeps its metadata in its own browser storage.
+Not part of this: searches, aggregate forms, metadata and app files (section 2).
 
 ## 1. The mode
 
 - `local_reads: true` in `hub.yaml`; off by default. A country setting in the Facility Hub app can follow once the mode is proven.
-- Only reads (`GET`). **Saves go to central at once, as today**, so central's refusals still show in the app while the patient is in front of the staff member. Saving into the outbox first and pushing later would hide refusals until later; that is not part of this proposal.
-- Answers the hub gives itself carry a header (`X-Hub-Mode: local`, next to today's `offline`), for the request log, the heartbeat's counts and debugging.
+- Only reads (`GET`). **Saves go to central at once, as today**, so central's refusals still show in the app while the patient is in front of the staff member.
+- Answers the hub gives itself while online carry `X-Hub-Mode: local` (offline ones keep `offline`); the request log already records which requests the hub served.
 
-## 2. The rule: complete, or central
+## 2. The rule: one function, complete or central
 
-The hub answers a read itself only when it knows its answer is the one central would give. When in doubt, the request goes to central, exactly as without the mode. Every condition below is a reason to forward, never to answer partly.
+One function, `local(request, session)`, decides at the existing decision point. It answers locally only when **all** of these hold; anything else, and any doubt, goes to central exactly as without the mode:
 
-### What can be answered locally
+| Condition | Why | Known from |
+|---|---|---|
+| The mode is on, and the user is the hub's staff (a hub session with a key slot) | others are passed through today (`registerOnline`) | the session |
+| The user's access was refreshed less than 15 minutes ago | online, central decides access on every read; locally the hub's copy does (section 4) | the user's "access refreshed" time, kept today |
+| The hub's last sync cycle succeeded less than 15 minutes ago | changes made elsewhere arrive with the pulls (section 3) | the cycle's time, kept today |
+| The request is a working list of this facility (`orgUnits` = the facility, `ouMode` `SELECTED`), or one person, enrollment or event by ID | the reads that matter most, and the simplest to know complete | the request |
+| The program has no retention window, and a person asked for by ID has no retention stub | with retention, central holds records the hub pruned | the retention settings and the hub's own records |
 
-| Read | Answered by the hub when |
-|---|---|
-| Working list (tracker or event program) | scoped to the hub's facility (`orgUnits` = the facility, mode `SELECTED`), and its date filters stay inside the program's retention window, or it lists active enrollments only (never pruned) |
-| A person's page (tracked entity with enrollments and events) | the hub holds the person in full: no enrollment of theirs is a retention stub |
-| An event or enrollment by ID | held in full |
-| Search, by name or other attributes | the user's **search scope** is the facility (or inside it), and the person type has **no retention window** (with one, people whose records were all pruned are gone from the hub but not from central) |
-| Search by a unique attribute | as above, or: a value unique across the system with a local match (a unique value belongs to one person); no local match goes to central |
-| Aggregate form (data values, completeness) | the facility, a period the hub holds |
+**Not in this version**, each for a reason:
+- **Searches.** They are a guarded area (AGENTS.md: SQL and Go that must mean the same), and a local search is complete only for staff whose search scope is the facility and person types without a retention window. Most of the rules a complete search needs, for a gain not yet measured.
+- **Aggregate forms.** Few reads per day.
+- **Programs with a retention window**, and **date filters** compared with retention cutoffs: parsing Capture's filters would break when Capture changes how it asks. Such programs go to central.
+- **Metadata and app files**: cached as today, not answered from the cache while online.
 
-### What stays on central
+Each can be added later, with its own measurement.
 
-- searches by staff whose search scope is wider than the facility (district or national, given so they find patients registered elsewhere);
-- anything outside the facility, or reaching past a retention window;
-- analytics, dashboards' charts, program indicators, notifications, and everything else central computes;
-- metadata and app files (cached as today; not answered from the cache while online).
-
-### Retention
-
-The check uses the same rules pruning uses (`core/prune.go`):
-- **event programs:** events older than the program's cutoff are deleted, so a list or search that reaches before the cutoff goes to central;
-- **tracker programs:** closed enrollments whose last change is older than the window become stubs, their events deleted. A person with a stub is not held in full; lists of closed enrollments with dates before the cutoff go to central;
-- **person types with a window:** people with nothing left in full are deleted, so searches for that type go to central.
-
-Different windows per program and person type only change the cutoff each check reads. The cutoff comes from `Retention().Cutoff`, as pruning does.
+**The window after an outage.** It answers every tracker read locally today, without these rules. Either it uses `local()` too, so both cases follow one rule, or it stays as it is because it is short and ends once the outbox is pushed. To decide (section 8); the spec should not leave the two differing unawares.
 
 ## 3. Fresh enough to answer
 
-Three conditions, per user and program, checked on every local answer:
+- **One hub-wide condition:** the last sync cycle succeeded less than `local_reads_max_age` ago (default 15 minutes). No per-program or per-group bookkeeping.
+- **The user's first pull** must be done: a staff member who has just logged in for the first time has nothing on the hub yet (their first pull starts at that login). Known from the pulls.
+- **Saves made online.** A save goes to central, and the hub's copy of the record lacks central's own fields (timestamps, `createdBy`, `updatedBy`) until the next pull. Instead of marking such records, the hub **reads the saved people back from central once, as the user who saved**, when central confirms the save (`storePersisted`), and stores central's version as it does for any online read. One extra request per save; saves are few next to reads.
+- **Unsent saves** in the outbox do not block a local answer: the hub's copy is then newer than central's.
 
-1. **First pull done.** The user's access group has finished its first full pull of the program. Pulls are already tracked per program and access group.
-2. **Pulled recently.** The group's last successful pull of the program is within `local_reads_max_age` (default 15 minutes).
-3. **Access refreshed recently.** The user's access was refreshed within the same window (section 4).
+The sync interval stays as it is (15 minutes). Whether it should be shorter with the mode on is a separate question, answered only if the measurements show staleness matters (section 7).
 
-Plus one per record:
+## 4. Access
 
-4. **Saved online, not yet pulled back.** A save sent through the hub online is stored as the client sent it; central's own fields (its timestamps, `createdBy`, `updatedBy`) arrive with the next pull. Until then a read that includes such a record goes to central. The hub marks these records when it stores them (`trackerapi.learn`) and clears the mark when a pull brings central's version.
+Online today, central decides on every read what each user may see. With a local answer, the hub's copy of the user's access decides; it is refreshed hourly (`access_refresh_interval`) and at each login.
 
-With the mode on, the sync interval can be shorter while online (5 minutes, say): incremental pulls list IDs and update times only, so they are cheap when little changed. That trade is to be measured too (section 8).
-
-Unsent saves waiting in the outbox do not block a local answer: the hub's copy is then newer than central's.
-
-## 4. Access for active users
-
-Online today, central decides on every read what each user may see. With local answers, the hub's copy of the user's access decides, and it is refreshed hourly (`access_refresh_interval`) and at each login.
-
-**Proposal:** while the mode is on, refresh every 15 minutes the access of **active users** only: users with a request through the hub in the last 15 minutes. Sessions already record when they were last used (`Session.lastSeen`, used for `session_idle`), so no new bookkeeping is needed.
-
-- **Cost:** a refresh is a few small reads per user (the user's details, and their access to the facility's programs and stages; `core.FetchAccess`). 15 active users cost about 240 reads an hour per hub. Every user every 5 minutes would be about 70 000 a day per hub at 60 users, roughly 400 a second for 500 hubs: too much.
-- **Outside working hours** nobody is active, so the mode adds nothing; the hourly refresh of everyone stays as today.
-- **A user coming back after a break** has stale access for that first request: it goes to central, the hub refreshes their access in the background, and later requests are answered locally.
-- **Android tablets left on** sync in the background every 5 minutes and would count as active all night. Count only interactive use (browser sessions, and Android requests other than its periodic sync), or accept the few extra refreshes. To decide (section 9).
+**The rule:** when a user's access is older than 15 minutes, the request goes to central, and the hub refreshes that user's access in the background; their next requests are answered locally again. That is the whole mechanism:
+- no periodic job and no notion of "active users": a user who keeps working costs one forwarded request every 15 minutes, and nobody costs anything outside working hours;
+- Android tablets syncing in the background are no special case;
+- an access change (a user moved away, a programme's sharing changed) shows within 15 minutes of the user's last forwarded request.
 
 ## 5. What stays the same
 
-- Offline behaviour, the outbox, pushes, and the pass-through after an outage.
+- Offline behaviour, the outbox, pushes.
 - Saves, online and offline.
-- What the hub pulls: still each user's own view, with their own token; central still decides what each user sees, and the hub keeps it per user.
-- Users who are not the hub's staff (`registerOnline`, "pass-through only"): always central.
+- What the hub pulls: still each user's own view, with their own token.
+- Users who are not the hub's staff: always central.
 
 ## 6. Risks
 
-- **Changes made outside the hub** (a referral, a lab result from an integration, a correction on central, an Android tablet syncing straight to central) show at the next pull: up to `local_reads_max_age` late. Today they show at once online.
-- **Access changes** show within 15 minutes for active users instead of at once.
-- **A wrong completeness check** would show a list missing records. The rule forwards on any doubt, and the tests (section 7) compare every local answer with central's.
+- **Changes made outside the hub** (a referral, a lab result from an integration, a correction on central, a tablet syncing straight to central) show at the next pull, up to about 15 minutes late. Today they show at once online. Section 7 asks the users whether that is acceptable.
+- **Access changes** show within 15 minutes instead of at once.
+- **A wrong completeness check** would show a list missing records. The rule forwards on any doubt, and the oracle tests compare every local answer with central's.
 
-## 7. Tests
-
-- **Oracles in this mode.** The live suite (`internal/live`) run with `local_reads` on: every read the hub answers itself compared with central's answer for the same user. Equivalent answers are already what the offline oracles check; here the comparison runs online, against central's current state.
-- **Completeness:** unit tests for each forwarding reason (scope beyond the facility, a date before the cutoff, a stub, a person type with a window, a wider search scope, a record saved and not pulled back, a stale pull, stale access).
-- **Fallback:** e2e tests that a forwarded read reaches central and a local one does not (the fake central's request counts).
-- **Guards** from AGENTS.md for the guarded areas this touches: searches (`TestQueryPlansUseIndexes`), shared listings (the twin users).
-
-## 8. Measure first
+## 7. Measure first
 
 Before building, on the demo central and a test hub:
-1. The same working list, person page and facility search, through the hub (offline answers stand in for local ones) and straight from central, over a typical facility uplink (a 4G stick), and over good broadband.
-2. A working day's requests through the hub (`log_requests`, the request log): the share that would qualify for a local answer.
-3. Central's requests per facility per day, with and without that share.
-4. With a 5-minute pull while online: the extra load of the pulls against what local answers save.
+1. **Time:** the same working list and person page through the hub (offline answers stand in for local ones) and straight from central, over a typical facility uplink (a 4G stick) and over good broadband. Central's own time to answer, apart from the link, on the demo central and, if possible, on a large national instance.
+2. **Share:** a working session through the hub (`log_requests`): the share of requests that this version's rules would answer. Capture keeps much in the browser already, so the share is to be counted, not assumed.
+3. **Load on central:** requests per facility per day, with and without that share.
+4. **Staleness:** ask staff and the national team which workflows need changes made elsewhere within minutes (referrals, lab results). If some do, the mode stays off where they run, or the pull interval is looked at (and measured) then.
 
-Build if local answers are clearly faster on a slow link and a large share of requests qualify. If the gain shows only on slow links, the mode stays optional and per hub.
+Build if local answers are clearly faster and a large share of requests qualify. If the gain shows only on slow links, the mode stays optional and per hub.
+
+## 8. Tests
+
+- **Oracles in this mode:** the live suite (`internal/live`) with `local_reads` on; every read the hub answers itself compared with central's answer for the same user, online, against central's current state.
+- **The rule:** a table test of `local()`, one case per reason to forward: another org unit or mode, a program with retention, a person with a stub, stale access, a stale cycle, a user without a first pull, a user who is not staff, the mode off.
+- **Fallback:** e2e tests that a local answer never reaches central and a forwarded one does (the fake central's request counts).
+- **Saves read back:** an e2e test that a save made online is followed by one read of the saved people, and that the local answer after it carries central's fields.
+- **Guards** for the areas this touches: shared listings (the twin users); `TestQueryPlansUseIndexes` for the working lists.
 
 ## 9. Open questions
 
-- The Android background sync and "active" (section 4).
-- Whether the pull interval shortens while online with the mode on, and to what.
+- The window after an outage: `local()` there too, or as today (section 2).
 - Whether the mode becomes a country setting in the Facility Hub app, per hub or for all.
-- Whether the user sees that an answer came from the hub (Capture shows "Online" either way).
+- Whether the user should see that an answer came from the hub (Capture shows "Online" either way).
+
+## Size
+
+One function at the existing decision, one read-back after online saves, the header, the setting, and the tests. No new stored state: the times it reads are kept today. Roughly a couple of hundred lines besides the tests.
