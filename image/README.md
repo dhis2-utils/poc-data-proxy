@@ -24,3 +24,7 @@ sudo image/check.sh out/dhis2-hub-0.3.0-arm64.img.xz
 What only a Pi can show (booting, Wi-Fi, the watchdog, the clock, the stick) is in docs/DEPLOYMENT.md, section 2.
 
 Flash the image with Raspberry Pi Imager or `xz -dc … | dd`, without the Imager's customisation: the image has no user, no SSH and no cloud-init.
+
+**Support without a console.** 3 minutes after each start, and every 30 minutes, the hub writes `hub-diag.txt` to the boot partition (`bootfs`, which any computer can read): the hub's state and log, failed services, the network devices and Wi-Fi, whether the USB stick is mounted, free disk, and this start's warnings (`/usr/local/sbin/hub-diag`). The hub's log lines hold templates and parameter names, no patient data or passwords. A hub that does not come up: take its card or disk out and read that file.
+
+**First boot.** The image's machine ID is empty, so each hub makes its own; systemd then treats that boot as a first boot. `systemd-firstboot`, which would ask on the console for a keymap, a time zone and a root password and wait for an answer, is masked: on 2026-10-22 two Pis without a screen waited there for good, before the hub started. `check.sh` checks it stays masked.

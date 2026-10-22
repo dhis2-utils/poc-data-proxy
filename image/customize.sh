@@ -32,8 +32,14 @@ echo dhis2 > /etc/hostname
 sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tdhis2/' /etc/hosts
 grep -q '^127\.0\.1\.1' /etc/hosts || printf '127.0.1.1\tdhis2\n' >> /etc/hosts
 
-systemctl enable hub.service hub-wifi-unblock.service nftables.service chrony.service avahi-daemon.service NetworkManager.service
+systemctl enable hub.service hub-wifi-unblock.service hub-diag.timer nftables.service chrony.service avahi-daemon.service NetworkManager.service
 systemctl disable userconfig.service sshswitch.service 2>/dev/null || true
-# A new machine ID at first boot, so cloned images do not share one.
+# A new machine ID at first boot, so cloned images do not share one. An empty one also
+# makes systemd treat that boot as a first boot, when systemd-firstboot asks on the
+# console for a keymap, time zone and root password and waits: with no screen or
+# keyboard, the hub never started (two Pis, 2026-10-22). The image sets what it would
+# ask for, or needs none of it.
+systemctl mask systemd-firstboot.service
+chmod 0755 /usr/local/sbin/hub-diag
 : > /etc/machine-id
 rm -f /var/lib/dbus/machine-id

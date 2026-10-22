@@ -28,6 +28,7 @@ R="$WORK/root.ext4"
 cat_() { debugfs -R "cat $1" "$R" 2>/dev/null; }
 mode() { debugfs -R "stat $1" "$R" 2>/dev/null | sed -n 's/.*Mode: *\([0-7]*\).*/\1/p'; }
 exists() { debugfs -R "stat $1" "$R" 2>/dev/null | grep -q '^Inode:'; }
+masked() { debugfs -R "stat /etc/systemd/system/$1" "$R" 2>/dev/null | grep -q 'Fast link dest: "/dev/null"'; }
 
 # Partitions: the disk identifier the boot configuration names.
 CMDLINE=$(mtype -i "$WORK/boot.vfat" ::/cmdline.txt)
@@ -64,6 +65,8 @@ check "the hub's binary folder is the hub's (self-upgrade)" sh -c "test -n '$HUB
 check "hub.service runs the binary in that folder" sh -c "debugfs -R 'cat /etc/systemd/system/hub.service' '$R' 2>/dev/null | grep -q '^ExecStart=/usr/local/lib/hub/hub '"
 check "rfkill does not block the Wi-Fi (setup Wi-Fi)" exists /etc/systemd/system/multi-user.target.wants/hub-wifi-unblock.service
 check "hub.service is enabled" exists /etc/systemd/system/multi-user.target.wants/hub.service
+check "diagnostics for support are written to the boot partition" exists /etc/systemd/system/timers.target.wants/hub-diag.timer
+check "no first-boot prompt waits for a console nobody has" masked systemd-firstboot.service
 check "hub.service may bind ports 80 and 443" sh -c "debugfs -R 'cat /etc/systemd/system/hub.service' '$R' 2>/dev/null | grep -q CAP_NET_BIND_SERVICE"
 YAML=$(cat_ /etc/hub/hub.yaml)
 check "hub.yaml has no central_url (one image for every country)" sh -c "! grep -q '^central_url' <<'X'

@@ -1,0 +1,10 @@
+# bootfs/hub-diag.txt 3 minutes after each start, then every 30 minutes.
+[Unit]
+Description=Facility hub diagnostics on the boot partition
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=30min
+
+[Install]
+WantedBy=timers.target

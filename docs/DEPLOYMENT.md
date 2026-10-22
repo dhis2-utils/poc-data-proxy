@@ -65,7 +65,7 @@ One generic image per release (built 2026-10-19: `image/`, see image/README.md).
 - **Updates:** `unattended-upgrades` for OS security fixes, rebooting at 03:00 when needed. The hub binary upgrades itself from the supplier's GitHub releases, to the version the country chose on central (section 6, "Upgrades").
 - **Watchdog:** the hardware watchdog (`RuntimeWatchdogSec=15`), plus `Restart=always` in systemd.
 - **The USB stick** is mounted for the hub at `/media/hub-usb` when plugged in (FAT or exFAT; a udev rule).
-- **No remote access.** A support VPN was considered and is out of scope for now: it needs a server, and it would add little, since the hub's data stays encrypted until a staff member logs in. Support works from central (section 6).
+- **No remote access.** A support VPN was considered and is out of scope for now: it needs a server, and it would add little, since the hub's data stays encrypted until a staff member logs in. Support works from central (section 6). A hub that does not come up at all writes what support needs to `hub-diag.txt` on its boot partition, readable on any computer (image/README.md).
 - **A machine ID made at first boot**, so cloned images do not share one.
 
 **Verified on hardware later** (no Pi yet):

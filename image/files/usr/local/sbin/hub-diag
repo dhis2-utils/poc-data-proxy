@@ -1,0 +1,20 @@
+#!/bin/sh
+# Writes what support needs to know about this hub to the boot partition, which any
+# computer can read (bootfs/hub-diag.txt): the image has no console user and no SSH.
+# Run by hub-diag.timer 3 minutes after each start and every 30 minutes. The hub's own
+# log lines hold templates and parameter names, no patient data or passwords.
+out=/boot/firmware/hub-diag.txt
+{
+  echo "== $(date -Is), up $(cut -d' ' -f1 /proc/uptime) s, $(tr -d '\0' < /proc/device-tree/model)"
+  echo "== hub $(/usr/local/lib/hub/hub version 2>&1)"
+  systemctl status hub.service --no-pager -l 2>&1 | head -12
+  echo; echo "== failed units"; systemctl --failed --no-pager 2>&1
+  echo; echo "== hub log, this start"; journalctl -b -u hub.service --no-pager -n 150 2>&1
+  echo; echo "== network"; nmcli -t device 2>&1; nmcli -t radio 2>&1; rfkill list 2>&1; ip -br addr 2>&1
+  echo; echo "== USB stick"; lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINTS 2>&1
+  findmnt /media/hub-usb 2>&1 || echo "/media/hub-usb: not mounted"
+  echo; echo "== disk"; df -h / /var/lib/hub 2>&1
+  echo; echo "== warnings and errors, this start"; journalctl -b -p warning --no-pager -n 100 2>&1
+} > "$out.tmp" 2>&1
+mv "$out.tmp" "$out"
+sync

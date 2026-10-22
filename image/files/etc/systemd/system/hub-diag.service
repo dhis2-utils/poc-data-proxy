@@ -1,0 +1,7 @@
+# Writes bootfs/hub-diag.txt for support (/usr/local/sbin/hub-diag).
+[Unit]
+Description=Facility hub diagnostics on the boot partition
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hub-diag
