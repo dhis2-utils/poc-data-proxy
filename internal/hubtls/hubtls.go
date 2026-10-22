@@ -121,9 +121,11 @@ func (c *Certs) Config() *tls.Config {
 		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return c.cur.Load(), nil }}
 }
 
-// Run checks every few minutes whether the server certificate needs renewing.
+// Run checks every 30 seconds whether the server certificate needs renewing: a new
+// address (the setup Wi-Fi's 10.42.0.1, a network joined) must be in it before a phone
+// opens the hub there. A check only compares names and addresses.
 func (c *Certs) Run(stop <-chan struct{}) {
-	t := time.NewTicker(5 * time.Minute)
+	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
 	for {
 		select {

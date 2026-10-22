@@ -209,7 +209,7 @@ func TestSetupCentralURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := url.Values{"step": {"server"}, "central_url": {"https://attacker.example"}}
-	if _, page := post(e.srv.URL, server); !strings.Contains(page, "wrong setup token") {
+	if _, page := post(e.srv.URL, server); !strings.Contains(page, "wrong setup code") {
 		t.Fatalf("setup without token: %s", page)
 	}
 	// A login posted straight away, with an address of its choosing, is refused: only

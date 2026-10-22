@@ -4,7 +4,8 @@
 <div class="card" id="checking"><p>Opening DHIS2 securely…</p>
 <p class="muted">If nothing happens, this device does not trust the facility's hub yet. Follow the steps below once.</p></div>
 
-<div class="card"><h2>Trust the facility's hub on this device (once)</h2>
+{{if .SetupWifi}}<div class="card"><p><b>Opened in a small sign-in window?</b> That window cannot download the certificate: close it, open <b>Safari</b> (iPhone) or <b>Chrome</b> (Android), and go to <span class="mono">http://10.42.0.1</span>.</p></div>
+{{end}}<div class="card"><h2>Trust the facility's hub on this device (once)</h2>
 <p>The hub encrypts everything with its own certificate. Install it once on each device, then this page opens DHIS2 by itself.</p>
 <p><a href="/hub/ca.crt"><button>Download the hub's certificate</button></a></p>
 <p class="muted">Fingerprint (SHA-256), to compare with the hub's page in the Facility Hub app on central:<br><span class="mono">{{.Fingerprint}}</span></p>

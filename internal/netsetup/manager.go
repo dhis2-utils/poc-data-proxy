@@ -23,7 +23,7 @@ const (
 	setupIP     = "10.42.0.1"
 	captiveFile = "hub-captive.conf"
 	// The setup Wi-Fi's password: no letters that look alike (0/O, 1/l/I).
-	setupAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+	setupAlphabet = "0123456789"
 )
 
 // Manager keeps a hub reachable: while it has no network it runs the setup Wi-Fi
@@ -393,15 +393,20 @@ func (m *Manager) Status() Status {
 // Hub-hub-Zvc7xMnFcVg).
 func (m *Manager) setupSSID() string { return "Hub-" + strings.TrimPrefix(m.HubID, "hub-") }
 
-// setupPassword is made once, at first use, and kept in the data folder.
+// setupPassword is made once, at first use, and kept in the data folder: 8 digits, the
+// least Wi-Fi allows, typed on a phone's number pad. It only leads to the setup page,
+// which needs the setup code or a staff login. One of another form (12 letters and
+// digits, until 2026-10-22) is replaced; hub.txt on the stick follows.
 func (m *Manager) setupPassword() (string, error) {
 	m.pwMu.Lock()
 	defer m.pwMu.Unlock()
 	p := filepath.Join(m.DataDir, "setup-wifi")
-	if b, err := devkey.ReadFile(p); err == nil && len(strings.TrimSpace(string(b))) == 12 {
-		return strings.TrimSpace(string(b)), nil
+	if b, err := devkey.ReadFile(p); err == nil {
+		if s := strings.TrimSpace(string(b)); len(s) == 8 && strings.Trim(s, setupAlphabet) == "" {
+			return s, nil
+		}
 	}
-	b := make([]byte, 12)
+	b := make([]byte, 8)
 	for i := range b {
 		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(setupAlphabet))))
 		if err != nil {

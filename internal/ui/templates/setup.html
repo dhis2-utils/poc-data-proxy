@@ -47,7 +47,7 @@
 <label for="c">Central server (https{{if .Hosts}} on {{.Hosts}}{{end}})</label><input id="c" type="url" name="central_url" required>
 <p id="scan-row" hidden><button type="button" id="scan" class="secondary">Scan the QR code</button></p>
 <video id="scan-video" hidden playsinline style="max-width:100%"></video>
-{{if .NeedToken}}<label for="t">Setup code</label><input id="t" type="text" name="setup_token" autocomplete="off" required>{{end}}
+{{if .NeedToken}}<label for="t">Setup code</label><input id="t" type="text" name="setup_token" inputmode="numeric" autocomplete="off" placeholder="6 digits, in setup-code.txt on the USB stick" required>{{end}}
 <p><button type="submit">Continue</button></p></form>
 <script src="/hub/setup.js"></script>
 {{end}}

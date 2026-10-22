@@ -186,20 +186,24 @@ func TestFacilityWifi(t *testing.T) {
 	}
 }
 
+// The setup Wi-Fi's password is 8 digits, the least Wi-Fi allows: typed on a phone's
+// number pad. It only leads to the setup page, which needs the setup code or a staff
+// login. A password of the earlier, longer form is replaced.
+func TestSetupPasswordIsEightDigits(t *testing.T) {
+	r := newRig(t)
+	os.WriteFile(filepath.Join(r.m.DataDir, "setup-wifi"), []byte("u3QjvpCA82jV\n"), 0o600)
+	p := r.m.Status().SetupPassword
+	if len(p) != 8 || strings.Trim(p, "0123456789") != "" {
+		t.Fatalf("setup Wi-Fi password %q", p)
+	}
+}
+
 func TestSetupPasswordStable(t *testing.T) {
 	r := newRig(t)
 	p1 := r.m.Status().SetupPassword
 	m2 := &Manager{R: r.nm, DataDir: r.m.DataDir, HubID: "hub-abc123", Now: r.m.Now}
-	if p2 := m2.Status().SetupPassword; p1 != p2 || len(p1) != 12 {
+	if p2 := m2.Status().SetupPassword; p1 != p2 || p1 == "" {
 		t.Fatalf("%q then %q", p1, p2)
-	}
-	for _, c := range p1 {
-		if !strings.ContainsRune(setupAlphabet, c) {
-			t.Fatalf("%q outside the alphabet", c)
-		}
-	}
-	if setupAlphabet != "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789" {
-		t.Fatal("alphabet changed")
 	}
 }
 

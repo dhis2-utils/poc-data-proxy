@@ -65,6 +65,9 @@ func (s *Start) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if err := tmpl.ExecuteTemplate(w, "start.html", map[string]any{
 		"Target": target, "Probe": origin + "/hub/status", "Fingerprint": hubtls.Fingerprint(s.DataDir),
+		// On the setup Wi-Fi phones open this page in their sign-in window, which
+		// cannot download the certificate.
+		"SetupWifi": s.Captive != nil && s.Captive(),
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

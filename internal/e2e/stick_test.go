@@ -51,8 +51,14 @@ func TestSetupCodeOnStick(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, _ := os.ReadFile(filepath.Join(e.dir, "setup-token"))
-	if !strings.Contains(string(b), strings.TrimSpace(string(code))) || !strings.Contains(string(b), e.app.Hub.HubID()) {
+	c := strings.TrimSpace(string(code))
+	if !strings.Contains(string(b), c) || !strings.Contains(string(b), e.app.Hub.HubID()) {
 		t.Fatalf("setup-code.txt: %s", b)
+	}
+	// 6 digits: it only proves that whoever sets the hub up holds the box, and wrong
+	// codes are throttled (50, then one per 15 minutes, from every device together).
+	if len(c) != 6 || strings.Trim(c, "0123456789") != "" {
+		t.Fatalf("setup code %q", c)
 	}
 }
 

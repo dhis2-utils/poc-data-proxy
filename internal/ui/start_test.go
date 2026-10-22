@@ -17,7 +17,7 @@ func startFixture(t *testing.T, httpsPort string) http.Handler {
 	}
 	return &Start{DataDir: dir, HTTPSPort: httpsPort,
 		Allowed: func(h string) bool {
-			return strings.HasPrefix(h, "dhis2.local") || strings.HasPrefix(h, "192.168.1.20")
+			return strings.HasPrefix(h, "dhis2.local") || strings.HasPrefix(h, "192.168.1.20") || strings.HasPrefix(h, "10.42.0.1")
 		}}
 }
 
@@ -49,6 +49,19 @@ func TestStartPageMovesToHTTPS(t *testing.T) {
 		if w.Header().Get("Cache-Control") != "no-store" {
 			t.Error("start page may be cached")
 		}
+	}
+}
+
+// On the setup Wi-Fi, phones open the start page in their small sign-in window, which
+// cannot download the certificate: the page says to open it in the browser.
+func TestStartPageOnSetupWifi(t *testing.T) {
+	h := startFixture(t, "443").(*Start)
+	if strings.Contains(get(h, "dhis2.local", "/").Body.String(), "sign-in window") {
+		t.Error("the note shows without the setup Wi-Fi")
+	}
+	h.Captive = func() bool { return true }
+	if body := get(h, "10.42.0.1", "/").Body.String(); !strings.Contains(body, "sign-in window") || !strings.Contains(body, "http://10.42.0.1") {
+		t.Errorf("no note on the setup Wi-Fi: %s", body)
 	}
 }
 
