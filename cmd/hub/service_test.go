@@ -33,11 +33,18 @@ func TestServiceArgs(t *testing.T) {
 
 // Stopping reports progress (a rising checkpoint) until the hub has stopped, so the
 // service manager waits instead of giving up on it, and gives up itself at the limit.
+// The hub "stops" at the 4th checkpoint, not after a sleep: Windows' timers tick every
+// 15.6 ms, and a busy runner reported only 2 checkpoints in 55 ms.
 func TestStopReportsProgress(t *testing.T) {
 	done := make(chan error, 1)
 	var cps []uint32
-	go func() { time.Sleep(55 * time.Millisecond); done <- nil }()
-	if !waitReporting(done, time.Second, 10*time.Millisecond, func(cp uint32) { cps = append(cps, cp) }) {
+	report := func(cp uint32) {
+		cps = append(cps, cp)
+		if cp == 4 {
+			done <- nil
+		}
+	}
+	if !waitReporting(done, 10*time.Second, 10*time.Millisecond, report) {
 		t.Fatal("not stopped")
 	}
 	if len(cps) < 4 || cps[0] != 1 {
