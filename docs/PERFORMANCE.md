@@ -66,7 +66,7 @@ The hub as a Windows program, on a small PC: a Windows 11 VM with **2 CPUs and 4
 
 The 10 k column ran before the index on unsynced objects (History, 2026-10-22); its reconnect includes the slow status count. Against `pi4` (1 GB, the ladder above) the VM is about the same in the first pull, a little slower at the median and faster at the tail; it serves 100 k people well for web users. As on the Pis, Android incremental syncs are the slow part from 30 k on (open above).
 
-Power cuts on Windows: `perf/windows/powercut.ps1` (hard resets under load, then every confirmed save is read back); results to come.
+Power cuts on Windows: `perf/windows/powercut.ps1` on the VM with `powercut-host.sh` on the Mac, which kills the VM at random moments (hard resets under load; at each start-up every confirmed save is read back); results to come.
 
 ## How the hub scales
 
