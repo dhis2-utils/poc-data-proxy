@@ -49,7 +49,7 @@ The 1 GB knee is between 30 k and 60 k people; the incremental syncs at 60 k ran
 
 ## On a Windows PC (2026-10-22)
 
-The hub as a Windows program, on a small PC: a Windows 11 VM with **2 CPUs and 4 GB**, on an NVMe disk, no TPM. `perf/windows/stress.ps1` runs the ladder's two runs there with 20 users: a second hub beside the installed one, the fake central and `hubload` on the same PC (they take CPU from the hub; on the Pis they run elsewhere), the data folder excluded from Defender as the installer does. Hub `0.1.5` (`376ce5a`); latencies offline, p50 / p95.
+The hub as a Windows program, on a small PC: a Windows 11 VM with **2 CPUs and 4 GB**, on an NVMe disk, no TPM. It is **Windows 11 on ARM** (UTM on an Apple Silicon Mac), so the hub, built for x86-64 like the installer, ran under Windows' x64 emulation: the times include its cost, and a real x86-64 PC of the same size is likely faster. Errors, memory, the reconnect and the power-cut results do not depend on it. `perf/windows/stress.ps1` runs the ladder's two runs there with 20 users: a second hub beside the installed one, the fake central and `hubload` on the same PC (they take CPU from the hub; on the Pis they run elsewhere), the data folder excluded from Defender as the installer does. Hub `0.1.5` (`376ce5a`); latencies offline, p50 / p95.
 
 | Windows VM, 20 users | 10 k | 30 k | 100 k |
 |---|---|---|---|
