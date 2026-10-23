@@ -16,7 +16,9 @@
 #   3. the reconnect at the end, timed;
 #   4. a hammer run: every user at once, no pauses, 2 minutes offline;
 #   5. every confirmed save read back from the hub, offline, as its author.
-# Results go to perf-results/<size>-<time>/ in the current folder. Sizes are those of
+# Results go to perf-results/<size>-<time>/ in the current folder, or
+# perf-results/<LABEL>-<size>-<time>/ with LABEL set (several machines at once, each
+# with its own PORT: LABEL=rpi5 PORT=8091 perf/remote-load.sh http://rpi5.local ...). Sizes are those of
 # stress.ps1: people, 5/3 enrollments and 4 events per person (300k = HC IV).
 #
 # fakecentral and hubload are taken from next to this script (the kit's mac folder),
@@ -38,7 +40,7 @@ ENR=$((PEOPLE * 5 / 3))
 EV=$((PEOPLE * 4))
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-OUT=perf-results/$SIZE-$(date +%Y%m%d-%H%M%S)
+OUT=perf-results/${LABEL:+$LABEL-}$SIZE-$(date +%Y%m%d-%H%M%S)
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 BIN=$HERE
@@ -53,11 +55,12 @@ CENTRAL_PID=$!
 trap 'kill $CENTRAL_PID 2>/dev/null || true' EXIT
 CENTRAL=http://127.0.0.1:$PORT
 
-# The address the hub reaches this Mac by: UTM's shared network is bridge100.
-MAC=$(ipconfig getifaddr bridge100 2>/dev/null || ipconfig getifaddr en0 2>/dev/null || echo "<this Mac's address>")
+# The addresses the hub reaches this Mac by: UTM's shared network is bridge100, the
+# facility network (the Pis) usually en0.
+VMNET=$(ipconfig getifaddr bridge100 2>/dev/null || echo "<the Mac's address on the VM's network>")
+LAN=$(ipconfig getifaddr en0 2>/dev/null || echo "<the Mac's address on the network>")
 echo "fake central: $PEOPLE people, $ENR enrollments, $EV events, $USERS users (generating)"
-echo "start the hub now, with its central at http://$MAC:$PORT"
-echo "  Windows: stress.ps1 -Size $SIZE -Central http://$MAC:$PORT   (administrator PowerShell)"
+echo "the hub's central: http://$VMNET:$PORT from the VM, http://$LAN:$PORT from the network"
 until curl -sf "$CENTRAL/api/system/ping" >/dev/null; do sleep 2; done
 echo "$(date +%T) fake central ready"
 until curl -sf "$HUB/hub/status" >/dev/null; do sleep 5; done
