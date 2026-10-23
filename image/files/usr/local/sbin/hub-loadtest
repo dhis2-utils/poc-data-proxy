@@ -1,0 +1,153 @@
+#!/bin/sh
+# Load-test mode of the hub image (docs/PERFORMANCE.md, "On real hardware"). When the
+# boot partition holds hub-loadtest.txt, hub.service stays off and this runs instead.
+# It does on the Pi what perf/windows/stress.ps1 -Queue does on a PC: it waits for the
+# fake central of a run of perf/remote-queue.sh on the Mac and starts a fresh hub for
+# it (plain http, its data in /var/lib/hub-loadtest). Every 10 seconds it samples
+# memory, CPU, the disk and the temperature. When the fake central goes away, it stops
+# the hub, copies the run's results to the boot partition (loadtest/), which any
+# computer can read, deletes the run's data and waits for the next run. Flash the disk
+# afresh to get the facility hub back.
+#
+# hub-loadtest.txt, one key=value per line:
+#   central=http://192.168.1.20:8091   the Mac's fake central for this Pi (required)
+#   name=rpi5                          host name: the Mac reaches the Pi at http://rpi5.local
+#   wifi_ssid=...                      join this Wi-Fi (without a cable)
+#   wifi_password=...
+#   listen=:80                         the test hub's address (default :80)
+set -u
+BOOT=${BOOT:-/boot/firmware}
+STATE=${STATE:-/var/lib/hub-loadtest}
+HUBBIN=${HUBBIN:-/usr/local/lib/hub/hub}
+CONF=$BOOT/hub-loadtest.txt
+OUT=$BOOT/loadtest
+mkdir -p "$STATE" "$OUT"
+
+conf() { sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$CONF" | tr -d '\r' | head -n 1; }
+log() { echo "$(date -Is) $*" | tee -a "$OUT/agent.log"; }
+started() { printf '%s' "$1" | sed -n 's/.*"started": *"\([^"]*\)".*/\1/p'; }
+run_info() { curl -sf -m 10 "$CENTRAL/fake/run" 2>/dev/null; }
+
+CENTRAL=$(conf central | sed 's#/*$##')
+NAME=$(conf name)
+LISTEN=$(conf listen)
+LISTEN=${LISTEN:-:80}
+SSID=$(conf wifi_ssid)
+WIFIPW=$(conf wifi_password)
+if [ -z "$CENTRAL" ]; then
+	log "no central= in $CONF"
+	exit 1
+fi
+
+if [ "$(id -u)" = 0 ]; then
+	if [ -n "$NAME" ] && [ "$(hostname)" != "$NAME" ]; then
+		hostnamectl set-hostname "$NAME"
+		sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$NAME/" /etc/hosts
+		systemctl restart avahi-daemon
+	fi
+	# No restarts for updates in the middle of a run.
+	systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null
+	if [ -n "$SSID" ]; then
+		for _ in 1 2 3 4 5 6 7 8 9 10; do
+			nmcli -t -f active,ssid device wifi 2>/dev/null | grep -qx "yes:$SSID" && break
+			nmcli device wifi rescan >/dev/null 2>&1
+			sleep 5
+			nmcli device wifi connect "$SSID" password "$WIFIPW" >/dev/null 2>&1 && break
+			sleep 20
+		done
+	fi
+fi
+log "load-test mode: name $(hostname), central $CENTRAL, addresses $(hostname -I 2>/dev/null)"
+
+# Every 10 seconds, until the hub stops: its memory and CPU, free memory, the root
+# disk's counters as /proc/diskstats has them (cumulative: reads, ms reading, writes,
+# ms writing, I/O in flight), the SoC's temperature and the firmware's throttling flags.
+sample() {
+	pid=$1 file=$2
+	dev=$(basename "$(findmnt -no SOURCE /)")
+	hz=$(getconf CLK_TCK)
+	echo "time,rss_mb,cpu_s,mem_available_mb,reads,read_ms,writes,write_ms,in_flight,temp_c,throttled" >"$file"
+	while kill -0 "$pid" 2>/dev/null; do
+		rss=$(awk '/^VmRSS/ {printf "%d", $2 / 1024}' "/proc/$pid/status" 2>/dev/null)
+		cpu=$(awk -v hz="$hz" '{printf "%.1f", ($14 + $15) / hz}' "/proc/$pid/stat" 2>/dev/null)
+		avail=$(awk '/^MemAvailable/ {printf "%d", $2 / 1024}' /proc/meminfo)
+		disk=$(awk -v d="$dev" '$3 == d {print $4 "," $7 "," $8 "," $11 "," $12}' /proc/diskstats)
+		temp=$(awk '{printf "%.1f", $1 / 1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
+		thr=$(vcgencmd get_throttled 2>/dev/null | sed 's/.*=//')
+		echo "$(date +%T),$rss,$cpu,$avail,${disk:-,,,,},$temp,$thr" >>"$file"
+		sleep 10
+	done
+}
+
+one_run() {
+	st=$1 tes=$2
+	id=$(printf '%s' "$st" | tr -d ':Z-' | tr T -)-$((tes / 1000))k
+	dir=$STATE/$id
+	rm -rf "$dir"
+	mkdir -p "$dir/data"
+	cat >"$dir/hub.yaml" <<EOF
+central_url: $CENTRAL
+listen: "$LISTEN"
+data_dir: $dir/data
+tls: false
+reconnect_delay: 0s
+log_requests: false
+EOF
+	log "run $id: $tes people; a fresh hub at $LISTEN"
+	"$HUBBIN" serve -config "$dir/hub.yaml" >"$dir/hub.out" 2>&1 &
+	pid=$!
+	sample "$pid" "$dir/samples.csv" &
+	spid=$!
+	miss=0 noted=""
+	while [ "$miss" -lt 4 ]; do
+		sleep 30
+		if [ -z "$noted" ] && ! kill -0 "$pid" 2>/dev/null; then
+			log "run $id: the hub exited"
+			noted=1
+		fi
+		now=$(started "$(run_info)")
+		if [ -z "$now" ]; then
+			miss=$((miss + 1))
+		elif [ "$now" != "$st" ]; then
+			break
+		else
+			miss=0
+		fi
+	done
+	log "run $id: its fake central is gone; stopping the hub"
+	kill "$pid" 2>/dev/null
+	wait "$pid" 2>/dev/null
+	kill "$spid" 2>/dev/null
+	wait "$spid" 2>/dev/null
+
+	res=$OUT/$id
+	mkdir -p "$res"
+	cp "$dir/hub.yaml" "$dir/samples.csv" "$res/"
+	for f in "$dir/hub.out" "$dir/data/hub.log"; do
+		[ -f "$f" ] && gzip -c "$f" >"$res/$(basename "$f").gz"
+	done
+	{
+		echo "run $id: $tes people, hub $("$HUBBIN" version 2>&1), $(tr -d '\0' </proc/device-tree/model 2>/dev/null)"
+		echo "data folder at the end: $(du -sh "$dir/data" | cut -f1)"
+		awk -F, 'NR > 1 && $2 != "" {
+			if ($2 > rss) rss = $2
+			if (min == "" || $4 < min) min = $4
+			if ($10 > t) t = $10
+		} END {printf "hub peak memory %d MB; least free memory %d MB; hottest %.1f C\n", rss, min, t}' "$dir/samples.csv"
+	} >"$res/summary.txt"
+	rm -rf "$dir"
+	sync
+	log "run $id: results in loadtest/$id on the boot partition"
+}
+
+last=""
+while :; do
+	info=$(run_info)
+	st=$(started "$info")
+	if [ -z "$st" ] || [ "$st" = "$last" ]; then
+		sleep 30
+		continue
+	fi
+	last=$st
+	one_run "$st" "$(printf '%s' "$info" | sed -n 's/.*"tes": *\([0-9]*\).*/\1/p')"
+done

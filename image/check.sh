@@ -70,6 +70,10 @@ check "hub.service is enabled" exists /etc/systemd/system/multi-user.target.want
 check "diagnostics for support are written to the boot partition" exists /etc/systemd/system/timers.target.wants/hub-diag.timer
 check "no first-boot prompt waits for a console nobody has" masked systemd-firstboot.service
 check "the disk is grown at the first start" exists /etc/systemd/system/multi-user.target.wants/hub-growdisk.service
+check "load-test mode is there, off unless the boot partition asks for it" sh -c "debugfs -R 'cat /etc/systemd/system/hub-loadtest.service' '$R' 2>/dev/null | grep -q '^ConditionPathExists=/boot/firmware/hub-loadtest.txt'"
+check "load-test mode is enabled" exists /etc/systemd/system/multi-user.target.wants/hub-loadtest.service
+check "the facility hub stays off in load-test mode" sh -c "debugfs -R 'cat /etc/systemd/system/hub.service.d/loadtest.conf' '$R' 2>/dev/null | grep -q '^ConditionPathExists=!/boot/firmware/hub-loadtest.txt'"
+check "curl is installed (load-test mode)" exists /usr/bin/curl
 wifi_on() { cat_ /var/lib/NetworkManager/NetworkManager.state | grep -q '^WirelessEnabled=true'; }
 check "NetworkManager starts with the Wi-Fi on" wifi_on
 check "hub.service may bind ports 80 and 443" sh -c "debugfs -R 'cat /etc/systemd/system/hub.service' '$R' 2>/dev/null | grep -q CAP_NET_BIND_SERVICE"

@@ -1,0 +1,16 @@
+# Load-test mode (/usr/local/sbin/hub-loadtest): only when the boot partition holds
+# hub-loadtest.txt, which also keeps hub.service off (hub.service.d/loadtest.conf).
+[Unit]
+Description=Facility hub load-test mode
+ConditionPathExists=/boot/firmware/hub-loadtest.txt
+RequiresMountsFor=/boot/firmware
+After=network-online.target hub-growdisk.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/sbin/hub-loadtest
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
