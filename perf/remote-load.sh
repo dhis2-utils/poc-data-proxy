@@ -21,6 +21,12 @@
 # with its own PORT: LABEL=rpi5 PORT=8091 perf/remote-load.sh http://rpi5.local ...). Sizes are those of
 # stress.ps1: people, 5/3 enrollments and 4 events per person (300k = HC IV).
 #
+# WEB is the share of users that work as Capture web users; the rest sync
+# incrementally like Android or eRegisters devices. The default, 0.95, makes 3 of 60
+# users such devices: Android Capture is on hold for hubs, and a facility has a few
+# eRegisters browsers at most. The first VM run used hubload's default of 0.7 (18 of
+# 60), and their offline syncs exhausted the hub's memory (docs/INCREMENTAL-SYNC-FIX.md).
+#
 # fakecentral and hubload are taken from next to this script (the kit's mac folder),
 # else built from this repository with Go.
 set -euo pipefail
@@ -29,6 +35,7 @@ SIZE=${2:?size: 10k 30k 60k 100k 300k 500k 700k}
 USERS=${3:-60}
 DURATION=${4:-1h}
 FLAP=${5:-10m/5m}
+WEB=${WEB:-0.95}
 PORT=${PORT:-8090}
 
 case $SIZE in
@@ -72,9 +79,9 @@ echo "$(date +%T) fake central ready"
 until curl -sf "$HUB/hub/status" >/dev/null; do sleep 5; done
 echo "$(date +%T) hub answering at $HUB"
 
-load() { "$BIN/hubload" -hub "$HUB" -central "$CENTRAL" -users "$USERS" "$@"; }
+load() { "$BIN/hubload" -hub "$HUB" -central "$CENTRAL" -users "$USERS" -web "$WEB" "$@"; }
 {
-	echo "remote load test: $SIZE ($PEOPLE people), $USERS users, $DURATION working day, uplink $FLAP, $(date +%FT%T)"
+	echo "remote load test: $SIZE ($PEOPLE people), $USERS users ($WEB web), $DURATION working day, uplink $FLAP, $(date +%FT%T)"
 	echo "hub $HUB; $(curl -s "$HUB/hub/status")"
 } >"$OUT/summary.txt"
 
