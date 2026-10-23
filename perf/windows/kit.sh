@@ -20,6 +20,6 @@ GOOS=windows GOARCH=${ARCH:-amd64} go build -trimpath -o "$OUT/hubload.exe" ./cm
 mkdir -p "$OUT/mac"
 GOOS=darwin GOARCH=arm64 go build -trimpath -o "$OUT/mac/fakecentral" ./cmd/fakecentral
 GOOS=darwin GOARCH=arm64 go build -trimpath -o "$OUT/mac/hubload" ./cmd/hubload
-cp "$HERE/../remote-load.sh" "$OUT/mac/"
+cp "$HERE/../remote-load.sh" "$HERE/../remote-queue.sh" "$OUT/mac/"
 cp "$HERE/stress.ps1" "$HERE/powercut.ps1" "$HERE/powercut-host.sh" "$OUT/"
 echo "$OUT: hub $V (windows/${ARCH:-amd64})"
