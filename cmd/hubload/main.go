@@ -272,7 +272,7 @@ func syncNow() {
 		v, _ := s["syncStarted"].(string)
 		started, err := time.Parse(time.RFC3339Nano, v)
 		return err == nil && started.After(asked) && s["syncing"] == false
-	}, 6*time.Hour)
+	}, 48*time.Hour) // the largest facilities on a slow disk
 }
 
 // --- users ---------------------------------------------------------------------------

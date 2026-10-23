@@ -20,6 +20,14 @@
 #
 #   powershell -ExecutionPolicy Bypass -File .\stress.ps1 -Size 300k -Central http://192.168.64.1:8090
 #
+# With -Queue as well, nobody needs to press Enter: the script waits for a fake
+# central at that address, starts a fresh hub for it (the size read from the fake
+# central), stops the hub when that fake central goes away, keeps the results and
+# deletes the test's data, and waits for the next one, until stopped with Ctrl+C.
+# perf/remote-queue.sh on the Mac runs the sizes one after another against it.
+#
+#   powershell -ExecutionPolicy Bypass -File .\stress.ps1 -Queue -Central http://192.168.64.1:8090
+#
 # Sizes: 10k to 700k people (enrollments 5/3 and events 4 per person: 300k is the HC
 # IV size). Run as administrator to exclude the test folder from Defender scanning, as
 # the installer does for the real hub's folder (and, with -Central, to open the port).
@@ -28,10 +36,31 @@ param(
   [int]$Users = 20,
   [string]$Realistic = "5m",
   [string]$Hammer = "2m",
-  [string]$Central = ""
+  [string]$Central = "",
+  [switch]$Queue,
+  [switch]$Auto # one run of the queue: stop when the fake central goes away
 )
 $ErrorActionPreference = "Stop"
 $here = $PSScriptRoot
+
+if ($Queue) {
+  if (-not $Central) { throw "-Queue needs -Central" }
+  $labels = @{ 10000 = "10k"; 30000 = "30k"; 60000 = "60k"; 100000 = "100k"; 300000 = "300k"; 500000 = "500k"; 700000 = "700k" }
+  $last = ""
+  while ($true) {
+    Write-Host "$(Get-Date -Format s) waiting for a fake central at $Central"
+    $r = $null
+    while (-not $r -or "$($r.started)" -eq $last) {
+      try { $r = Invoke-RestMethod -TimeoutSec 10 "$Central/fake/run" } catch { $r = $null }
+      if (-not $r -or "$($r.started)" -eq $last) { Start-Sleep 30 }
+    }
+    $last = "$($r.started)"
+    $label = $labels[[int]$r.tes]
+    if (-not $label) { Write-Host "size $($r.tes) people is not one of stress.ps1's sizes; skipped"; continue }
+    Write-Host "$(Get-Date -Format s) run of $label, $($r.users) users"
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath -Size $label -Central $Central -Auto
+  }
+}
 $people = @{ "10k" = 10000; "30k" = 30000; "60k" = 60000; "100k" = 100000; "300k" = 300000; "500k" = 500000; "700k" = 700000 }[$Size]
 # The test's data on this PC's own disk, never next to the script: run from a shared
 # folder (Z:\ from the Mac), the database would sit on the network share.
@@ -144,7 +173,23 @@ try {
     Note "hub only, central $Central; this PC: $ips"
     Note "on the Mac: perf/remote-load.sh http://<one of those addresses>:18090 $Size ..."
     Sample $hub.Id
-    Read-Host "`nRun the load from the Mac now. Press Enter here when it is done"
+    if ($Auto) {
+      # Until this run's fake central goes away (2 minutes without an answer) or
+      # another one replaces it.
+      $started = "$((Invoke-RestMethod -TimeoutSec 10 "$Central/fake/run").started)"
+      $miss = 0; $noted = $false
+      while ($miss -lt 4) {
+        Start-Sleep 30
+        if ($hub.HasExited -and -not $noted) { Note "$(Get-Date -Format s) hub.exe exited with code $($hub.ExitCode)"; $noted = $true }
+        try {
+          if ("$((Invoke-RestMethod -TimeoutSec 10 "$Central/fake/run").started)" -ne $started) { break }
+          $miss = 0
+        } catch { $miss++ }
+      }
+      Note "$(Get-Date -Format s) the run's fake central is gone: stopping the hub"
+    } else {
+      Read-Host "`nRun the load from the Mac now. Press Enter here when it is done"
+    }
     Summary
     return
   }
@@ -190,5 +235,9 @@ try {
   Get-ChildItem $run -File | Compress-Archive -DestinationPath $zip -Force
   if ($admin) { Remove-MpPreference -ExclusionPath $run -ErrorAction SilentlyContinue }
   Write-Host "`nresults: $zip"
-  Write-Host "the test's data stays in $run; delete that folder when done"
+  if ($Auto) {
+    Remove-Item -Recurse -Force $data -ErrorAction SilentlyContinue # room for the next, larger run
+  } else {
+    Write-Host "the test's data stays in $run; delete that folder when done"
+  }
 }
