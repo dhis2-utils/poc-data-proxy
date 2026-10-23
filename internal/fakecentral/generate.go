@@ -229,7 +229,11 @@ func (g *generated) listTEs(w http.ResponseWriter, r *http.Request) bool {
 	// Every generated object has the same update time, so "updated after" the newest
 	// one the hub has seen means nothing changed (DHIS2 returns the few at that exact
 	// time again; here they would be everything).
-	if q.Get("orgUnits") != Facility || (q.Get("updatedAfter") != "" && q.Get("updatedAfter") >= g.updatedAt) {
+	ou := q.Get("orgUnits") // Android's download says orgUnit (with DESCENDANTS)
+	if ou == "" {
+		ou = q.Get("orgUnit")
+	}
+	if ou != Facility || (q.Get("updatedAfter") != "" && q.Get("updatedAfter") >= g.updatedAt) {
 		total = 0
 	}
 	idsOnly := strings.HasPrefix(q.Get("fields"), "trackedEntity,updatedAt") || q.Get("fields") == "trackedEntity"
@@ -322,4 +326,41 @@ func idsOf(m tracker.M) tracker.M {
 		}
 	}
 	return out
+}
+
+// getTE answers GET /api/tracker/trackedEntities/{uid} for a generated person, with
+// its enrollments in the requested program, as the web app's dashboard reads it
+// online. It reports false for any other uid.
+func (g *generated) getTE(w http.ResponseWriter, r *http.Request, uid string) bool {
+	if g == nil {
+		return false
+	}
+	var i int
+	if _, err := fmt.Sscanf(uid, "Te%09d", &i); err != nil || len(uid) != 11 || i < 0 || i >= g.TEs {
+		return false
+	}
+	t := g.renderTE(i)
+	for p := 0; p < g.Programs; p++ {
+		if r.URL.Query().Get("program") != GenProgram(p) {
+			continue
+		}
+		var enrs []any
+		for n := 0; i+n*g.TEs < g.Enrollments; n++ {
+			if j := i + n*g.TEs; g.program(j) == p {
+				enrs = append(enrs, g.renderEnrollment(j))
+			}
+		}
+		t["enrollments"] = orEmpty(enrs)
+	}
+	writeJSON(w, 200, t)
+	return true
+}
+
+// enrollmentEvents answers GET /api/tracker/events?enrollments={uid} for one generated
+// enrollment: its generated events. Events pushed to it later are not among them; a
+// load test reads them back from the hub.
+func (g *generated) enrollmentEvents(w http.ResponseWriter, r *http.Request) {
+	var j int
+	fmt.Sscanf(r.URL.Query().Get("enrollments"), "En%09d", &j)
+	writeJSON(w, 200, map[string]any{"events": g.renderEnrollment(j)["events"]})
 }
