@@ -54,10 +54,20 @@ func main() {
 	lo, hi := thinkRange(*think)
 	report := []string{fmt.Sprintf("hubload %s: %d users (%.0f%% web), %s offline, think %s, Android limit %d per program, first downloads %s",
 		time.Now().Format(time.RFC3339), *users, *webShare*100, *duration, *think, *andLimit, *andFirst)}
+	var noteMu sync.Mutex // the uplink flapper notes too
 	note := func(f string, a ...any) {
 		s := fmt.Sprintf(f, a...)
 		log.Print(s)
+		noteMu.Lock()
 		report = append(report, s)
+		noteMu.Unlock()
+	}
+	var flapDown, flapUp time.Duration
+	if *flapF != "" {
+		var err error
+		if flapDown, flapUp, err = parseFlap(*flapF); err != nil {
+			log.Fatal(err)
+		}
 	}
 	waitUp(3 * time.Minute)
 	if *verifyF != "" {
@@ -94,6 +104,11 @@ func main() {
 	m := newMetrics()
 	var wg sync.WaitGroup
 	stop := time.Now().Add(*duration)
+	flapDone := make(chan struct{})
+	if *flapF != "" {
+		note("uplink flapping: %s down, %s up", flapDown, flapUp)
+		go flapUplink(note, flapDone, stop, flapDown, flapUp)
+	}
 	nWeb := int(float64(*users) * *webShare)
 	if *paced {
 		var all []*user
@@ -116,6 +131,7 @@ func main() {
 		}(i)
 	}
 	wg.Wait()
+	close(flapDone)
 	report = append(report, m.report(*duration)...)
 	note("hub status after the load: %s", status())
 
@@ -350,10 +366,16 @@ func (u *user) web(m *metrics, stop time.Time, lo, hi time.Duration) {
 			continue
 		}
 		enr := pick.Enrollments[0].Enrollment
-		st, _, d = u.get("/api/tracker/trackedEntities/" + pick.TE + "?program=" + prog + "&fields=*")
+		st, b, d = u.get("/api/tracker/trackedEntities/" + pick.TE + "?program=" + prog + "&fields=*")
 		m.add("web: dashboard, person", st, d)
-		st, _, d = u.get("/api/tracker/events?enrollments=" + enr + "&fields=*&paging=false")
+		if st != 200 {
+			m.sample("web: dashboard, person error", []byte(fmt.Sprintf("%s %s: %d %s", u.name, pick.TE, st, b)))
+		}
+		st, b, d = u.get("/api/tracker/events?enrollments=" + enr + "&fields=*&paging=false")
 		m.add("web: dashboard, events", st, d)
+		if st != 200 {
+			m.sample("web: dashboard, events error", []byte(fmt.Sprintf("%s %s: %d %s", u.name, enr, st, b)))
+		}
 		pause(lo, hi)
 
 		if mrand.IntN(3) == 0 {

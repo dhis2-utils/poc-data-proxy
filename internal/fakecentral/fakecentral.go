@@ -471,12 +471,16 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		c.listProgramEvents(w, r, u)
 	case p == "/api/tracker/events" && c.gen != nil && strings.HasPrefix(r.URL.Query().Get("program"), "GenEvP"):
 		c.gen.listEvents(w, r)
+	case p == "/api/tracker/events" && c.gen.has(r.URL.Query().Get("enrollments")):
+		c.gen.enrollmentEvents(w, r)
 	case p == "/api/categoryCombos":
 		c.categoryCombos(w, r, u)
 	case p == "/api/tracker/trackedEntities":
 		c.listTEs(w, r, u)
 	case strings.HasPrefix(p, "/api/tracker/trackedEntities/"):
-		c.getTE(w, r, u, strings.TrimPrefix(p, "/api/tracker/trackedEntities/"))
+		if uid := strings.TrimPrefix(p, "/api/tracker/trackedEntities/"); !c.gen.getTE(w, r, uid) {
+			c.getTE(w, r, u, uid)
+		}
 	case p == "/api/tracker/ownership/transfer" && r.Method == "PUT":
 		c.transfer(w, r, u)
 	case p == "/api/tracker/ownership/override" && r.Method == "POST":
