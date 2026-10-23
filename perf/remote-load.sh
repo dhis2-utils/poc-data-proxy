@@ -57,8 +57,14 @@ CENTRAL=http://127.0.0.1:$PORT
 
 # The addresses the hub reaches this Mac by: UTM's shared network is bridge100, the
 # facility network (the Pis) usually en0.
-VMNET=$(ipconfig getifaddr bridge100 2>/dev/null || echo "<the Mac's address on the VM's network>")
-LAN=$(ipconfig getifaddr en0 2>/dev/null || echo "<the Mac's address on the network>")
+# ipconfig getifaddr knows only interfaces macOS's own network configuration manages,
+# not the bridge UTM creates, so read the address from ifconfig.
+addr() { ifconfig "$1" 2>/dev/null | awk '$1 == "inet" {print $2; exit}'; }
+VMNET=$(addr bridge100)
+VMNET=${VMNET:-"<the Mac's address on the VM's network>"}
+LAN=$(addr en0)
+LAN=${LAN:-$(addr en1)}
+LAN=${LAN:-"<the Mac's address on the network>"}
 echo "fake central: $PEOPLE people, $ENR enrollments, $EV events, $USERS users (generating)"
 echo "the hub's central: http://$VMNET:$PORT from the VM, http://$LAN:$PORT from the network"
 until curl -sf "$CENTRAL/api/system/ping" >/dev/null; do sleep 2; done
