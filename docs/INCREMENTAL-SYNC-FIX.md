@@ -1,8 +1,8 @@
-# Incremental sync under load: measured problem and proposed fix
+# Incremental sync under load: measured problem and fix
 
-Status: proposed, 23 October 2026. Not built.
+Status: built, 23 October 2026. Measured in the sandbox; the VM run is to be repeated.
 
-On a small Windows PC, the hub ran out of memory during a load test at 100,000 people. The cause is the offline answer to incremental syncs (`updatedAfter`), which Android Capture and eRegisters send. Two changes are proposed: a cheaper check for "changed since", and stopping a search when its client has gone. Both keep the hub's answers exactly as they are now.
+On a small Windows PC, the hub ran out of memory during a load test at 100,000 people. The cause is the offline answer to incremental syncs (`updatedAfter`), which Android Capture and eRegisters send. Two changes followed: a cheaper check for "changed since", and stopping a search when its client has gone. Both keep the hub's answers exactly as they were.
 
 ## The measurement
 
@@ -30,7 +30,7 @@ On the VM, those calls ran long enough to overlap. Each syncing device starts a 
 
 The fake central makes the worst case constant: it gives every person with an active enrollment an update time of "now", so most of the 100,000 people count as changed in every sync. Real data is gentler. But a busy facility after a day's work can pass 500 changed people, and eRegisters asks with an older date offline (its `updatedAfter` comes from a cached `serverDate`, `docs/FINDINGS.md`, "eRegisters through the hub").
 
-## Proposed change
+## The change
 
 ### 1. A cheaper "changed since" check
 
@@ -45,7 +45,7 @@ The result is the same as today's by construction: the same check, on the same o
 
 The request's context is passed into offline searches, and the per-row loop checks it. When the client has gone, the search stops and nothing is written. This applies to every offline search, not only incremental syncs: on a slow machine, web searches can pile up the same way.
 
-### Not proposed
+### Left out
 
 A limit on how many searches run at once is left out. AGENTS.md asks for a measured problem before a new mechanism, and the two changes above may be enough. If the measurement after them still shows memory growing on the VM, a limit is the next step, with its own numbers.
 
@@ -60,11 +60,42 @@ Searches are one of the areas AGENTS.md guards: the SQL part and the Go part mus
 
 The numbers before and after come from the sandbox reproduction on one core: 100,000 people, 60 users of whom 18 sync incrementally, 10 minutes down and 5 up. Before the change, `childStates` allocated 5.7 GB in 3 minutes, and memory peaked at 365 MB. After it, the same run gives the allocations, the peak memory and the latency of an incremental sync. The VM run is then repeated at the same size and settings.
 
+## Result
+
+Built as described. `newestChild` in `internal/tracker/search.go` reads the hub-written children in full (they are few, and their check may read the object), then central's children newest first, with only five columns, and stops at the first the user may read. The facility, deleted and stub conditions are in SQL. Searches stop with 499 when the request's context ends.
+
+Tests:
+
+- `TestUpdatedMatchAsReadingEveryChild` compares the new check with the old one on 300 random people, with children that differ in central's list, facility, deleted, stub, origin, program and stage, under five date ranges, with and without `includeDeleted` and search scope. Each SQL condition was removed or inverted in turn, and the test failed each time.
+- `TestSearchStopsWhenClientGone`, and `TestQueryPlansUseIndexes` with the new queries.
+- The live suite on the synthetic profile, against DHIS2 42 and 43: passed, with no LEAK or DIFFERS in reads (MATCH 977 and 998). The read oracle sends no `updatedAfter`, so the comparison with the old check above is what covers it.
+- `go test ./...`, and `-race` on `internal/e2e`, `internal/live`, `internal/tracker` and `internal/store`.
+
+Measurement, in the sandbox on 23 October 2026: 100,000 people, 60 users of whom 18 sync incrementally, 10 minutes down and 5 up. The old build (`ecd4ddf`) and the new one ran at the same time, each hub on one core, the load tools on two others. First pull: 3 min 56 s old, 4 min 1 s new.
+
+| 40-minute working day | Before | After |
+| --- | --- | --- |
+| Android incremental sync, p50 | 1 min 19 s | 34 s |
+| Android incremental sync, p95 | 3 min 37 s | 2 min 52 s |
+| Android download page, p50 | 10.6 s | 5.2 s |
+| Web dashboard (person), p99 | 662 ms | 374 ms |
+| Peak memory after the first cut | 624 MB | 539 MB |
+
+The first new build still built the two query texts for every person, which cost more than reading the rows; they are now built once. A second pair of runs compared the final build with the old one, with a 3-minute allocation profile from 2 minutes after the first cut:
+
+| 3 minutes offline | Before | After |
+| --- | --- | --- |
+| Allocated by the "changed since" check | 7.6 GB | 1.6 GB |
+| Allocated by the whole hub | 13.3 GB | 7.8 GB |
+| Peak memory | 430 MB | 370 MB |
+
+The cost still grows with the number of changed people: one small query per candidate. Whether memory stays bounded on the 2-CPU VM, where searches overlapped, is what the repeated VM run shows (`WEB=0.7`, 100k).
+
 ## Meanwhile
 
-Until this is built, `perf/remote-load.sh` runs with few incremental-sync devices: `WEB=0.95` by default, 3 of 60 users. Android Capture is on hold for hubs, and a facility has a few eRegisters browsers at most. The weekend runs on the VM and the Pis measure the hardware with that mix.
+Until the VM run is repeated with this build, `perf/remote-load.sh` runs with few incremental-sync devices: `WEB=0.95` by default, 3 of 60 users. Android Capture is on hold for hubs, and a facility has a few eRegisters browsers at most. The weekend runs on the VM and the Pis measure the hardware with that mix.
 
 ## Open questions
 
 - Should the fake central give realistic update times, so that an incremental sync sees a day's changes rather than the whole facility? The worst case stays useful as a separate setting.
-- Is 500 the right point to switch from the SQL list to the per-person check, once the check is cheap? To measure, not to guess.
+- Is 500 the right point to switch from the SQL list to the per-person check, now that the check is cheaper? To measure, not to guess.

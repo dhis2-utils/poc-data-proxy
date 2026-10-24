@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -304,9 +305,22 @@ type Viewer struct {
 	// IncludeDeleted: the request asked for includeDeleted=true (Android's download),
 	// so tombstones are read too, marked deleted. Otherwise they are not there.
 	IncludeDeleted bool
+	// Ctx is the request's: a search stops when its client has gone, so abandoned
+	// searches do not pile up on a slow machine (docs/INCREMENTAL-SYNC-FIX.md).
+	Ctx context.Context
 
 	payloads map[string]M      // full payloads loaded for this request (prefetch)
 	related  map[string][]*Obj // children looked up for this request (enrollmentsFor and the like)
+}
+
+// gone is the answer to a search whose client has gone (nginx's code: nobody reads it).
+var gone = &APIError{Status: 499, Message: "client closed request"}
+
+func (v *Viewer) ctx() context.Context {
+	if v == nil || v.Ctx == nil {
+		return context.Background()
+	}
+	return v.Ctx
 }
 
 func (v *Viewer) memo(key string, load func() []*Obj) []*Obj {

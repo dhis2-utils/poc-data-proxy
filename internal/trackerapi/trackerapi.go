@@ -275,6 +275,7 @@ func (a *API) serveLocal(w http.ResponseWriter, r *http.Request, sess *core.Sess
 		return
 	}
 	v := a.H.Viewer(sess.UserID)
+	v.Ctx = r.Context()
 	api := a.H.API()
 	coll, uid := split(r.URL.Path)
 	switch {
