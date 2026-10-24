@@ -25,6 +25,10 @@ type Scale struct {
 	// EventPrograms generated event programs (GenEvP…), each with ProgramEvents events
 	// whose dates are spread over the last 36 months.
 	EventPrograms, ProgramEvents int
+	// Changed is the share of active enrollments, with their people, last changed at
+	// generation time; the rest were changed earlier. 0 means all: every incremental
+	// sync then finds most of the facility changed (the worst case).
+	Changed float64
 }
 
 type generated struct {
@@ -107,7 +111,25 @@ func (g *generated) enrollmentUpdated(j int) string {
 	if g.status(j) == "COMPLETED" {
 		return g.date(g.enrolled(j).AddDate(1, 0, 0))
 	}
-	return g.updatedAt
+	if g.Changed <= 0 || g.Changed >= 1 || spread(j, 1) < g.Changed {
+		return g.updatedAt
+	}
+	// Changed earlier: between enrollment and two days before generation, outside the
+	// day the hub adds to an updatedAfter date.
+	e, last := g.enrolled(j), g.base.Add(-48*time.Hour)
+	if !last.After(e) {
+		return g.date(e)
+	}
+	return g.date(e.Add(time.Duration(spread(j, 2) * float64(last.Sub(e)))))
+}
+
+// spread is a fixed value in [0, 1) for enrollment j, different for each seed.
+func spread(j, seed int) float64 {
+	h := uint32(j)*2654435761 ^ uint32(seed)*40503
+	h ^= h >> 15
+	h *= 2246822519
+	h ^= h >> 13
+	return float64(h%10000) / 10000
 }
 
 // teUpdated is a person's last change: the newest of their enrollments'.

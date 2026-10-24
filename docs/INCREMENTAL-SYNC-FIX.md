@@ -97,5 +97,5 @@ Until the VM run is repeated with this build, `perf/remote-load.sh` runs with fe
 
 ## Open questions
 
-- Should the fake central give realistic update times, so that an incremental sync sees a day's changes rather than the whole facility? The worst case stays useful as a separate setting.
-- Is 500 the right point to switch from the SQL list to the per-person check, now that the check is cheaper? To measure, not to guess.
+- Realistic update times: done. `fakecentral -changed 0.01` (`CHANGED=0.01` for `perf/remote-load.sh`) marks 1 % of active enrollments, with their people, as changed now and the rest earlier; at 100k about 330 people, plus what the users write. The default, 0, keeps the worst case. At 100k with 18 Android users, the hub on one core, 12 minutes: incremental sync 3.9 s (p50) and 6.0 s (p95), Android page 0.6 s, the check's allocations 31 MB in 3 minutes, peak memory 244 MB. That run had the machine to itself; the worst-case runs above shared it.
+- Is 500 the right point to switch from the SQL list to the per-person check, now that the check is cheaper? To measure, not to guess. On a realistic day a facility stays under it (above), so it matters for devices that were off for days and for eRegisters' older dates.

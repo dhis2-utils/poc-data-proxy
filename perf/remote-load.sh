@@ -27,6 +27,12 @@
 # eRegisters browsers at most. The first VM run used hubload's default of 0.7 (18 of
 # 60), and their offline syncs exhausted the hub's memory (docs/INCREMENTAL-SYNC-FIX.md).
 #
+# CHANGED is the share of active enrollments, with their people, that the fake central
+# says changed now; the rest changed earlier. The default, 0, means all: every
+# incremental sync then checks most of the facility (the worst case, as in all runs
+# up to 24 October 2026). CHANGED=0.01 is closer to a facility's day: at 100k about
+# 330 people, plus what the users write during the run.
+#
 # fakecentral and hubload are taken from next to this script (the kit's mac folder),
 # else built from this repository with Go.
 set -euo pipefail
@@ -36,6 +42,7 @@ USERS=${3:-60}
 DURATION=${4:-1h}
 FLAP=${5:-10m/5m}
 WEB=${WEB:-0.95}
+CHANGED=${CHANGED:-0}
 PORT=${PORT:-8090}
 
 case $SIZE in
@@ -56,7 +63,7 @@ if [ ! -x "$BIN/fakecentral" ] || [ ! -x "$BIN/hubload" ]; then
 	(cd "$HERE/.." && go build -o "$BIN/fakecentral" ./cmd/fakecentral && go build -o "$BIN/hubload" ./cmd/hubload)
 fi
 
-"$BIN/fakecentral" -listen ":$PORT" -tes "$PEOPLE" -enrollments "$ENR" -events "$EV" -users "$USERS" \
+"$BIN/fakecentral" -listen ":$PORT" -tes "$PEOPLE" -enrollments "$ENR" -events "$EV" -users "$USERS" -changed "$CHANGED" \
 	>"$OUT/central.log" 2>&1 &
 CENTRAL_PID=$!
 trap 'kill $CENTRAL_PID 2>/dev/null || true' EXIT
@@ -81,7 +88,7 @@ echo "$(date +%T) hub answering at $HUB"
 
 load() { "$BIN/hubload" -hub "$HUB" -central "$CENTRAL" -users "$USERS" -web "$WEB" "$@"; }
 {
-	echo "remote load test: $SIZE ($PEOPLE people), $USERS users ($WEB web), $DURATION working day, uplink $FLAP, $(date +%FT%T)"
+	echo "remote load test: $SIZE ($PEOPLE people), $USERS users ($WEB web), changed $CHANGED, $DURATION working day, uplink $FLAP, $(date +%FT%T)"
 	echo "hub $HUB; $(curl -s "$HUB/hub/status")"
 } >"$OUT/summary.txt"
 

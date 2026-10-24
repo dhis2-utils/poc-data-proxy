@@ -26,6 +26,7 @@ func main() {
 	flag.IntVar(&s.Programs, "programs", 6, "generated tracker programs")
 	flag.IntVar(&s.Users, "users", 50, "generated users perf_001 … (password "+fakecentral.Password+")")
 	flag.IntVar(&s.Years, "years", 5, "years the enrollment dates spread over")
+	flag.Float64Var(&s.Changed, "changed", 0, "share of active enrollments, with their people, changed now; the rest earlier (0: all, the worst case for incremental syncs)")
 	flag.Parse()
 	fc := fakecentral.New()
 	if s.TEs > 0 {
