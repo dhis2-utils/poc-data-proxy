@@ -168,6 +168,7 @@ func (ix *Index) run(v *Viewer, p *plan, want int) ([]*Obj, bool, string, *APIEr
 		chunk = want + 1 // a page and one more, to know whether more follow
 	}
 	last := ""
+	ctx := v.ctx()
 	for off := 0; ; {
 		q, args := query, p.args
 		if chunk > 0 {
@@ -189,6 +190,9 @@ func (ix *Index) run(v *Viewer, p *plan, want int) ([]*Obj, bool, string, *APIEr
 			return nil, false, "", &APIError{Status: 500, Message: "search: " + err.Error()}
 		}
 		for _, r := range rows {
+			if ctx.Err() != nil {
+				return nil, false, "", gone
+			}
 			if seen[r[0].UID] {
 				continue
 			}
@@ -616,33 +620,82 @@ func (ix *Index) updatedMatch(v *Viewer, o *Obj, tf timeFilter, q url.Values) (b
 	if q.Get(tf.after) == "" && q.Get(tf.before) == "" {
 		return true, nil
 	}
-	objs := []*Obj{o}
-	if o.Kind == store.KindTrackedEntity {
-		objs = append(objs, ix.visible(v, ix.childStates(o.UID))...)
+	if o.Origin == store.OriginLocal {
+		return true, nil
 	}
-	newest := ""
-	for _, x := range objs {
-		if x.Origin == store.OriginLocal {
+	newest := o.UpdatedAt
+	if o.Kind == store.KindTrackedEntity {
+		local, t, err := ix.newestChild(v, o.UID)
+		if err != nil {
+			return false, err
+		}
+		if local {
 			return true, nil
 		}
-		newest = max(newest, x.UpdatedAt)
+		newest = max(newest, t)
 	}
 	return tf.match(M{"updatedAt": newest}, q)
 }
 
-// childStates is a tracked entity's enrollments and events without their data.
-func (ix *Index) childStates(te string) []*Obj {
-	rows, err := ix.store.QueryObjects(`SELECT `+slimCol.ReplaceAllString(store.ObjectCols(""), "''")+
-		` FROM objects INDEXED BY objects_te WHERE te_uid = ? AND kind IN ('enrollment', 'event')`, te)
+// The children newestChild reads: those written on the hub, and central's, with the
+// conditions of visibleWith that SQL can apply, with and without the deleted ones.
+// Built once: building them per person cost more than reading the rows.
+var (
+	sqlHubChildren = `SELECT ` + slimCol.ReplaceAllString(store.ObjectCols(""), "''") +
+		` FROM objects INDEXED BY objects_te WHERE te_uid = ? AND kind IN ('enrollment', 'event') AND origin <> 'central'`
+	sqlCentralChildren = `SELECT coalesce(slot, 0), kind, program, stage, updated_at FROM objects INDEXED BY objects_te
+ WHERE te_uid = ? AND kind IN ('enrollment', 'event') AND origin = 'central' AND owner_org_unit = ? AND stub = 0`
+	sqlCentralChildrenLive = sqlCentralChildren + ` AND deleted = 0 ORDER BY updated_at DESC`
+	sqlCentralChildrenAll  = sqlCentralChildren + ` ORDER BY updated_at DESC`
+)
+
+// newestChild reports whether the user may read an enrollment or event of te written
+// on the hub, and otherwise the newest update time among those of central they may
+// read. Each child is checked with visibleWith, as when all were read. Central's are
+// read newest first, with only the columns the check needs after the facility,
+// deleted and stub conditions in SQL, and reading stops at the first the user may
+// read: an incremental sync checks every changed person, and reading all their
+// children ran a small PC out of memory (docs/INCREMENTAL-SYNC-FIX.md).
+func (ix *Index) newestChild(v *Viewer, te string) (local bool, newest string, apiErr *APIError) {
+	if ix.store == nil || !ix.store.Unlocked() {
+		return false, "", nil
+	}
+	bm := ix.bitmapOf(v.UserID)
+	rows, err := ix.store.QueryObjects(sqlHubChildren, te)
 	if err != nil {
 		slog.Warn("index query", "err", err)
-		return nil
 	}
-	out := make([]*Obj, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, ix.row(r, false))
+		// Without data: optionsReadable reads the object when it needs its combination.
+		if ix.visibleWith(v, bm, ix.row(r, false)) {
+			return true, "", nil
+		}
 	}
-	return out
+	if v.Access == nil {
+		return false, "", nil
+	}
+	query := sqlCentralChildrenLive
+	if v.IncludeDeleted {
+		query = sqlCentralChildrenAll
+	}
+	c := &Obj{Origin: store.OriginCentral, OwnerOrgUnit: v.Facility}
+	err = ix.store.Each(v.ctx(), query, []any{te, v.Facility}, func(scan func(...any) error) (bool, error) {
+		if err := scan(&c.Slot, &c.Kind, &c.Program, &c.Stage, &c.UpdatedAt); err != nil {
+			return false, err
+		}
+		if ix.visibleWith(v, bm, c) {
+			newest = c.UpdatedAt
+			return false, nil
+		}
+		return true, nil
+	})
+	if v.ctx().Err() != nil {
+		return false, "", gone
+	}
+	if err != nil {
+		slog.Warn("index query", "err", err)
+	}
+	return false, newest, nil
 }
 
 func matchAll(d M, q url.Values, tfs []timeFilter) (bool, *APIError) {

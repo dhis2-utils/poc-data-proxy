@@ -1,0 +1,165 @@
+package tracker
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"math/rand"
+	"net/url"
+	"testing"
+
+	"github.com/dhis2/facility-hub/internal/access"
+	"github.com/dhis2/facility-hub/internal/store"
+)
+
+// updatedMatchAll is updatedMatch as it was before it stopped at the first child that
+// decides: every child read, the visible ones kept, the newest compared.
+func updatedMatchAll(ix *Index, v *Viewer, o *Obj, tf timeFilter, q url.Values) (bool, *APIError) {
+	if q.Get(tf.after) == "" && q.Get(tf.before) == "" {
+		return true, nil
+	}
+	objs := []*Obj{o}
+	if o.Kind == store.KindTrackedEntity {
+		rows, err := ix.store.QueryObjects(`SELECT `+slimCol.ReplaceAllString(store.ObjectCols(""), "''")+
+			` FROM objects WHERE te_uid = ? AND kind IN ('enrollment', 'event')`, o.UID)
+		if err != nil {
+			panic(err)
+		}
+		var children []*Obj
+		for _, r := range rows {
+			children = append(children, ix.row(r, false))
+		}
+		objs = append(objs, ix.visible(v, children)...)
+	}
+	newest := ""
+	for _, x := range objs {
+		if x.Origin == store.OriginLocal {
+			return true, nil
+		}
+		newest = max(newest, x.UpdatedAt)
+	}
+	return tf.match(M{"updatedAt": newest}, q)
+}
+
+// A person counts as changed exactly as when every child was read, whatever makes a
+// child visible or not: central's list for the user, the owning facility, deleted,
+// a stub, written on the hub, and the program and stage the user may read.
+func TestUpdatedMatchAsReadingEveryChild(t *testing.T) {
+	s := testStore(t)
+	ix := NewStoreIndex(s)
+	const ou, other = "OuAaaaaaaa1", "OuAaaaaaaa2"
+	progs := []string{"PrAaaaaaaa1", "PrAaaaaaaa2"}
+	stages := []string{"PsAaaaaaaa1", "PsAaaaaaaa2"}
+	days := []string{"2024-03-01T10:00:00.000", "2024-03-05T10:00:00.000", "2024-03-09T10:00:00.000", "2024-03-12T10:00:00.000", ""}
+	r := rand.New(rand.NewSource(7))
+	pick := func(l []string) string { return l[r.Intn(len(l))] }
+	var people []*Obj
+	listed := map[uint32]bool{}
+	err := s.Tx(context.Background(), func(tx *sql.Tx) error {
+		put := func(o *Obj, deleted, stub bool) error {
+			o.Slot = ix.SlotFor(o.UID)
+			if deleted {
+				o.Data["deleted"] = true
+			}
+			if stub {
+				o.Data["hubStub"] = true
+			}
+			if r.Intn(5) > 0 {
+				listed[o.Slot] = true
+			}
+			return s.PutObject(tx, o.ToStore())
+		}
+		origin := func(local int) (string, string) {
+			if r.Intn(local) == 0 {
+				return store.OriginLocal, store.SyncPending
+			}
+			return store.OriginCentral, store.SyncSynced
+		}
+		for i := range 300 {
+			te := &Obj{UID: fmt.Sprintf("TeAaaaaa%03d", i), Kind: store.KindTrackedEntity, TET: "TetAaaaaaa1",
+				OwnerOrgUnit: ou, UpdatedAt: pick(days), Data: M{}}
+			te.Origin, te.SyncState = origin(30)
+			if err := put(te, false, false); err != nil {
+				return err
+			}
+			people = append(people, te)
+			for j := range r.Intn(8) {
+				c := &Obj{UID: fmt.Sprintf("EnAaa%03d%03d", i, j), Kind: store.KindEnrollment, TE: te.UID,
+					Program: pick(progs), OwnerOrgUnit: ou, UpdatedAt: pick(days), Data: M{}}
+				if r.Intn(2) == 0 {
+					c.UID, c.Kind, c.Stage, c.Enrollment = fmt.Sprintf("EvAaa%03d%03d", i, j), store.KindEvent, pick(stages), "EnAaa000000"
+				}
+				if r.Intn(6) == 0 {
+					c.OwnerOrgUnit = other
+				}
+				c.Origin, c.SyncState = origin(12)
+				if err := put(c, r.Intn(6) == 0, c.Kind == store.KindEnrollment && r.Intn(8) == 0); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var deleted, stubs int
+	s.DB().QueryRow(`SELECT sum(deleted), sum(stub) FROM objects`).Scan(&deleted, &stubs)
+	if deleted == 0 || stubs == 0 {
+		t.Fatalf("the fixture stored %d deleted and %d stubs", deleted, stubs)
+	}
+	ix.PrepareVisibility(1, listed).Done(true)
+	acc := &access.List{TETs: map[string]access.Perm{"TetAaaaaaa1": {Read: true}},
+		Programs: map[string]access.Perm{progs[0]: {Read: true}, progs[1]: {Read: true}},
+		Stages:   map[string]access.Perm{stages[0]: {Read: true}}} // not the second stage
+	upd := timeFilter{"updatedAt", "updatedAfter", "updatedBefore"}
+	queries := []url.Values{
+		{"updatedAfter": {"2024-03-04"}}, {"updatedAfter": {"2024-03-10"}}, {"updatedAfter": {"2024-03-20"}},
+		{"updatedBefore": {"2024-03-06"}}, {"updatedAfter": {"2024-03-02"}, "updatedBefore": {"2024-03-10"}},
+	}
+	differ, changed := 0, 0
+	for _, scope := range []bool{true, false} {
+		for _, deleted := range []bool{false, true} {
+			v := &Viewer{UserID: 1, Access: acc, Facility: ou, SearchScope: scope, IncludeDeleted: deleted}
+			for _, q := range queries {
+				for _, te := range people {
+					want, _ := updatedMatchAll(ix, v, te, upd, q)
+					got, apiErr := ix.updatedMatch(v, te, upd, q)
+					if apiErr != nil {
+						t.Fatal(apiErr)
+					}
+					if got != want {
+						differ++
+						if differ <= 5 {
+							t.Errorf("%s %v scope=%v deleted=%v: changed=%v, reading every child gives %v", te.UID, q, scope, deleted, got, want)
+						}
+					}
+					if want {
+						changed++
+					}
+				}
+			}
+		}
+	}
+	if differ > 0 {
+		t.Errorf("%d answers differ", differ)
+	}
+	if changed == 0 || changed == 4*len(queries)*len(people) {
+		t.Fatalf("the fixture does not tell the answers apart: %d changed", changed)
+	}
+}
+
+// A search whose client has gone stops: it answers 499 and reads no further.
+func TestSearchStopsWhenClientGone(t *testing.T) {
+	ix, v, p := pagingFixture(t, 60)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	v.Ctx = ctx
+	if out, _, _, err := ix.run(v, p, 0); err == nil || err.Status != 499 {
+		t.Fatalf("search for a client that has gone: %d found, %v; want 499", len(out), err)
+	}
+	v.Ctx = context.Background()
+	if out, _, _, err := ix.run(v, p, 0); err != nil || len(out) == 0 {
+		t.Fatalf("search for a client still there: %d found, %v", len(out), err)
+	}
+}

@@ -248,6 +248,33 @@ func (s *Store) QueryObjects(query string, args ...any) ([]*Object, error) {
 	return out, rows.Err()
 }
 
+// Each runs query and calls fn for each row, until fn returns false or ctx ends. fn
+// scans the row; it must not query the store, as the row's connection is held until
+// Each returns.
+func (s *Store) Each(ctx context.Context, query string, args []any, fn func(scan func(...any) error) (bool, error)) error {
+	db := s.DB()
+	st, err := s.stmt(db, query)
+	if err != nil {
+		return err
+	}
+	var rows *sql.Rows
+	if st == nil {
+		rows, err = db.QueryContext(ctx, query, args...)
+	} else {
+		rows, err = st.QueryContext(ctx, args...)
+	}
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if more, err := fn(rows.Scan); err != nil || !more {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
 // QueryObjectPairs is QueryObjects for rows of two objects: ObjectCols of one, then of
 // the other.
 func (s *Store) QueryObjectPairs(query string, args ...any) ([][2]*Object, error) {
