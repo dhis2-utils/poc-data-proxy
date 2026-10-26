@@ -304,9 +304,15 @@ func (h *Hub) RecordScopes(tes []string, scope string) error {
 
 // setVisibility stores and applies one user's visibility changes.
 func (h *Hub) setVisibility(userID int64, changes map[uint32]bool) error {
-	vc := h.Index.PrepareVisibility(userID, changes)
-	err := h.Store.Tx(context.Background(), func(tx *sql.Tx) error { return vc.Write(h.Store, tx) })
-	vc.Done(err == nil)
+	return h.setVisibilities(map[int64]map[uint32]bool{userID: changes})
+}
+
+// setVisibilities stores and applies several users' visibility changes in one
+// transaction.
+func (h *Hub) setVisibilities(changes map[int64]map[uint32]bool) error {
+	cs := h.Index.PrepareVisibilities(changes)
+	err := h.Store.Tx(context.Background(), func(tx *sql.Tx) error { return cs.Write(h.Store, tx) })
+	cs.Done(err == nil)
 	return err
 }
 
@@ -318,6 +324,7 @@ func (h *Hub) ShareByRules(uids []string) {
 	if err != nil {
 		return
 	}
+	all := map[int64]map[uint32]bool{}
 	for _, u := range users {
 		v := h.Viewer(u.ID)
 		if !v.Access.InFacility(h.FacilityPath()) {
@@ -336,9 +343,12 @@ func (h *Hub) ShareByRules(uids []string) {
 			}
 		}
 		if len(changes) > 0 {
-			if err := h.setVisibility(u.ID, changes); err != nil {
-				slog.Warn("sharing by rules", "user", u.Username, "err", err)
-			}
+			all[u.ID] = changes
+		}
+	}
+	if len(all) > 0 {
+		if err := h.setVisibilities(all); err != nil {
+			slog.Warn("sharing by rules", "users", len(all), "err", err)
 		}
 	}
 }
@@ -386,10 +396,12 @@ func (h *Hub) ApplyTransfer(teUID, program, owner string) error {
 	if err != nil {
 		return err
 	}
+	all := map[int64]map[uint32]bool{}
 	for _, u := range users {
-		if err := h.setVisibility(u.ID, slots); err != nil {
-			return err
-		}
+		all[u.ID] = slots
+	}
+	if err := h.setVisibilities(all); err != nil {
+		return err
 	}
 	slog.Info("ownership moved away", "trackedEntity", teUID, "program", program, "owner", owner, "objects", len(objs))
 	return nil

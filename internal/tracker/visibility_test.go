@@ -40,7 +40,7 @@ func TestVisibilityChangeAppliesOnCommit(t *testing.T) {
 	ix := NewStoreIndex(nil)
 	o := &Obj{UID: "TeAaaaaaaa1", Kind: store.KindTrackedEntity, Origin: store.OriginCentral, Slot: ix.SlotFor("TeAaaaaaaa1")}
 	vc := ix.PrepareVisibility(7, map[uint32]bool{o.Slot: true})
-	if ix.VisibleTo(o, 7) || len(vc.Chunks) != 1 {
+	if ix.VisibleTo(o, 7) || len(vc.Chunks[7]) != 1 {
 		t.Fatal("visible before commit, or no chunk to write")
 	}
 	vc.Done(false)

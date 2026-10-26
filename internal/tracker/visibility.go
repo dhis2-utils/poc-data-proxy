@@ -105,32 +105,41 @@ func (ix *Index) VisibleTo(o *Obj, userID int64) bool {
 	return ix.vis[userID].has(o.Slot)
 }
 
-// VisibilityChange is a pending change to one user's visibility. Prepare it before
-// starting the transaction that stores it (the lock order is visibility, then
-// database), write Chunks in that transaction, then call Done with whether it
-// committed.
+// VisibilityChange is a pending change to the visibility of one or more users.
+// Prepare it before starting the transaction that stores it (the lock order is
+// visibility, then database), write it in that transaction, then call Done with
+// whether it committed. Several users' changes go in one transaction: an object
+// shared with every user cost a transaction per user, each flushed to disk.
 type VisibilityChange struct {
 	ix     *Index
-	user   int64
-	next   bitmap
-	Chunks map[int64][]byte // chunk -> new contents, only the chunks that change
+	next   map[int64]bitmap
+	Chunks map[int64]map[int64][]byte // user -> chunk -> new contents, only the chunks that change
 }
 
-// PrepareVisibility starts a change: changes maps slots to visible or not.
-// Changes for all users are serialised until Done.
+// PrepareVisibility starts a change for one user: changes maps slots to visible or
+// not. Changes for all users are serialised until Done.
 func (ix *Index) PrepareVisibility(userID int64, changes map[uint32]bool) *VisibilityChange {
+	return ix.PrepareVisibilities(map[int64]map[uint32]bool{userID: changes})
+}
+
+// PrepareVisibilities is PrepareVisibility for several users.
+func (ix *Index) PrepareVisibilities(changes map[int64]map[uint32]bool) *VisibilityChange {
 	ix.visMu.Lock()
-	ix.mu.RLock()
-	cur := ix.vis[userID]
-	ix.mu.RUnlock()
-	c := &VisibilityChange{ix: ix, user: userID, next: cur.with(changes), Chunks: map[int64][]byte{}}
-	for slot, on := range changes {
-		if cur.has(slot) == on {
-			continue
-		}
-		ch := int64(slot) / store.VisibilityChunkBits
-		if _, ok := c.Chunks[ch]; !ok {
-			c.Chunks[ch] = c.next.chunk(ch)
+	c := &VisibilityChange{ix: ix, next: map[int64]bitmap{}, Chunks: map[int64]map[int64][]byte{}}
+	for user, slots := range changes {
+		ix.mu.RLock()
+		cur := ix.vis[user]
+		ix.mu.RUnlock()
+		next := cur.with(slots)
+		c.next[user], c.Chunks[user] = next, map[int64][]byte{}
+		for slot, on := range slots {
+			if cur.has(slot) == on {
+				continue
+			}
+			ch := int64(slot) / store.VisibilityChunkBits
+			if _, ok := c.Chunks[user][ch]; !ok {
+				c.Chunks[user][ch] = next.chunk(ch)
+			}
 		}
 	}
 	return c
@@ -138,9 +147,11 @@ func (ix *Index) PrepareVisibility(userID int64, changes map[uint32]bool) *Visib
 
 // Write stores the changed chunks.
 func (c *VisibilityChange) Write(s *store.Store, q store.Execer) error {
-	for ch, b := range c.Chunks {
-		if err := s.PutVisibilityChunk(q, c.user, ch, b); err != nil {
-			return err
+	for user, chunks := range c.Chunks {
+		for ch, b := range chunks {
+			if err := s.PutVisibilityChunk(q, user, ch, b); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -150,7 +161,9 @@ func (c *VisibilityChange) Write(s *store.Store, q store.Execer) error {
 func (c *VisibilityChange) Done(committed bool) {
 	if committed {
 		c.ix.mu.Lock()
-		c.ix.vis[c.user] = c.next
+		for user, next := range c.next {
+			c.ix.vis[user] = next
+		}
 		c.ix.mu.Unlock()
 	}
 	c.ix.visMu.Unlock()
