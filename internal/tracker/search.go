@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/url"
 	"regexp"
 	"slices"
@@ -478,26 +479,17 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *API
 		}
 		w.add("EXISTS (SELECT 1 FROM te_attrs a WHERE a.te_uid = "+person+" AND a.attr = ? AND "+cond+")", f.uid, val)
 	}
-	// Changed people are found once: as a list when few (an incremental sync), else
-	// checked per row.
+	// Changed people are found once and checked in SQL, on the person's identifier in
+	// the index the search walks, so the rows of people who did not change are never
+	// read: on a hard disk an incremental sync read every enrollment of the program
+	// (docs/INCREMENTAL-SYNC-FIX.md). One JSON list, whatever its size.
 	floor, apiErr := updatedFloor(q)
 	if apiErr != nil {
 		return nil, apiErr
 	}
-	var changed map[string]bool
 	if floor != "" && ix.store != nil && ix.store.Unlocked() {
-		changed = ix.changedTEs(floor)
-		if len(changed) <= 500 {
-			list := make([]string, 0, len(changed))
-			for uid := range changed {
-				list = append(list, uid)
-			}
-			if len(list) == 0 {
-				w.add("0")
-			}
-			w.in("t.uid", list)
-			changed = nil
-		}
+		list, _ := json.Marshal(slices.Collect(maps.Keys(ix.changedTEs(floor))))
+		w.add(person+" IN (SELECT value FROM json_each(?))", string(list))
 	}
 	p.sel += w.sql()
 	p.args = w.args
@@ -519,9 +511,6 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *API
 	timed := func(tf timeFilter) bool { return q.Get(tf.after) != "" || q.Get(tf.before) != "" }
 	p.needData = timed(enrolled) || !byCreated
 	p.keep = func(o, enr *Obj) (bool, *APIError) {
-		if changed != nil && !changed[o.UID] {
-			return false, nil
-		}
 		if enr != nil {
 			if ok, err := enrolled.match(enr.Data, q); err != nil || !ok {
 				return false, err

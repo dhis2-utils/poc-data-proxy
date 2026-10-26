@@ -163,3 +163,89 @@ func TestSearchStopsWhenClientGone(t *testing.T) {
 		t.Fatalf("search for a client still there: %d found, %v", len(out), err)
 	}
 }
+
+// An incremental sync with many changed people (more than any list size) returns,
+// page by page, exactly the people that changed, in both orders clients use. A person
+// counts as changed through their own update time or their enrollment's.
+func TestIncrementalSearchManyChanged(t *testing.T) {
+	s := testStore(t)
+	ix := NewStoreIndex(s)
+	const ou, prog, tet, n = "OuAaaaaaaa1", "PrAaaaaaaa1", "TetAaaaaaa1", 1200
+	const old, recent = "2024-01-01T00:00:00.000", "2024-06-01T00:00:00.000"
+	want := map[string]bool{}
+	visible := map[uint32]bool{}
+	err := s.Tx(context.Background(), func(tx *sql.Tx) error {
+		for i := range n {
+			te := &Obj{UID: fmt.Sprintf("TeAaaaa%04d", i), Kind: store.KindTrackedEntity, TET: tet, OwnerOrgUnit: ou,
+				Origin: store.OriginCentral, SyncState: store.SyncSynced, UpdatedAt: old,
+				Data: M{"trackedEntity": fmt.Sprintf("TeAaaaa%04d", i), "createdAt": fmt.Sprintf("2023-%02d-%02dT00:00:00.000", 1+i%12, 1+i%28)}}
+			enr := &Obj{UID: fmt.Sprintf("EnAaaaa%04d", i), Kind: store.KindEnrollment, TE: te.UID, Program: prog,
+				OwnerOrgUnit: ou, Origin: store.OriginCentral, SyncState: store.SyncSynced, UpdatedAt: old, Data: M{"status": "ACTIVE"}}
+			switch i % 12 {
+			case 0, 1, 2, 3, 4, 5:
+				te.UpdatedAt = recent
+			case 6:
+				enr.UpdatedAt = recent // changed through the enrollment
+			}
+			for _, o := range []*Obj{te, enr} {
+				o.Slot = ix.SlotFor(o.UID)
+				if err := s.PutObject(tx, o.ToStore()); err != nil {
+					return err
+				}
+				if i%50 != 49 { // a few the user may not see
+					visible[o.Slot] = true
+				}
+			}
+			if i%12 <= 6 && i%50 != 49 {
+				want[te.UID] = true
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(want) <= 500 {
+		t.Fatalf("fixture: %d changed people, want more than 500", len(want))
+	}
+	ix.PrepareVisibility(1, visible).Done(true)
+	v := &Viewer{UserID: 1, Facility: ou, Access: &access.List{Programs: map[string]access.Perm{prog: {Read: true}},
+		TETs: map[string]access.Perm{tet: {Read: true}}},
+		Catalog: &access.Catalog{Programs: map[string]*access.ProgramMeta{prog: {ID: prog}}}}
+	for _, order := range []string{"", "createdAt:desc"} {
+		got := map[string]bool{}
+		for pg := 1; ; pg++ {
+			q := url.Values{"program": {prog}, "orgUnits": {ou}, "pageSize": {"50"}, "page": {fmt.Sprint(pg)},
+				"fields": {"trackedEntity"}, "updatedAfter": {"2024-05-01"}}
+			if order != "" {
+				q.Set("order", order)
+			}
+			res, apiErr := ix.Search(v, "trackedEntities", q)
+			if apiErr != nil {
+				t.Fatal(apiErr)
+			}
+			for _, it := range res.Items {
+				uid := Str(it, "trackedEntity")
+				if uid == "" {
+					t.Fatalf("item without trackedEntity: %v", it)
+				}
+				if got[uid] {
+					t.Fatalf("order %q: %s on two pages", order, uid)
+				}
+				got[uid] = true
+			}
+			if len(res.Items) < 50 {
+				break
+			}
+		}
+		if len(got) != len(want) {
+			t.Errorf("order %q: %d people, want %d", order, len(got), len(want))
+		}
+		for uid := range got {
+			if !want[uid] {
+				t.Errorf("order %q: %s has not changed", order, uid)
+				break
+			}
+		}
+	}
+}
