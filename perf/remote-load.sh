@@ -73,7 +73,7 @@ CENTRAL=http://127.0.0.1:$PORT
 # facility network (the Pis) usually en0.
 # ipconfig getifaddr knows only interfaces macOS's own network configuration manages,
 # not the bridge UTM creates, so read the address from ifconfig.
-addr() { ifconfig "$1" 2>/dev/null | awk '$1 == "inet" {print $2; exit}'; }
+addr() { ifconfig "$1" 2>/dev/null | awk '$1 == "inet" {print $2; exit}' || true; } # no such interface: empty
 VMNET=$(addr bridge100)
 VMNET=${VMNET:-"<the Mac's address on the VM's network>"}
 LAN=$(addr en0)
