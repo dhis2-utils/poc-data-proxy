@@ -53,9 +53,11 @@ jobs:
       - name: Check the image
         run: sudo image/check.sh "out/dhis2-hub-$VERSION-arm64.img.xz"
       # Named after the image, with its version: GitHub offers it as a zip of that
-      # name (the release fetches it by the same name).
+      # name (the release fetches it by the same name, in the same run, and publishes
+      # it with the release). Kept 3 days: test images filled the artifact storage.
       - uses: actions/upload-artifact@v4
         with:
           name: dhis2-hub-${{ env.VERSION }}-arm64.img
           path: out/dhis2-hub-${{ env.VERSION }}-arm64.img.xz
           compression-level: 0
+          retention-days: 3
