@@ -2,6 +2,10 @@
 
 The performance results so far come from containers on a Mac that approximate a Raspberry Pi (PERFORMANCE.md, "Running the tests"). They cap CPU time on cores two to three times faster than a Pi 5's, and Docker Desktop may not apply disk limits at all. This plan replaces those approximations with measurements on the boards and storage a deployment would use, and calibrates the container profiles so later container runs mean something.
 
+## Results so far
+
+2026-10-26: a Pi 5 (4 GB) on a SATA SSD through a USB adapter at 100 k and 300 k, and a Pi 4 (1 GB) on a microSD card at 10 k, 30 k and 60 k, over Wi-Fi, with the image's load-test mode (PERFORMANCE.md, "On Raspberry Pis"). Not done yet: the Pi 4 on an SSD, the Pi 5 on a card, the calibration of the container profiles, bytes written per day, and power cuts.
+
 ## What is being tested
 
 | Board | Storage | Container profile it checks |

@@ -84,6 +84,32 @@ With 18 Android users and every person changed (the worst case), the old build r
 
 The hub needs flash storage: an SSD, eMMC or a good SD card. On a hard disk with 4 GB it serves web users at 100 k with slow tails, and its first pull takes hours from 300 k.
 
+
+## On Raspberry Pis (2026-10-26)
+
+The image's load-test mode (`hub-loadtest.txt`), image `0.1.5-local.bc1ad67` (main with the fixes of 2026-10-26), on two boards over Wi-Fi: `rpi5`, a Pi 5 with 4 GB on a SATA SSD through a USB adapter, and `rpi4`, a Pi 4 with 1 GB on a microSD card. The fake central and the users ran on the Mac (`perf/remote-queue.sh`): 60 users of whom 18 sync like Android (`WEB=0.7`), 1 % of active enrollments changed on central (`CHANGED=0.01`), an hour's working day with the uplink 10 minutes down and 5 up, then the hammer run. Medians and p95s; web pages are the dashboards, name search and working list.
+
+| | `rpi4`, 10 k | `rpi4`, 30 k | `rpi4`, 60 k | `rpi5`, 100 k | `rpi5`, 300 k |
+|---|---|---|---|---|---|
+| First pull | 2 min 11 s | 11 min 13 s | 24 min 3 s | 13 min 23 s | 40 min 30 s |
+| Web pages | 30–96 ms / 0.8–1.2 s | 33–96 ms / 0.8–1.1 s | 26–89 ms / 0.9–1.2 s | 22–49 ms / 0.19–0.45 s | 21–45 ms / 0.12–0.33 s |
+| New event | 59 ms / 1.6 s | 61 ms / 1.3 s | 52 ms / 1.6 s | 35 ms / 0.30 s | 31 ms / 0.22 s |
+| Android incremental sync | 1.1 s / 3.4 s | 1.6 s / 3.2 s | 2.3 s / 4.7 s | 1.0 s / 1.5 s | 3.1 s / 3.8 s |
+| Hammer: 18 first downloads at once | 1 min 5 s | 1 min 3 s | 1 min 1 s | 1 min 1 s | 38 s |
+| Reconnects: online after; outbox empty after | 15–16 s; 12–28 s | 14–15 s; 12–23 s | 15–17 s; 13–23 s | 16–17 s; 12–20 s | 14 s; 8–16 s |
+| Peak memory of the hub; least free memory | 207 MB; 529 MB | 215 MB; 541 MB | 225 MB; 494 MB | 260 MB; 3.5 GB | 361 MB; 3.4 GB |
+| Hub's CPU, share of one core | 58 % | 59 % | 62 % | 30 % | 41 % |
+| Disk write, per operation | 18 ms | 21 ms | 23 ms | 1.9 ms | 2.3 ms |
+| Hottest; throttled | 72.5 °C; no | 73.5 °C; no | 75.5 °C; no | 57.9 °C; no | 59.5 °C; no |
+| Data folder | 0.2 GB | 0.7 GB | 1.3 GB | 2.2 GB | 6.5 GB |
+
+Every confirmed save was read back (2 568–2 675 a run); one request failed in all five runs (a working list at 30 k). The longest gap between confirmed saves was 9.5–13 s a run, against 85 s on the hard disk.
+
+- **A Pi 5 with an SSD serves the busy HC IV size** (300 k people) with pages in tens of milliseconds and Android syncs of 3 s, while its memory stayed under 400 MB. Its p95s at 300 k were lower than at 100 k: with flash storage the size hardly matters.
+- **A Pi 4 with 1 GB and an SD card serves 60 k** with medians under 100 ms and tails about a second. Its limit is the card's writes (18–23 ms each, ten times the SSD's), which show in the save tails (p95 1.3–1.6 s). Memory is not the limit at 60 k (225 MB). Bytes written per day, for the card's endurance, were not measured: the samples count operations, not sectors.
+- **The Pi 4 runs warm**: 75.5 °C at 60 k, 4.5 °C below the point where it slows itself down (the room temperature and the board's cooling were not recorded). In a warm facility it needs a heatsink and a ventilated case.
+- The Pi 4 booted with the image's date (6 October) until it found network time: a board without a clock battery starts at its last known time (DEPLOYMENT.md, "Clock").
+
 ## How the hub scales
 
 - **One store.** Objects live only in the encrypted SQLite data file: each row has the columns lists filter and sort on, its slim JSON, and its sealed payload; attribute values are in `te_attrs`. Searches put every condition columns decide into SQL, read in growing chunks in the requested order where SQL can give it (creation date) and stop at a full page; other orders sort in Go. `TestQueryPlansUseIndexes` fails if a query scans a table.
@@ -301,3 +327,4 @@ Each page read and sorted the program's events; `objects_events` (creation order
 - **2026-10-22, Windows; counting unsynced objects.** The ladder on a 2-CPU Windows VM (section "On a Windows PC"). It found the status page, the heartbeat and each sync cycle counting pending and refused objects by reading every object: at 30 k a `/hub/status` took 9–15 s here and about a minute on the VM, and the data folder reached 1.8 GB, probably a write-ahead log that the long reads kept from being checkpointed (not checked). A partial index of the unsynced objects: 1–8 ms, the 30 k first pull 5 min 48 s → 4 min, the data folder 0.7 GB; built at the HC IV size in 15 s.
 - **2026-10-23, incremental syncs again.** On the 2-CPU Windows VM at 100 k, with 18 Android users, memory grew to 7.7 GB and the hub exited: each incremental sync read every child of every changed person, and searches whose clients had given up kept running. The check now reads central's children newest first, five columns, and stops at the first the user may read; searches stop when their client has gone (docs/INCREMENTAL-SYNC-FIX.md). In the sandbox, one core per hub: the check's allocations 7.6 GB → 1.6 GB in 3 minutes, incremental sync 1 min 19 s → 34 s (p50), Android page 10.6 s → 5.2 s.
 - **2026-10-26, incremental syncs on a hard disk; online saves.** At 300 k on the hard-disk VM (above) incremental syncs took 12 minutes and starved everything else. The list of changed people narrowed nothing: SQLite walked every enrollment of the program and read each one's row and its person's before checking the list. The list is now one JSON value checked on the person's identifier in the index the search walks, at any size (the switch at 500 people and its check in Go are gone). Saves made online were shared with each user in a transaction of its own, each flushed to disk, and stalled for up to 85 s after reconnects; now one transaction. In the sandbox at 100 k, 18 Android users, one core: incremental sync 3.9 s → 0.33 s (p50, about 330 people changed) and 3.9 s → 0.72 s (about 1 000), the hub's CPU 25–37 s → 11 s in 2 minutes; an online save with 60 users 12.6 ms → 4.3 ms.
+- **2026-10-26, Raspberry Pis.** The first runs on the boards (section "On Raspberry Pis"): a Pi 5 with an SSD at 100 k and 300 k, a Pi 4 with 1 GB and an SD card at 10 k, 30 k and 60 k, with this day's fixes. Both served every size; the Pi 4's SD card makes its saves' tails ten times the Pi 5's.
