@@ -87,7 +87,7 @@ The hub needs flash storage: an SSD, eMMC or a good SD card. On a hard disk with
 
 ## On Raspberry Pis (2026-10-26)
 
-The image's load-test mode (`hub-loadtest.txt`), image `0.1.5-local.bc1ad67` (main with the fixes of 2026-10-26), on two boards over Wi-Fi: `rpi5`, a Pi 5 with 4 GB on a SATA SSD through a USB adapter, and `rpi4`, a Pi 4 with 1 GB on a microSD card. The fake central and the users ran on the Mac (`perf/remote-queue.sh`): 60 users of whom 18 sync like Android (`WEB=0.7`), 1 % of active enrollments changed on central (`CHANGED=0.01`), an hour's working day with the uplink 10 minutes down and 5 up, then the hammer run. Medians and p95s; web pages are the dashboards, name search and working list.
+The image's load-test mode (`hub-loadtest.txt`), image `0.1.5-local.bc1ad67` (main with the fixes of 2026-10-26), on two boards over Wi-Fi at 20 °C: `rpi5`, a Pi 5 with 4 GB on a SATA SSD (Intenso SATA III High Performance, 120 GB) through a USB adapter (StarTech USB 3.1 Gen 2 to SATA cable), and `rpi4`, a Pi 4 with 1 GB on a microSD card (SanDisk High Endurance, 64 GB) and no heatsink. The fake central and the users ran on the Mac (`perf/remote-queue.sh`): 60 users of whom 18 sync like Android (`WEB=0.7`), 1 % of active enrollments changed on central (`CHANGED=0.01`), an hour's working day with the uplink 10 minutes down and 5 up, then the hammer run. Medians and p95s; web pages are the dashboards, name search and working list.
 
 | | `rpi4`, 10 k | `rpi4`, 30 k | `rpi4`, 60 k | `rpi5`, 100 k | `rpi5`, 300 k |
 |---|---|---|---|---|---|
@@ -106,8 +106,8 @@ The image's load-test mode (`hub-loadtest.txt`), image `0.1.5-local.bc1ad67` (ma
 Every confirmed save was read back (2 568–2 675 a run); one request failed in all five runs (a working list at 30 k). The longest gap between confirmed saves was 9.5–13 s a run, against 85 s on the hard disk.
 
 - **A Pi 5 with an SSD serves the busy HC IV size** (300 k people) with pages in tens of milliseconds and Android syncs of 3 s, while its memory stayed under 400 MB. Its p95s at 300 k were lower than at 100 k: with flash storage the size hardly matters.
-- **A Pi 4 with 1 GB and an SD card serves 60 k** with medians under 100 ms and tails about a second. Its limit is the card's writes (18–23 ms each, ten times the SSD's), which show in the save tails (p95 1.3–1.6 s). Memory is not the limit at 60 k (225 MB). Bytes written per day, for the card's endurance, were not measured: the samples count operations, not sectors.
-- **The Pi 4 runs warm**: 75.5 °C at 60 k, 4.5 °C below the point where it slows itself down (the room temperature and the board's cooling were not recorded). In a warm facility it needs a heatsink and a ventilated case.
+- **A Pi 4 with 1 GB and an SD card serves 60 k** with medians under 100 ms and tails about a second. Its limit is the card's writes (18–23 ms each, ten times the SSD's), which show in the save tails (p95 1.3–1.6 s). Memory is not the limit at 60 k (225 MB). Bytes written per day, for the card's endurance, were not measured in these runs: the samples counted operations, not bytes. The sampler records MB read and written from the next runs on.
+- **The Pi 4 runs warm without a heatsink**: 75.5 °C at 60 k in a 20 °C room, 4.5 °C below the point where it slows itself down. A facility at 30–35 °C would push it past that; it needs a heatsink and a ventilated case.
 - The Pi 4 booted with the image's date (6 October) until it found network time: a board without a clock battery starts at its last known time (DEPLOYMENT.md, "Clock").
 
 ## How the hub scales
