@@ -125,6 +125,8 @@ Aggregate data adds, per access group and cycle, one `dataValueSets` and one `co
 
 The generated users share one access, so the last row is the best case; a real facility has a handful of access groups. What remains is mostly the hourly access refresh (four reads per user). After an outage each hub waits up to five minutes at random before syncing, so hubs do not reach central in the same second: 500 hubs start under two pushes a second. Until its outbox is pushed, a hub keeps answering tracker requests itself, so the wait is invisible to staff (FINDINGS.md, "Reconnecting").
 
+**When central struggles** (`TestStrugglingCentral`, 2026-10-26; the fake central's `Struggle` answers late or with 503). A hub's sync sends one request at a time, so 500 hubs have at most 500 requests open at central; a cycle against a slow central just takes longer (651 requests at 200 ms each: 2 min 13 s), and the next starts when it ends. A failed request is not retried within the cycle. When central answers every request with 503, the cycle that meets it carries on user by user (212 requests, all refused, against 651 when healthy); two failed pings, 30 s apart at most, then take the hub offline, and it sends nothing but a ping every 15 s until central answers again (2 requests in the measured cycle, both pings). When half the requests fail, the pings mostly pass and the hub keeps its rhythm (337 requests). No back-off was added: nothing measured shows hubs adding to central's trouble beyond their normal rate. Devices' requests pass through the hub while it is online, as they would go to central without it.
+
 ## Running the tests
 
 In process on a development machine (unconstrained), with `HUB_PERF_SCALE="tes,enrollments,events"` and `HUB_PERF_USERS`:

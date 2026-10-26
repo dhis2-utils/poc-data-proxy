@@ -74,6 +74,9 @@ type Central struct {
 	// LoseResponse ("PUT /api/...": n) carries out the next n such requests but answers
 	// them with 502, as when the answer is lost on the way back.
 	LoseResponse map[string]int
+	delay        time.Duration // Struggle
+	failShare    float64
+	struggled    int                        // requests counted for failShare
 	passwords    map[string]string          // users created through the API, with their own password
 	readers      map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (read)
 	writers      map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (write)
@@ -305,6 +308,14 @@ func (c *Central) credentialUser(r *http.Request) *User {
 	return nil
 }
 
+// Struggle makes central overloaded: every answer is held for delay, and that share
+// of requests is answered with 503 (tests of what a hub sends it then). Zeros end it.
+func (c *Central) Struggle(delay time.Duration, failShare float64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.delay, c.failShare, c.struggled = delay, failShare, 0
+}
+
 func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c.mu.Lock()
 	lose := c.LoseResponse[r.Method+" "+r.URL.Path] > 0
@@ -334,7 +345,17 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 	c.mu.Lock()
 	c.Requests[r.Method+" "+r.URL.Path]++
 	fail := c.FailPaths[r.URL.Path]
+	delay := c.delay
+	if c.failShare > 0 {
+		// Every request whose count crosses a multiple of 1/failShare fails: the
+		// share is exact, and the same in every run.
+		c.struggled++
+		if int(float64(c.struggled)*c.failShare) != int(float64(c.struggled-1)*c.failShare) {
+			fail = http.StatusServiceUnavailable
+		}
+	}
 	c.mu.Unlock()
+	time.Sleep(delay)
 	p := r.URL.Path
 	if fail != 0 {
 		webMessage(w, fail, "failing as asked", "")
