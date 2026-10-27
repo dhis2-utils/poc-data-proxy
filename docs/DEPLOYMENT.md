@@ -173,6 +173,8 @@ No facility is assigned at the depot. Any box can go anywhere.
 
 No one from the district needs to come. Kits arrive by courier or with a routine district visit; Windows PCs get the hub from MoH IT beforehand.
 
+**What the person setting up needs, besides the kit:** a device that can read the USB stick in the box: a laptop, or a phone or tablet with a USB adapter (USB-C or OTG). The setup code is only on the stick (`setup-code.txt`, not printed on the box), and every Pi hub asks for it; Ethernet does not change that. Without Ethernet the same file also gives the setup Wi-Fi's name and password. A facility with neither a laptop nor an adapter needs one sent with the kit: the depot keeps no record of the codes.
+
 1. Mount the hub near the router and plug in power and Ethernet, as on the installation card. The card covers the case with no router (section 4, case C).
 2. On any laptop or phone on the facility network, open the address on the label (on the Windows PC, the hub's page opens on the PC itself, and set-up only opens there). The hub shows its setup page. Scan the QR code on the installation card to give it central's address, and enter the setup code from `setup-code.txt` on the USB stick in the box (read on a laptop, or a phone with a USB adapter). The hub accepts only `https` with a publicly trusted certificate, and shows the server's name before anyone logs in (built). Scanning works in browsers with the BarcodeDetector API on a secure page (Chrome on Android); elsewhere the address is typed.
 3. The facility focal point, or anyone assigned to the facility, logs in with their own DHIS2 account. The hub then:
