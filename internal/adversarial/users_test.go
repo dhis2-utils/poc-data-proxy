@@ -43,23 +43,35 @@ func (s *scene) noLeaks(c *tk.Client) {
 	}
 }
 
+// Central (2.42) keeps a personal access token's authentication, with the user's
+// access as it was, for an hour after its first use (apiTokensCache), and drops it
+// only when the token is deleted. The hub works with users' tokens, so the B1 and B2
+// scenarios run twice: within that hour, and after it (central's cache cleared).
+
 // B1: a user loses the facility (org unit removed) while their offline work waits.
 // Must hold: their saves as central decides on push, refusals kept; their offline
 // reads stop at the next sync.
-//
-// On 2.42 the hub pushes with the user's personal access token, and central keeps
-// the token's old capture scope: the offline saves are accepted, though central
-// refuses the same writes to the user logging in with the password (E1000). Offline
-// the hub then refuses the user (403); online it passes their reads through with the
-// token, and central answers them with the old scope: a leak through the hub.
-func TestB1UserLosesFacility(t *testing.T) {
-	finding(t, "B1: online, a user moved away still reads the facility through the hub (central's token keeps the old scope)")
+func TestB1UserLosesFacility(t *testing.T) { userLosesFacility(t, true) }
+
+// Within the hour, the offline saves are accepted with the token, though central
+// refuses the same write to the user's password (E1000). Offline the hub refuses the
+// user (403); online it passes their reads through with the token, and central
+// answers with the old scope: a leak through the hub.
+func TestB1UserLosesFacilityWithinTheHour(t *testing.T) {
+	finding(t, "B1: for up to an hour, a user moved away reads the facility through the hub online (central's token cache)")
+	userLosesFacility(t, false)
+}
+
+func userLosesFacility(t *testing.T, expire bool) {
 	s := begin(t)
 	u := s.NewUserLike(tk.RoleNurse)
 	c := s.connect(u.Username)
 	s.offlineWork(c, "AdvB1")
 
 	s.SetUserOrgUnits(u, s.M.Sibling.ID)
+	if expire {
+		s.ExpireTokenCache()
+	}
 	s.noRepeats(s.reconnect(3))
 	s.expect(nil, tk.OnCentral, tk.RefusedKept)
 	s.noLeaks(c)
@@ -69,19 +81,31 @@ func TestB1UserLosesFacility(t *testing.T) {
 // can no longer log in once the hub knows; their saves are pushed with their token
 // or refused and kept, never lost silently.
 //
-// On 2.42 central goes on accepting a disabled user's personal access token: the
-// saves are pushed, and the hub never learns; the user goes on working through the
-// hub, online and offline, while central refuses their password ("Account
-// disabled"). On the fake, which refuses the token, the saves wait for a login that
-// cannot come, and are pushed again every cycle.
+// After the hour, central answers the token 401; the hub holds the saves for an
+// online login that cannot come, as for a deleted user (B8).
 func TestB2UserDisabled(t *testing.T) {
-	finding(t, "B2: a disabled user goes on working through the hub (live); their saves wait for ever (fake)")
+	finding(t, "B2: a disabled user's saves wait for ever for a login, pushed again every cycle, not listed as refused")
+	userDisabled(t, true)
+}
+
+// Within the hour, central accepts the disabled user's token: the saves are pushed,
+// and the user goes on working through the hub online and offline, while central
+// refuses their password ("Account disabled").
+func TestB2UserDisabledWithinTheHour(t *testing.T) {
+	finding(t, "B2: for up to an hour, a disabled user goes on working through the hub (central's token cache)")
+	userDisabled(t, false)
+}
+
+func userDisabled(t *testing.T, expire bool) {
 	s := begin(t)
 	u := s.NewUserLike(tk.RoleNurse)
 	c := s.connect(u.Username)
 	s.offlineWork(c, "AdvB2")
 
 	s.SetUserDisabled(u, true)
+	if expire {
+		s.ExpireTokenCache()
+	}
 	s.noRepeats(s.reconnect(3))
 	s.expect(nil, tk.OnCentral, tk.RefusedKept)
 	if st, b := c.Do("GET", "/api/me?fields=id", nil); st != 401 {

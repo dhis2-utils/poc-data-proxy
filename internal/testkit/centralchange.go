@@ -186,6 +186,16 @@ func (e *Env) RevokeTokens(u User) int {
 	return len(toks.APIToken)
 }
 
+// ExpireTokenCache clears central's caches, as an hour does for its cache of personal
+// access tokens: 2.42 keeps a token's authentication, with the user's access as it
+// was, for an hour after its first use (apiTokensCache). The fake has no such cache.
+func (e *Env) ExpireTokenCache() {
+	e.T.Helper()
+	if e.Live() {
+		e.centralDo("POST", "/api/maintenance/cacheClear", nil)
+	}
+}
+
 // DeleteUser deletes a user on central.
 func (e *Env) DeleteUser(u User) {
 	e.T.Helper()
