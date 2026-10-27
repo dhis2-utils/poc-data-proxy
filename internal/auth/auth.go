@@ -256,7 +256,7 @@ func (a *Auth) ensureKeySlot(username, userUID, password string) (int64, error) 
 	if err != nil {
 		return 0, err
 	}
-	if !h.Store.Unlocked() {
+	if !h.Unlocked() {
 		if u == nil {
 			return 0, errLockedNewUser
 		}
@@ -331,7 +331,7 @@ func (a *Auth) loginOffline(username, password string) (*core.Session, *Failure)
 		// (spec 8.3 cannot see revoked access offline; this it can see).
 		return nil, &Failure{Status: 401, Body: a.api().WebMessage(401, needsOnlineAgain, "")}
 	}
-	if !h.Store.Unlocked() {
+	if !h.Unlocked() {
 		if err := h.Unlock(dk); err != nil {
 			return nil, &Failure{Status: 500, Body: a.api().WebMessage(500, "unlock failed", "")}
 		}

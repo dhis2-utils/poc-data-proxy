@@ -418,6 +418,15 @@ func (h *Hub) Unlock(dk hubcrypto.Key) (err error) {
 	return nil
 }
 
+// Unlocked reports whether the store is unlocked and its index loaded: it waits for
+// an Unlock in progress. The store takes its key before the index is loaded, and a
+// login that went on then saved into an index not yet loaded (E1).
+func (h *Hub) Unlocked() bool {
+	h.unlockMu.Lock()
+	defer h.unlockMu.Unlock()
+	return h.Store.Unlocked()
+}
+
 // AfterUnlock registers a function run at each unlock, once the data key is set and
 // before the runtime and the index are loaded. An error fails the unlock.
 func (h *Hub) AfterUnlock(fn func() error) { h.afterUnlock = append(h.afterUnlock, fn) }
