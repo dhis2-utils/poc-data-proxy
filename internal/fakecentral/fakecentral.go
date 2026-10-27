@@ -74,6 +74,9 @@ type Central struct {
 	// LoseResponse ("PUT /api/...": n) carries out the next n such requests but answers
 	// them with 502, as when the answer is lost on the way back.
 	LoseResponse map[string]int
+	// DropPaths closes the connection on requests to these paths without an answer,
+	// as a flapping link does (tests).
+	DropPaths map[string]bool
 	// FailHTML makes a path answer this status with an HTML page, as a proxy or a
 	// firewall in front of central does (tests).
 	FailHTML map[string]int
@@ -368,6 +371,7 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 	c.Requests[r.Method+" "+r.URL.Path]++
 	fail := c.FailPaths[r.URL.Path]
 	failHTML := c.FailHTML[r.URL.Path]
+	drop := c.DropPaths[r.URL.Path]
 	delay := c.delay
 	if c.failShare > 0 {
 		// Every request whose count crosses a multiple of 1/failShare fails: the
@@ -380,6 +384,15 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 	c.mu.Unlock()
 	time.Sleep(delay)
 	p := r.URL.Path
+	if drop {
+		if hj, ok := w.(http.Hijacker); ok {
+			if conn, _, err := hj.Hijack(); err == nil {
+				conn.Close()
+				return
+			}
+		}
+		panic(http.ErrAbortHandler)
+	}
 	if failHTML != 0 {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(failHTML)

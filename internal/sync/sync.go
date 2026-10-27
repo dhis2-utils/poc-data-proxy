@@ -156,6 +156,22 @@ func (w *Worker) cycle(ctx context.Context) error {
 		h.DropTokens(ctx)
 		return nil
 	}
+	// The push first: what staff saved offline goes before the hub's own housekeeping,
+	// which on a link that keeps dropping may never finish (docs/ADVERSARIAL-TESTING.md,
+	// D11). Central decides on each save whatever the hub knows of access.
+	if err := w.applyRetries(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("retries: %w", err))
+	}
+	before := h.Store.CountOutbox(store.OutboxPending)
+	if err := w.Push(ctx); err != nil {
+		return err
+	}
+	// Writes made while the push ran keep the hub answering tracker requests itself
+	// (core.PassThrough): push them in the next cycle at once rather than in 15
+	// minutes, as long as pushing makes progress.
+	if h.Store.CountOutbox(store.OutboxPending) < before && h.OutboxWaiting() {
+		defer h.TriggerSync()
+	}
 	if err := h.RenewHubToken(ctx); err != nil {
 		errs = append(errs, err)
 	}
@@ -169,19 +185,6 @@ func (w *Worker) cycle(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("key slots: %w", err))
 	} else if len(pruned) > 0 {
 		slog.Info("removed unused key slots", "users", pruned)
-	}
-	if err := w.applyRetries(ctx); err != nil {
-		errs = append(errs, fmt.Errorf("retries: %w", err))
-	}
-	before := h.Store.CountOutbox(store.OutboxPending)
-	if err := w.Push(ctx); err != nil {
-		return err
-	}
-	// Writes made while the push ran keep the hub answering tracker requests itself
-	// (core.PassThrough): push them in the next cycle at once rather than in 15
-	// minutes, as long as pushing makes progress.
-	if h.Store.CountOutbox(store.OutboxPending) < before && h.OutboxWaiting() {
-		defer h.TriggerSync()
 	}
 	if err := w.ReportIssues(ctx); err != nil {
 		errs = append(errs, err)
