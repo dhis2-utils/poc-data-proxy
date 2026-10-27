@@ -8,10 +8,11 @@ import {
     DataTableColumnHeader,
     DataTableHead,
     DataTableRow,
+    InputField,
     NoticeBox,
 } from '@dhis2/ui'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import styles from './Pages.module.css'
 import { useApi } from '@/api/useApi'
 import { ManagersOnly } from '@/components/hub/ManagersOnly'
@@ -20,6 +21,8 @@ import { useNamed } from '@/hooks/useNamed'
 import { when } from '@/hubs/format'
 import {
     groupRefusals,
+    noLoginCode,
+    notAppliedOn,
     partlyReported,
     readRetries,
     RefusalRow,
@@ -31,6 +34,8 @@ import { AccountsSettings, useAdminEntry, useHubs } from '@/hubs/useHubs'
 
 const sameGroup = (a: Retry, b: RefusalRow) =>
     a.kind === b.kind && a.program === b.program && a.code === b.code
+
+const groupKey = (g: RefusalRow) => JSON.stringify([g.kind, g.program, g.code])
 
 const Refusals = () => {
     const api = useApi()
@@ -46,6 +51,8 @@ const Refusals = () => {
         queryKey: ['retries'],
         queryFn: () => readRetries(api),
     })
+    // The user to send a group as, by group: only for saves whose author could not log in.
+    const [sendAs, setSendAs] = useState<Record<string, string>>({})
     const send = useMutation(
         (g: RefusalRow) =>
             resend(api, g, {
@@ -53,6 +60,7 @@ const Refusals = () => {
                 at: new Date().toISOString(),
                 id: retryId(),
                 managers: settings?.managers,
+                user: g.code === noLoginCode ? sendAs[groupKey(g)] : undefined,
             }),
         { onSuccess: () => client.invalidateQueries(['retries']) }
     )
@@ -83,7 +91,7 @@ const Refusals = () => {
         <>
             <div className={styles.muted}>
                 {i18n.t(
-                    "Saves central refused, added up across the hubs still in use, by kind, programme and error code. Once the cause is fixed on central (a setting, an option, someone's access), Resend asks every hub to send that group's refused saves again, as their original authors, at its next sync. Central's new answer stands; a save it refuses again shows up here as a fresh refusal."
+                    "Saves central refused, added up across the hubs still in use, by kind, programme and error code. Once the cause is fixed on central (a setting, an option, someone's access), Resend asks every hub to send that group's refused saves again, as their original authors, at its next sync. Central's new answer stands; a save it refuses again shows up here as a fresh refusal. Saves whose author could not log in online for 7 days after central stopped accepting their token (error code NO_LOGIN) can be resent as another user of the hub."
                 )}
             </div>
             {partly.length > 0 && (
@@ -134,13 +142,7 @@ const Refusals = () => {
                     </DataTableHead>
                     <DataTableBody>
                         {rows.map((g) => (
-                            <DataTableRow
-                                key={JSON.stringify([
-                                    g.kind,
-                                    g.program,
-                                    g.code,
-                                ])}
-                            >
+                            <DataTableRow key={groupKey(g)}>
                                 <DataTableCell>{g.kind}</DataTableCell>
                                 <DataTableCell>
                                     {programName(g.program)}
@@ -152,6 +154,23 @@ const Refusals = () => {
                                     {lastFor(g) ? when(lastFor(g)) : '—'}
                                 </DataTableCell>
                                 <DataTableCell>
+                                    {g.code === noLoginCode && (
+                                        <InputField
+                                            dense
+                                            label={i18n.t('Send as user')}
+                                            placeholder={i18n.t('username')}
+                                            helpText={i18n.t(
+                                                'A user of the hub who can send (has logged in online there). The records then appear on central as created by this user. Leave empty to send them as their authors.'
+                                            )}
+                                            value={sendAs[groupKey(g)] ?? ''}
+                                            onChange={({ value }) =>
+                                                setSendAs({
+                                                    ...sendAs,
+                                                    [groupKey(g)]: value ?? '',
+                                                })
+                                            }
+                                        />
+                                    )}
                                     <Button
                                         small
                                         disabled={!me || send.isLoading}
@@ -194,6 +213,12 @@ const Refusals = () => {
                                 <DataTableColumnHeader>
                                     {i18n.t('Error code')}
                                 </DataTableColumnHeader>
+                                <DataTableColumnHeader>
+                                    {i18n.t('Sent as')}
+                                </DataTableColumnHeader>
+                                <DataTableColumnHeader>
+                                    {i18n.t('Not applied')}
+                                </DataTableColumnHeader>
                             </DataTableRow>
                         </DataTableHead>
                         <DataTableBody>
@@ -206,6 +231,18 @@ const Refusals = () => {
                                         {programName(r.program)}
                                     </DataTableCell>
                                     <DataTableCell>{r.code}</DataTableCell>
+                                    <DataTableCell>
+                                        {r.user ?? i18n.t('their authors')}
+                                    </DataTableCell>
+                                    <DataTableCell>
+                                        {notAppliedOn(hubs ?? [], r.id).map(
+                                            (n) => (
+                                                <div key={n.hub}>
+                                                    {n.hub} ({n.reason})
+                                                </div>
+                                            )
+                                        )}
+                                    </DataTableCell>
                                 </DataTableRow>
                             ))}
                         </DataTableBody>

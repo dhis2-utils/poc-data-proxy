@@ -72,7 +72,27 @@ export type Retry = {
     code: string
     at: string
     by: string
+    /** The hub user to send the saves as, instead of their authors. */
+    user?: string
 }
+
+/**
+ * The error code of saves a hub refused itself: their author could not log in online
+ * for 7 days after central stopped accepting their token. They can be resent as
+ * another user.
+ */
+export const noLoginCode = 'NO_LOGIN'
+
+/** The hubs that did not apply a retry at all, and why (their heartbeats). */
+export const notAppliedOn = (
+    hubs: HubRow[],
+    id: string
+): { hub: string; reason: string }[] =>
+    hubs.flatMap((h) =>
+        (h.heartbeat?.retriesNotApplied ?? [])
+            .filter((r) => r.id === id)
+            .map((r) => ({ hub: h.id, reason: r.reason }))
+    )
 
 export const keptRetries = 50
 
@@ -89,8 +109,8 @@ export const readRetries = async (api: Api): Promise<Retry[]> => {
 }
 
 /**
- * Asks every hub to send a group's refused saves again, as their authors, at its next
- * sync: appended to facility-hub-admin/retries, written as an admin entry.
+ * Asks every hub to send a group's refused saves again, as their authors or as user,
+ * at its next sync: appended to facility-hub-admin/retries, written as an admin entry.
  */
 export const resend = async (
     api: Api,
@@ -100,8 +120,10 @@ export const resend = async (
         at,
         id,
         managers,
-    }: { by: string; at: string; id: string; managers?: string }
+        user,
+    }: { by: string; at: string; id: string; managers?: string; user?: string }
 ): Promise<Retry[]> => {
+    const as = user?.trim()
     const retries = withRetry(await readRetries(api), {
         id,
         kind: group.kind,
@@ -109,6 +131,7 @@ export const resend = async (
         code: group.code,
         at,
         by,
+        ...(as ? { user: as } : {}),
     })
     await writeAdminEntry(api, {
         key: 'retries',

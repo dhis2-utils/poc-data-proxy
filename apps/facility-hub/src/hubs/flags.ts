@@ -38,6 +38,8 @@ export type Heartbeat = {
         | null
     /** How many such groups there are in all. */
     refusedGroups?: number
+    /** Resend instructions the hub did not apply at all, and why. */
+    retriesNotApplied?: { id: string; reason: string }[] | null
     /**
      * Reads the hub answered "needs connection" offline since it started (a screen
      * nobody opened online): the 10 most frequent, by endpoint, and how many in all.

@@ -34,7 +34,7 @@ export const flagSentence = (kind: FlagKind, hb?: Heartbeat): string => {
         case 'pending':
             return (hb?.stuckOutbox ?? 0) > 0
                 ? i18n.t(
-                      '{{- n}} saves wait for their user to log in on the hub again.',
+                      '{{- n}} saves wait for their user to log in on the hub again. After 7 days they become refused saves, which can be resent as another user.',
                       { n: hb?.stuckOutbox }
                   )
                 : i18n.t(

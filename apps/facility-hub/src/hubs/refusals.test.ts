@@ -3,6 +3,7 @@
  */
 import {
     groupRefusals,
+    notAppliedOn,
     partlyReported,
     refusedGroupsOf,
     resend,
@@ -174,6 +175,36 @@ describe('resend', () => {
         ])
     })
 
+    it('names the user to send as, when one is given', async () => {
+        const api = new FakeApi()
+        await resend(
+            api,
+            { ...group, code: 'NO_LOGIN' },
+            { ...who, user: 'nurse_b' }
+        )
+        expect(api.entry('facility-hub-admin', 'retries')).toEqual({
+            retries: [
+                {
+                    id: 'abc',
+                    ...group,
+                    code: 'NO_LOGIN',
+                    at: who.at,
+                    by: 'manager',
+                    user: 'nurse_b',
+                },
+            ],
+        })
+    })
+
+    it('leaves the user out when none is given', async () => {
+        const api = new FakeApi()
+        await resend(api, group, { ...who, user: '  ' })
+        expect(
+            (api.entry('facility-hub-admin', 'retries') as { retries: Retry[] })
+                .retries[0]
+        ).not.toHaveProperty('user')
+    })
+
     it('copies a group without a programme exactly', async () => {
         const api = new FakeApi()
         await resend(api, { kind: 'aggregate', program: '', code: 'none' }, who)
@@ -188,5 +219,29 @@ describe('resend', () => {
             at: who.at,
             by: 'manager',
         })
+    })
+})
+
+describe('notAppliedOn', () => {
+    it('lists the hubs that did not apply a retry, with their reason', () => {
+        expect(
+            notAppliedOn(
+                [
+                    hub('hub-a', {
+                        heartbeat: {
+                            retriesNotApplied: [
+                                {
+                                    id: 'r1',
+                                    reason: 'user x is not known on this hub',
+                                },
+                            ],
+                        },
+                    }),
+                    hub('hub-b', { heartbeat: { retriesNotApplied: [] } }),
+                    hub('hub-c'),
+                ],
+                'r1'
+            )
+        ).toEqual([{ hub: 'hub-a', reason: 'user x is not known on this hub' }])
     })
 })
