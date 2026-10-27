@@ -105,6 +105,70 @@ func (e *Env) SetRepeatable(stage string, repeatable bool) {
 	})
 }
 
+// RemoveStageDataElement takes a data element out of a program stage (the data
+// element itself stays, and so do events' values of it on central).
+func (e *Env) RemoveStageDataElement(stage, de string) {
+	e.T.Helper()
+	e.needLive("RemoveStageDataElement")
+	var removed any
+	e.putOwner("/api/programStages/"+stage, func(o map[string]any) {
+		list := asAnyList(o["programStageDataElements"])
+		i := slices.IndexFunc(list, func(x any) bool { return ref(x.(map[string]any)["dataElement"]) == de })
+		if i < 0 {
+			e.T.Fatalf("%s is not in stage %s", de, stage)
+		}
+		removed = list[i]
+		o["programStageDataElements"] = slices.Delete(slices.Clone(list), i, i+1)
+	})
+	e.T.Cleanup(func() {
+		e.putOwner("/api/programStages/"+stage, func(o map[string]any) {
+			o["programStageDataElements"] = append(asAnyList(o["programStageDataElements"]), removed)
+		})
+	})
+}
+
+// SetUnique makes a tracked entity attribute unique, or not.
+func (e *Env) SetUnique(attr string, unique bool) {
+	e.T.Helper()
+	e.needLive("SetUnique")
+	var cur struct{ Unique bool }
+	json.Unmarshal(e.centralDo("GET", "/api/trackedEntityAttributes/"+attr+"?fields=unique", nil), &cur)
+	e.patch("/api/trackedEntityAttributes/"+attr, replaceOp("/unique", unique))
+	e.T.Cleanup(func() {
+		e.Central.Do("PATCH", "/api/trackedEntityAttributes/"+attr, []any{replaceOp("/unique", cur.Unique)})
+	})
+}
+
+// TransferOwnership moves a tracked entity's ownership in a program to an org unit,
+// as an administrator does on central. Tracker data: not undone.
+func (e *Env) TransferOwnership(te, program, ou string) {
+	e.T.Helper()
+	e.needLive("TransferOwnership")
+	param := "ou" // 2.42; 2.43 names it orgUnit
+	if strings.HasPrefix(e.M.DHIS2Version, "2.43") {
+		param = "orgUnit"
+	}
+	e.centralDo("PUT", "/api/tracker/ownership/transfer?"+url.Values{"trackedEntity": {te}, "program": {program}, param: {ou}}.Encode(), nil)
+}
+
+// CentralOwner is the org unit that owns a tracked entity in a program on central.
+func (e *Env) CentralOwner(te, program string) string {
+	e.T.Helper()
+	var r struct {
+		ProgramOwners []struct{ OrgUnit, Program string } `json:"programOwners"`
+	}
+	if err := e.Central.JSON("GET", "/api/tracker/trackedEntities/"+te+"?"+url.Values{"program": {program},
+		"fields": {"programOwners"}}.Encode(), nil, &r); err != nil {
+		e.T.Fatal(err)
+	}
+	for _, po := range r.ProgramOwners {
+		if po.Program == program {
+			return po.OrgUnit
+		}
+	}
+	return ""
+}
+
 // RemoveProgramFromOrgUnit unassigns a program from an org unit.
 func (e *Env) RemoveProgramFromOrgUnit(program, ou string) {
 	e.T.Helper()

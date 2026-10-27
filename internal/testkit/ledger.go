@@ -18,11 +18,14 @@ type Save struct {
 	User   string // username of the author
 	Kind   string // trackedEntities, enrollments or events
 	UID    string
-	Parent string            // the event's enrollment
-	Stage  string            // the event's program stage
-	Status string            // the event's or enrollment's status
-	Values map[string]string // attributes (tracked entities) or data values (events)
-	Online bool
+	Parent string // the event's enrollment
+	Stage  string // the event's program stage
+	// Program a tracked entity was saved enrolled in: central lists the program's
+	// attributes only when read with it.
+	Program string
+	Status  string            // the event's or enrollment's status
+	Values  map[string]string // attributes (tracked entities) or data values (events)
+	Online  bool
 }
 
 // Outcomes of a save, per the plan.
@@ -75,6 +78,11 @@ func (l *Ledger) Confirmed(user string, payload map[string]any) {
 					am := a.(map[string]any)
 					s.Values[am["attribute"].(string)] = fmt.Sprint(am["value"])
 				}
+				for _, en := range asAnyList(o["enrollments"]) {
+					if s.Program == "" {
+						s.Program, _ = en.(map[string]any)["program"].(string)
+					}
+				}
 				walk("enrollments", s.UID, o["enrollments"])
 			case "enrollments":
 				s.UID, _ = o["enrollment"].(string)
@@ -113,9 +121,15 @@ func (l *Ledger) Check() []Line {
 		e.T.Fatal(err)
 	}
 	for _, is := range issues {
-		var stored struct{ Message string }
+		var stored struct {
+			Message      string
+			ErrorReports []struct{ ErrorCode string }
+		}
 		json.Unmarshal(is.Error, &stored)
 		open[is.ObjectUID] = stored.Message
+		for _, r := range stored.ErrorReports {
+			open[is.ObjectUID] += " [" + r.ErrorCode + "]"
+		}
 		if !e.issueOnCentral(fmt.Sprintf("%s-%d", e.App.Hub.HubID(), is.ID)) {
 			open[is.ObjectUID] += " (not in facility-hub-issues on central)"
 		}
@@ -132,7 +146,7 @@ func (l *Ledger) Check() []Line {
 			// An earlier version of an object saved again: what counts is that it is
 			// there; its values are the later save's.
 			ln.Detail = SavedAgain
-			if e.CentralObject(s.Kind, s.UID) != nil {
+			if l.central(s) != nil {
 				ln.Outcome = OnCentral
 			} else if obj != nil && obj.SyncState == store.SyncRejected && open[s.UID] != "" {
 				ln.Outcome = RefusedKept
@@ -144,7 +158,7 @@ func (l *Ledger) Check() []Line {
 		} else if obj != nil && obj.SyncState == store.SyncRejected && open[s.UID] != "" {
 			// Central may hold an earlier version: this save is the one refused.
 			ln.Outcome, ln.Detail = RefusedKept, open[s.UID]
-		} else if o := e.CentralObject(s.Kind, s.UID); o != nil {
+		} else if o := l.central(s); o != nil {
 			ln.Outcome, ln.Detail = OnCentral, l.differs(s, o)
 			if ln.Detail != "" {
 				ln.Outcome = ChangedOnCentral
@@ -162,6 +176,26 @@ func (l *Ledger) Check() []Line {
 		out = append(out, ln)
 	}
 	return out
+}
+
+// central reads the saved object from central as the superuser; a tracked entity
+// with the program it was saved in, so its program attributes are listed too, or
+// without when central does not have it in that program (its enrollment refused).
+func (l *Ledger) central(s Save) map[string]any {
+	if s.Kind != "trackedEntities" || s.Program == "" || !l.e.Live() {
+		return l.e.CentralObject(s.Kind, s.UID)
+	}
+	st, b, err := l.e.Central.Do("GET", "/api/tracker/trackedEntities/"+s.UID+"?"+
+		url.Values{"program": {s.Program}, "fields": {"*"}}.Encode(), nil)
+	if err != nil {
+		l.e.T.Fatal(err)
+	}
+	if st != 200 {
+		return l.e.CentralObject(s.Kind, s.UID)
+	}
+	var o map[string]any
+	json.Unmarshal(b, &o)
+	return o
 }
 
 // issueOnCentral reports whether central's facility-hub-issues holds key, where the
