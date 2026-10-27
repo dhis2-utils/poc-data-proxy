@@ -3,6 +3,8 @@ package adversarial
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http/httptest"
 	"slices"
 	"testing"
 	"time"
@@ -172,4 +174,48 @@ func errorCodes(b []byte) []string {
 		out = append(out, e.ErrorCode)
 	}
 	return out
+}
+
+// leaks asks the hub (offline) and central (as the same user) the same listing, and
+// returns what the hub shows that central does not (I3). coll and key name the list
+// and its items' uid, e.g. trackedEntities and trackedEntity.
+func (s *scene) leaks(c *tk.Client, path, coll, key string) []string {
+	s.t.Helper()
+	if !s.Net.Down() {
+		s.t.Fatal("leaks: ask the hub offline")
+	}
+	list := func(st int, b []byte) []string {
+		if st != 200 {
+			return nil
+		}
+		var r map[string]any
+		json.Unmarshal(b, &r)
+		var out []string
+		for _, x := range asList(r[coll]) {
+			if m, ok := x.(map[string]any); ok {
+				out = append(out, fmt.Sprint(m[key]))
+			}
+		}
+		return out
+	}
+	hst, hb := c.Do("GET", path, nil)
+	var cst int
+	var cb []byte
+	if s.Live() {
+		cst, cb, _ = s.Central.As(c.User, s.M.Password).Do("GET", path, nil)
+	} else {
+		req := httptest.NewRequest("GET", path, nil)
+		req.SetBasicAuth(c.User, s.M.Password)
+		w := httptest.NewRecorder()
+		s.Fake.ServeHTTP(w, req)
+		cst, cb = w.Code, w.Body.Bytes()
+	}
+	hub, central := list(hst, hb), list(cst, cb)
+	s.t.Logf("%s as %s: hub offline %d (%d items), central %d (%d items)", path, c.User, hst, len(hub), cst, len(central))
+	return slices.DeleteFunc(hub, func(u string) bool { return slices.Contains(central, u) })
+}
+
+func asList(v any) []any {
+	l, _ := v.([]any)
+	return l
 }
