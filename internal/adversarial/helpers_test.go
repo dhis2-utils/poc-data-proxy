@@ -226,3 +226,23 @@ func finding(t *testing.T, what string) {
 		t.Skip("FINDING: " + what + " (HUB_FINDINGS=1 runs it)")
 	}
 }
+
+// shows logs what a client gets from the hub for an object, online and offline: what
+// the app would show of a refused save (I8).
+func (s *scene) shows(c *tk.Client, kind, uid string) (online, offline int) {
+	s.t.Helper()
+	for _, down := range []bool{false, true} {
+		if down {
+			s.Offline()
+			defer s.Online()
+		}
+		st, b := c.Do("GET", "/api/tracker/"+kind+"/"+uid+"?fields=*", nil)
+		s.t.Logf("%s %s through the hub (online=%v): %d %.200s", kind, uid, !down, st, b)
+		if down {
+			offline = st
+		} else {
+			online = st
+		}
+	}
+	return
+}

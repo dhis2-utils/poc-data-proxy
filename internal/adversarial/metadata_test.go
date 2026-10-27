@@ -116,6 +116,7 @@ func TestA2OptionRemoved(t *testing.T) {
 	s.RemoveOption(el.OptionSet, gone)
 	s.noRepeats(s.reconnect(3))
 	s.expect(map[string]string{evGone: tk.RefusedKept, evStays: tk.OnCentral}, tk.OnCentral)
+	s.shows(nurse, "events", evGone)
 }
 
 // A4: a stage is made non-repeatable while two events in it wait offline for one
