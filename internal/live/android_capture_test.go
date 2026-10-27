@@ -2,6 +2,9 @@ package live
 
 import (
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -59,9 +62,12 @@ func TestCaptureAndroid(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s login: %v", phase, err)
 		}
-		n, ok := tk.HomeCount(nodes, program)
+		if _, ok := tk.HomeCount(nodes, program); !ok {
+			t.Logf("%s: no record count under %q right after login; waiting for the sync", phase, program)
+		}
+		n, ok := settledCount(a, program)
 		if !ok {
-			t.Logf("%s: no record count under %q", phase, program)
+			t.Logf("%s: no settled record count under %q", phase, program)
 		}
 		return n
 	}
@@ -173,4 +179,72 @@ func waitRequest(t *testing.T, e *tk.Env, method, suffix string, timeout time.Du
 	}
 	t.Fatalf("the app sent no %s …%s in %s", method, suffix, timeout)
 	return tk.Request{}
+}
+
+// TestCaptureAndroidDirect is TestCaptureAndroid's login with no hub: the device
+// reaches central through a plain proxy on the same port, so the home screen's count
+// is central's own, to compare with what the app shows through the hub.
+func TestCaptureAndroidDirect(t *testing.T) {
+	port := os.Getenv("SANDBOX_HOST_PORT_2")
+	a := &tk.Android{Package: "com.dhis2"}
+	switch {
+	case os.Getenv("HUB_CLIENTS") == "":
+		t.Skip("set HUB_CLIENTS=1 to drive the real Android Capture app")
+	case port == "" || !a.Available():
+		t.Skip("needs an emulator or a device (adb) and SANDBOX_HOST_PORT_2")
+	}
+	e := tk.Start(t)
+	if !e.Live() {
+		t.Skip("needs a live central (HUB_MANIFEST)")
+	}
+	m := e.M
+	host, err := a.HostFor(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := url.Parse(m.CentralURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rp := httputil.NewSingleHostReverseProxy(target)
+	direct := rp.Director
+	rp.Director = func(r *http.Request) { direct(r); r.Host = target.Host }
+	ln, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: rp}
+	go srv.Serve(ln)
+	defer srv.Close()
+
+	program := m.Primary().Name
+	if err := a.Reset(); err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := a.Login("http://"+host+":"+port+target.Path, m.Users[tk.RoleNurse].Username, m.Password, program, 10*time.Minute)
+	if err != nil {
+		t.Fatalf("login straight to central: %v", err)
+	}
+	_ = nodes
+	n, ok := settledCount(a, program)
+	t.Logf("%q on the home screen, straight to central: %d records (settled: %v)", program, n, ok)
+}
+
+// settledCount reads the program's count on the home screen once the app's sync after
+// login has finished: the count appears, and is the same in two reads 20 s apart.
+func settledCount(a *tk.Android, program string) (int, bool) {
+	last, seen := -1, false
+	for range 15 {
+		time.Sleep(20 * time.Second)
+		nodes, err := a.Screen()
+		if err != nil {
+			continue
+		}
+		n, ok := tk.HomeCount(nodes, program)
+		if ok && n == last {
+			return n, true
+		}
+		last, seen = n, ok
+	}
+	return last, seen
 }
