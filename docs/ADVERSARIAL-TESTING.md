@@ -239,6 +239,51 @@ The hub checks offline only what it can know; central decides on push. In each s
 | M2 | Retention pruning, a full pull and an upgrade during a busy day | As above | S | none |
 | M3 | The same against a Laos-sized real instance | As above | S | none |
 
+### N. Updates: the hub, DHIS2 and the apps
+
+Every part of the system changes under the others: the hub gets releases, central gets DHIS2 patches and new majors, and the apps the clients run are updated on central or in the Play Store, each on its own schedule. Groups G and H name a few of these; this group covers them all. Versions: the hub's last release and the next; DHIS2 2.42 and 2.43, each at its oldest and newest patch; each app at the version bundled with that DHIS2 and the newest on the App Hub; Android Capture at the version in use and the newest.
+
+**The hub's releases**
+
+| ID | Scenario | Must hold | Where | Today |
+|---|---|---|---|---|
+| N1 | Upgrade from the last release with a full outbox, refused changes, stubs and every kind of record present, clients working | Every record and setting carried over; the outbox pushes after; clients see at most a short refusal | S, P | fake, real binaries (scripts/test-upgrade.sh) |
+| N2 | Upgrade skipping releases (the oldest still in use straight to the newest) | All migrations run in order; as N1 | S | none |
+| N3 | A migration on a full store at the HC IV size, on a Pi and on Windows | Finishes within the time AGENTS.md asks; the hub serves staff or says it is upgrading | P | sandbox only (TestMigrationOnFullStore) |
+| N4 | Power cut or kill during download, during the migration, and during the first start of the new release | Back on the old or the new release, never between; no data lost (E4) | S, P | none |
+| N5 | The new release fails its health check after the migration ran | Rolls back to the old binary and the old store; nothing written in between is lost | S | fake |
+| N6 | Two hubs of a country on different releases at once (a staged rollout) | Both work with central and with the Facility Hub app | S | none |
+| N7 | A release that refuses something the old one accepted (stricter checks) with such saves queued | Queued saves still pushed or refused with a reason, never dropped | S | none |
+| N8 | The release key changes (a new signing key) | Hubs on the old key accept the new one only through the documented path; nothing unsigned runs | S | none |
+| N9 | Windows: the service upgraded while Windows Update restarts the PC; antivirus holds the new hub.exe | The service comes back on one of the two releases; the store stays unlocked or asks for a login | P (VM) | CI install test only |
+| N10 | An upgrade offered while the hub has been offline for weeks | Downloaded and applied only after the outbox is pushed (G5) | S | none |
+
+**DHIS2 core**
+
+| ID | Scenario | Must hold | Where | Today |
+|---|---|---|---|---|
+| N11 | A patch release of central (2.42.x to 2.42.y) with hubs holding queued saves | Hubs carry on; the oracles still pass | S | none |
+| N12 | A new major (2.42 to 2.43) while hubs are offline with queued saves, on a hub release that supports both | Saves pushed after; reads and the oracles pass on the new major | S | none |
+| N13 | A new major the hub's release does not support | The hub stops answering offline, passes everything through and shows "needs upgrade" (SPEC); no queued save lost; after the hub is upgraded, they push | S | none (the fake's Version field is unused) |
+| N14 | A new major changes an answer the hub relies on (a field renamed, an endpoint moved, an error code changed, the tracker import report reshaped) | Found by the oracles and the hub's own checks before a country upgrades; a hub that meets it refuses rather than misreads | S | 2.43 differences handled once |
+| N15 | Central's personal access tokens or session handling change in a new major | Hubs keep their tokens or get new ones at the next login, as TESTING.md's token tests | S | none |
+| N16 | Central upgraded and its metadata migrated (new uids for categories, options sorted differently) | The hub's catalogue matches central after one sync | S | none |
+| N17 | Central rolled back to the previous major from a backup after a failed upgrade | As H4: nothing pushed is lost; watermarks do not skip data | S | none |
+
+**The apps the clients run**
+
+| ID | Scenario | Must hold | Where | Today |
+|---|---|---|---|---|
+| N18 | Capture web updated on central (App Management) while the hub is offline | Browsers keep the cached app offline; the new one loads online; a new endpoint the hub cannot answer gives "needs connection", never wrong data | C | none |
+| N19 | Capture web at the newest App Hub version against the hub | The same checks as the bundled version (working lists, dashboard, saves offline) | C | none |
+| N20 | The Data Entry app updated, as N18 and N19 | As N18 and N19 | C | none |
+| N21 | Android Capture updated on the tablet (newer SDK) while it holds unsynced data from the hub | Its data reaches the hub and central once; the new SDK's requests are answered or refused clearly | C (tablet) | none |
+| N22 | Android Capture at an older version than the hub was tested with | As N21 | C (tablet) | none |
+| N23 | The Facility Hub app updated on central while hubs run | Hubs and the app still agree on the dataStore formats (registry, approvals, retention, retries) | S | none |
+| N24 | eRegisters updated | As N19 | C | none |
+
+How: the hub's old releases are the signed GitHub releases (or local builds of their tags); DHIS2 versions come from the broker's seeds (2.42 and 2.43), and an upgrade is a database dump of one instance restored into an instance of the next version, if the broker cannot upgrade an instance in place; app versions are installed from the App Hub into the test instance; Android versions are APKs installed on the tablet with adb.
+
 ## What to build first
 
 1. **Central helpers for a real DHIS2**: metadata changes (compulsory, options, stage repeatable, program and data set assignment, closed dates, expiry, approvals), user changes (org units, disabled, password, groups, sharing, authorities), tokens, stopping and starting the instance. Today most of this exists only on the fake.
@@ -248,6 +293,7 @@ The hub checks offline only what it can know; central decides on push. In each s
 5. **A hard kill of the sandbox hub**, and a hub clock offset if it can be done without code in the hub that only tests use.
 6. **A second sandbox hub** for two-hub scenarios.
 7. **Playwright scripts that save** in Capture web and the Data Entry app, with a screenshot at every refusal; the existing scripts run again.
+8. **An upgrade bench**: the last release and the next as real binaries against a real DHIS2, with data of every kind present (extends scripts/test-upgrade.sh); a DHIS2 upgrade by moving a database dump into an instance of the next version; app versions installed from the App Hub and APKs on the tablet.
 
 Each finding becomes a failing test before its fix, as for every other bug (AGENTS.md).
 
@@ -255,8 +301,8 @@ Each finding becomes a failing test before its fix, as for every other bug (AGEN
 
 Tools and scenarios are built side by side: each tool is used by a scenario as soon as it works, and results are recorded as they come.
 
-1. **Wave 1, sandbox, highest risk of silent loss**: A1–A5, A7, B1, B2, B4, B6, B8, C1–C4, D1, D2, D5, E1–E4, G1, H1, H3, H4, J1, J3, K1, K3.
-2. **Wave 2, real apps in the sandbox**: I1c, I2c, I6c, I7c, and the Android ones on the tablet.
+1. **Wave 1, sandbox, highest risk of silent loss**: A1–A5, A7, B1, B2, B4, B6, B8, C1–C4, D1, D2, D5, E1–E4, G1, H1, H3, H4, J1, J3, K1, K3, and the updates most likely to lose data: N1, N4, N5, N12, N13.
+2. **Wave 2, real apps in the sandbox**: I1c, I2c, I6c, I7c, the Android ones on the tablet, and the app updates N18–N22.
 3. **Wave 3, the rest in the sandbox**, then the soak (M1) in the sandbox.
 4. **Wave 4, physical sessions with you** (below), one at a time, when the Pis have an image with the latest changes.
 
