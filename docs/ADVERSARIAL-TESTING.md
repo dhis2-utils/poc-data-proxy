@@ -82,14 +82,25 @@ The hub checks offline only what it can know; central decides on push. In each s
 
 | ID | Scenario | Must hold | Where | Today |
 |---|---|---|---|---|
-| B1 | A user loses the facility (org unit removed) while working offline | Their offline saves: as central decides on push. Their offline reads: stop at the next sync | S, C | fake (TestAdminPageLostWhenMovedAway) |
-| B2 | A user is disabled on central while offline | Can no longer log in once the hub knows; their queued saves: pushed with their token or refused and kept, never lost silently | S | fake (TestDisabledUserLosesAccess) |
+| B1 | pass; within the hour accepted | 27 Oct | Central (2.42.7) caches a personal access token's authentication, with the user's access as it was, for an hour after its first use (`apiTokensCache`, `expireAfterWrite(1, HOURS)`; dropped only when the token is deleted, or by a cache clear). After the hour (`TestB1UserLosesFacility`, the cache cleared): every offline save refused (E1000) and kept, offline reads 403, online 409 as on central. Within it (`TestB1UserLosesFacilityWithinTheHour`, `HUB_FINDINGS=1`): the offline saves are accepted with the token though central refuses the same write to the user's password; online the hub passes the user's listing through with the token and shows 87 people at the facility, where central answers the user 409. Accepted (FINDINGS.md): an access change reaches the hub within about two hours; deleting the user's tokens ends it at once. |
+| B2 | pass; within the hour accepted | 27 Oct | Within the hour (as B1), central accepts a disabled user's token: accepted. After it, central answers the token 401; the hub refuses the user's login online and offline and holds their saves, sending one a cycle to learn whether central takes the token again. Fixed: 7 days after the hub marked the user (backdated in the test) the saves are refused (`NO_LOGIN`) and kept; Resend naming another nurse sends them, and central has them whole, with that nurse as `createdBy`. |
 | B3 | A user's password is changed on central | Offline login with the old password until the hub learns; documented | S, M | none |
 | B4 | A user's personal access token is revoked or expires with saves queued | Saves wait, "needs online login" shown; pushed after they log in online | S | fake (RevokeToken) |
 | B5 | A role loses an authority (for example tracked entity delete) | Refused offline at the next sync, as central | S | none |
 | B6 | Program or stage sharing removed from a user group | Offline reads and writes stop at the next sync; queued writes refused and kept | S | fake (TestAccessChangeOfOneUser) |
 | B7 | A user moves to another facility with a hub | Sees only the new facility's data, on each hub, after login | S | none |
-| B8 | A user is deleted on central with saves queued | Saves refused and kept, visible to a manager; never pushed as someone else | S | none |
+| B8 | pass | 27 Oct | Central deletes the user (their online data does not stop it) and answers their token 401. The saves wait, then after 7 days are refused (`NO_LOGIN`) and kept; resent as another nurse, they reach central whole with that nurse as author. Before the fix they waited for ever, listed only as "waiting for their user to log in". |
+| D1 | pass | 27 Oct | A push cut on its way, and a push whose answer is cut: nothing lost, partial, duplicated or wrong on central (226 and 236 registrations checked). Before the fix the cut answer was read as central's refusal (FINDINGS.md, "Found by adversarial testing" 1). |
+| D2 | pass | 27 Oct | Central stores a push or an online save and the answer is lost: pushed again, nothing created twice (217 and 91 registrations). The one online save not confirmed was the hub's "needs connection" for a person it does not hold. |
+| D4 | pass | 27 Oct | 2G link (20 kB/s, 2 s latency): saves and reads online wait for central; after the outage the outbox drained in 8 min 10 s over it, nothing lost (140 registrations). |
+| D5 | pass | 27 Oct | Half-open link: the hub's timeouts free it, it goes offline, saves locally, drains 4 s after the link returns (246 registrations). |
+| D11 | pass | 27 Oct | Link up and down every 4 s for 90 s with 500 ms latency: 2 393 saves, median wait 8 ms, max 99 ms; 13 imports while flapping, drained 51 s after; 1 705 registrations, none lost or twice. Before the fix no push got through while it flapped (FINDINGS.md 2). |
+| E1 | pass | 27 Oct | Killed (-9) during saves online and offline: every confirmed save on central, 757 registrations, none partial. Logins after a restart while saves come in: 0 failures in 10 restarts; before the fixes 5 saves failed with 500 `objects.slot` (FINDINGS.md 3). |
+| E2 | pass | 27 Oct | Killed while central had stored a push the hub had not heard about, then at random moments of the drain: 808 saves, none lost or twice (542 registrations). |
+| E3 | pass | 27 Oct | Killed during the first pull: after the restart the hub holds all 10 916 people at the facility, none missing or in part. |
+| I1c | pass | 27 Oct | Capture web against the hub: the same rows online and offline (15/15/13/15/10); an offline save, read inside the app's frame, reaches central once. Screenshots of each refusal still to do. |
+| I3c (part) | pass | 27 Oct | Android Capture on a real tablet (Galaxy Tab A7 Lite, through `adb reverse`): 2 records online, offline and straight to central alike. Switching a tablet with unsynced data is still to do. Screenshots come out black (the app sets FLAG_SECURE). |
+| I6c | **finding, open** | 27 Oct | Data Entry app: completing a form offline shows "Couldn't validate the form…". Not yet looked into. |
 | B9 | A brand-new user arrives while the facility is offline | Cannot log in (first login must be online); clear message | S, C | e2e (unknown user) |
 | B10 | Two users swap devices or share a tablet | Each sees only their own access; no cached data from the other (Capture's browser cache, Android's database) | C, M | per-user metadata: e2e |
 | B11 | User group membership changes for many users at once | Access refreshed for all within the refresh interval; measure the gap | S | none |
@@ -322,7 +333,7 @@ Each scenario's result is recorded here: pass, fail with the finding, or decided
 
 | Session | Status | Date | Result |
 |---|---|---|---|
-| Sandbox wave 1 | started | 27 Oct 2026 | A1, A2, A4, A5, B1, B2, B4, B6, B8 on synthetic 2.42 (`internal/adversarial`) |
+| Sandbox wave 1 | started | 27 Oct 2026 | A1, A2, A4, A5, B1, B2, B4, B6, B8, D1, D2, D4, D5, D11, E1–E3 on synthetic 2.42 (`internal/adversarial`): 21 pass, the two runs within central's token hour skipped (accepted). Real clients: Capture web, Android on a Galaxy Tab A7 Lite, the Data Entry app |
 | Sandbox wave 2 | not started | | |
 | Sandbox wave 3 and soak | not started | | |
 | Physical 1: network | not started | | |
