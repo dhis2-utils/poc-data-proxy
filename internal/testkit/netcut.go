@@ -17,12 +17,13 @@ import (
 // live. It keeps the Host header the hub sent, so central builds absolute URLs (pager
 // links, redirects) on the proxy's address, which is the hub's central URL.
 type Netcut struct {
-	srv   *http.Server
-	ln    net.Listener
-	down  atomic.Bool
-	delay atomic.Int64                  // nanoseconds added to every request
-	rate  atomic.Int64                  // bytes per second each way; 0: unlimited
-	held  atomic.Pointer[chan struct{}] // half open while set: closed to release
+	srv     *http.Server
+	ln      net.Listener
+	down    atomic.Bool
+	delay   atomic.Int64                  // nanoseconds added to every request
+	rate    atomic.Int64                  // bytes per second each way; 0: unlimited
+	held    atomic.Pointer[chan struct{}] // half open while set: closed to release
+	refused atomic.Int64                  // requests cut while down
 
 	mu     sync.Mutex
 	calls  []Call   // what the hub asked central, since the last Calls
@@ -88,6 +89,7 @@ func NewNetcut(target string) (*Netcut, error) {
 	rp.FlushInterval = -1
 	n.srv = &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if n.down.Load() {
+			n.refused.Add(1)
 			cut(w)
 			return
 		}
@@ -126,7 +128,11 @@ func NewNetcut(target string) (*Netcut, error) {
 			record(m.status, m.bytes)
 			return
 		}
-		defer func() { f.hit <- struct{}{} }()
+		defer func() {
+			if f.kind != "lose" {
+				f.hit <- struct{}{}
+			}
+		}()
 		if f.kind == "cutRequest" {
 			// Part of the request leaves; central never sees it whole.
 			io.CopyN(io.Discard, r.Body, r.ContentLength/2)
@@ -139,6 +145,10 @@ func NewNetcut(target string) (*Netcut, error) {
 		rp.ServeHTTP(b, r)
 		record(b.status, 0)
 		if f.kind == "lose" {
+			// Tell first, and keep the hub waiting a moment: a test can kill it while
+			// central has stored what it is still waiting to hear about.
+			f.hit <- struct{}{}
+			time.Sleep(time.Second)
 			cut(w)
 			return
 		}
@@ -172,6 +182,9 @@ func (n *Netcut) Down() bool               { return n.down.Load() }
 func (n *Netcut) SetDelay(d time.Duration) { n.delay.Store(int64(d)) }
 func (n *Netcut) Close() error             { return n.srv.Close() }
 
+// Refused counts the requests the hub made while the uplink was down.
+func (n *Netcut) Refused() int64 { return n.refused.Load() }
+
 // SetRate limits the link to bps bytes per second each way (0: unlimited), as a slow
 // mobile uplink; SetDelay adds its latency.
 func (n *Netcut) SetRate(bps int) { n.rate.Store(int64(bps)) }
@@ -193,7 +206,8 @@ func (n *Netcut) HalfOpen() (release func()) {
 
 // LoseAnswer lets the next n requests that match reach central, then drops the
 // connection to the hub instead of passing on central's answer: central acted, the
-// hub cannot know. The channel receives once per lost answer.
+// hub cannot know. The channel receives once per lost answer, a second before the
+// connection drops.
 func (n *Netcut) LoseAnswer(count int, match func(*http.Request) bool) <-chan struct{} {
 	return n.add("lose", count, match)
 }
