@@ -1,7 +1,11 @@
 /**
  * @jest-environment node
  */
-import { writeAdminEntry } from './adminEntry'
+import {
+    ensureAdminEntries,
+    shareAdminEntries,
+    writeAdminEntry,
+} from './adminEntry'
 import { FakeApi } from '@/hubaccount/fakeApi'
 
 // facility-hub-admin must be writable by administrators only (docs/DEPLOYMENT.md): a
@@ -88,5 +92,102 @@ describe('writeAdminEntry in facility-hub-config', () => {
             },
         })
         expect(api.store['facility-hub-admin']).toBeUndefined()
+    })
+})
+
+// On 2.42 any user may create a missing dataStore key, own it, and keep writing it
+// while public access is read only: the hub would trust it. A manager opening the app
+// creates the missing facility-hub-admin entries first, protected.
+describe('ensureAdminEntries', () => {
+    const keys = ['accounts', 'central-move', 'release', 'retries']
+
+    it('creates each missing entry, readable by all, writable by the managers', async () => {
+        const api = new FakeApi()
+        api.store['facility-hub-admin'] = {
+            accounts: { group: 'G', role: 'R', managers: 'HubGrpMgrs' },
+        }
+        api.sharing['meta-facility-hub-admin-accounts'] = {
+            object: { publicAccess: 'r-------' },
+        }
+        expect(await ensureAdminEntries(api, 'HubGrpMgrs')).toEqual([
+            'central-move',
+            'release',
+            'retries',
+        ])
+        for (const key of keys.slice(1)) {
+            expect(api.creators[`facility-hub-admin/${key}`]).toBe(api.me)
+            expect(api.sharing[`meta-facility-hub-admin-${key}`]).toEqual({
+                object: {
+                    publicAccess: 'r-------',
+                    userAccesses: [],
+                    userGroupAccesses: [
+                        { id: 'HubGrpMgrs', access: 'rw------' },
+                    ],
+                },
+            })
+        }
+        // Empty values the hubs and the app read as "not set".
+        expect(api.entry('facility-hub-admin', 'central-move')).toEqual({})
+        expect(api.entry('facility-hub-admin', 'release')).toEqual({
+            version: '',
+            pilotHubs: [],
+            percent: 0,
+        })
+        expect(api.entry('facility-hub-admin', 'retries')).toEqual({
+            retries: [],
+        })
+        expect(api.entry('facility-hub-admin', 'accounts')).toEqual({
+            group: 'G',
+            role: 'R',
+            managers: 'HubGrpMgrs',
+        })
+    })
+
+    it('creates accounts writable by administrators only', async () => {
+        const api = new FakeApi()
+        await ensureAdminEntries(api, undefined)
+        expect(api.entry('facility-hub-admin', 'accounts')).toEqual({})
+        expect(api.sharing['meta-facility-hub-admin-accounts']).toEqual({
+            object: {
+                publicAccess: 'r-------',
+                userAccesses: [],
+                userGroupAccesses: [],
+            },
+        })
+    })
+
+    it('does nothing when all exist', async () => {
+        const api = new FakeApi()
+        await ensureAdminEntries(api, 'HubGrpMgrs')
+        api.log = []
+        expect(await ensureAdminEntries(api, 'HubGrpMgrs')).toEqual([])
+        expect(api.log.filter((l) => !l.startsWith('GET '))).toEqual([])
+    })
+})
+
+// Entries made before the hub managers group was named are writable by
+// administrators only: naming the group shares them with it.
+describe('shareAdminEntries', () => {
+    it('shares the protected entries with the managers, and leaves open ones as they are', async () => {
+        const api = new FakeApi()
+        await ensureAdminEntries(api, undefined)
+        api.store['facility-hub-admin'].retries = { retries: [] }
+        delete api.sharing['meta-facility-hub-admin-retries'] // open to all
+        await shareAdminEntries(api, 'HubGrpMgrs')
+        expect(api.sharing['meta-facility-hub-admin-release']).toEqual({
+            object: {
+                publicAccess: 'r-------',
+                userAccesses: [],
+                userGroupAccesses: [{ id: 'HubGrpMgrs', access: 'rw------' }],
+            },
+        })
+        expect(api.sharing['meta-facility-hub-admin-retries']).toBeUndefined()
+        expect(
+            (
+                api.sharing['meta-facility-hub-admin-accounts'] as {
+                    object: { userGroupAccesses: unknown[] }
+                }
+            ).object.userGroupAccesses
+        ).toEqual([])
     })
 })

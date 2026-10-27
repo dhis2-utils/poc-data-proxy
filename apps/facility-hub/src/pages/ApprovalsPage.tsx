@@ -20,6 +20,7 @@ import { useApi } from '@/api/useApi'
 import { ApproveDialog } from '@/components/hub/ApproveDialog'
 import { ManagersOnly } from '@/components/hub/ManagersOnly'
 import { useCanManage } from '@/hooks/useCanManage'
+import { shareAdminEntries } from '@/hubs/adminEntry'
 import { when } from '@/hubs/format'
 import {
     AccountsSettings,
@@ -60,10 +61,12 @@ const AccountsSettingsCard = () => {
     const [group, setGroup] = useState('')
     const [role, setRole] = useState('')
     const [managers, setManagers] = useState('')
+    const [owners, setOwners] = useState('')
     useEffect(() => {
         setGroup(settings?.group ?? '')
         setRole(settings?.role ?? '')
         setManagers(settings?.managers ?? '')
+        setOwners(settings?.owners ?? '')
     }, [settings])
 
     if (isLoading || choices.isLoading) {
@@ -74,7 +77,7 @@ const AccountsSettingsCard = () => {
             <h2 className={styles.subtitle}>{i18n.t('Hub accounts')}</h2>
             <div className={styles.muted}>
                 {i18n.t(
-                    'Each approved hub gets a user in this group (write sharing on the facility-hub namespaces, except facility-hub-admin) with this role, which must have no authorities. Members of the hub managers group approve hubs and make move codes without being superusers; they need a role with F_USER_ADD, F_USER_VIEW, F_USER_GROUPS_READ_ONLY_ADD_MEMBERS and M_facilityhub, and read access to the hub accounts group. Only superusers change these settings.'
+                    'Each approved hub gets a user in this group (write sharing on the facility-hub namespaces, except facility-hub-admin) with this role, which must have no authorities. Members of the hub managers group approve hubs and make move codes without being superusers; they need a role with F_USER_ADD, F_USER_VIEW, F_USER_GROUPS_READ_ONLY_ADD_MEMBERS and M_facilityhub, and read access to the hub accounts group. Each hub makes its registry entry writable by the hub owners group (staff who set hubs up, take them over or replace them), the hub accounts group and the hub managers only, once the hub owners group is named. Only superusers change these settings.'
                 )}
             </div>
             <div className={styles.row}>
@@ -127,13 +130,40 @@ const AccountsSettingsCard = () => {
                         />
                     ))}
                 </SingleSelectField>
+                <SingleSelectField
+                    label={i18n.t('Hub owners group')}
+                    selected={owners}
+                    onChange={({ selected }) => setOwners(selected)}
+                    disabled={!superuser}
+                    filterable
+                    clearable
+                    className={styles.search}
+                >
+                    {(choices.data?.groups ?? []).map((g) => (
+                        <SingleSelectOption
+                            key={g.id}
+                            value={g.id}
+                            label={g.displayName}
+                        />
+                    ))}
+                </SingleSelectField>
                 <Button
                     onClick={() =>
-                        save.mutate({
-                            group,
-                            role,
-                            ...(managers && { managers }),
-                        })
+                        save.mutate(
+                            {
+                                group,
+                                role,
+                                ...(managers && { managers }),
+                                ...(owners && { owners }),
+                            },
+                            {
+                                // Entries made before the managers were named.
+                                onSuccess: () =>
+                                    managers &&
+                                    managers !== settings?.managers &&
+                                    shareAdminEntries(api, managers),
+                            }
+                        )
                     }
                     loading={save.isLoading}
                     disabled={
@@ -142,7 +172,8 @@ const AccountsSettingsCard = () => {
                         !role ||
                         (group === settings?.group &&
                             role === settings?.role &&
-                            managers === (settings?.managers ?? ''))
+                            managers === (settings?.managers ?? '') &&
+                            owners === (settings?.owners ?? ''))
                     }
                 >
                     {i18n.t('Save')}
@@ -232,7 +263,7 @@ const Approvals = () => {
                                         <Button
                                             small
                                             primary
-                                            disabled={!settings}
+                                            disabled={!settings?.group}
                                             onClick={() => setApproving(h)}
                                         >
                                             {i18n.t('Approve')}
@@ -244,7 +275,7 @@ const Approvals = () => {
                     </DataTable>
                 )}
             </div>
-            {approving && settings && (
+            {approving && settings?.group && (
                 <ApproveDialog
                     hub={approving}
                     settings={settings}

@@ -107,11 +107,11 @@ export const HubPage = () => {
                         primary
                         small
                         onClick={() => setApproving(true)}
-                        disabled={!settings}
+                        disabled={!settings?.group}
                     >
                         {i18n.t('Approve')}
                     </Button>{' '}
-                    {!settings &&
+                    {!settings?.group &&
                         i18n.t(
                             'Set the hub accounts group and role on the Approvals page first.'
                         )}
@@ -376,7 +376,7 @@ export const HubPage = () => {
                 )}
             </div>
             {canManage && <RevokeTokens hub={hub} />}
-            {approving && settings && (
+            {approving && settings?.group && (
                 <ApproveDialog
                     hub={hub}
                     settings={settings}

@@ -27,6 +27,8 @@ export class FakeApi implements Api {
     log: string[] = []
     // The logged-in user, and who created each entry (its owner).
     me = 'MeUser00001'
+    superuser = false
+    groups: string[] = []
     creators: Record<string, string> = {}
     // Personal access tokens the logged-in user may delete (their own, or shared).
     apiTokens = new Set<string>()
@@ -52,15 +54,25 @@ export class FakeApi implements Api {
         if (m) {
             const [, ns, key, meta] = m
             const k = decodeURIComponent(key)
+            const has = this.store[ns] && k in this.store[ns]
             if (meta) {
+                if (!has) {
+                    throw new ApiError(404, 'not found')
+                }
                 const owner = this.creators[`${ns}/${k}`] ?? this.me
+                // Public access as 2.42 reports it: read and write until sharing sets it.
+                const shared = this.sharing[`meta-${ns}-${k}`] as
+                    | { object: { publicAccess: string } }
+                    | undefined
                 return {
                     id: `meta-${ns}-${k}`,
                     createdBy: { id: owner },
-                    sharing: { owner },
+                    sharing: {
+                        owner,
+                        public: shared?.object.publicAccess ?? 'rw------',
+                    },
                 }
             }
-            const has = this.store[ns] && k in this.store[ns]
             switch (method) {
                 case 'GET':
                     if (!has) {
@@ -108,7 +120,11 @@ export class FakeApi implements Api {
             return {}
         }
         if (p === '/me' && method === 'GET') {
-            return { id: this.me }
+            return {
+                id: this.me,
+                authorities: this.superuser ? ['ALL'] : [],
+                userGroups: this.groups.map((id) => ({ id })),
+            }
         }
         if (p === '/sharing' && method === 'POST') {
             this.sharing[new URLSearchParams(query).get('id') ?? ''] = body

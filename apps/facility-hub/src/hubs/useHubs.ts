@@ -158,6 +158,8 @@ export type AccountsSettings = {
     role: string
     /** The hub managers group: its members approve hubs and make move codes. */
     managers?: string
+    /** The hub owners group: staff who set hubs up; each hub's registry entry is writable by it. */
+    owners?: string
 }
 
 /** A planned move of central (facility-hub-admin/central-move), read by every hub. */

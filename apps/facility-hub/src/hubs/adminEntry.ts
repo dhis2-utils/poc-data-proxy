@@ -1,9 +1,9 @@
-import { Api, ApiError } from '@/hubaccount/api'
+import { Api, ApiError, getOrNull } from '@/hubaccount/api'
 
 type Meta = {
     id: string
     createdBy?: { id?: string }
-    sharing?: { owner?: string }
+    sharing?: { owner?: string; public?: string }
 }
 
 /**
@@ -47,10 +47,14 @@ export const writeAdminEntry = async (
             await api.request('POST', path, {})
         }
     }
-    const meta = await metaOf()
-    await api.request(
+    await share(api, (await metaOf()).id, managers)
+    await api.request('PUT', path, value)
+}
+
+const share = (api: Api, id: string, managers?: string) =>
+    api.request(
         'POST',
-        `/sharing?type=dataStore&id=${encodeURIComponent(meta.id)}`,
+        `/sharing?type=dataStore&id=${encodeURIComponent(id)}`,
         {
             object: {
                 publicAccess: 'r-------',
@@ -62,5 +66,52 @@ export const writeAdminEntry = async (
             },
         }
     )
-    await api.request('PUT', path, value)
+
+const adminPath = (key: string) => `/dataStore/facility-hub-admin/${key}`
+
+const metaOrNull = (api: Api, key: string) =>
+    getOrNull<Meta>(api, `${adminPath(key)}/metaData`)
+
+// The facility-hub-admin entries the hubs trust, each with a value they read as "not
+// set". accounts is writable by administrators only.
+const empty: Record<string, unknown> = {
+    accounts: {},
+    'central-move': {},
+    release: { version: '', pilotHubs: [], percent: 0 },
+    retries: { retries: [] },
+}
+
+/**
+ * Creates the facility-hub-admin entries that do not exist yet, protected as
+ * writeAdminEntry protects them: on 2.42 any user may create a missing key, own it and
+ * keep writing it while its public access is read only, which the hubs would trust.
+ * Run when a hub manager opens the app. It returns the keys it created.
+ */
+export const ensureAdminEntries = async (api: Api, managers?: string) => {
+    const made: string[] = []
+    for (const key of Object.keys(empty)) {
+        if (!(await metaOrNull(api, key))) {
+            await writeAdminEntry(api, {
+                key,
+                value: empty[key],
+                managers: key === 'accounts' ? undefined : managers,
+            })
+            made.push(key)
+        }
+    }
+    return made
+}
+
+/**
+ * Shares the facility-hub-admin entries (but accounts) with the hub managers group, once
+ * a superuser names it: entries made before are writable by administrators only. One
+ * any user may write is left as it is: its value is not to be trusted unseen.
+ */
+export const shareAdminEntries = async (api: Api, managers: string) => {
+    for (const key of Object.keys(empty).filter((k) => k !== 'accounts')) {
+        const meta = await metaOrNull(api, key)
+        if (meta && meta.sharing?.public?.[1] !== 'w') {
+            await share(api, meta.id, managers)
+        }
+    }
 }

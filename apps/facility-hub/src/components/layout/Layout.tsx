@@ -2,6 +2,7 @@ import React from 'react'
 import { Outlet, useMatches } from 'react-router-dom'
 import { Sidebar } from '../sidebar/Sidebar'
 import styles from './Layout.module.css'
+import { useEnsureAdminEntries } from '@/hooks/useEnsureAdminEntries'
 
 export type RouteHandle = {
     fullWidth?: boolean
@@ -10,6 +11,7 @@ export type RouteHandle = {
 }
 
 export const Layout = () => {
+    useEnsureAdminEntries()
     const collapseSidebar = useMatches().some(
         (match) => (match.handle as RouteHandle)?.collapseSidebar
     )
