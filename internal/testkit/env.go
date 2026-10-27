@@ -92,7 +92,7 @@ func Start(t testing.TB) *Env {
 
 func (e *Env) Config() config.Config {
 	c := config.Default()
-	c.TPM = false // the same files on every machine; internal/devkey tests the TPM
+	c.TPM = false           // the same files on every machine; internal/devkey tests the TPM
 	c.HeartbeatInterval = 0 // tests read the heartbeat after each sync
 	c.CentralURL = e.Net.URL()
 	c.DataDir = e.Dir
@@ -140,7 +140,9 @@ func (e *Env) boot() {
 func (e *Env) stop() {
 	if e.Srv != nil {
 		e.Srv.Close()
-		e.App.Close()
+		if e.App != nil {
+			e.App.Close()
+		}
 		e.Srv = nil
 	}
 }
@@ -226,6 +228,13 @@ func (e *Env) Setup() {
 // SetupAs sets the hub up as a user of this role, as staff at the facility would.
 func (e *Env) SetupAs(role string) {
 	e.T.Helper()
+	e.SetupOnly(role)
+	e.Sync()
+}
+
+// SetupOnly sets the hub up as SetupAs does, without its first sync.
+func (e *Env) SetupOnly(role string) {
+	e.T.Helper()
 	c := e.Web(role)
 	resp, err := c.PostForm("/hub/setup", url.Values{"step": {"login"}, "username": {c.User}, "password": {e.M.Password}})
 	if err != nil {
@@ -246,7 +255,6 @@ func (e *Env) SetupAs(role string) {
 	if !bytes.Contains(b, []byte("This hub now serves")) {
 		e.T.Fatalf("setup failed: %.2000s", b)
 	}
-	e.Sync()
 }
 
 var nonceRe = regexp.MustCompile(`name="nonce" value="([^"]+)"`)
@@ -297,6 +305,20 @@ func (c *Client) DoHeader(method, path string) (int, http.Header, []byte) {
 
 func (c *Client) do(method, path string, body any) (int, http.Header, []byte) {
 	c.e.T.Helper()
+	st, h, b, err := c.try(method, path, body)
+	if err != nil {
+		c.e.T.Fatal(err)
+	}
+	return st, h, b
+}
+
+// Try is Do that returns a network error instead of failing the test: for clients
+// that keep working while the hub or its network fails, from other goroutines.
+func (c *Client) Try(method, path string, body any) (int, http.Header, []byte, error) {
+	return c.try(method, path, body)
+}
+
+func (c *Client) try(method, path string, body any) (int, http.Header, []byte, error) {
 	var rd io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -310,11 +332,11 @@ func (c *Client) do(method, path string, body any) (int, http.Header, []byte) {
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		c.e.T.Fatal(err)
+		return 0, nil, nil, err
 	}
 	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, resp.Header, b
+	b, err := io.ReadAll(resp.Body)
+	return resp.StatusCode, resp.Header, b, err
 }
 
 // JSON does a request, requires the status, and decodes an object answer.
