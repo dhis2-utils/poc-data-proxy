@@ -103,8 +103,9 @@ choose 0.2.0
 wait_for 10 is mode online || fail "hub did not come back online"
 sync_now
 wait_for 15 is pending 0 || fail "outbox not pushed"
-sync_now   # second cycle: heartbeat carries the upgrade result of the first
-wait_for 15 sh -c "curl -s -u hub_admin:Hub-Test-2026! $FC/api/dataStore/facility-hub-status/$HUB_ID | grep -q ignored" || fail "no 'ignored' in heartbeat"
+# The hub logs the result at once; the heartbeat carries it within the hour (here no
+# restart sends one sooner, as after steps 2 and 3).
+wait_for 15 sh -c "grep -q 'upgrade result=ignored' $WORK/hub.log" || fail "no 'ignored' result logged"
 [ "$(status version)" = 0.1.0 ] || fail "unsigned release was installed"
 echo "heartbeat lastUpgrade: $(heartbeat_upgrade)"
 
