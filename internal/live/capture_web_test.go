@@ -2,6 +2,7 @@ package live
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
@@ -56,9 +58,13 @@ func TestCaptureWeb(t *testing.T) {
 		progs = append(progs, p.ID)
 	}
 	cmd := exec.Command("python3", "-I", "../../clients/capture_web.py")
+	// Saved offline through Capture, it must reach central once (I1, I2 in
+	// docs/ADVERSARIAL-TESTING.md); the weight finds it there.
+	enr := enrollmentAt(t, e, m.Primary(), m.Facility.ID)
+	weight := fmt.Sprint(500 + time.Now().UnixNano()%400)
 	cmd.Env = append(os.Environ(), "HUB_URL="+e.Srv.URL, "CONTROL_URL="+control.URL, "HUB_USER="+nurse.User,
 		"HUB_PASSWORD="+m.Password, "ORG_UNIT="+m.Facility.ID, "PROGRAMS="+strings.Join(progs, ","),
-		"ENROLLMENT="+enrollmentAt(t, e, m.Primary(), m.Facility.ID), "OUT="+out)
+		"ENROLLMENT="+enr, "OUT="+out, "WEIGHT="+weight)
 	cmd.Stderr = os.Stderr
 	b, err := cmd.Output()
 	if err != nil {
@@ -103,6 +109,34 @@ func TestCaptureWeb(t *testing.T) {
 	}
 	for _, e := range res.Errors["offline"] {
 		t.Errorf("Capture page error offline: %s", e)
+	}
+	if st, _ := res.Offline["save-status"].(float64); st != 200 {
+		t.Errorf("Capture's offline save: the hub answered %v; after the save Capture showed: %.300v", res.Offline["save-status"], res.Offline["after-save"])
+	} else {
+		e.Sync()
+		var evs struct {
+			Events []struct {
+				Event      string
+				CreatedBy  struct{ Username string } `json:"createdBy"`
+				DataValues []struct{ Value string }  `json:"dataValues"`
+			} `json:"events"`
+		}
+		if err := e.Central.JSON("GET", "/api/tracker/events?paging=false&enrollments="+enr+"&fields=event,createdBy,dataValues[value]", nil, &evs); err != nil {
+			t.Fatal(err)
+		}
+		var found []string
+		for _, ev := range evs.Events {
+			for _, dv := range ev.DataValues {
+				if dv.Value == weight {
+					found = append(found, ev.Event+" by "+ev.CreatedBy.Username)
+				}
+			}
+		}
+		if len(found) != 1 || !strings.HasSuffix(found[0], " by "+nurse.User) {
+			t.Errorf("the event saved offline in Capture (weight %s) on central: %v; want once, by %s", weight, found, nurse.User)
+		} else {
+			t.Logf("saved offline in Capture, on central once: %s", found[0])
+		}
 	}
 	t.Logf("screenshots and result in %s", out)
 }

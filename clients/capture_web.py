@@ -3,13 +3,15 @@
 
 Run by internal/live/capture_web_test.go, which starts the hub and passes:
   HUB_URL, CONTROL_URL (GET /offline, /online), HUB_USER, HUB_PASSWORD,
-  ORG_UNIT, PROGRAMS (comma separated), ENROLLMENT (one to open), OUT (folder).
+  ORG_UNIT, PROGRAMS (comma separated), ENROLLMENT (one to open), OUT (folder),
+  WEIGHT (saves a new event on that enrollment offline, with this weight).
 Prints one JSON object: what loaded, rows seen, and every request the hub could
 not answer offline. Exits non-zero only if the browser itself fails.
 """
 import json
 import os
 import sys
+import time
 import urllib.request
 
 from playwright.sync_api import sync_playwright
@@ -21,6 +23,7 @@ OU = os.environ["ORG_UNIT"]
 PROGRAMS = [p for p in os.environ.get("PROGRAMS", "").split(",") if p]
 ENROLLMENT = os.environ.get("ENROLLMENT", "")
 OUT = os.environ.get("OUT", ".")
+WEIGHT = os.environ.get("WEIGHT", "")  # set: save an event offline with this weight
 
 
 def control(what):
@@ -52,6 +55,32 @@ def main():
                 print(json.dumps(result))
                 return
 
+            def app():
+                # From 2.42 the app runs in a frame inside the global shell; earlier, in the page.
+                for f in page.frames:
+                    if f != page.main_frame and "capture" in f.url:
+                        return f
+                return page.main_frame
+
+            def save_event(out):
+                # A new event in the first stage, saved offline as staff would: the
+                # report date, a weight the test looks for on central, then "Save
+                # without completing". The hub's answer to the save is recorded.
+                a = app()
+                a.locator("button", has_text="New event").first.click(timeout=15000)
+                a.locator("[data-test=program-stage-selector-button]").first.click(timeout=15000)
+                a.get_by_placeholder("yyyy-mm-dd").first.fill(time.strftime("%Y-%m-%d"))
+                a.get_by_placeholder("yyyy-mm-dd").first.press("Tab")
+                a.locator("text=Synthetic weight").locator("xpath=following::input[1]").fill(WEIGHT)
+                a.locator("text=Synthetic weight").locator("xpath=following::input[1]").press("Tab")
+                with page.expect_response(lambda r: "/api/" in r.url and "tracker" in r.url and r.request.method == "POST",
+                                          timeout=60000) as resp:
+                    a.locator("button", has_text="Save without completing").first.click(timeout=15000)
+                out["save-status"] = resp.value.status
+                page.wait_for_timeout(5000)
+                page.screenshot(path=os.path.join(OUT, "offline-saved.png"), full_page=True)
+                out["after-save"] = a.locator("body").inner_text()[:1500]
+
             def visit(tag):
                 p = phase["name"]
                 out = {}
@@ -60,15 +89,21 @@ def main():
                 for prog in PROGRAMS:
                     page.goto(f"{HUB}/dhis-web-capture/index.html#/?orgUnitId={OU}&programId={prog}",
                               wait_until="networkidle", timeout=120000)
-                    page.wait_for_timeout(3000)
-                    out[f"rows:{prog}"] = page.locator("table tbody tr").count()
+                    try:  # the list appears after its own queries
+                        app().wait_for_selector("table tbody tr", timeout=30000)
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(1000)
+                    out[f"rows:{prog}"] = app().locator("table tbody tr").count()
                     page.screenshot(path=os.path.join(OUT, f"{tag}-{prog}.png"))
                 if ENROLLMENT:
                     page.goto(f"{HUB}/dhis-web-capture/index.html#/enrollment?enrollmentId={ENROLLMENT}",
                               wait_until="networkidle", timeout=120000)
                     page.wait_for_timeout(3000)
-                    out["dashboard"] = page.locator("body").inner_text()[:2000]
+                    out["dashboard"] = app().locator("body").inner_text()[:2000]
                     page.screenshot(path=os.path.join(OUT, f"{tag}-dashboard.png"))
+                    if tag == "offline" and WEIGHT:
+                        save_event(out)
                 result[p] = out
 
             visit("online")

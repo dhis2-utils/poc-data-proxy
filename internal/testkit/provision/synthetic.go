@@ -285,7 +285,7 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 	program := func(id, name, level string, attrs []any, stages []string) map[string]any {
 		return map[string]any{"id": id, "name": "Synthetic " + name, "shortName": "Syn " + name,
 			"programType": "WITH_REGISTRATION", "trackedEntityType": ref(tetPerson), "accessLevel": level,
-			"onlyEnrollOnce": false, "displayIncidentDate": true, "programTrackedEntityAttributes": attrs,
+			"onlyEnrollOnce": false, "displayIncidentDate": true, "displayFrontPageList": true, "programTrackedEntityAttributes": attrs,
 			"programStages": refs(stages...), "organisationUnits": refs(facilities...), "sharing": sh(id).json()}
 	}
 	programs := []any{
