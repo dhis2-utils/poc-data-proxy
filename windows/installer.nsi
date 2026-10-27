@@ -163,7 +163,9 @@ Section "!The hub" SecHub
   Call StopHub
 
   ; From a per-user hub to the whole PC: the installing user's hub moves along, so it
-  ; keeps its ID, approval and certificate authority (devices notice nothing).
+  ; keeps its ID, approval and certificate authority (devices notice nothing). Its bin
+  ; folder stays behind: anything the user could change must not be run elevated or
+  ; become the service's program; the hub.exe of this installer goes in instead.
   ${If} $MultiUser.InstallMode == "AllUsers"
   ${AndIf} ${FileExists} "$UserAppDataLocal\${NAME}\ca.key"
   ${AndIfNot} ${FileExists} "$DataDir\ca.key"
@@ -173,7 +175,7 @@ Section "!The hub" SecHub
       DeleteRegValue HKCU "${RUNKEY}" "${NAME}"
       CreateDirectory "$DataDir"
       Delete "$UserAppDataLocal\${NAME}\hub.yaml" ; written again for the new place
-      !insertmacro Run 'robocopy "$UserAppDataLocal\${NAME}" "$DataDir" /E /MOVE /NFL /NDL /NJH /NJS'
+      !insertmacro Run 'robocopy "$UserAppDataLocal\${NAME}" "$DataDir" /E /MOVE /XD bin /NFL /NDL /NJH /NJS'
     nomove:
   ${EndIf}
 

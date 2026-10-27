@@ -50,6 +50,14 @@ own, run = s.find("/setowner *S-1-5-32-544"), s.find('"$HubExe" version')
 sys.exit(0 if 0 <= own < run else 1)
 PY
 check "the per-user move reads the user's own folder" grep -q 'UserAppDataLocal' <<<"$STR"
+# Review GLM5-F1: the user's own folder is theirs to change, so its hub.exe must not
+# reach the admin-only folder, where the elevated installer would run it and the
+# service would start it.
+check "the per-user move leaves the user's hub.exe behind" python3 - "$HERE/installer.nsi" <<'PY'
+import re, sys
+moves = [l for l in open(sys.argv[1]) if "robocopy" in l and "UserAppDataLocal" in l]
+sys.exit(0 if moves and all(re.search(r'/XD\s+"?bin"?(\s|$|\')', l) for l in moves) else 1)
+PY
 check "the installer waits for the service to stop" grep -q 'service stop' <<<"$STR"
 check "install.ini and ca.crt stay readable (public; the CI check reads them)" grep -q 'install.ini" /grant "\*S-1-5-32-545:R"' <<<"$STR"
 check "the installer records what it ran (install.log)" grep -q 'FileOpen $LogFile "$DataDir\\install.log"' <<<"$STR"
