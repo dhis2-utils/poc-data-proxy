@@ -224,16 +224,21 @@ func (s *Store) CountOutbox(state string) int {
 
 // Requeue sends refused saves again (a retry from the Facility Hub app): the refused
 // objects go back to pending, and so do the refused or partly refused outbox entries
-// holding them, or named by seq (aggregate edits). It returns the entries requeued.
-func (s *Store) Requeue(uids []string, seqs []int64) (int, error) {
+// holding them, or named by seq (aggregate edits). A userID other than 0 makes those
+// entries that user's, to be sent with their token. It returns the entries requeued.
+func (s *Store) Requeue(uids []string, seqs []int64, userID int64) (int, error) {
+	var as any // NULL keeps the author
+	if userID != 0 {
+		as = userID
+	}
 	var n int
 	err := s.Tx(context.Background(), func(tx *sql.Tx) error {
 		for _, uid := range uids {
 			if _, err := tx.Exec(`UPDATE objects SET sync_state=? WHERE uid=? AND sync_state=?`, SyncPending, uid, SyncRejected); err != nil {
 				return err
 			}
-			res, err := tx.Exec(`UPDATE outbox SET state=?, failing_since='' WHERE state IN (?,?) AND seq IN (SELECT seq FROM outbox_objects WHERE uid=?)`,
-				OutboxPending, OutboxRejected, OutboxPartial, uid)
+			res, err := tx.Exec(`UPDATE outbox SET state=?, failing_since='', user_id=coalesce(?, user_id) WHERE state IN (?,?) AND seq IN (SELECT seq FROM outbox_objects WHERE uid=?)`,
+				OutboxPending, as, OutboxRejected, OutboxPartial, uid)
 			if err != nil {
 				return err
 			}
@@ -241,7 +246,8 @@ func (s *Store) Requeue(uids []string, seqs []int64) (int, error) {
 			n += int(k)
 		}
 		for _, seq := range seqs {
-			res, err := tx.Exec(`UPDATE outbox SET state=?, failing_since='' WHERE state IN (?,?) AND seq=?`, OutboxPending, OutboxRejected, OutboxPartial, seq)
+			res, err := tx.Exec(`UPDATE outbox SET state=?, failing_since='', user_id=coalesce(?, user_id) WHERE state IN (?,?) AND seq=?`,
+				OutboxPending, as, OutboxRejected, OutboxPartial, seq)
 			if err != nil {
 				return err
 			}

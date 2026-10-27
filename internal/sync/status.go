@@ -50,7 +50,7 @@ func Status(h *core.Hub) map[string]any {
 		// Whose token the hub's housekeeping uses, so the Facility Hub app can list the
 		// hubs that depend on a user who is being disabled.
 		"hubTokenOwner": h.Runtime().TokenOwner(), "hubTokenExpires": hubTokenExpires(h),
-		"refused": refused, "refusedGroups": refusedGroups,
+		"refused": refused, "refusedGroups": refusedGroups, "retriesNotApplied": retriesNotApplied(h),
 		// The dataStore entries the hub acts on that any user may write: until a country
 		// protects them, anyone could retire the hub or announce a move (not followed).
 		"unprotected": h.Unprotected(),
@@ -93,6 +93,18 @@ func refusedCounts(h *core.Hub) ([]map[string]any, int) {
 		out = append(out, map[string]any{"kind": k[0], "program": k[1], "code": k[2], "count": counts[k]})
 	}
 	return out, len(keys)
+}
+
+// retriesNotApplied lists the resend instructions this hub did not apply at all, and
+// why (a user to send as whom it cannot send for), for the Facility Hub app.
+func retriesNotApplied(h *core.Hub) []map[string]string {
+	var m map[string]string
+	json.Unmarshal([]byte(h.Store.Meta(metaRetriesNotApplied)), &m)
+	out := []map[string]string{}
+	for _, id := range slices.Sorted(maps.Keys(m)) {
+		out = append(out, map[string]string{"id": id, "reason": m[id]})
+	}
+	return out
 }
 
 func usbStatus(h *core.Hub) any {

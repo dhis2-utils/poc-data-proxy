@@ -11,11 +11,13 @@ import (
 
 // goneAuthor has nurse_a save a person offline and central disable nurse_a before the
 // hub pushes it: the hub marks nurse_a as needing an online login, and the save waits.
+// nurse_b has logged in online, so the hub holds a token for them.
 func goneAuthor(t *testing.T, te, en, nat string) *env {
 	e := newEnv(t)
 	e.setup()
 	a := e.web("nurse_a")
 	a.login()
+	e.web("nurse_b").login()
 	e.offline()
 	a.json("POST", postSync, newPatient(te, en, "Gone", nat, nil), 200)
 	e.central.SetDisabled("nurse_a", true)
@@ -44,8 +46,19 @@ func noLoginGroup(e *env) map[string]any {
 	return nil
 }
 
+func retryAs(e *env, id string, g map[string]any, user string) {
+	r := map[string]any{"id": id, "kind": g["kind"], "program": g["program"], "code": g["code"],
+		"at": time.Now().UTC().Format(time.RFC3339), "by": "hub_admin", "user": user}
+	b, _ := json.Marshal(map[string]any{"retries": []any{r}})
+	if e.central.DataStore["facility-hub-admin"] == nil {
+		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{}
+	}
+	e.central.DataStore["facility-hub-admin"]["retries"] = b
+}
+
 // A user disabled (or deleted) on central never logs in online again: after 7 days
-// their waiting saves become refusals, kept and reported like any other.
+// their waiting saves become refusals, kept and reported like any other, and a hub
+// manager can resend them as another user of the hub.
 func TestAuthorGoneRefusedAfter7Days(t *testing.T) {
 	e := goneAuthor(t, "GoneTe00001", "GoneEn00001", "NAT-9101")
 	h := e.app.Hub
@@ -73,5 +86,51 @@ func TestAuthorGoneRefusedAfter7Days(t *testing.T) {
 	}
 	if e.central.Object("GoneTe00001") != nil {
 		t.Fatal("the save reached central")
+	}
+
+	// Resent as nurse_b: on central, nurse_b created the person.
+	retryAs(e, "r-as-b", noLoginGroup(e), "nurse_b")
+	e.sync()
+	o := e.central.Object("GoneTe00001")
+	if o == nil {
+		t.Fatal("the resent person did not reach central")
+	}
+	if by, _ := o["createdBy"].(map[string]any); by["username"] != "nurse_b" {
+		t.Fatalf("created by %v, want nurse_b", o["createdBy"])
+	}
+	if e.central.Object("GoneEn00001") == nil {
+		t.Fatal("the resent enrollment did not reach central")
+	}
+	if g := refusedGroups(e); len(g) != 0 {
+		t.Fatalf("refusals left after the resend: %v", g)
+	}
+}
+
+// A resend naming a user the hub does not know, or one it cannot push for, changes
+// nothing, and the hub says why in its heartbeat.
+func TestResendAsUnknownUserAppliesNothing(t *testing.T) {
+	e := goneAuthor(t, "GoneTe00002", "GoneEn00002", "NAT-9102")
+	h := e.app.Hub
+	needsLoginFor(e, "nurse_a", 8*24*time.Hour)
+	e.sync()
+	g := noLoginGroup(e)
+	if g == nil {
+		t.Fatalf("no NO_LOGIN refusal: %v", refusedGroups(e))
+	}
+	issues := h.Store.CountIssues()
+	for _, user := range []string{"nobody_here", "nurse_a"} {
+		before := e.central.RequestCount("POST /api/tracker")
+		retryAs(e, "r-"+user, g, user)
+		e.sync()
+		if e.central.Object("GoneTe00002") != nil || e.central.RequestCount("POST /api/tracker") != before {
+			t.Fatalf("a resend as %s sent the save", user)
+		}
+		if noLoginGroup(e) == nil || h.Store.CountIssues() != issues {
+			t.Fatalf("resend as %s: refusals %v, %d issues", user, refusedGroups(e), h.Store.CountIssues())
+		}
+		hb, _ := json.Marshal(e.central.DataStoreValue("facility-hub-status", h.HubID())["retriesNotApplied"])
+		if !bytes.Contains(hb, []byte(`"id":"r-`+user+`"`)) || !bytes.Contains(hb, []byte(user)) {
+			t.Fatalf("heartbeat does not say why the resend as %s was not applied: %s", user, hb)
+		}
 	}
 }

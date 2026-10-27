@@ -396,16 +396,21 @@ func issueGroup(h *core.Hub, is *store.Issue) (program string, codes map[string]
 }
 
 // retry is a resend instruction from the Facility Hub app (facility-hub-admin/retries).
+// User, if given, is the hub user to send the saves as instead of their authors.
 type retry struct {
-	ID, Kind, Program, Code, At string
+	ID, Kind, Program, Code, At, User string
 }
 
-const metaRetriesApplied = "retries_applied" // the retry IDs this hub has applied
+const (
+	metaRetriesApplied    = "retries_applied"     // the retry IDs this hub has applied
+	metaRetriesNotApplied = "retries_not_applied" // why it applied some of them not at all, by ID (JSON)
+)
 
 // applyRetries takes up the resend instructions a hub manager gave in the Facility Hub
 // app after central was fixed: this hub's saves refused with that kind, programme and
-// error code, and what they blocked, are sent again as their authors, once per
-// instruction, when the hub first sees it. Central's new answer stands.
+// error code, and what they blocked, are sent again as their authors, or as the user
+// the instruction names, once per instruction, when the hub first sees it. Central's
+// new answer stands.
 func (w *Worker) applyRetries(ctx context.Context) error {
 	h := w.H
 	var v struct {
@@ -419,10 +424,16 @@ func (w *Worker) applyRetries(ctx context.Context) error {
 		return err
 	}
 	applied := strings.Split(h.Store.Meta(metaRetriesApplied), ",")
+	var notApplied map[string]string
+	json.Unmarshal([]byte(h.Store.Meta(metaRetriesNotApplied)), &notApplied)
+	kept := map[string]string{}
 	var todo []retry
 	var ids []string
 	for _, r := range v.Retries {
 		ids = append(ids, r.ID)
+		if why, ok := notApplied[r.ID]; ok {
+			kept[r.ID] = why
+		}
 		if !slices.Contains(applied, r.ID) {
 			todo = append(todo, r)
 		}
@@ -432,15 +443,44 @@ func (w *Worker) applyRetries(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		uids, seqs := map[string]bool{}, map[int64]bool{}
+		type group struct {
+			program string
+			codes   map[string]bool
+		}
+		groups := map[int64]group{}
 		blocked := map[string][]*store.Issue{} // by the object that blocked them
 		for _, is := range issues {
 			program, codes, by := issueGroup(h, is)
 			if by != "" {
 				blocked[by] = append(blocked[by], is)
 			}
-			for _, r := range todo {
-				if is.Kind != r.Kind || program != r.Program || !codes[r.Code] {
+			groups[is.ID] = group{program, codes}
+		}
+		reassigned := false
+		for _, r := range todo {
+			var as int64 // 0: as their authors
+			if r.User != "" {
+				u, err := h.Store.UserByName(r.User)
+				if err != nil {
+					return err
+				}
+				switch {
+				case u == nil:
+					kept[r.ID] = "user " + r.User + " is not known on this hub"
+				case u.CannotPush():
+					kept[r.ID] = "user " + r.User + " cannot send: they must log in online on this hub first"
+				default:
+					as = u.ID
+				}
+				if as == 0 {
+					slog.Warn("retry from the Facility Hub app not applied", "id", r.ID, "reason", kept[r.ID])
+					continue
+				}
+			}
+			uids, seqs := map[string]bool{}, map[int64]bool{}
+			for _, is := range issues {
+				g := groups[is.ID]
+				if is.Kind != r.Kind || g.program != r.Program || !g.codes[r.Code] {
 					continue
 				}
 				if is.Kind == store.OutboxAggregate && w.aggregateReplaced(is) {
@@ -451,21 +491,31 @@ func (w *Worker) applyRetries(ctx context.Context) error {
 				}
 				uids[is.ObjectUID], seqs[is.OutboxSeq] = true, true
 			}
-		}
-		for queue := slices.Collect(maps.Keys(uids)); len(queue) > 0; queue = queue[1:] {
-			for _, is := range blocked[queue[0]] {
-				if !uids[is.ObjectUID] {
-					uids[is.ObjectUID], seqs[is.OutboxSeq] = true, true
-					queue = append(queue, is.ObjectUID)
+			for queue := slices.Collect(maps.Keys(uids)); len(queue) > 0; queue = queue[1:] {
+				for _, is := range blocked[queue[0]] {
+					if !uids[is.ObjectUID] {
+						uids[is.ObjectUID], seqs[is.OutboxSeq] = true, true
+						queue = append(queue, is.ObjectUID)
+					}
 				}
 			}
+			n, err := h.Store.Requeue(slices.Collect(maps.Keys(uids)), slices.Collect(maps.Keys(seqs)), as)
+			if err != nil {
+				return err
+			}
+			reassigned = reassigned || (as != 0 && n > 0)
+			slog.Info("retry from the Facility Hub app", "id", r.ID, "as", r.User, "objects", len(uids), "entries", n)
 		}
-		n, err := h.Store.Requeue(slices.Collect(maps.Keys(uids)), slices.Collect(maps.Keys(seqs)))
-		if err != nil {
-			return err
+		if reassigned {
+			// Saves sent as another user get central's answer to that user: their old
+			// issues go, so a refusal comes back with central's reason.
+			if err := w.clearResolvedIssues(ctx); err != nil {
+				return err
+			}
 		}
-		slog.Info("retry from the Facility Hub app", "instructions", len(todo), "objects", len(uids), "entries", n)
 	}
+	b, _ := json.Marshal(kept)
+	h.Store.SetMeta(metaRetriesNotApplied, string(b))
 	h.Store.SetMeta(metaRetriesApplied, strings.Join(ids, ","))
 	return nil
 }

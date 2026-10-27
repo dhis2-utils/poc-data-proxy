@@ -801,3 +801,30 @@ func TestAggregatePushRetriesAnswersFromTheWay(t *testing.T) {
 		})
 	}
 }
+
+// An aggregate edit whose author central disabled is refused after 7 days without an
+// online login, and a resend naming another hub user sends it as that user.
+func TestAggregateAuthorGoneResentAsAnother(t *testing.T) {
+	e, ag, nurse, clerk := aggregateEnv(t)
+	e.NeedFake()
+	pe := aggPeriod(e, ag)
+	e.Offline()
+	nurse.PostDataValue("/api/"+e.App.Hub.APIMinor()+"/dataValues", cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "5"))
+	e.Fake.SetDisabled(nurse.User, true)
+	e.Online()
+	e.Sync()
+	at := time.Now().Add(-8 * 24 * time.Hour).UTC().Format(time.RFC3339Nano)
+	if _, err := e.App.Hub.Store.Keys.Exec(`UPDATE key_slots SET needs_login_at=? WHERE username=?`, at, nurse.User); err != nil {
+		t.Fatal(err)
+	}
+	e.Sync()
+	if is, _ := e.App.Hub.Store.UnresolvedIssues(10); len(is) != 1 || !strings.Contains(string(is[0].Error), "NO_LOGIN") {
+		t.Fatalf("issues after 7 days: %d", len(is))
+	}
+	e.Fake.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"retries": json.RawMessage(
+		`{"retries":[{"id":"r1","kind":"aggregate","program":"","code":"NO_LOGIN","at":"` + time.Now().UTC().Format(time.RFC3339) + `","by":"admin","user":"` + clerk.User + `"}]}`)}
+	e.Sync()
+	if val, by, _ := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "5" || by != clerk.User {
+		t.Fatalf("after the resend central has %q by %q, want 5 by %s", val, by, clerk.User)
+	}
+}
