@@ -119,6 +119,7 @@ type Hub struct {
 	// localWrites is held shared by every write to the store that only the hub holds
 	// (offline imports, reserved values handed out) and exclusively to freeze them.
 	localWrites sync.RWMutex
+	unlockMu    sync.Mutex // one Unlock at a time
 	hosts       hostCache
 }
 
@@ -369,6 +370,14 @@ func (h *Hub) UpdateRuntime(fn func(*Runtime)) error {
 // If any step fails the store is locked again: a half-unlocked hub would serve cached
 // answers with no runtime (security review 2026-10-20, S14).
 func (h *Hub) Unlock(dk hubcrypto.Key) (err error) {
+	// Staff logging in together after a restart all find the store locked: one
+	// unlocks it, the others find it done. Two unlocks rebuilt the index together,
+	// and saves made meanwhile failed (docs/ADVERSARIAL-TESTING.md, E1).
+	h.unlockMu.Lock()
+	defer h.unlockMu.Unlock()
+	if h.Store.Unlocked() {
+		return nil
+	}
 	if err := h.Store.SetDK(dk); err != nil {
 		return err
 	}
