@@ -62,4 +62,15 @@ func TestStickAutoAsksThenKeepsCopy(t *testing.T) {
 	if entries, _ := os.ReadDir(d1); len(entries) != 0 {
 		t.Fatal("the hub moved its copy to another drive")
 	}
+	// A drive made to look like the chosen one (its label and serial) gets nothing, and
+	// the admin page asks again.
+	d3 := t.TempDir()
+	plugged = append(plugged, stick.Drive{Root: d3, Label: "KINGSTON", Serial: 2})
+	e.app.Stick.Tick(context.Background())
+	if entries, _ := os.ReadDir(d3); len(entries) != 0 {
+		t.Fatalf("a look-alike drive got %v", entries)
+	}
+	if st := e.app.Stick.Status(); !st.Unknown || len(st.Ask) != 2 {
+		t.Fatalf("status with a look-alike drive: %+v", st)
+	}
 }

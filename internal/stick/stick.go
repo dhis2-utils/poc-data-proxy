@@ -4,6 +4,9 @@ package stick
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"github.com/dhis2/facility-hub/internal/atomicfile"
 	"github.com/dhis2/facility-hub/internal/devkey"
@@ -30,10 +33,17 @@ type Status struct {
 	// whether the chosen one is not plugged in.
 	Ask     []Drive `json:"ask,omitempty"`
 	Missing bool    `json:"missing,omitempty"`
+	// Unknown: the stick plugged in is not the box's own; it gets nothing.
+	Unknown bool `json:"unknown,omitempty"`
 }
 
 // MetaChoice is the drive a staff member chose for the copy (usb_dir: auto).
 const MetaChoice = "usb_choice"
+
+// MetaStick is the mark of the box's own stick, also in facility-hub/<hub ID>/stick-id
+// on it: once set up, the hub copies only to the stick holding it. The stick in the
+// box before set-up gets it, or one a staff member takes on later (Choose).
+const MetaStick = "usb_stick"
 
 // Stick runs on its own timer, so a slow or failing stick never delays a save.
 type Stick struct {
@@ -87,24 +97,79 @@ func (s *Stick) locate() bool {
 	s.autoRoot = root
 	s.st.Ask, s.st.Missing = ask, missing
 	if root == "" {
-		s.st.Present, s.st.Writable, s.st.FreeBytes = false, false, 0
+		s.st.Present, s.st.Writable, s.st.FreeBytes, s.st.Unknown = false, false, 0, false
 	}
 	s.mu.Unlock()
 	return root != ""
 }
 
-// Choose keeps the hub's copy on the removable drive at root from now on: a staff
-// member's choice on the admin page (usb_dir: auto).
+// Choose keeps the hub's copy on the removable drive at root from now on (usb_dir:
+// auto), or on the stick plugged in (root ignored): a staff member's choice on the
+// admin page, which also replaces a lost stick. A stick marked before gets nothing more.
 func (s *Stick) Choose(root string) error {
+	s.tickMu.Lock()
+	defer s.tickMu.Unlock()
+	if !s.auto() {
+		if !s.plugged(s.dir()) {
+			return errors.New("no stick is plugged in")
+		}
+		return s.mark(s.dir(), true)
+	}
 	for _, d := range Removable() {
 		if d.Root == root {
-			if err := os.MkdirAll(filepath.Join(root, "facility-hub", s.H.HubID()), 0o700); err != nil {
+			if err := s.mark(root, true); err != nil {
 				return err
 			}
 			return s.H.Store.SetMeta(MetaChoice, d.ID())
 		}
 	}
 	return errors.New("that drive is not plugged in")
+}
+
+// mark writes the hub's mark on the stick at dir: a new one with renew or when the hub
+// has none yet, kept in the key file.
+func (s *Stick) mark(dir string, renew bool) error {
+	had := s.H.Store.Meta(MetaStick)
+	tok := had
+	if tok == "" || renew {
+		b := make([]byte, 32)
+		rand.Read(b)
+		tok = hex.EncodeToString(b)
+	}
+	d := filepath.Join(dir, "facility-hub", s.H.HubID())
+	if err := os.MkdirAll(d, 0o700); err != nil {
+		return err
+	}
+	path := filepath.Join(d, "stick-id")
+	if b, err := os.ReadFile(path); err != nil || string(b) != tok {
+		if err := atomicfile.Write(path, []byte(tok), 0o600); err != nil {
+			return err
+		}
+	}
+	if tok == had {
+		return nil
+	}
+	s.keysAt = 0 // a new stick needs the key file too
+	return s.H.Store.SetMeta(MetaStick, tok)
+}
+
+// own reports whether the stick is the box's own: it holds the hub's mark. A hub
+// upgraded from a version without marks takes on the stick holding its copy (a state
+// that opens with its data key).
+func (s *Stick) own() bool {
+	want := s.H.Store.Meta(MetaStick)
+	if want == "" {
+		sealed, err := os.ReadFile(filepath.Join(s.hubDir(), "state.rec"))
+		if err != nil {
+			return false
+		}
+		if _, err := s.H.Store.OpenBlob(stateAAD, sealed); err != nil {
+			return false
+		}
+		return s.mark(s.dir(), false) == nil
+	}
+	got, err := os.ReadFile(filepath.Join(s.hubDir(), "stick-id"))
+	return err == nil && subtle.ConstantTimeCompare(got, []byte(want)) == 1
 }
 
 // Run ticks every minute until ctx ends.
@@ -150,7 +215,10 @@ func (s *Stick) Tick(ctx context.Context) {
 	}
 	st := s.check()
 	s.setStatus(func(cur *Status) {
-		cur.Present, cur.Writable, cur.FreeBytes, cur.Error = st.Present, st.Writable, st.FreeBytes, st.Error
+		cur.Present, cur.Writable, cur.FreeBytes, cur.Error, cur.Unknown = st.Present, st.Writable, st.FreeBytes, st.Error, st.Unknown
+		if st.Unknown && s.auto() {
+			cur.Ask = Removable() // choose again
+		}
 	})
 	if !st.Present || !st.Writable {
 		return
@@ -160,7 +228,7 @@ func (s *Stick) Tick(ctx context.Context) {
 		err = s.writeInfo(s.Info())
 	}
 	if s.H.Mode() == core.ModeSetup {
-		err = errors.Join(err, s.writeSetupCode())
+		err = errors.Join(err, s.writeSetupCode(), s.mark(s.dir(), false))
 	} else {
 		os.Remove(filepath.Join(s.root(), "setup-code.txt")) // used: it no longer works
 		err = errors.Join(err, s.mirror())
@@ -170,17 +238,27 @@ func (s *Stick) Tick(ctx context.Context) {
 	}
 }
 
+// plugged reports whether a stick is at dir.
+func (s *Stick) plugged(dir string) bool {
+	fi, err := os.Stat(dir)
+	if err != nil || !fi.IsDir() {
+		return false
+	}
+	// The folder, not a stick: never fill the hub's own disk.
+	return !s.H.Cfg.USBRequireMount || s.auto() || mountPoint(dir)
+}
+
 // check finds the stick and writes and reads back a small file.
 func (s *Stick) check() Status {
 	var st Status
-	fi, err := os.Stat(s.dir())
-	if err != nil || !fi.IsDir() {
+	if !s.plugged(s.dir()) {
 		return st
 	}
-	if s.H.Cfg.USBRequireMount && !s.auto() && !mountPoint(s.dir()) {
-		return st // the folder, not a stick: never fill the hub's own disk
-	}
 	st.Present = true
+	if s.H.Mode() != core.ModeSetup && !s.own() {
+		st.Unknown = true // someone else's stick: nothing of the hub's goes on it
+		return st
+	}
 	if err := os.MkdirAll(s.root(), 0o700); err != nil {
 		st.Error = err.Error()
 		return st

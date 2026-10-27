@@ -50,7 +50,7 @@ type UI struct {
 	// Restart restarts the hub process (nil where nothing restarts it, as in tests).
 	Restart func()
 	// ChooseUSB keeps the hub's copy on the removable drive at a root (Windows,
-	// usb_dir: auto; stick.Stick.Choose).
+	// usb_dir: auto), or on the stick plugged in (stick.Stick.Choose).
 	ChooseUSB func(root string) error
 	// Net manages the network on a Pi (nil elsewhere): the pages' network section.
 	Net   *netsetup.Manager

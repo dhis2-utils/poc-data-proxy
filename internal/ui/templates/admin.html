@@ -58,6 +58,8 @@
 {{with .Heartbeat.usb}}<div class="card"><h2>USB stick</h2>
 {{if .Ask}}<p>The hub keeps a copy on a USB stick, so a new disk can be restored from it. Choose the stick that stays in this PC; staff's own sticks must not be chosen.</p>
 {{range .Ask}}<form class="inline" method="post" action="/hub/ui/usb"><input type="hidden" name="root" value="{{.Root}}"><button class="secondary">Keep the hub's copy on drive {{.Root}} ({{.Label}}, {{gb .Size}})</button></form>{{end}}
+{{else if .Unknown}}<p><b>This is not the box's USB stick</b>: the hub copies nothing to it. Put the box's stick back. If it is lost, keep the hub's copy on this one from now on; the lost one then gets nothing more.</p>
+<form class="inline" method="post" action="/hub/ui/usb"><button class="secondary">Keep the hub's copy on this stick</button></form>
 {{else if .Missing}}<p><b>The USB stick chosen for the hub's copy is not plugged in.</b> Put it back; the hub does not use another stick by itself.</p>
 {{else}}<p>{{if not .Present}}<b>No stick found.</b> Put the box's USB stick in: it holds the copy a new disk is restored from.{{else if not .Writable}}<b>The stick does not work</b>{{with .Error}}: {{.}}{{end}}. Replace it.{{else}}Working. Last copy {{or (short .LastCopy) "none yet"}}{{end}}</p>{{end}}</div>{{end}}
 

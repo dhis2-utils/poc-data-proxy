@@ -18,6 +18,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/config"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 	"github.com/dhis2/facility-hub/internal/hubtls"
+	"github.com/dhis2/facility-hub/internal/stick"
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
@@ -38,6 +39,7 @@ func stickEnv(t *testing.T, codeMode bool) (*env, string) {
 		}
 	}
 	e.start()
+	e.app.Stick.Tick(context.Background()) // at boot: the box's stick gets the hub's mark
 	return e, usb
 }
 
@@ -235,6 +237,7 @@ func TestStickDropsPushedSaves(t *testing.T) {
 func TestStickMustBeMounted(t *testing.T) {
 	e, usb := stickEnv(t, true)
 	e.app.Hub.Cfg.USBRequireMount = true
+	os.RemoveAll(filepath.Join(usb, "facility-hub")) // from the boot tick, without the check
 	e.app.Stick.Tick(context.Background())
 	if _, err := os.Stat(filepath.Join(usb, "facility-hub")); err == nil {
 		t.Fatal("wrote to a folder that is not a mount point")
@@ -478,5 +481,109 @@ func TestStickKeepsHubCertificate(t *testing.T) {
 	}
 	if got := hubtls.Fingerprint(e.dir); got != fp {
 		t.Fatal("the restored authority was replaced at the next start")
+	}
+}
+
+// swapStick takes the stick at usb out and plugs in another (a blank one, or the stick
+// at other); it returns where the stick taken out is kept.
+func swapStick(t *testing.T, usb, other string) string {
+	t.Helper()
+	out := filepath.Join(t.TempDir(), "stick")
+	if err := os.Rename(usb, out); err != nil {
+		t.Fatal(err)
+	}
+	if other == "" {
+		os.MkdirAll(usb, 0o700)
+	} else if err := os.Rename(other, usb); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// Review critical: the hub copies only to the box's own stick (the one in the box
+// before set-up, or one a staff member took on since): a stick someone plugs in gets
+// nothing of the hub's, and the hub says an unknown stick is in.
+func TestStickForeignGetsNothing(t *testing.T) {
+	e, usb, id := stickWithSaves(t)
+	box := swapStick(t, usb, "")
+	e.app.Stick.Tick(context.Background())
+	if entries, _ := os.ReadDir(usb); len(entries) != 0 {
+		t.Fatalf("a foreign stick got %v", entries)
+	}
+	if st := e.app.Stick.Status(); !st.Present || !st.Unknown || st.Writable {
+		t.Fatalf("status with a foreign stick: %+v", st)
+	}
+	a := e.web("nurse_a")
+	a.login()
+	if _, page := a.do("GET", "/hub/ui", nil); !strings.Contains(string(page), "copy on this stick") {
+		t.Fatal("the admin page does not say the stick is not the box's")
+	}
+	// A copy of the box's stick's folders, without its mark, is no better.
+	os.MkdirAll(filepath.Join(usb, "facility-hub", id), 0o700)
+	os.WriteFile(filepath.Join(usb, "facility-hub", id, "stick-id"), []byte("guess"), 0o600)
+	e.app.Stick.Tick(context.Background())
+	if files, _ := filepath.Glob(filepath.Join(usb, "facility-hub", id, "*")); len(files) != 1 {
+		t.Fatalf("a stick with a wrong mark got %v", files)
+	}
+	swapStick(t, usb, box) // the box's stick back: copying goes on
+	a.json("POST", postSync, newPatient("StickTe0003", "StickEn0003", "Stick", "NAT-5353", nil), 200)
+	e.app.Stick.Tick(context.Background())
+	if files, _ := filepath.Glob(filepath.Join(usb, "facility-hub", id, "outbox", "*")); len(files) != 2 {
+		t.Fatalf("the box's stick after it came back: %v (status %+v)", files, e.app.Stick.Status())
+	}
+}
+
+// A lost stick is replaced on the admin page: the new one is taken on and gets the
+// whole copy, a new disk restores from it, and the old one, if found, gets nothing more.
+func TestStickReplaced(t *testing.T) {
+	e, usb, id := stickWithSaves(t)
+	old := swapStick(t, usb, "")
+	a := e.web("hub_admin")
+	a.login()
+	resp, err := a.postForm("/hub/ui/usb", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	e.app.Stick.Tick(context.Background())
+	for _, f := range []string{"keys.db", "state.rec", "stick-id"} {
+		if _, err := os.Stat(filepath.Join(usb, "facility-hub", id, f)); err != nil {
+			t.Fatalf("the new stick: %v (status %+v)", err, e.app.Stick.Status())
+		}
+	}
+	newStick := swapStick(t, usb, old)
+	e.app.Stick.Tick(context.Background())
+	if st := e.app.Stick.Status(); !st.Unknown {
+		t.Fatalf("the old stick is still taken: %+v", st)
+	}
+	swapStick(t, usb, newStick)
+	e.diskDies()
+	e.restoreFromStick(id, "nurse_a", fc.Password)
+	e.web("nurse_a").login()
+	e.sync()
+	if e.central.Object("StickTe0001") == nil {
+		t.Fatal("the save on the new stick did not reach central")
+	}
+	e.app.Stick.Tick(context.Background())
+	if st := e.app.Stick.Status(); st.Unknown || st.LastCopy == "" {
+		t.Fatalf("the restored hub does not copy to the stick it came from: %+v", st)
+	}
+}
+
+// A hub upgraded from a version without marks takes on the stick that holds its copy,
+// and only that one.
+func TestStickMarkedAfterUpgrade(t *testing.T) {
+	e, usb, id := stickWithSaves(t)
+	e.app.Hub.Store.SetMeta(stick.MetaStick, "") // as before marks
+	os.Remove(filepath.Join(usb, "facility-hub", id, "stick-id"))
+	box := swapStick(t, usb, "")
+	e.app.Stick.Tick(context.Background())
+	if entries, _ := os.ReadDir(usb); len(entries) != 0 || !e.app.Stick.Status().Unknown {
+		t.Fatalf("a blank stick was taken on: %v", entries)
+	}
+	swapStick(t, usb, box)
+	e.app.Stick.Tick(context.Background())
+	if st := e.app.Stick.Status(); st.Unknown || e.app.Hub.Store.Meta(stick.MetaStick) == "" {
+		t.Fatalf("the hub's own stick was not taken on: %+v", st)
 	}
 }

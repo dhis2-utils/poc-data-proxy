@@ -64,7 +64,7 @@ One generic image per release (built 2026-10-19: `image/`, see image/README.md).
 - **Firewall** (`nftables`): from private addresses only, ports 80 and 443 and mDNS, plus DHCP and DNS on the hub's own Wi-Fi.
 - **Updates:** `unattended-upgrades` for OS security fixes, rebooting at 03:00 when needed. The hub binary upgrades itself from the supplier's GitHub releases, to the version the country chose on central (section 6, "Upgrades").
 - **Watchdog:** the hardware watchdog (`RuntimeWatchdogSec=15`), plus `Restart=always` in systemd.
-- **The USB stick** is mounted for the hub at `/media/hub-usb` when plugged in (FAT or exFAT; a udev rule).
+- **The USB stick** is mounted for the hub at `/media/hub-usb` when plugged in (FAT or exFAT; a udev rule). Any stick is mounted, but once set up the hub copies only to the box's own: the stick in the box before set-up, or one an admin took on later on the hub's page (RECOVERY.md, C2, "Only the box's own stick").
 - **No remote access.** A support VPN was considered and is out of scope for now: it needs a server, and it would add little, since the hub's data stays encrypted until a staff member logs in. Support works from central (section 6). A hub that does not come up at all writes what support needs to `hub-diag.txt` on its boot partition, readable on any computer (image/README.md).
 - **A machine ID made at first boot**, so cloned images do not share one.
 
@@ -149,7 +149,7 @@ For facilities without a Pi kit: the same hub on a PC they already have. That ca
 - **Devices use `dhis2.local`, as on the Pi.** The hub answers it itself on the network (`internal/mdns`), and stays silent if another device already does. The PC's name and IP are the fallback; the hub's page on the PC shows them.
 - **Set-up only on the PC itself:** being at the PC proves presence at the facility, so no setup code is needed.
 - **After a restart**, including Windows Update, the first staff login through the hub unlocks it, offline too. Until then saves wait. Nothing unlocks it without a person.
-- **USB stick.** The hub keeps its copy on a stick a staff member chose on the admin page (`usb_dir: auto`), found again by its folder whatever its drive letter. It never picks one by itself.
+- **USB stick.** The hub keeps its copy on a stick a staff member chose on the admin page (`usb_dir: auto`), found again by its label and serial number, or its folder, whatever its drive letter. It never picks one by itself. Choosing marks the stick as on the Pi (RECOVERY.md, C2, "Only the box's own stick"): a drive with the same label and serial but without the mark gets nothing, and the admin page asks again.
 - **Upgrades.** The same releases and staging as the Pi. The hub runs from its data folder, replaces its own `hub.exe` (the running one is renamed), and the service manager starts the new one. The data key is handed over in a file sealed to the hub's account (DPAPI), read once and refused after 2 minutes.
 - **Not checked until a Windows machine runs it:** everything in docs/TESTING.md, "Windows".
 

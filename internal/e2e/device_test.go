@@ -38,6 +38,7 @@ func TestDeviceKeyProtectsTheDisk(t *testing.T) {
 	e.cfgHook = func(c *config.Config) { c.USBDir, c.USBRequireMount = usb, false }
 	t.Cleanup(func() { devkey.Use(nil) })
 	e.start()
+	e.app.Stick.Tick(context.Background()) // at boot: the box's stick gets the hub's mark
 	if devkey.Key() == nil {
 		t.Fatal("no device key with a TPM")
 	}
