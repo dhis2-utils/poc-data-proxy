@@ -2,12 +2,12 @@ package testkit
 
 import (
 	"bytes"
-	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -108,24 +108,6 @@ func NewNetcut(target string) (*Netcut, error) {
 		if d := n.delay.Load(); d > 0 {
 			time.Sleep(time.Duration(d))
 		}
-		if v := n.version.Load(); v != nil && strings.HasSuffix(r.URL.Path, "/api/system/info") {
-			r.Header.Del("Accept-Encoding") // a plain answer, to rewrite
-			b := &buffered{header: http.Header{}, status: 200}
-			rp.ServeHTTP(b, r)
-			var info map[string]any
-			out := b.body.Bytes()
-			if json.Unmarshal(out, &info) == nil && info["version"] != nil {
-				info["version"] = *v
-				out, _ = json.Marshal(info)
-			}
-			for k, vs := range b.header {
-				w.Header()[k] = vs
-			}
-			w.Header().Del("Content-Length")
-			w.WriteHeader(b.status)
-			w.Write(out)
-			return
-		}
 		asked := *r.URL // the proxy rewrites r.URL
 		f := n.take(r)
 		record := func(status int, bytes int64) {
@@ -139,6 +121,19 @@ func NewNetcut(target string) (*Netcut, error) {
 		}
 		if bps := n.rate.Load(); bps > 0 && r.Body != nil {
 			r.Body = io.NopCloser(&slowReader{r: r.Body, bps: bps})
+		}
+		if v := n.version.Load(); v != nil && f == nil && strings.HasSuffix(r.URL.Path, "/api/system/info") {
+			r.Header.Del("Accept-Encoding") // a plain answer, to rewrite
+			b := &buffered{header: http.Header{}, status: 200}
+			rp.ServeHTTP(b, r)
+			record(b.status, int64(b.body.Len()))
+			for k, vs := range b.header {
+				w.Header()[k] = vs
+			}
+			w.Header().Del("Content-Length")
+			w.WriteHeader(b.status)
+			w.Write(versionRe.ReplaceAll(b.body.Bytes(), []byte(`"version":"`+*v+`"`)))
+			return
 		}
 		if f == nil {
 			m := &meter{ResponseWriter: w, status: 200}
@@ -203,18 +198,20 @@ func (n *Netcut) Down() bool               { return n.down.Load() }
 func (n *Netcut) SetDelay(d time.Duration) { n.delay.Store(int64(d)) }
 func (n *Netcut) Close() error             { return n.srv.Close() }
 
-// SetVersion makes /api/system/info answer this version instead of central's, as
-// central would after an upgrade to it; "" ends it. Everything else stays central's.
+// Refused counts the requests the hub made while the uplink was down.
+func (n *Netcut) Refused() int64 { return n.refused.Load() }
+
+// SetVersion makes central's /api/system/info say it runs version v, as after an
+// upgrade of central the hub's release may not support; "" passes central's own.
 func (n *Netcut) SetVersion(v string) {
 	if v == "" {
 		n.version.Store(nil)
-	} else {
-		n.version.Store(&v)
+		return
 	}
+	n.version.Store(&v)
 }
 
-// Refused counts the requests the hub made while the uplink was down.
-func (n *Netcut) Refused() int64 { return n.refused.Load() }
+var versionRe = regexp.MustCompile(`"version"\s*:\s*"[^"]*"`)
 
 // SetRate limits the link to bps bytes per second each way (0: unlimited), as a slow
 // mobile uplink; SetDelay adds its latency.
