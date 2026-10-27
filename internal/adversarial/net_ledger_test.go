@@ -105,8 +105,25 @@ func netStart(t *testing.T) *netRun {
 	if !e.Live() {
 		t.Skip("adversarial scenarios run against a real DHIS2 (HUB_MANIFEST)")
 	}
+	r := newRun(t, e)
+	e.Setup()
+	for _, role := range []string{tk.RoleNurse, tk.RoleRestricted} {
+		if _, ok := e.M.User(role); ok {
+			e.Web(role).Login()
+		}
+	}
+	e.Sync()
+	r.p = e.Detach()
+	t.Cleanup(r.keepLog)
+	r.p.WaitFor("online", time.Minute, tk.Online)
+	t.Logf("run tag %s; hub log %s", r.tag, r.p.Log)
+	return r
+}
+
+// newRun is a run's clients and ledger for the Env's primary program, writing in a
+// stage every writer may use, with a numeric value to change.
+func newRun(t *testing.T, e *tk.Env) *netRun {
 	r := &netRun{t: t, e: e, prog: e.M.Primary(), tag: "Zqadv" + strings.ToLower(tk.UID()[:6]), ledger: &netLedger{}}
-	// A stage every writer may use, with a numeric value to change.
 	for _, st := range r.prog.Stages {
 		if st == r.prog.RestrictedStage {
 			continue
@@ -123,17 +140,6 @@ func netStart(t *testing.T) *netRun {
 	if r.de == "" {
 		t.Skip("the primary program has no stage with a numeric value to save")
 	}
-	e.Setup()
-	for _, role := range []string{tk.RoleNurse, tk.RoleRestricted} {
-		if _, ok := e.M.User(role); ok {
-			e.Web(role).Login()
-		}
-	}
-	e.Sync()
-	r.p = e.Detach()
-	t.Cleanup(r.keepLog)
-	r.p.WaitFor("online", time.Minute, tk.Online)
-	t.Logf("run tag %s; hub log %s", r.tag, r.p.Log)
 	return r
 }
 
