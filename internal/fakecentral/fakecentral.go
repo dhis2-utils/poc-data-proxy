@@ -74,6 +74,9 @@ type Central struct {
 	// LoseResponse ("PUT /api/...": n) carries out the next n such requests but answers
 	// them with 502, as when the answer is lost on the way back.
 	LoseResponse map[string]int
+	// FailHTML makes a path answer this status with an HTML page, as a proxy or a
+	// firewall in front of central does (tests).
+	FailHTML map[string]int
 	// CutResponse ("POST /api/...": n) carries out the next n such requests but cuts
 	// their answer off halfway, as when the connection drops while the hub reads it.
 	CutResponse map[string]int
@@ -364,6 +367,7 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 	c.mu.Lock()
 	c.Requests[r.Method+" "+r.URL.Path]++
 	fail := c.FailPaths[r.URL.Path]
+	failHTML := c.FailHTML[r.URL.Path]
 	delay := c.delay
 	if c.failShare > 0 {
 		// Every request whose count crosses a multiple of 1/failShare fails: the
@@ -376,6 +380,12 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 	c.mu.Unlock()
 	time.Sleep(delay)
 	p := r.URL.Path
+	if failHTML != 0 {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(failHTML)
+		fmt.Fprintf(w, "<html><body><h1>%d %s</h1><hr>nginx</body></html>", failHTML, http.StatusText(failHTML))
+		return
+	}
 	if fail != 0 {
 		webMessage(w, fail, "failing as asked", "")
 		return

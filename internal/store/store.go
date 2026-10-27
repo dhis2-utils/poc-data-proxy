@@ -217,6 +217,10 @@ CREATE INDEX agg_forms_ds ON agg_forms(data_set, fetched_at);
 	// heartbeat, each sync cycle) without reading every object (stress test on Windows,
 	// 2026-10-21). Only unsynced rows are in it, so it stays small.
 	`CREATE INDEX objects_unsynced ON objects(sync_state) WHERE sync_state <> 'synced';`,
+	// 3: when an outbox entry first got an answer that was not an import report, so
+	// such an entry is refused after a day instead of retried for ever (push.go). A
+	// new column with a constant default: existing rows are not rewritten.
+	`ALTER TABLE outbox ADD COLUMN failing_since TEXT NOT NULL DEFAULT '';`,
 }
 
 // DataPath is the data file that belongs to the key file at path.

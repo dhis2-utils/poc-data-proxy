@@ -106,3 +106,40 @@ func countOf(s []string, v string) int {
 	}
 	return n
 }
+
+// A non-report answer that is not a temporary one (a proxy's 413 page, say) keeps the
+// save pending, but not for ever: after a day of such answers the entry is refused,
+// with the answer, so a manager sees it and it no longer holds up the saves after it.
+func TestPushRefusesAfterADayOfOtherAnswers(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	h := e.app.Hub
+	a := e.web("nurse_a")
+	a.login()
+	e.offline()
+	a.json("POST", postSync, newPatient("DayTe000001", "DayEn000001", "Day", "", nil), 200)
+	e.central.FailHTML = map[string]int{"/api/tracker": 413}
+	e.online()
+	e.sync()
+	if n := h.Store.CountOutbox(store.OutboxPending); n != 1 {
+		t.Fatalf("pending after the first 413 page: %d", n)
+	}
+	if n := h.Store.CountIssues(); n != 0 {
+		t.Fatalf("%d refusals after the first 413 page", n)
+	}
+	// A day later, still the same answer.
+	day := time.Now().Add(-25 * time.Hour).UTC().Format(time.RFC3339)
+	if _, err := h.Store.DB().Exec(`UPDATE outbox SET failing_since = ? WHERE failing_since <> ''`, day); err != nil {
+		t.Fatal(err)
+	}
+	e.sync()
+	if n := h.Store.CountOutbox(store.OutboxPending); n != 0 {
+		t.Fatalf("still pending after a day of 413 pages: %d", n)
+	}
+	if n := h.Store.CountIssues(); n == 0 {
+		t.Fatal("no refusal recorded after a day of 413 pages")
+	}
+	if o := h.Index.Get("DayTe000001"); o == nil || o.SyncState != store.SyncRejected {
+		t.Fatalf("not marked refused: %+v", o)
+	}
+}

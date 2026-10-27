@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Outbox entry kinds.
@@ -202,6 +203,19 @@ func (s *Store) NoteAttempt(seq int64, lastError string) error {
 	return err
 }
 
+// FailingSince records that the entry got an answer that was not an import report,
+// unless an earlier one is recorded, and returns when the first came.
+func (s *Store) FailingSince(seq int64) time.Time {
+	s.write(`UPDATE outbox SET failing_since=? WHERE seq=? AND failing_since=''`, time.Now().UTC().Format(time.RFC3339), seq)
+	var since string
+	s.DB().QueryRow(`SELECT failing_since FROM outbox WHERE seq=?`, seq).Scan(&since)
+	t, err := time.Parse(time.RFC3339, since)
+	if err != nil {
+		return time.Now()
+	}
+	return t
+}
+
 func (s *Store) CountOutbox(state string) int {
 	var n int
 	s.DB().QueryRow(`SELECT count(*) FROM outbox WHERE state=?`, state).Scan(&n)
@@ -218,7 +232,7 @@ func (s *Store) Requeue(uids []string, seqs []int64) (int, error) {
 			if _, err := tx.Exec(`UPDATE objects SET sync_state=? WHERE uid=? AND sync_state=?`, SyncPending, uid, SyncRejected); err != nil {
 				return err
 			}
-			res, err := tx.Exec(`UPDATE outbox SET state=? WHERE state IN (?,?) AND seq IN (SELECT seq FROM outbox_objects WHERE uid=?)`,
+			res, err := tx.Exec(`UPDATE outbox SET state=?, failing_since='' WHERE state IN (?,?) AND seq IN (SELECT seq FROM outbox_objects WHERE uid=?)`,
 				OutboxPending, OutboxRejected, OutboxPartial, uid)
 			if err != nil {
 				return err
@@ -227,7 +241,7 @@ func (s *Store) Requeue(uids []string, seqs []int64) (int, error) {
 			n += int(k)
 		}
 		for _, seq := range seqs {
-			res, err := tx.Exec(`UPDATE outbox SET state=? WHERE state IN (?,?) AND seq=?`, OutboxPending, OutboxRejected, OutboxPartial, seq)
+			res, err := tx.Exec(`UPDATE outbox SET state=?, failing_since='' WHERE state IN (?,?) AND seq=?`, OutboxPending, OutboxRejected, OutboxPartial, seq)
 			if err != nil {
 				return err
 			}

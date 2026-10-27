@@ -174,9 +174,18 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 	}
 	persisted, errsByUID, perr := h.API().TrackerResult(resp.StatusCode, rb)
 	if perr != nil {
-		// Not an import report (a proxy's page, say): it says nothing about the saves.
-		h.Store.NoteAttempt(e.Seq, perr.Error())
-		return pushResult{stop: true}, nil
+		// Not an import report (a proxy's page, say): it says nothing about the saves,
+		// so they are tried again. After a day of such answers the entry is refused, so
+		// it does not hold up the saves after it for ever, and a manager sees why.
+		if time.Since(h.Store.FailingSince(e.Seq)) < 24*time.Hour {
+			h.Store.NoteAttempt(e.Seq, perr.Error())
+			return pushResult{stop: true}, nil
+		}
+		msg := (&central.HTTPError{Status: resp.StatusCode, Body: rb}).Error()
+		for _, it := range send {
+			w.reject(e, it, nil, msg, refusedAt)
+		}
+		return pushResult{}, h.Store.FinishOutbox(e.Seq, store.OutboxRejected, perr.Error())
 	}
 	ok, bad := 0, len(blocked)
 	for _, it := range send {
