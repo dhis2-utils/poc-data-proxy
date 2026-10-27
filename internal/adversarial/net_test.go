@@ -2,7 +2,6 @@ package adversarial
 
 import (
 	"net/http"
-	"os"
 	"testing"
 	"time"
 
@@ -15,14 +14,6 @@ func (r *netRun) outage(d time.Duration) {
 	r.e.Net.SetDown(true)
 	r.p.WaitFor("offline", time.Minute, tk.Offline)
 	time.Sleep(d)
-}
-
-// findings skips a scenario that fails on a known finding, unless HUB_ADV_FINDINGS is
-// set: the scenario documents the bug until it is fixed.
-func findings(t *testing.T, finding string) {
-	if os.Getenv("HUB_ADV_FINDINGS") == "" {
-		t.Skip("FINDING: " + finding)
-	}
 }
 
 // D1: the uplink drops in the middle of a push, while the request is on its way:
@@ -52,10 +43,6 @@ func TestD1UplinkDropsMidPushRequest(t *testing.T) {
 // D1, the other half: the uplink drops while central's answer to a push comes back.
 // Central stored the objects; the hub has half a report.
 func TestD1UplinkDropsMidPushAnswer(t *testing.T) {
-	findings(t, "a push whose answer is cut midway is read as central's refusal: push.go ignores the "+
-		"error reading the body, TrackerResult fails on the half report, and every object of the entry is "+
-		"rejected with \"central returned 200\" although central stored them; later edits of them are "+
-		"\"blocked by\" the rejected parent and never reach central (aggregate.go has the same read)")
 	r := netStart(t)
 	stop := r.write(300 * time.Millisecond)
 	defer stop()
@@ -248,9 +235,6 @@ func TestD11UplinkReturnsMidSave(t *testing.T) {
 // windows it is up. Each reconnect starts a sync cycle that re-reads the catalog and
 // every user's access before it pushes; a window shorter than that pushes nothing.
 func TestD11PushProgressWhileFlapping(t *testing.T) {
-	findings(t, "while the uplink flaps (4 s up, 4 s down, 500 ms latency) the hub pushes almost nothing: "+
-		"each cycle starts with the catalog and access refresh (sync.Worker.cycle), the window closes before the "+
-		"push, the refresh never completes so it is never skipped; 2 imports in 90 s against 2400 saves queued")
 	r := netStart(t)
 	r.e.Net.SetDelay(500 * time.Millisecond)
 	stop := r.write(300 * time.Millisecond)

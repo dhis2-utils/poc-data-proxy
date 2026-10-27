@@ -1,9 +1,12 @@
 package adversarial
 
 import (
+	"fmt"
 	"net/url"
 	"testing"
+	"time"
 
+	"github.com/dhis2/facility-hub/internal/sync"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
 
@@ -58,7 +61,7 @@ func TestB1UserLosesFacility(t *testing.T) { userLosesFacility(t, true) }
 // user (403); online it passes their reads through with the token, and central
 // answers with the old scope: a leak through the hub.
 func TestB1UserLosesFacilityWithinTheHour(t *testing.T) {
-	finding(t, "B1: for up to an hour, a user moved away reads the facility through the hub online (central's token cache)")
+	finding(t, "B1: for up to an hour, a user moved away reads the facility through the hub online (central's token cache; accepted)")
 	userLosesFacility(t, false)
 }
 
@@ -81,39 +84,99 @@ func userLosesFacility(t *testing.T, expire bool) {
 // can no longer log in once the hub knows; their saves are pushed with their token
 // or refused and kept, never lost silently.
 //
-// After the hour, central answers the token 401; the hub holds the saves for an
-// online login that cannot come, as for a deleted user (B8).
+// After the hour, central answers the token 401 and the hub holds the saves for an
+// online login that cannot come. After 7 days they become refusals (NO_LOGIN), and a
+// hub manager resends them as another user, as for a deleted user (B8).
 func TestB2UserDisabled(t *testing.T) {
-	finding(t, "B2: a disabled user's saves wait for ever for a login, pushed again every cycle, not listed as refused")
 	userDisabled(t, true)
 }
 
 // Within the hour, central accepts the disabled user's token: the saves are pushed,
 // and the user goes on working through the hub online and offline, while central
-// refuses their password ("Account disabled").
+// refuses their password ("Account disabled"). Accepted: docs/FINDINGS.md.
 func TestB2UserDisabledWithinTheHour(t *testing.T) {
-	finding(t, "B2: for up to an hour, a disabled user goes on working through the hub (central's token cache)")
+	finding(t, "B2: for up to an hour, a disabled user goes on working through the hub (central's token cache; accepted)")
 	userDisabled(t, false)
 }
 
 func userDisabled(t *testing.T, expire bool) {
 	s := begin(t)
 	u := s.NewUserLike(tk.RoleNurse)
+	other := s.NewUserLike(tk.RoleNurse)
 	c := s.connect(u.Username)
+	s.connect(other.Username)
 	s.offlineWork(c, "AdvB2")
 
 	s.SetUserDisabled(u, true)
 	if expire {
 		s.ExpireTokenCache()
+		// Saves waiting for a login: the hub sends one each cycle to learn whether
+		// central takes the user's token again; they are not refusals sent again.
+		s.reconnect(3)
+	} else {
+		s.noRepeats(s.reconnect(3))
 	}
-	s.noRepeats(s.reconnect(3))
-	s.expect(nil, tk.OnCentral, tk.RefusedKept)
+	if expire {
+		s.resentAfterAWeek(u, other)
+	} else {
+		s.expect(nil, tk.OnCentral, tk.RefusedKept)
+	}
 	if st, b := c.Do("GET", "/api/me?fields=id", nil); st != 401 {
 		t.Errorf("disabled user online: %d %.300s", st, b)
 	}
 	s.Offline()
 	if st, b := c.Do("GET", "/api/me?fields=id", nil); st != 401 {
 		t.Errorf("disabled user offline, after the hub learned: %d %.300s", st, b)
+	}
+}
+
+// resentAfterAWeek checks what happens to the saves of a user central stopped
+// accepting: they wait for a login; 7 days after the hub marked the user (backdated
+// here) they are refused and kept (NO_LOGIN); a hub manager's Resend as other sends
+// them, and central records other as the author of the people.
+func (s *scene) resentAfterAWeek(gone, other tk.User) {
+	s.t.Helper()
+	if !s.needsLogin(gone.Username) {
+		s.t.Fatalf("%s is not marked as needing an online login", gone.Username)
+	}
+	s.expect(nil, tk.OnCentral, tk.Waiting)
+	at := time.Now().Add(-(7*24*time.Hour + time.Minute)).UTC().Format(time.RFC3339Nano)
+	if _, err := s.App.Hub.Store.Keys.Exec(`UPDATE key_slots SET needs_login_at=? WHERE username=?`, at, gone.Username); err != nil {
+		s.t.Fatal(err)
+	}
+	s.reconnect(1)
+	s.expect(nil, tk.OnCentral, tk.RefusedKept)
+	// The refusals as the hub's heartbeat lists them for the Facility Hub app.
+	groups, _ := sync.Status(s.App.Hub)["refused"].([]map[string]any)
+	// Resend on each NO_LOGIN group, as a hub manager does in the app.
+	var retries []any
+	for _, g := range groups {
+		if g["code"] == "NO_LOGIN" {
+			retries = append(retries, map[string]any{"id": "adv-" + tk.UID(), "kind": g["kind"], "program": g["program"],
+				"code": "NO_LOGIN", "at": time.Now().UTC().Format(time.RFC3339), "by": "adversarial", "user": other.Username})
+		}
+	}
+	if len(retries) == 0 {
+		s.t.Fatalf("no NO_LOGIN refusal: %v", groups)
+	}
+	body := map[string]any{"retries": retries}
+	if err := s.Central.JSON("PUT", "/api/dataStore/facility-hub-admin/retries", body, nil); err != nil {
+		if err := s.Central.JSON("POST", "/api/dataStore/facility-hub-admin/retries", body, nil); err != nil {
+			s.t.Fatal(err)
+		}
+	}
+	s.reconnect(2)
+	// Live, the ledger compares central's createdBy with the author: the resent saves
+	// differ in that alone, and name other.
+	resent := fmt.Sprintf("createdBy %q", other.Username)
+	for _, ln := range s.l.Check() {
+		s.t.Logf("ledger: %s", ln)
+		switch {
+		case ln.Outcome == tk.OnCentral && (!s.Live() || ln.Online):
+		case ln.Outcome == tk.ChangedOnCentral && s.Live() && !ln.Online && ln.Detail == resent:
+		default:
+			s.t.Errorf("%s %s: %s %s", ln.Kind, ln.UID, ln.Outcome, ln.Detail)
+		}
 	}
 }
 
@@ -215,20 +278,22 @@ func (s *scene) writingGroup(u tk.User, kind, id string) string {
 }
 
 // B8: a user is deleted on central while their saves wait. Must hold: the saves are
-// refused and kept, visible to a manager; never pushed as someone else.
+// refused and kept, visible to a manager; pushed as someone else only when a hub
+// manager resends them so.
 //
 // Central answers the deleted user's token 401; the hub holds the saves for an
-// online login that cannot come, sends one of them again every cycle, and the
-// Facility Hub app says only "2 saves wait for their user to log in on the hub
-// again". Nothing is lost or pushed as someone else.
+// online login that cannot come, and after 7 days refuses them (NO_LOGIN).
 func TestB8UserDeleted(t *testing.T) {
-	finding(t, "B8: a deleted user's saves wait for ever for a login, pushed again every cycle, not listed as refused")
 	s := begin(t)
 	u := s.NewUserLike(tk.RoleNurse)
+	other := s.NewUserLike(tk.RoleNurse)
 	c := s.connect(u.Username)
+	s.connect(other.Username)
 	s.offlineWork(c, "AdvB8")
 
 	s.DeleteUser(u)
-	s.noRepeats(s.reconnect(3))
-	s.expect(nil, tk.OnCentral, tk.RefusedKept)
+	// The hub sends one waiting save each cycle to learn whether central takes the
+	// user's token again (B2).
+	s.reconnect(3)
+	s.resentAfterAWeek(u, other)
 }

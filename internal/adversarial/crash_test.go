@@ -206,9 +206,6 @@ func TestE3KillDuringFirstPull(t *testing.T) {
 // several arrive at once (the Android apps sync on their own). Each login unlocks the
 // store and rebuilds the index; saves made meanwhile must still be stored.
 func TestE1ConcurrentUnlockAfterRestart(t *testing.T) {
-	findings(t, "two logins that unlock the store at once each rebuild the index (core.Hub.Unlock, "+
-		"tracker.Index.Load); the second resets the next visibility slot while a save is being stored, and the "+
-		"next offline saves fail with 500 \"UNIQUE constraint failed: objects.slot\" (seen in TestE1KillDuringSaves)")
 	r := netStart(t)
 	r.e.Net.SetDown(true)
 	r.p.WaitFor("offline", time.Minute, tk.Offline)
