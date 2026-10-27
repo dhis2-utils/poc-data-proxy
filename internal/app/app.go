@@ -66,6 +66,10 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 		return nil, err
 	}
 	storePath := filepath.Join(cfg.DataDir, "hub.db")
+	// An upgrade cut short is finished or undone before the store is opened.
+	if err := upgrade.Recover(cfg.DataDir, storePath, version); err != nil {
+		return nil, err
+	}
 	// A restore from the USB stick chosen on the setup page goes in place now
 	// (docs/RECOVERY.md, C2).
 	if err := stick.Finish(cfg.DataDir, storePath); err != nil {

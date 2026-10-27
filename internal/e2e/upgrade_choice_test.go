@@ -304,3 +304,47 @@ func TestUpgradeConfirmedAfterUnlock(t *testing.T) {
 		t.Error("the old store stays after the confirmation")
 	}
 }
+
+// An upgrade cut short in its store swap (a power cut after the live store was moved
+// aside) restarts on the old binary: the old store, with its unsent saves, is put back
+// before it is opened, and the upgrade is reported as failed, not as done.
+func TestUpgradeCutShortKeepsStore(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.offline()
+	a.json("POST", postSync, newPatient("CutTe000001", "CutEn000001", "Cut", "NAT-5151", nil), 200)
+	hubID := e.app.Hub.HubID()
+	e.stop()
+	live := filepath.Join(e.dir, "hub.db")
+	for _, f := range []string{live, live + ".data"} { // the migrated copy
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(strings.Replace(f, "hub.db", "hub.db.next", 1), b, 0o600)
+	}
+	mk, _ := json.Marshal(upgrade.Marker{State: "swapped", From: "0.1.0", To: "0.2.0", ExePath: filepath.Join(e.dir, "x"),
+		PrevBinary: filepath.Join(e.dir, "y"), PrevStore: live + ".prev"})
+	os.WriteFile(filepath.Join(e.dir, "upgrade.json"), mk, 0o600)
+	if err := os.Rename(live, live+".prev"); err != nil { // the swap's first step, then the cut
+		t.Fatal(err)
+	}
+	e.start() // the old binary (0.1.0)
+	e.app.Upgrader.AfterBoot(context.Background(), e.srv.URL+"/hub/status")
+	if got := e.app.Hub.HubID(); got != hubID {
+		t.Fatalf("hub ID %q after the restart, want %q: the old store is not in place", got, hubID)
+	}
+	if r := lastUpgrade(e); r["result"] != "failed" || r["to"] != "0.2.0" {
+		t.Fatalf("a swap cut short is reported as %v", r)
+	}
+	if e.app.Hub.Store.Meta("upgrade_skip") != "0.2.0" {
+		t.Error("the version whose swap was cut short is tried again")
+	}
+	a = e.web("nurse_a")
+	a.login()
+	if p, err := e.app.Hub.Store.PendingOutbox(); err != nil || len(p) != 1 {
+		t.Fatalf("pending saves after the restart: %d, %v", len(p), err)
+	}
+}

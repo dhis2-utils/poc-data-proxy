@@ -193,8 +193,9 @@ func (u *Upgrader) check(ctx context.Context) error {
 		}
 	}()
 	// 3. Migrations on a copy of the store, run by the new binary.
-	next := u.StorePath + ".next"
+	next, prev := u.StorePath+".next", u.StorePath+".prev"
 	removeStore(next)
+	removeStore(prev) // the swap moves the live store here, and Recover moves it back
 	if err := u.H.Store.BackupTo(next); err != nil {
 		return fmt.Errorf("store copy: %w", err)
 	}
@@ -227,7 +228,7 @@ func (u *Upgrader) check(ctx context.Context) error {
 		return fmt.Errorf("saving previous binary: %w", err)
 	}
 	mk := Marker{State: "swapped", From: u.H.Version, To: m.Version, ExePath: exe, PrevBinary: prevBin,
-		PrevStore: u.StorePath + ".prev", StartedAt: store.Now()}
+		PrevStore: prev, StartedAt: store.Now()}
 	if err := writeMarker(u.dir("upgrade.json"), mk); err != nil {
 		return err
 	}
@@ -237,17 +238,20 @@ func (u *Upgrader) check(ctx context.Context) error {
 	u.H.Store.SetMeta("upgrade_skip", m.Version)
 	slog.Info("upgrading", "from", u.H.Version, "to", m.Version)
 	u.Shutdown()
-	if err := swapStore(u.StorePath, next, mk.PrevStore); err != nil {
+	// From here a failure exits, and the service manager starts the hub again: on the
+	// old binary, Recover puts the old store back; on the new one, AfterBoot checks it.
+	if err := swapStore(u.StorePath, next, prev); err != nil {
 		slog.Error("store swap failed", "err", err)
-		os.Exit(1) // previous binary + store are untouched; the service manager restarts us
+		os.Exit(1)
 	}
 	if err := replaceBinary(newBin, exe); err != nil {
-		swapStore(u.StorePath, mk.PrevStore, next) // put the old store back
-		os.Remove(u.dir("upgrade.json"))
 		slog.Error("binary swap failed", "err", err)
 		os.Exit(1)
 	}
-	return Reexec(exe, dk)
+	err = Reexec(exe, dk)
+	slog.Error("re-exec failed", "err", err)
+	os.Exit(1)
+	return err
 }
 
 // fetchChoice reads the country's choice from central; nil when there is none.
@@ -505,6 +509,14 @@ func (u *Upgrader) AfterBoot(ctx context.Context, selfStatusURL string) {
 		u.record(Result{Result: "failed", From: mk.From, To: mk.To, Reason: "health check failed, rolled back: " + mk.Reason})
 		return
 	case "swapped":
+		if mk.To != u.H.Version {
+			// The old binary runs: the upgrade stopped before the new one started, and
+			// Recover put the old store back.
+			os.Remove(path)
+			u.H.Store.SetMeta("upgrade_skip", mk.To)
+			u.record(Result{Result: "failed", From: mk.From, To: mk.To, Reason: "the upgrade stopped before " + mk.To + " started"})
+			return
+		}
 	default:
 		os.Remove(path)
 		return
@@ -535,12 +547,16 @@ func (u *Upgrader) confirm(ctx context.Context, selfStatusURL, path string, mk M
 	}
 	slog.Error("upgrade health check failed, rolling back", "reason", reason)
 	mk.State, mk.Reason = "rolledback", reason
-	writeMarker(path, mk)
+	if err := writeMarker(path, mk); err != nil {
+		slog.Error("rollback: marker not written; staying on this version", "err", err)
+		return
+	}
 	dk, _ := u.H.Store.DK()
 	u.Shutdown()
-	failed := u.StorePath + ".failed"
-	if err := swapStore(u.StorePath, mk.PrevStore, failed); err != nil {
+	// From here a failure exits, and Recover finishes the rollback at the next start.
+	if err := swapStore(u.StorePath, mk.PrevStore, u.StorePath+".next"); err != nil {
 		slog.Error("rollback: store restore failed", "err", err)
+		os.Exit(1)
 	}
 	if err := replaceBinary(mk.PrevBinary, mk.ExePath); err != nil {
 		slog.Error("rollback: binary restore failed", "err", err)
@@ -589,37 +605,90 @@ func (u *Upgrader) healthCheck(ctx context.Context, statusURL string) string {
 
 func writeMarker(path string, mk Marker) error {
 	b, _ := json.MarshalIndent(mk, "", "  ")
-	return os.WriteFile(path, b, 0o600)
+	return atomicfile.Write(path, b, 0o600)
 }
 
-// swapStore moves live -> saveAs and incoming -> live, for the key file and its data
-// file. The store must be closed.
-func swapStore(live, incoming, saveAs string) error {
-	for _, f := range []string{live, store.DataPath(live)} {
-		for _, sfx := range []string{"-wal", "-shm"} {
-			os.Remove(f + sfx)
+// Recover runs at start-up, before the store is opened. An upgrade cut short (a power
+// cut, a crash, a failed swap or re-exec) leaves the marker and the store's files
+// (live hub.db, the migrated copy hub.db.next, the old store hub.db.prev) in one of
+// these states; Recover ends each on the old release with the old store, or the new
+// release with the new store:
+//
+//	marker      running  files                                   Recover
+//	none        any      live                                    nothing
+//	swapped     To       live = new, prev = old (swap complete)  nothing; AfterBoot checks it
+//	swapped     other    the swap anywhere from not begun to     swaps back: the old store
+//	                     complete (the binary was not replaced)  is live again, AfterBoot
+//	                                                             reports the failure
+//	rolledback  From     the swap back anywhere, or complete     finishes the swap back
+//	rolledback  To       same                                    finishes it, puts the old
+//	                                                             binary back and exits
+//
+// The swap moves live to prev, then next to live, one file at a time; swapping back
+// moves live to next, then prev to live. From any point of either, swapping back ends
+// with the old store live (swapStore).
+func Recover(dataDir, storePath, version string) error {
+	b, err := os.ReadFile(filepath.Join(dataDir, "upgrade.json"))
+	if err != nil {
+		return nil
+	}
+	var mk Marker
+	if json.Unmarshal(b, &mk) != nil || mk.State == "swapped" && version == mk.To {
+		return nil
+	}
+	if err := swapStore(storePath, mk.PrevStore, storePath+".next"); err != nil {
+		return fmt.Errorf("upgrade: putting the old store back: %w", err)
+	}
+	if mk.State == "rolledback" && version == mk.To {
+		if err := replaceBinary(mk.PrevBinary, mk.ExePath); err != nil {
+			return fmt.Errorf("upgrade: putting the old binary back: %w", err)
 		}
-	}
-	removeStore(saveAs)
-	if err := os.Rename(live, saveAs); err != nil {
-		return err
-	}
-	if err := os.Rename(store.DataPath(live), store.DataPath(saveAs)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		os.Rename(saveAs, live)
-		return err
-	}
-	if err := os.Rename(incoming, live); err != nil {
-		os.Rename(saveAs, live)
-		os.Rename(store.DataPath(saveAs), store.DataPath(live))
-		return err
-	}
-	if err := os.Rename(store.DataPath(incoming), store.DataPath(live)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		os.Rename(live, incoming)
-		os.Rename(saveAs, live)
-		os.Rename(store.DataPath(saveAs), store.DataPath(live))
-		return err
+		return errors.New("upgrade: the old binary is back; exiting so that it is started")
 	}
 	return nil
+}
+
+// swapStore moves live to saveAs and incoming to live, the key file and then its data
+// file. The store must be closed, and saveAs free. Each move skips what is already
+// done, so swapStore(live, saveAs, incoming) undoes a swap cut short at any point.
+func swapStore(live, incoming, saveAs string) error {
+	for _, m := range storeMoves(live, incoming, saveAs) {
+		if err := moveFile(m[0], m[1]); err != nil {
+			return err
+		}
+	}
+	// The renames are durable only once the folder is synced (best effort, as in
+	// atomicfile): before the binary is replaced, which may be on another disk.
+	if d, err := os.Open(filepath.Dir(live)); err == nil {
+		d.Sync()
+		d.Close()
+	}
+	return nil
+}
+
+func storeMoves(live, incoming, saveAs string) [][2]string {
+	return [][2]string{{live, saveAs}, {store.DataPath(live), store.DataPath(saveAs)},
+		{incoming, live}, {store.DataPath(incoming), store.DataPath(live)}}
+}
+
+// moveFile renames a store file with its -wal and -shm, if any: a store closed cleanly
+// has none, but one that was not keeps saves in its -wal. Without from, or with to
+// already there, the move is done or not due.
+func moveFile(from, to string) error {
+	if !exists(from) || exists(to) {
+		return nil
+	}
+	for _, sfx := range []string{"-wal", "-shm", ""} {
+		if err := os.Rename(from+sfx, to+sfx); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // removeStore deletes a key file and its data file.

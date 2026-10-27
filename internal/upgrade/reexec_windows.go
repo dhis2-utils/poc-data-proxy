@@ -15,14 +15,18 @@ import (
 const ExitRestart = 3
 
 // replaceBinary puts src at dst. Windows cannot overwrite a running .exe but can
-// rename it: the running one becomes dst.old, removed at the next upgrade.
+// rename it: the new one is copied next to it first, then the running one becomes
+// dst.old (removed at the next upgrade) and the new one takes its name.
 func replaceBinary(src, dst string) error {
-	old := dst + ".old"
+	next, old := dst+".new", dst+".old"
+	if err := atomicfile.Copy(src, next, 0o755); err != nil {
+		return err
+	}
 	os.Remove(old)
 	if err := os.Rename(dst, old); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	if err := atomicfile.Copy(src, dst, 0o755); err != nil {
+	if err := os.Rename(next, dst); err != nil {
 		os.Rename(old, dst)
 		return err
 	}
