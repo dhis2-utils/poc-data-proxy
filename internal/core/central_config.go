@@ -3,8 +3,10 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/dhis2/facility-hub/internal/central"
 )
@@ -63,4 +65,34 @@ func (h *Hub) writableByAll(ctx context.Context, path string) (bool, error) {
 		return false, err
 	}
 	return len(meta.Sharing.Public) < 2 || meta.Sharing.Public[1] == 'w', nil
+}
+
+// MetaUnprotected lists the dataStore entries the hub acts on that any user may
+// write, as last checked.
+const MetaUnprotected = "unprotected"
+
+// CheckProtection notes which of the dataStore entries the hub acts on any user may
+// write (docs/DEPLOYMENT.md, "Protect the data store namespaces"), for the heartbeat
+// and the admin page. Missing entries are not listed.
+func (h *Hub) CheckProtection(ctx context.Context) {
+	var open []string
+	for _, path := range []string{"/api/dataStore/facility-hub-admin/accounts", "/api/dataStore/facility-hub-admin/central-move",
+		"/api/dataStore/facility-hub-admin/release", "/api/dataStore/facility-hub-admin/retries", RegistryPath(h.HubID())} {
+		o, err := h.writableByAll(ctx, path)
+		if central.IsNetwork(err) {
+			return
+		}
+		if err == nil && o {
+			open = append(open, strings.TrimPrefix(path, "/api/dataStore/"))
+		}
+	}
+	if len(open) > 0 {
+		slog.Warn("dataStore entries the hub acts on are writable by any user; protect them on central (docs/DEPLOYMENT.md)", "entries", open)
+	}
+	h.Store.SetMeta(MetaUnprotected, strings.Join(open, " "))
+}
+
+// Unprotected is what CheckProtection last found.
+func (h *Hub) Unprotected() []string {
+	return strings.Fields(h.Store.Meta(MetaUnprotected))
 }

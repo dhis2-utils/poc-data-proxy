@@ -23,6 +23,7 @@ func (w *Worker) heartbeat(ctx context.Context) {
 	if !w.lastBeat.IsZero() && time.Since(w.lastBeat) < h.Cfg.HeartbeatInterval {
 		return
 	}
+	h.CheckProtection(ctx)
 	if err := h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-status/"+h.HubID(), Status(h), h.HubAuth(), nil); err != nil {
 		slog.Warn("heartbeat", "err", err)
 		return
@@ -50,6 +51,9 @@ func Status(h *core.Hub) map[string]any {
 		// hubs that depend on a user who is being disabled.
 		"hubTokenOwner": h.Runtime().TokenOwner(), "hubTokenExpires": hubTokenExpires(h),
 		"refused": refused, "refusedGroups": refusedGroups,
+		// The dataStore entries the hub acts on that any user may write: until a country
+		// protects them, anyone could retire the hub or announce a move (not followed).
+		"unprotected": h.Unprotected(),
 		// What staff asked for offline that the hub could not answer ("needs connection":
 		// a screen nobody opened online), since the hub started: the 10 most frequent,
 		// by endpoint (identifiers as {uid}, parameter names without values).

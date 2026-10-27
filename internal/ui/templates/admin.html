@@ -19,6 +19,8 @@
 <a href="/hub/ui/endpoints">Endpoint log</a>
 </div>
 
+{{with .Heartbeat.unprotected}}<div class="card"><h2>Central's hub settings are not protected</h2><p>Any user on central may write <span class="mono">{{range $i, $k := .}}{{if $i}}, {{end}}{{$k}}{{end}}</span>. Until the national team protects them, this hub does not follow a planned move of central announced there. Ask them to protect the hub's data store entries (deployment guide, "Protect the data store namespaces").</p></div>{{end}}
+
 {{with .Net}}{{template "netsection" .}}{{end}}
 <div class="card"><h2>Devices</h2>
 <p>Devices open <span class="mono">https://dhis2.local</span>{{with .Heartbeat.addresses}}, or where that name does not work <span class="mono">{{range $i, $a := .}}{{if $i}}, {{end}}https://{{$a}}{{end}}</span>{{end}}. A device that does not trust the hub yet opens <span class="mono">http://dhis2.local</span> and follows its steps once.</p>

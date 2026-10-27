@@ -1001,6 +1001,10 @@ func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
 		}
 	}
 	if len(parts) == 3 && parts[2] == "metaData" {
+		if _, ok := c.DataStore[ns][key]; !ok {
+			webMessage(w, 404, "Key not found", "E1005")
+			return
+		}
 		var ownerUID string
 		if cr := c.Users[c.creators[id]]; cr != nil {
 			ownerUID = cr.UID
