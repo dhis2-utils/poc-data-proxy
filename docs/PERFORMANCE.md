@@ -87,6 +87,8 @@ The hub needs flash storage: an SSD, eMMC or a good SD card. On a hard disk with
 
 ## On Raspberry Pis (2026-10-26)
 
+**First round: the Pi 5 on the SSD, the Pi 4 on the card.**
+
 The image's load-test mode (`hub-loadtest.txt`), image `0.1.5-local.bc1ad67` (main with the fixes of 2026-10-26), on two boards over Wi-Fi at 20 °C: `rpi5`, a Pi 5 with 4 GB on a SATA SSD (Intenso SATA III High Performance, 120 GB) through a USB adapter (StarTech USB 3.1 Gen 2 to SATA cable), and `rpi4`, a Pi 4 with 1 GB on a microSD card (SanDisk High Endurance, 64 GB) and no heatsink. The fake central and the users ran on the Mac (`perf/remote-queue.sh`): 60 users of whom 18 sync like Android (`WEB=0.7`), 1 % of active enrollments changed on central (`CHANGED=0.01`), an hour's working day with the uplink 10 minutes down and 5 up, then the hammer run. Medians and p95s; web pages are the dashboards, name search and working list.
 
 | | `rpi4`, 10 k | `rpi4`, 30 k | `rpi4`, 60 k | `rpi5`, 100 k | `rpi5`, 300 k |
@@ -109,6 +111,31 @@ Every confirmed save was read back (2 568–2 675 a run); one request failed in 
 - **A Pi 4 with 1 GB and an SD card serves 60 k** with medians under 100 ms and tails about a second. Its limit is the card's writes (18–23 ms each, ten times the SSD's), which show in the save tails (p95 1.3–1.6 s). Memory is not the limit at 60 k (225 MB). Bytes written per day, for the card's endurance, were not measured in these runs: the samples counted operations, not bytes. The sampler records MB read and written from the next runs on.
 - **The Pi 4 runs warm without a heatsink**: 75.5 °C at 60 k in a 20 °C room, 4.5 °C below the point where it slows itself down. A facility at 30–35 °C would push it past that; it needs a heatsink and a ventilated case.
 - The Pi 4 booted with the image's date (6 October) until it found network time: a board without a clock battery starts at its last known time (DEPLOYMENT.md, "Clock").
+
+**Second round: the storage swapped, and up to 500 k** (image `0.1.5-local.8019c36`, the same hub with the sampler counting bytes). The Pi 5 on the microSD card, the Pi 4 on the SSD, now with a heatsink; otherwise as above.
+
+| | `rpi5` on the card, 100 k | 300 k | 500 k | `rpi4` on the SSD, 60 k | 100 k | 300 k | 500 k |
+|---|---|---|---|---|---|---|---|
+| First pull | 25 min 33 s | 1 h 31 min | 2 h 57 min | 16 min 34 s | 28 min 15 s | 1 h 29 min | 2 h 36 min |
+| Web pages | 22–47 ms / 0.29–0.60 s | 20–45 ms / 0.29–0.63 s | 21–46 ms / 0.35–0.72 s | 30–95 ms / 0.26–0.58 s | 29–96 ms / 0.27–0.58 s | 32–108 ms / 0.33–0.68 s | 28–107 ms / 0.28–0.58 s |
+| New event | 32 ms / 0.47 s | 34 ms / 0.48 s | 37 ms / 0.57 s | 54 ms / 0.52 s | 49 ms / 0.47 s | 59 ms / 0.56 s | 51 ms / 0.57 s |
+| Android incremental sync | 1.0 s / 1.4 s | 3.1 s / 3.7 s | 4.9 s / 6.2 s | 2.2 s / 3.8 s | 3.4 s / 4.8 s | 12 s / 16 s | 19 s / 27 s |
+| Peak memory of the hub; least free memory | 223 MB; 3.6 GB | 617 MB; 3.2 GB | 634 MB; 3.1 GB | 208 MB; 503 MB | 230 MB; 509 MB | 645 MB; 119 MB | 657 MB; 70 MB |
+| Hub's CPU, share of one core | 25 % | 28 % | 27 % | 68 % | 73 % | 92 % | 95 % |
+| Disk write, per operation | 24 ms | 31 ms | 39 ms | 1.7 ms | 1.8 ms | 2.2 ms | 2.4 ms |
+| Hottest | 57 °C | 56 °C | 57 °C | 76 °C | 76 °C | 76 °C | 78 °C |
+| Data folder | 2.2 GB | 6.5 GB | 11 GB | 1.3 GB | 2.2 GB | 6.5 GB | 11 GB |
+
+Every confirmed save was read back (2 614–2 707 a run); one request failed in seven runs. Nothing throttled; reconnects took 14–15 s.
+
+- **Storage sets the tails and the first pull; the board sets the rest.** On the same board, the card made each write 10–15 times slower than the SSD: the first pull took about twice as long and the p95s and p99s of pages and saves were two to three times higher. Medians and Android syncs did not change.
+- **A Pi 5 with 4 GB is not at its limit at 500 k, even on the card.** Android syncs grow with the size (1 s at 100 k, 5 s at 500 k), its CPU stays under a third of a core.
+- **A Pi 4 with 1 GB on an SSD serves 300 k for web users**, with Android syncs of 12 s. At 500 k it is at its edge: syncs of 19 s (p95 27 s), the hub near a full core, 70 MB of memory free.
+- **The hub's memory rose to 620–660 MB in the working day from 300 k on**, against 130–230 MB below, and fell back afterwards: slower Android syncs overlap, each with its working memory. It is what leaves a 1 GB board short.
+- **A heatsink is not enough for a Pi 4 under load**: 76–78 °C at 20 °C, 2 °C below throttling at 500 k. It needs a fan or a well-ventilated case. The Pi 5 stayed under 60 °C.
+- **Writes.** A first pull writes about five times the data folder (11 GB at 100 k, 55 GB at 500 k), once per hub. In the working day the hub wrote 9 MB a minute while offline and 235–272 MB a minute while online, at every size: it stored every object of every online read anew, changed or not. Fixed (History, 2026-10-27).
+
+**What to deploy, from these runs.** Up to about 60 k people, a Pi 4 with 1 GB on a good SD card. Up to 300 k (a busy HC IV), a Pi 5 with 4 GB, on an SSD for the best tails and first pull or on a card if that is what is available; a Pi 4 with 1 GB on an SSD as a cheaper option for mostly web use. Above 300 k, a Pi 5. Every Pi 4 with active cooling or a ventilated case.
 
 ## How the hub scales
 
@@ -328,3 +355,4 @@ Each page read and sorted the program's events; `objects_events` (creation order
 - **2026-10-23, incremental syncs again.** On the 2-CPU Windows VM at 100 k, with 18 Android users, memory grew to 7.7 GB and the hub exited: each incremental sync read every child of every changed person, and searches whose clients had given up kept running. The check now reads central's children newest first, five columns, and stops at the first the user may read; searches stop when their client has gone (docs/INCREMENTAL-SYNC-FIX.md). In the sandbox, one core per hub: the check's allocations 7.6 GB → 1.6 GB in 3 minutes, incremental sync 1 min 19 s → 34 s (p50), Android page 10.6 s → 5.2 s.
 - **2026-10-26, incremental syncs on a hard disk; online saves.** At 300 k on the hard-disk VM (above) incremental syncs took 12 minutes and starved everything else. The list of changed people narrowed nothing: SQLite walked every enrollment of the program and read each one's row and its person's before checking the list. The list is now one JSON value checked on the person's identifier in the index the search walks, at any size (the switch at 500 people and its check in Go are gone). Saves made online were shared with each user in a transaction of its own, each flushed to disk, and stalled for up to 85 s after reconnects; now one transaction. In the sandbox at 100 k, 18 Android users, one core: incremental sync 3.9 s → 0.33 s (p50, about 330 people changed) and 3.9 s → 0.72 s (about 1 000), the hub's CPU 25–37 s → 11 s in 2 minutes; an online save with 60 users 12.6 ms → 4.3 ms.
 - **2026-10-26, Raspberry Pis.** The first runs on the boards (section "On Raspberry Pis"): a Pi 5 with an SSD at 100 k and 300 k, a Pi 4 with 1 GB and an SD card at 10 k, 30 k and 60 k, with this day's fixes. Both served every size; the Pi 4's SD card makes its saves' tails ten times the Pi 5's.
+- **2026-10-27, writes while online.** The Pis' second round counted bytes: while online the hub wrote 235–272 MB a minute, against 9 MB offline, because it stored every object of every online read anew, changed or not (section "On Raspberry Pis"). An object whose merged data equals what the hub holds is now left as it is; only the user's visibility is recorded. In the sandbox at 100 k, 60 users of whom 18 Android, online: 233 MB → 66 MB a minute over the same 9 minutes.

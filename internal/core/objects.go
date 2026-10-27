@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log/slog"
+	"reflect"
 	"slices"
 	"time"
 
@@ -142,6 +143,14 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 					full = h.Index.Full(old)
 				}
 				o.Data = tracker.Merge(full, it.Data)
+				if old.SyncState == store.SyncSynced && old.OwnerOrgUnit == o.OwnerOrgUnit && reflect.DeepEqual(o.Data, full) {
+					// Nothing new: only the user's visibility. Rewriting every object of
+					// every online read wrote about 250 MB a minute on the Pis
+					// (docs/PERFORMANCE.md, History, 2026-10-27).
+					objs = append(objs, &tracker.Obj{UID: old.UID, Kind: "visibility-only", Slot: old.Slot})
+					batch[it.UID] = old
+					continue
+				}
 			}
 			if o.TET == "" {
 				o.TET = old.TET
