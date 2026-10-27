@@ -304,6 +304,15 @@ func (w *Worker) pushAggregate(ctx context.Context, e *store.OutboxEntry) (pushR
 	if h.Store.EarlierPendingFor(e.Seq, order) {
 		return pushResult{}, nil
 	}
+	if w.authorGone(e.UserID) {
+		issue, _ := json.Marshal(map[string]any{"message": tracker.NoLoginMessage,
+			"errorReports": []map[string]string{{"errorCode": tracker.NoLoginCode, "message": tracker.NoLoginMessage}}, "edit": ed})
+		if err := h.Store.AddIssue(e.Seq, ed.CellKey(), store.OutboxAggregate, e.UserID, issue, ""); err != nil {
+			slog.Error("add issue", "err", err)
+		}
+		h.Store.MarkAggFormStale(ed.Form.String())
+		return pushResult{}, h.Store.FinishOutbox(e.Seq, store.OutboxRejected, tracker.NoLoginMessage)
+	}
 	auth, err := h.UpstreamAuth(e.UserID)
 	if err != nil {
 		h.Store.SetNeedsLogin(e.UserID, true)

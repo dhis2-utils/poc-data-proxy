@@ -135,6 +135,20 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 	if len(send) == 0 {
 		return pushResult{}, h.Store.FinishOutbox(e.Seq, store.OutboxRejected, "all objects blocked")
 	}
+	if w.authorGone(e.UserID) {
+		// What the refused objects of this entry hold is blocked by them, as when
+		// central refuses: a resend of the refused ones sends it along.
+		for _, it := range send {
+			if p := slices.IndexFunc(parents(it), func(p string) bool { return blocked[p] }); p >= 0 {
+				w.reject(e, it, nil, "blocked by "+parents(it)[p], "")
+			} else {
+				w.reject(e, it, []tracker.ErrorReport{{ErrorCode: tracker.NoLoginCode, Message: tracker.NoLoginMessage,
+					TrackerType: tracker.TrackerType(it.Kind), UID: it.UID}}, tracker.NoLoginMessage, "")
+			}
+			blocked[it.UID] = true
+		}
+		return pushResult{}, h.Store.FinishOutbox(e.Seq, store.OutboxRejected, tracker.NoLoginMessage)
+	}
 	body, _ := json.Marshal(flat(send))
 	auth, err := h.UpstreamAuth(e.UserID)
 	if err != nil {
@@ -219,6 +233,17 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 	}
 	slog.Info("pushed outbox entry", "seq", e.Seq, "ok", ok, "rejected", bad, "state", state)
 	return pushResult{}, h.Store.FinishOutbox(e.Seq, state, "")
+}
+
+// loginWait is how long the saves of a user central stopped accepting wait for that
+// user to log in online again. After that they are refused: a user disabled or deleted
+// on central never logs in again, and a hub manager can resend them as another user.
+const loginWait = 7 * 24 * time.Hour
+
+// authorGone reports whether the user has needed an online login for loginWait.
+func (w *Worker) authorGone(userID int64) bool {
+	u, _ := w.H.Store.UserByID(userID)
+	return u != nil && u.NeedsLogin && u.NeedsLoginSince != "" && time.Since(store.ParseTime(u.NeedsLoginSince)) >= loginWait
 }
 
 // onTheWay: an answer from the way to central rather than about the request: a

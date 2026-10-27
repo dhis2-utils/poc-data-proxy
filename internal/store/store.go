@@ -69,6 +69,11 @@ CREATE TABLE key_slots(
   needs_login INTEGER NOT NULL DEFAULT 0
 );
 `,
+	// 2: when a user was first marked as needing an online login, so their saves are
+	// refused after a while (sync, loginWait). A new column with a constant default:
+	// existing rows are not rewritten; a user marked before gets the time at the next
+	// refusal of their token.
+	`ALTER TABLE key_slots ADD COLUMN needs_login_at TEXT NOT NULL DEFAULT '';`,
 }
 
 // dataMigrations are applied to the data file, the same way. A migration that

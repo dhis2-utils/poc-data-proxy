@@ -16,6 +16,9 @@ type User struct {
 	KEKSalt    []byte
 	WrappedDK  []byte
 	NeedsLogin bool
+	// NeedsLoginSince is when the hub first marked the user as needing an online
+	// login ("" when it does not, or marked them before it recorded the time).
+	NeedsLoginSince string
 
 	// From the data file; empty while locked.
 	UserUID           string
@@ -33,12 +36,12 @@ type User struct {
 // online again: central refused their token or password, or the hub has neither.
 func (u *User) CannotPush() bool { return u.NeedsLogin || (!u.HasPAT && !u.HasPassword) }
 
-const slotCols = `id, username, kek_salt, wrapped_dk, needs_login`
+const slotCols = `id, username, kek_salt, wrapped_dk, needs_login, needs_login_at`
 
 func scanSlot(sc interface{ Scan(...any) error }) (*User, error) {
 	u := &User{}
 	var needs int
-	if err := sc.Scan(&u.ID, &u.Username, &u.KEKSalt, &u.WrappedDK, &needs); err != nil {
+	if err := sc.Scan(&u.ID, &u.Username, &u.KEKSalt, &u.WrappedDK, &needs, &u.NeedsLoginSince); err != nil {
 		return nil, err
 	}
 	u.NeedsLogin = needs != 0
@@ -114,7 +117,7 @@ func (s *Store) UpsertCredentials(username, userUID string, salt, wrapped []byte
 		return 0, ErrLocked
 	}
 	_, err := s.Keys.Exec(`INSERT INTO key_slots(username, kek_salt, wrapped_dk) VALUES(?,?,?)
-ON CONFLICT(username) DO UPDATE SET kek_salt=excluded.kek_salt, wrapped_dk=excluded.wrapped_dk, needs_login=0`,
+ON CONFLICT(username) DO UPDATE SET kek_salt=excluded.kek_salt, wrapped_dk=excluded.wrapped_dk, needs_login=0, needs_login_at=''`,
 		username, salt, wrapped)
 	if err != nil {
 		return 0, err
@@ -165,13 +168,15 @@ func (s *Store) PruneKeySlots(maxAge time.Duration, keep int) ([]string, error) 
 	return pruned, nil
 }
 
-// SetNeedsLogin is in the key file, so an offline login can refuse before unlock.
+// SetNeedsLogin is in the key file, so an offline login can refuse before unlock. The
+// time of the first mark is kept until it is cleared.
 func (s *Store) SetNeedsLogin(id int64, v bool) error {
-	n := 0
-	if v {
-		n = 1
+	if !v {
+		_, err := s.Keys.Exec(`UPDATE key_slots SET needs_login=0, needs_login_at='' WHERE id=?`, id)
+		return err
 	}
-	_, err := s.Keys.Exec(`UPDATE key_slots SET needs_login=? WHERE id=?`, n, id)
+	_, err := s.Keys.Exec(`UPDATE key_slots SET needs_login=1,
+ needs_login_at=CASE WHEN needs_login=0 OR needs_login_at='' THEN ? ELSE needs_login_at END WHERE id=?`, Now(), id)
 	return err
 }
 

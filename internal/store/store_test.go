@@ -150,3 +150,45 @@ func TestPruneKeySlots(t *testing.T) {
 		t.Fatal("kept slot removed")
 	}
 }
+
+// The hub records when it first marked a user as needing an online login, so their
+// saves can be refused after a while (sync, loginWait); an online login clears it.
+func TestNeedsLoginSince(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	dk := mustKey(t)
+	if err := s.SetDK(dk); err != nil {
+		t.Fatal(err)
+	}
+	salt, _ := hubcrypto.RandomBytes(16)
+	wrapped, _, _ := hubcrypto.WrapSlot(dk, "a", salt, nil)
+	id, err := s.UpsertCredentials("a", "", salt, wrapped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetNeedsLogin(id, true)
+	u, _ := s.UserByID(id)
+	first := u.NeedsLoginSince
+	if !u.NeedsLogin || time.Since(ParseTime(first)) > time.Minute {
+		t.Fatalf("needs login %v since %q", u.NeedsLogin, first)
+	}
+	time.Sleep(2 * time.Millisecond)
+	s.SetNeedsLogin(id, true) // refused again: the first time stands
+	if u, _ = s.UserByID(id); u.NeedsLoginSince != first {
+		t.Fatalf("since %q, want %q", u.NeedsLoginSince, first)
+	}
+	if _, err := s.UpsertCredentials("a", "", salt, wrapped); err != nil { // an online login
+		t.Fatal(err)
+	}
+	if u, _ = s.UserByID(id); u.NeedsLogin || u.NeedsLoginSince != "" {
+		t.Fatalf("after an online login: needs login %v since %q", u.NeedsLogin, u.NeedsLoginSince)
+	}
+	s.SetNeedsLogin(id, true)
+	s.SetNeedsLogin(id, false)
+	if u, _ = s.UserByID(id); u.NeedsLogin || u.NeedsLoginSince != "" {
+		t.Fatalf("cleared: needs login %v since %q", u.NeedsLogin, u.NeedsLoginSince)
+	}
+}

@@ -360,6 +360,9 @@ func OutgoingReports(reps []ErrorReport, sent []string) []ErrorReport {
 // OutgoingMessage is an issue message safe to leave the hub: the error codes when
 // central sent error reports, a message the hub wrote itself, or a fixed text.
 func OutgoingMessage(msg string, reps []ErrorReport) string {
+	if msg == NoLoginMessage {
+		return msg
+	}
 	if len(reps) > 0 {
 		var codes []string
 		for _, r := range reps {
@@ -378,6 +381,14 @@ func OutgoingMessage(msg string, reps []ErrorReport) string {
 	}
 	return "rejected by central"
 }
+
+// A save the hub refuses itself, its author having been unable to log in online for a
+// week after central stopped accepting their token (sync, loginWait): its error code
+// groups such refusals for a resend as another user, and its message leaves the hub.
+const (
+	NoLoginCode    = "NO_LOGIN"
+	NoLoginMessage = "author could not log in online for 7 days after central stopped accepting their token (disabled, deleted or token expired)"
+)
 
 var (
 	hubBlocked       = regexp.MustCompile(`^blocked by [A-Za-z][A-Za-z0-9]{10}$`)
