@@ -1,0 +1,175 @@
+package adversarial
+
+import (
+	"context"
+	"encoding/json"
+	"slices"
+	"testing"
+	"time"
+
+	"github.com/dhis2/facility-hub/internal/store"
+	tk "github.com/dhis2/facility-hub/internal/testkit"
+)
+
+// scene is one scenario: a hub set up at the facility, and the ledger of what it
+// confirmed to clients.
+type scene struct {
+	*tk.Env
+	t *testing.T
+	l *tk.Ledger
+}
+
+func begin(t *testing.T) *scene {
+	e := tk.Start(t)
+	e.Setup()
+	return &scene{Env: e, t: t, l: e.Ledger()}
+}
+
+// connect makes a user's Android client known to the hub, online, as the app's first
+// login does.
+func (s *scene) connect(username string) *tk.Client {
+	s.t.Helper()
+	c := s.AndroidUser(username)
+	if st, b := c.Do("GET", "/api/me?fields=id", nil); st != 200 {
+		s.t.Fatalf("%s: /api/me %d %.300s", username, st, b)
+	}
+	return c
+}
+
+// save posts a tracker payload as the client; what the hub confirms goes in the ledger.
+func (s *scene) save(c *tk.Client, what string, payload map[string]any) (int, []byte) {
+	s.t.Helper()
+	st, b := c.Do("POST", tk.SyncImport, payload)
+	if st == 200 {
+		s.l.Confirmed(c.User, payload)
+	}
+	s.t.Logf("%s (%s, online=%v): hub answers %d %.400s", what, c.User, !s.Net.Down(), st, b)
+	return st, b
+}
+
+// register registers a person in p online, without events, and returns them.
+func (s *scene) register(c *tk.Client, p tk.Program, name string) *tk.Person {
+	s.t.Helper()
+	pr := s.M.NewPerson(p, name)
+	c.Complete(p, pr)
+	if st, _ := s.save(c, "register "+name, pr.Payload); st != 200 {
+		s.t.Fatalf("registering %s failed", name)
+	}
+	return pr
+}
+
+// event builds a payload of one event with these data values.
+func (s *scene) event(p tk.Program, stage, enrollment, uid string, values map[string]string) map[string]any {
+	dvs := []any{}
+	for de, v := range values {
+		dvs = append(dvs, map[string]any{"dataElement": de, "value": v})
+	}
+	return map[string]any{"events": []any{map[string]any{"event": uid, "enrollment": enrollment, "program": p.ID,
+		"programStage": stage, "orgUnit": s.M.Facility.ID, "occurredAt": time.Now().UTC().Format("2006-01-02"),
+		"status": "ACTIVE", "dataValues": dvs}}}
+}
+
+// reconnect brings the uplink back and runs cycles, returning how many tracker pushes
+// each cycle sent to central: after the first, refused changes must not be sent again
+// and again (I5, I7). A cycle's error is logged, not fatal.
+func (s *scene) reconnect(cycles int) []int {
+	s.t.Helper()
+	s.Online()
+	s.Net.Calls()
+	var pushes []int
+	for range cycles {
+		if err := s.App.Worker.Cycle(context.Background()); err != nil {
+			s.t.Logf("sync: %v", err)
+		}
+		n := 0
+		for _, c := range s.Net.Calls() {
+			if c.Method == "POST" && c.URL.Path == "/api/tracker" {
+				n++
+			}
+		}
+		pushes = append(pushes, n)
+	}
+	s.t.Logf("tracker pushes per cycle: %v; pending outbox %d, stuck %v", pushes,
+		s.App.Hub.Store.CountOutbox(store.OutboxPending), s.App.Hub.StuckOutbox())
+	return pushes
+}
+
+// noRepeats fails if a cycle after the first pushed again.
+func (s *scene) noRepeats(pushes []int) {
+	s.t.Helper()
+	if len(pushes) > 1 && slices.ContainsFunc(pushes[1:], func(n int) bool { return n > 0 }) {
+		s.t.Errorf("I5/I7: pushes repeat in later cycles: %v", pushes)
+	}
+}
+
+// expect checks the ledger: every save has an allowed outcome, and the last save of
+// each named object has exactly its own.
+func (s *scene) expect(want map[string]string, allowed ...string) []tk.Line {
+	s.t.Helper()
+	lines := s.l.Check()
+	for i, ln := range lines {
+		s.t.Logf("ledger: %s", ln)
+		later := slices.ContainsFunc(lines[i+1:], func(x tk.Line) bool { return x.UID == ln.UID })
+		if w, ok := want[ln.UID]; ok && !later && ln.Outcome != w {
+			s.t.Errorf("%s %s: %s, want %s", ln.Kind, ln.UID, ln.Outcome, w)
+		} else if (!ok || later) && !slices.Contains(allowed, ln.Outcome) {
+			s.t.Errorf("%s %s: %s", ln.Kind, ln.UID, ln.Outcome)
+		}
+	}
+	return lines
+}
+
+// stageElement is a data element of a program stage on central.
+type stageElement struct {
+	ID         string
+	Compulsory bool
+	OptionSet  string
+	Options    []string
+}
+
+func (s *scene) stageElements(stage string) []stageElement {
+	s.t.Helper()
+	var res struct {
+		PSDEs []struct {
+			Compulsory  bool
+			DataElement struct {
+				ID        string
+				OptionSet *struct {
+					ID      string
+					Options []struct{ Code string }
+				}
+			}
+		} `json:"programStageDataElements"`
+	}
+	if err := s.Central.JSON("GET", "/api/programStages/"+stage+
+		"?fields=programStageDataElements[compulsory,dataElement[id,optionSet[id,options[code]]]]", nil, &res); err != nil {
+		s.t.Fatal(err)
+	}
+	var out []stageElement
+	for _, p := range res.PSDEs {
+		el := stageElement{ID: p.DataElement.ID, Compulsory: p.Compulsory}
+		if os := p.DataElement.OptionSet; os != nil {
+			el.OptionSet = os.ID
+			for _, o := range os.Options {
+				el.Options = append(el.Options, o.Code)
+			}
+		}
+		out = append(out, el)
+	}
+	return out
+}
+
+// errorCodes are the error codes in a tracker import report.
+func errorCodes(b []byte) []string {
+	var r struct {
+		ValidationReport struct {
+			ErrorReports []struct{ ErrorCode string } `json:"errorReports"`
+		} `json:"validationReport"`
+	}
+	json.Unmarshal(b, &r)
+	var out []string
+	for _, e := range r.ValidationReport.ErrorReports {
+		out = append(out, e.ErrorCode)
+	}
+	return out
+}
