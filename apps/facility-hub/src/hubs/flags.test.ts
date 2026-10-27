@@ -17,6 +17,7 @@ const healthy: Heartbeat = {
     hubTokenExpires: ago(-24 * 30),
     lastUpgrade: { result: 'ok' },
     needsUpgrade: false,
+    unprotected: [],
 }
 const kinds = (hb?: Heartbeat) => flags(hb, now).map((f) => f.kind)
 
@@ -41,6 +42,7 @@ describe('flags', () => {
             { lastUpgrade: { result: 'failed', reason: 'health check' } },
         ],
         ['needsUpgrade', { needsUpgrade: true }],
+        ['unprotected', { unprotected: ['facility-hub-admin/central-move'] }],
     ])('raises %s', (kind, change) => {
         expect(kinds({ ...healthy, ...change })).toEqual([kind])
     })

@@ -48,6 +48,8 @@ export type Heartbeat = {
     addresses?: string[] | null
     /** SHA-256 of the certificate authority devices install, colon-separated hex. */
     caFingerprint?: string
+    /** The dataStore entries the hub acts on that any user may write (CheckProtection). */
+    unprotected?: string[] | null
     history?: Day[]
 }
 
@@ -71,6 +73,7 @@ export type FlagKind =
     | 'token'
     | 'upgrade'
     | 'needsUpgrade'
+    | 'unprotected'
 
 export type Flag = { kind: FlagKind }
 
@@ -114,6 +117,7 @@ export const flags = (hb: Heartbeat | undefined, now: Date): Flag[] => {
     )
     add('upgrade', hb.lastUpgrade?.result === 'failed')
     add('needsUpgrade', hb.needsUpgrade === true)
+    add('unprotected', (hb.unprotected?.length ?? 0) > 0)
     return out
 }
 

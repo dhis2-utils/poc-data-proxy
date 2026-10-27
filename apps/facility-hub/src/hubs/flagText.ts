@@ -14,6 +14,7 @@ export const flagLabel = (kind: FlagKind): string =>
         token: i18n.t('Token expired'),
         upgrade: i18n.t('Upgrade failed'),
         needsUpgrade: i18n.t('Needs upgrade'),
+        unprotected: i18n.t('Unprotected entries'),
     })[kind]
 
 /** A sentence explaining a flag, for the hub's page. */
@@ -74,6 +75,11 @@ export const flagSentence = (kind: FlagKind, hb?: Heartbeat): string => {
         case 'needsUpgrade':
             return i18n.t(
                 'Central runs a DHIS2 version this hub release does not support – it only passes requests through until it is upgraded.'
+            )
+        case 'unprotected':
+            return i18n.t(
+                'Any user can change these entries on central – {{- entries}}. Check each, then protect it with sharing, read only for the public. Saving a setting in this app protects its entry; a hub protects its own registry entry once the hub owners group is named on the Approvals page.',
+                { entries: (hb?.unprotected ?? []).join(', ') }
             )
     }
 }

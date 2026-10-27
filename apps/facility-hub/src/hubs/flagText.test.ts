@@ -7,4 +7,17 @@ describe('flagSentence', () => {
         })
         expect(s).toContain("disk/full: can't swap")
     })
+
+    it('names the entries any user may write, and what to do', () => {
+        const s = flagSentence('unprotected', {
+            unprotected: [
+                'facility-hub-admin/central-move',
+                'facility-hub-registry/hub-abc',
+            ],
+        })
+        expect(s).toContain(
+            'facility-hub-admin/central-move, facility-hub-registry/hub-abc'
+        )
+        expect(s).toContain('sharing')
+    })
 })
