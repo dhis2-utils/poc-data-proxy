@@ -68,8 +68,18 @@ func (l *netLedger) summary() string {
 			upd++
 		}
 	}
-	return fmt.Sprintf("%d saves: %d confirmed (%d by central, %d by the hub), %d not confirmed; %d of them updates",
-		conf+unconf, conf, online, conf-online, unconf, upd)
+	why := map[string]int{}
+	for _, s := range l.all() {
+		if !s.Confirmed {
+			k := s.Err
+			if k == "" {
+				k = strconv.Itoa(s.Status)
+			}
+			why[k[:min(len(k), 160)]]++
+		}
+	}
+	return fmt.Sprintf("%d saves: %d confirmed (%d by central, %d by the hub), %d not confirmed; %d of them updates; not confirmed: %v",
+		conf+unconf, conf, online, conf-online, unconf, upd, why)
 }
 
 // netRun is one scenario: a hub process, its uplink and the clients saving through it.
@@ -119,6 +129,7 @@ func netStart(t *testing.T) *netRun {
 	}
 	e.Sync()
 	r.p = e.Detach()
+	t.Cleanup(r.keepLog)
 	r.p.WaitFor("online", time.Minute, tk.Online)
 	t.Logf("run tag %s; hub log %s", r.tag, r.p.Log)
 	return r
@@ -139,7 +150,9 @@ func (r *netRun) writers() []*netWriter {
 		if _, ok := r.e.M.User(role); !ok {
 			continue
 		}
-		ws = append(ws, &netWriter{r: r, c: r.e.Web(role), web: true})
+		w := &netWriter{r: r, c: r.e.Web(role), web: true}
+		w.c.Try("POST", "/api/auth/login", map[string]string{"username": w.c.User, "password": r.e.M.Password})
+		ws = append(ws, w)
 	}
 	ws = append(ws, &netWriter{r: r, c: r.e.Android(tk.RoleNurse)})
 	return ws
@@ -188,12 +201,12 @@ func (w *netWriter) once() {
 	s.Status = st
 	if err != nil {
 		s.Err = err.Error()
-	} else if st == 401 && w.web {
+	} else if (st == 401 || st == 302) && w.web {
 		w.c.Try("POST", "/api/auth/login", map[string]string{"username": w.c.User, "password": r.e.M.Password})
 	}
 	s.Confirmed = err == nil && accepted(st, b)
 	s.Online = hdr == ""
-	if !s.Confirmed && err == nil && st != 401 && st != 503 {
+	if !s.Confirmed && err == nil && st != 401 && st != 302 {
 		s.Err = fmt.Sprintf("%d %.300s", st, b)
 	}
 	r.ledger.add(s)
@@ -417,13 +430,30 @@ func (r *netRun) finish(drain time.Duration) netCheck {
 	r.p.WaitFor("the outbox to drain", drain, tk.Drained)
 	r.t.Logf("drained %s after the fault ended", time.Since(start).Round(time.Second))
 	r.t.Logf("ledger: %s", r.ledger.summary())
+	seen := map[string]bool{}
+	for _, s := range r.ledger.all() {
+		if !s.Confirmed && s.Err != "" && !seen[s.Err[:min(len(s.Err), 60)]] {
+			seen[s.Err[:min(len(s.Err), 60)]] = true
+			r.t.Logf("not confirmed (%s, %s, update=%v, registered by central=%v): %s", s.User, s.At.Format("15:04:05.000"),
+				s.Update, r.registeredOnline(s.Event), s.Err)
+		}
+	}
 	c := r.check()
 	r.t.Logf("central: %s", c)
-	r.keepLog()
 	if !c.ok() {
 		r.t.Errorf("invariants broken: %s", c)
 	}
 	return c
+}
+
+// registeredOnline reports whether central answered the event's registration.
+func (r *netRun) registeredOnline(event string) bool {
+	for _, s := range r.ledger.all() {
+		if s.Event == event && !s.Update {
+			return s.Confirmed && s.Online
+		}
+	}
+	return false
 }
 
 // keepLog copies the hub's log to testresults/adversarial, as the scenario's evidence.
