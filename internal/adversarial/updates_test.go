@@ -154,9 +154,9 @@ func choose(e *tk.Env, version, hubID string) {
 	})
 }
 
-// upgradeStart sets a hub of the old release up for the facility, through its own
+// releaseStart sets a hub of the old release up for the facility, through its own
 // pages as an installer would, logs the writers in and waits for its first pull.
-func upgradeStart(t *testing.T, old string) *netRun {
+func releaseStart(t *testing.T, old string) *netRun {
 	t.Helper()
 	e := tk.Start(t)
 	r := newRun(t, e)
@@ -250,7 +250,7 @@ func TestN1UpgradeWithEveryKindOfRecord(t *testing.T) {
 	ch := newChannel(t)
 	old := ch.build(fromRelease(), "0.1.0")
 	next := ch.build("", "0.2.0")
-	r := upgradeStart(t, old)
+	r := releaseStart(t, old)
 	e, p := r.e, r.p
 	if len(e.M.EventPrograms) == 0 || e.M.Aggregate == nil {
 		t.Skip("this setup has no event program or no aggregate data set")
@@ -398,7 +398,7 @@ func TestN4KilledDuringUpgrade(t *testing.T) {
 	next := ch.build("", "0.2.0")
 	hold := t.TempDir()
 	ch.publish("0.2.0", wrapper(t, hold, next))
-	r := upgradeStart(t, old)
+	r := releaseStart(t, old)
 	e, p := r.e, r.p
 	stop := r.write(300 * time.Millisecond)
 	defer stop()
@@ -474,7 +474,7 @@ func TestN5HealthCheckFailsAfterMigration(t *testing.T) {
 	next := ch.build("", "0.2.0")
 	hold := t.TempDir()
 	ch.publish("0.2.0", wrapper(t, hold, next))
-	r := upgradeStart(t, old)
+	r := releaseStart(t, old)
 	e, p := r.e, r.p
 	stop := r.write(200 * time.Millisecond)
 	defer stop()
@@ -534,7 +534,7 @@ func TestN13UnsupportedMajor(t *testing.T) {
 	ch := newChannel(t)
 	cur := ch.build("", "0.1.0")
 	next := ch.build("", "0.2.0")
-	r := upgradeStart(t, cur)
+	r := releaseStart(t, cur)
 	e, p := r.e, r.p
 	e.Net.SetDown(true)
 	p.WaitFor("offline", time.Minute, tk.Offline)

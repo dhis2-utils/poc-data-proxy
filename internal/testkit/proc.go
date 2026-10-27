@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"testing"
 	"time"
 )
 
@@ -41,35 +42,52 @@ type Proc struct {
 func (e *Env) Detach() *Proc {
 	e.T.Helper()
 	bin := filepath.Join(e.T.TempDir(), "hub")
-	build := exec.Command("go", "build", "-o", bin, "github.com/dhis2/facility-hub/cmd/hub")
-	if out, err := build.CombinedOutput(); err != nil {
-		e.T.Fatalf("building the hub: %v\n%s", err, out)
-	}
-	return e.detach(bin, false)
+	BuildHub(e.T, "", bin, "")
+	return e.DetachBinary(bin, false)
 }
 
-// DetachRelease runs a hub binary built elsewhere (an older release, to upgrade from)
-// as the Env's hub, on an empty data directory: the in-process hub's store is removed,
-// and the binary creates its own, to be set up through /hub/setup. The binary is
-// copied, so an upgrade can replace it as it replaces an installed one.
-func (e *Env) DetachRelease(bin string) *Proc {
+// BuildHub builds cmd/hub of the module in src ("" for this one) to out, with these
+// -ldflags (e.g. "-X main.version=0.2.0"). A tree built through a go.work (the
+// sandbox's, with local copies of modules) is given the same.
+func BuildHub(t testing.TB, src, out, ldflags string) {
+	t.Helper()
+	if src != "" {
+		if _, err := os.Stat(filepath.Join(src, "go.work")); err != nil {
+			if w, _ := exec.Command("go", "env", "GOWORK").Output(); len(strings.TrimSpace(string(w))) > 0 {
+				b, err := os.ReadFile(strings.TrimSpace(string(w)))
+				if err != nil || os.WriteFile(filepath.Join(src, "go.work"), b, 0o644) != nil {
+					t.Fatalf("copying %s: %v", w, err)
+				}
+			}
+		}
+	}
+	build := exec.Command("go", "build", "-ldflags", ldflags, "-o", out, "github.com/dhis2/facility-hub/cmd/hub")
+	build.Dir = src
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("building the hub in %q: %v\n%s", src, err, out)
+	}
+}
+
+// DetachRelease runs an older release's binary as the Env's hub, on an empty data
+// directory, to be set up through /hub/setup and then upgraded.
+func (e *Env) DetachRelease(bin string) *Proc { return e.DetachBinary(bin, true) }
+
+// DetachBinary is Detach with a hub binary of the test's choosing, such as an older
+// release. The process runs a copy of it, which an upgrade may replace. With empty,
+// the process starts on an empty data directory, to be set up through it: an older
+// release cannot open a store this tree's hub created.
+func (e *Env) DetachBinary(bin string, empty bool) *Proc {
 	e.T.Helper()
+	dir := e.T.TempDir()
+	p := &Proc{e: e, bin: filepath.Join(dir, "hub"), cfg: filepath.Join(dir, "hub.yaml"), Log: filepath.Join(dir, "hub.log"),
+		SyncInterval: 5 * time.Second, PingInterval: 2 * time.Second}
 	b, err := os.ReadFile(bin)
+	if err == nil {
+		err = os.WriteFile(p.bin, b, 0o755)
+	}
 	if err != nil {
 		e.T.Fatal(err)
 	}
-	own := filepath.Join(e.T.TempDir(), "hub")
-	if err := os.WriteFile(own, b, 0o755); err != nil {
-		e.T.Fatal(err)
-	}
-	return e.detach(own, true)
-}
-
-func (e *Env) detach(bin string, fresh bool) *Proc {
-	e.T.Helper()
-	dir := filepath.Dir(bin)
-	p := &Proc{e: e, bin: bin, cfg: filepath.Join(dir, "hub.yaml"), Log: filepath.Join(dir, "hub.log"),
-		SyncInterval: 5 * time.Second, PingInterval: 2 * time.Second}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		e.T.Fatal(err)
@@ -81,10 +99,12 @@ func (e *Env) detach(bin string, fresh bool) *Proc {
 	front := e.Srv.Listener.Addr().String()
 	e.stop()
 	e.App = nil
-	if fresh {
+	if empty {
 		ents, _ := os.ReadDir(e.Dir)
-		for _, x := range ents {
-			os.RemoveAll(filepath.Join(e.Dir, x.Name()))
+		for _, d := range ents {
+			if err := os.RemoveAll(filepath.Join(e.Dir, d.Name())); err != nil {
+				e.T.Fatal(err)
+			}
 		}
 	}
 	target, _ := url.Parse("http://" + p.addr)
@@ -149,6 +169,7 @@ func (p *Proc) Start() {
 	}
 	p.cmd = exec.Command(p.bin, "serve", "-config", p.cfg)
 	p.cmd.Stdout, p.cmd.Stderr = logf, logf
+	p.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Kill ends its children too
 	if err := p.cmd.Start(); err != nil {
 		p.e.T.Fatal(err)
 	}
@@ -157,8 +178,14 @@ func (p *Proc) Start() {
 	p.WaitFor("the hub answers", time.Minute, func(map[string]any) bool { return true })
 }
 
-// Kill ends the process with SIGKILL, as a power cut: nothing is flushed or closed.
-func (p *Proc) Kill() { p.signal(syscall.SIGKILL) }
+// Kill ends the process with SIGKILL, as a power cut: nothing is flushed or closed,
+// and the processes it started (an upgrade's migration) die with it.
+func (p *Proc) Kill() {
+	if p.Running() {
+		syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
+		<-p.exited
+	}
+}
 
 // Stop ends it with SIGTERM, as a clean shutdown.
 func (p *Proc) Stop() { p.signal(syscall.SIGTERM) }
@@ -170,6 +197,9 @@ func (p *Proc) signal(sig syscall.Signal) {
 	p.cmd.Process.Signal(sig)
 	<-p.exited
 }
+
+// Bin is the binary the process runs, and starts from: an upgrade replaces it.
+func (p *Proc) Bin() string { return p.bin }
 
 func (p *Proc) Running() bool {
 	if p.exited == nil {

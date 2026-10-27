@@ -101,6 +101,25 @@ type netRun struct {
 // to its own process.
 func netStart(t *testing.T) *netRun {
 	t.Helper()
+	r := netPrepare(t)
+	e := r.e
+	e.Setup()
+	for _, role := range []string{tk.RoleNurse, tk.RoleRestricted} {
+		if _, ok := e.M.User(role); ok {
+			e.Web(role).Login()
+		}
+	}
+	e.Sync()
+	r.p = e.Detach()
+	t.Cleanup(r.keepLog)
+	r.p.WaitFor("online", time.Minute, tk.Online)
+	t.Logf("run tag %s; hub log %s", r.tag, r.p.Log)
+	return r
+}
+
+// netPrepare picks what the writers save, for a hub not yet set up.
+func netPrepare(t *testing.T) *netRun {
+	t.Helper()
 	e := tk.Start(t)
 	if !e.Live() {
 		t.Skip("adversarial scenarios run against a real DHIS2 (HUB_MANIFEST)")
