@@ -73,6 +73,7 @@ func (u *UI) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/hub/ui/usb", u.admin(u.handleUSB))
 	mux.HandleFunc("/hub/network/join", u.handleNetwork(false))
 	mux.HandleFunc("/hub/network/facility", u.handleNetwork(true))
+	mux.HandleFunc("/hub/ui/wifi-password", u.admin(u.handleWifiPassword))
 	mux.HandleFunc("/hub/ui/reset", u.admin(u.handleReset))
 	mux.HandleFunc("/hub/ui/takeover", u.admin(u.handleTakeOver))
 	mux.HandleFunc("/hub/ui/move", u.admin(u.handleMove))
@@ -294,7 +295,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"ServerVersion": h.ServerVersion(), "Msg": r.URL.Query().Get("msg"),
 		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour), "Orphans": h.Store.PendingWithoutUser(),
 		"Offline": !h.Online(), "AccountCode": h.AccountCode(),
-		"Reach": reachText(h.Reach()), "Proxy": h.Proxy(), "Net": u.netView(),
+		"Reach": reachText(h.Reach()), "Proxy": h.Proxy(), "Net": u.netView(true),
 	})
 }
 

@@ -84,7 +84,7 @@ The image holds **no secrets**. Each hub gets its own data key, hub ID and signi
   - the server's `tls.key`, which the hub needs before anyone logs in, to serve its login page over HTTPS;
   - the authority's `ca.key`, which renews it.
 - **Before set-up:** the setup code (`setup-token`, *sealed*).
-- **On a Pi:** the setup Wi-Fi's password (`setup-wifi`) and the chosen Wi-Fi's name (`network.json`), both *sealed*. The facility Wi-Fi's password is kept by NetworkManager, readable by root only.
+- **On a Pi:** the setup Wi-Fi's password (`setup-wifi`), the password of the hub's own facility Wi-Fi (`facility-wifi`, case C) and the chosen Wi-Fi's name (`network.json`), all *sealed*. NetworkManager keeps a copy of each Wi-Fi password, readable by root only.
 - **The logs:** templates and parameter names only, no values.
 
 The hub's own account password, the move key and the users' tokens are in the encrypted state.
@@ -231,7 +231,8 @@ These small devices often have no Ethernet port and frequently isolate clients.
 - The hub runs its own Wi-Fi access point, DHCP and DNS (NetworkManager's shared mode). Its uplink is the Ethernet port (to a modem) or a USB 4G modem.
 - The Pi's built-in Wi-Fi handles a small facility, about 10–15 devices. Beyond that, add a cheap external access point on the hub's Ethernet.
 - This is the most robust case, because the hub controls DHCP, DNS and client isolation. It is also the simplest to support remotely, because every facility in this mode looks the same.
-- Chosen on the setup Wi-Fi ("Setup Wi-Fi" below; built, untested on hardware): the setup network becomes the facility's network, under a name and password the admin chooses.
+- Chosen on the setup Wi-Fi ("Setup Wi-Fi" below; built, untested on hardware): the setup network becomes the facility's network. It keeps the hub's name (`Hub-Zvc7xMnFcVg`), with a password the hub makes (decided 2026-10-27): 4 groups of 4 lowercase letters and digits without look-alikes (no 0/o, 1/l/i), as `k7mp-x2qd-9wtr-b4nz`, about 80 bits. The page that makes the Wi-Fi shows it, then the hub's admin page and `hub.txt` on the USB stick ("Facility Wi-Fi password:"); `setup-code.txt` does not, since it is for set-up only. An admin can make a new password on the admin page ("New password"): the Wi-Fi starts again with it, and every device has to join again.
+- Hubs made the facility's Wi-Fi before 2026-10-27, under a name and password an admin chose, keep them until an admin makes a new password; the Wi-Fi then takes the hub's name too. Their password is in neither the admin page nor `hub.txt`.
 - Its uplink: the Ethernet port to a modem or router, or a USB 4G stick of the one kind the hub supports ("USB modems" below).
 
 ### Setup Wi-Fi: a hub with no screen or keyboard (built 2026-10-19, untested on hardware)
@@ -239,10 +240,10 @@ These small devices often have no Ethernet port and frequently isolate clients.
 A hub with no network cannot be configured over one, and has no screen. So it provides one for the purpose:
 
 1. **When:** at boot, if the hub has no Ethernet link with DHCP and no saved Wi-Fi it can join, it starts its own setup Wi-Fi.
-2. **Its name and password:** "Hub-" and the hub ID without its "hub-" (`Hub-Zvc7xMnFcVg` for `hub-Zvc7xMnFcVg`), with a password the hub makes at its first boot at the depot: 8 digits, the least Wi-Fi allows, typed on a phone's number pad. Not one password for every kit. The setup code (`setup-code.txt`) is 6 digits: both only prove that someone holds the box, and wrong setup codes are throttled (50, then one every 15 minutes, from every device together). Both are on the USB stick in the box, in `facility-hub/hub.txt`, which the hub writes and keeps current: the hub ID, the setup Wi-Fi's name and password, and the hub's address on the facility network. Unlike `setup-code.txt`, it stays after set-up, since the setup Wi-Fi is needed again when the facility's network changes. The label may repeat them, but nothing depends on a label or a sheet surviving: whoever holds the box has the stick. (Plain text on the stick weakens nothing: the setup Wi-Fi only leads to the setup page, which needs the setup code or a staff login.)
+2. **Its name and password:** "Hub-" and the hub ID without its "hub-" (`Hub-Zvc7xMnFcVg` for `hub-Zvc7xMnFcVg`), with a password the hub makes at its first boot at the depot: 8 digits, the least Wi-Fi allows, typed on a phone's number pad. Not one password for every kit. The setup code (`setup-code.txt`) is 6 digits: both only prove that someone holds the box, and wrong setup codes are throttled (50, then one every 15 minutes, from every device together). Both are on the USB stick in the box, in `facility-hub/hub.txt`, which the hub writes and keeps current: the hub ID, the setup Wi-Fi's name and password, the hub's address on the facility network, and in case C the facility Wi-Fi's name and password. Unlike `setup-code.txt`, it stays after set-up, since the setup Wi-Fi is needed again when the facility's network changes. The label may repeat them, but nothing depends on a label or a sheet surviving: whoever holds the box has the stick. (Plain text on the stick weakens nothing: the setup Wi-Fi only leads to the setup page, which needs the setup code or a staff login.)
 3. **What the admin does:** connect a phone to that Wi-Fi; the phone opens the hub's setup page by itself, as a hotel Wi-Fi does (the hub answers every name with its own address). The page offers:
    - **Join an existing Wi-Fi** (case B, or case A without a cable): pick a network from a scan, enter its password;
-   - **Make this hub the facility's Wi-Fi** (case C): the setup network becomes the facility's, under a name and password the admin chooses.
+   - **Make this hub the facility's Wi-Fi** (case C): the setup network becomes the facility's, under the same name, with a longer password the hub makes and shows (case C above). The setup Wi-Fi keeps its 8 digits: it only leads to the setup page.
 4. **Switching:** the Pi has one Wi-Fi radio, and running its own network while joining another is unreliable. So the hub scans first, keeps the choice, turns its own network off and joins. If that fails within about a minute, the setup Wi-Fi comes back with what went wrong ("wrong password", "network not found"). Before switching, the page tells the admin to put the phone back on the facility's Wi-Fi, and shows the hub's address there.
 5. **Afterwards:** if the joined network is gone for 15 minutes, the setup Wi-Fi returns, so a hub is never out of reach because a router changed its password. The setup Wi-Fi runs only while the hub has no network.
 6. **Security:** besides the per-kit password, the setup page needs the setup code before set-up and a staff login after it, as on any network.
@@ -252,7 +253,7 @@ A hub with no network cannot be configured over one, and has no screen. So it pr
    - While the setup Wi-Fi is on, the hub tries a Wi-Fi it joined before every 15 minutes, so a router that restarted is rejoined without anyone coming back. NetworkManager does not retry while the radio is an access point.
    - The captive answer is a dnsmasq line (`address=/#/10.42.0.1`) that the hub writes only while the setup Wi-Fi is on. The hub's plain-HTTP page sends phones to `http://10.42.0.1/`. Phones open it in their small sign-in window, which cannot download the hub's certificate: the page then says to open `http://10.42.0.1` in Safari or Chrome. The hub renews its certificate within 30 seconds of a new address (the setup Wi-Fi's, or a network it joined), so `https://10.42.0.1` is covered.
    - The setup and admin pages show the network section. After set-up, changing the network needs a staff login.
-   - `hub.txt` leaves out the facility Wi-Fi's password, since the facility chose it.
+   - `hub.txt` carries the facility Wi-Fi's password, since the hub chose it (`facility-wifi`, sealed in the data folder, made once). A password an admin chose before 2026-10-27 is left out.
 
 The hub's IP changes when it moves from its own network to the facility's; devices use `dhis2.local`, so that does not matter ("Reaching the hub securely" below).
 

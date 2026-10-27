@@ -24,6 +24,8 @@ const (
 	captiveFile = "hub-captive.conf"
 	// The setup Wi-Fi's password: no letters that look alike (0/O, 1/l/I).
 	setupAlphabet = "0123456789"
+	// The facility Wi-Fi's password: lowercase letters and digits without 0/o, 1/l/i.
+	facilityAlphabet = "23456789abcdefghjkmnpqrstuvwxyz"
 )
 
 // Manager keeps a hub reachable: while it has no network it runs the setup Wi-Fi
@@ -40,7 +42,7 @@ type Manager struct {
 	Delay func(func())
 
 	mu       sync.Mutex // held through nmcli calls, which can take a minute
-	pwMu     sync.Mutex // the setup password file
+	pwMu     sync.Mutex // the password files
 	snap     atomic.Pointer[snapshot]
 	started  time.Time
 	lastNet  time.Time // when the hub last had a network (zero: never since start)
@@ -84,12 +86,15 @@ type Status struct {
 	LastError     string
 	SetupSSID     string
 	SetupPassword string
+	// The facility Wi-Fi's password, when the hub made it (not one an admin chose).
+	FacilityPassword string
 }
 
 // saved is what the admin chose, in <DataDir>/network.json.
 type saved struct {
-	Wifi     string `json:"wifi,omitempty"`
-	Facility string `json:"facility,omitempty"`
+	Wifi        string `json:"wifi,omitempty"`
+	Facility    string `json:"facility,omitempty"`
+	HubPassword bool   `json:"hubPassword,omitempty"` // the facility Wi-Fi has facilityPassword
 }
 
 func (m *Manager) now() time.Time {
@@ -301,20 +306,34 @@ func (m *Manager) Join(ssid, password string) error {
 		m.lastErr, m.lastNet = "", m.now()
 		m.markUp(WifiConn)
 		m.publish()
-		m.save(func(s *saved) { s.Wifi, s.Facility = ssid, "" })
+		m.save(func(s *saved) { *s = saved{Wifi: ssid} })
 		m.R.Run(ctx, "connection", "delete", FacilityConn)
 		slog.Info("network: joined a Wi-Fi", "ssid", ssid)
 	})
 	return nil
 }
 
-// MakeFacilityWifi makes the hub the facility's Wi-Fi (case C) a moment later.
-func (m *Manager) MakeFacilityWifi(ssid, password string) error {
-	if strings.TrimSpace(ssid) == "" {
-		return errors.New("give the Wi-Fi a name")
+// MakeFacilityWifi makes the hub the facility's Wi-Fi (case C) a moment later, under
+// the setup Wi-Fi's name and the hub's own password (facilityPassword).
+func (m *Manager) MakeFacilityWifi() (ssid, password string, err error) {
+	return m.startFacility(false)
+}
+
+// NewFacilityPassword starts the facility's Wi-Fi again a moment later with a new
+// password: every device joins again. A Wi-Fi an admin named (until 2026-10-27) takes
+// the hub's name.
+func (m *Manager) NewFacilityPassword() (ssid, password string, err error) {
+	if m.load().Facility == "" {
+		return "", "", errors.New("the hub is not the facility's Wi-Fi")
 	}
-	if len(password) < 8 {
-		return errors.New("the password needs at least 8 characters")
+	return m.startFacility(true)
+}
+
+func (m *Manager) startFacility(renew bool) (string, string, error) {
+	ssid := m.setupSSID()
+	pw, err := m.facilityPassword(renew)
+	if err != nil {
+		return "", "", err
 	}
 	m.delay(func() {
 		ctx := context.Background()
@@ -325,7 +344,7 @@ func (m *Manager) MakeFacilityWifi(ssid, password string) error {
 		m.R.Run(ctx, "connection", "delete", FacilityConn)
 		if _, err := m.R.Run(ctx, "connection", "add", "type", "wifi", "ifname", "wlan0", "con-name", FacilityConn,
 			"autoconnect", "yes", "ssid", ssid, "802-11-wireless.mode", "ap", "802-11-wireless.band", "bg",
-			"ipv4.method", "shared", "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", password); err != nil {
+			"ipv4.method", "shared", "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", pw); err != nil {
 			m.failed(ctx, err)
 			return
 		}
@@ -336,10 +355,10 @@ func (m *Manager) MakeFacilityWifi(ssid, password string) error {
 		m.lastErr, m.lastNet = "", m.now()
 		m.markUp(FacilityConn)
 		m.publish()
-		m.save(func(s *saved) { s.Facility, s.Wifi = ssid, "" })
+		m.save(func(s *saved) { *s = saved{Facility: ssid, HubPassword: true} })
 		slog.Info("network: the hub is the facility's Wi-Fi", "ssid", ssid)
 	})
-	return nil
+	return ssid, pw, nil
 }
 
 func (m *Manager) delay(f func()) {
@@ -378,6 +397,9 @@ func (m *Manager) Status() Status {
 		st.Mode = "setup"
 	case activeIn(snap.devs, FacilityConn):
 		st.Mode, st.Name = "facility", sv.Facility
+		if sv.HubPassword {
+			st.FacilityPassword, _ = m.facilityPassword(false)
+		}
 	case kind == "wifi":
 		st.Mode, st.Name = kind, sv.Wifi
 	case kind != "":
@@ -398,26 +420,53 @@ func (m *Manager) setupSSID() string { return "Hub-" + strings.TrimPrefix(m.HubI
 // which needs the setup code or a staff login. One of another form (12 letters and
 // digits, until 2026-10-22) is replaced; hub.txt on the stick follows.
 func (m *Manager) setupPassword() (string, error) {
+	return m.password("setup-wifi", "xxxxxxxx", setupAlphabet, false)
+}
+
+// facilityPassword is the facility Wi-Fi's, made once (or anew on renew) and kept in
+// the data folder: 4 groups of 4 lowercase letters and digits with no look-alikes,
+// about 80 bits, as "k7mp-x2qd-9wtr-b4nz". The admin page and hub.txt show it.
+func (m *Manager) facilityPassword(renew bool) (string, error) {
+	return m.password("facility-wifi", "xxxx-xxxx-xxxx-xxxx", facilityAlphabet, renew)
+}
+
+// password reads the file, or makes one of form: each "x" a character from alphabet,
+// anything else as it is. One of another form is replaced.
+func (m *Manager) password(name, form, alphabet string, renew bool) (string, error) {
 	m.pwMu.Lock()
 	defer m.pwMu.Unlock()
-	p := filepath.Join(m.DataDir, "setup-wifi")
-	if b, err := devkey.ReadFile(p); err == nil {
-		if s := strings.TrimSpace(string(b)); len(s) == 8 && strings.Trim(s, setupAlphabet) == "" {
+	p := filepath.Join(m.DataDir, name)
+	if b, err := devkey.ReadFile(p); err == nil && !renew {
+		if s := strings.TrimSpace(string(b)); fits(s, form, alphabet) {
 			return s, nil
 		}
 	}
-	b := make([]byte, 8)
+	b := []byte(form)
 	for i := range b {
-		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(setupAlphabet))))
-		if err != nil {
-			return "", err
+		if b[i] == 'x' {
+			n, err := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
+			if err != nil {
+				return "", err
+			}
+			b[i] = alphabet[n.Int64()]
 		}
-		b[i] = setupAlphabet[n.Int64()]
 	}
 	if err := devkey.WriteFile(p, append(b, '\n'), 0o600); err != nil {
 		return "", err
 	}
 	return string(b), nil
+}
+
+func fits(s, form, alphabet string) bool {
+	if len(s) != len(form) {
+		return false
+	}
+	for i := range s {
+		if form[i] == 'x' && !strings.ContainsRune(alphabet, rune(s[i])) || form[i] != 'x' && s[i] != form[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *Manager) load() saved {

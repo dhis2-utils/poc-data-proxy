@@ -48,10 +48,12 @@ func stickEnv(t *testing.T, codeMode bool) (*env, string) {
 func TestSetupCodeOnStick(t *testing.T) {
 	e, usb := stickEnv(t, true)
 	// As on a Pi (app.SetNet): hub.txt with the setup Wi-Fi. setup-code.txt repeats
-	// it, since whoever sets the hub up opens that file first.
+	// it, since whoever sets the hub up opens that file first, but not the facility
+	// Wi-Fi (case C): that file is for set-up only.
 	e.app.Stick.Info = func() string {
 		return "Facility hub " + e.app.Hub.HubID() + "\nOpen: http://dhis2.local\nAddresses: none\n" +
-			"Setup Wi-Fi: Hub-Test\nSetup Wi-Fi password: 12345678\n"
+			"Setup Wi-Fi: Hub-Test\nSetup Wi-Fi password: 12345678\n" +
+			"Facility Wi-Fi: Hub-Test\nFacility Wi-Fi password: k7mp-x2qd-9wtr-b4nz\n"
 	}
 	e.app.Stick.Tick(context.Background())
 	b, err := os.ReadFile(filepath.Join(usb, "facility-hub", "setup-code.txt"))
@@ -61,7 +63,8 @@ func TestSetupCodeOnStick(t *testing.T) {
 	code, _ := os.ReadFile(filepath.Join(e.dir, "setup-token"))
 	c := strings.TrimSpace(string(code))
 	if !strings.Contains(string(b), c) || !strings.Contains(string(b), e.app.Hub.HubID()) ||
-		!strings.Contains(string(b), "Setup Wi-Fi: Hub-Test\nSetup Wi-Fi password: 12345678\n") {
+		!strings.Contains(string(b), "Setup Wi-Fi: Hub-Test\nSetup Wi-Fi password: 12345678\n") ||
+		strings.Contains(string(b), "k7mp-x2qd-9wtr-b4nz") {
 		t.Fatalf("setup-code.txt: %s", b)
 	}
 	// 6 digits: it only proves that whoever sets the hub up holds the box, and wrong

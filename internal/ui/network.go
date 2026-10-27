@@ -14,14 +14,20 @@ type netView struct {
 	netsetup.Status
 	ModeText string
 	OnSetup  bool // the setup Wi-Fi is on: joining and case C are offered
+	Admin    bool // the admin page: the facility Wi-Fi's password and "New password"
 }
 
-func (u *UI) netView() *netView {
+// netView is the network section; the setup page, open before set-up to anyone on the
+// network, leaves out the facility Wi-Fi's password.
+func (u *UI) netView(admin bool) *netView {
 	if u.Net == nil {
 		return nil
 	}
 	st := u.Net.Status()
-	v := &netView{Status: st, OnSetup: st.Mode == "setup"}
+	if !admin {
+		st.FacilityPassword = ""
+	}
+	v := &netView{Status: st, OnSetup: st.Mode == "setup", Admin: admin}
 	switch st.Mode {
 	case "cable":
 		v.ModeText = "Cable"
@@ -48,14 +54,15 @@ func (u *UI) handleNetwork(facility bool) http.HandlerFunc {
 			http.Redirect(w, r, "/hub/", http.StatusFound)
 			return
 		}
-		ssid, pw := r.FormValue("ssid"), r.FormValue("password")
+		var ssid, pw string // pw: the facility Wi-Fi's, which the phone joins next
 		var err error
 		if facility {
-			err = u.Net.MakeFacilityWifi(ssid, pw)
+			ssid, pw, err = u.Net.MakeFacilityWifi()
 		} else {
-			err = u.Net.Join(ssid, pw)
+			ssid = r.FormValue("ssid")
+			err = u.Net.Join(ssid, r.FormValue("password"))
 		}
-		u.render(w, "netdone", map[string]any{"HubID": u.H.HubID(), "SSID": ssid, "Facility": facility, "Error": err})
+		u.render(w, "netdone", map[string]any{"HubID": u.H.HubID(), "SSID": ssid, "Password": pw, "Facility": facility, "Error": err})
 	}
 	admin := u.admin(do)
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +80,16 @@ func (u *UI) handleNetwork(facility bool) http.HandlerFunc {
 		}
 		do(w, r)
 	}
+}
+
+// handleWifiPassword makes a new password for the facility's Wi-Fi (admin page).
+func (u *UI) handleWifiPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || u.Net == nil {
+		http.Redirect(w, r, "/hub/ui", http.StatusFound)
+		return
+	}
+	ssid, pw, err := u.Net.NewFacilityPassword()
+	u.render(w, "netdone", map[string]any{"HubID": u.H.HubID(), "SSID": ssid, "Password": pw, "Facility": true, "Error": err})
 }
 
 // setupNet is the setup Wi-Fi's network (NetworkManager's shared mode, 10.42.0.1/24).

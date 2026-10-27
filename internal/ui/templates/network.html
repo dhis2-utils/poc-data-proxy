@@ -1,5 +1,8 @@
 {{define "netsection"}}<div class="card"><h2>Network</h2>
 <p>{{.ModeText}}{{with .Addresses}} · <span class="mono">{{range $i, $a := .}}{{if $i}}, {{end}}{{$a}}{{end}}</span>{{end}}</p>
+{{if and .Admin (eq .Mode "facility")}}<form method="post" action="/hub/ui/wifi-password"><p>{{with .FacilityPassword}}Wi-Fi password <span class="mono">{{.}}</span> (also on the USB stick, in <span class="mono">facility-hub/hub.txt</span>){{else}}The Wi-Fi's name and password were chosen when it was made; a new password also names it <span class="mono">{{.SetupSSID}}</span>{{end}}.</p>
+<p class="muted">A new password starts the Wi-Fi again with it: every device then has to join again, with the new password.</p>
+<p><button class="secondary">New password</button></p></form>{{end}}
 {{with .LastError}}<div class="err">The last change failed: {{.}}</div>{{end}}
 {{if .OnSetup}}<p class="muted">The hub has no network and runs its setup Wi-Fi <strong>{{.SetupSSID}}</strong> (password on the USB stick, in <span class="mono">facility-hub/hub.txt</span>). Plugging in a network cable is enough; otherwise:</p>
 <form method="post" action="/hub/network/join"><h3>Join this Wi-Fi</h3>
@@ -8,7 +11,6 @@
 <p><button>Join this Wi-Fi</button></p></form>
 <form method="post" action="/hub/network/facility"><h3>Make this hub the facility's Wi-Fi</h3>
 <p class="muted">For facilities with no Wi-Fi of their own. Connect a network cable or the USB modem for internet; without one, the hub's Wi-Fi works inside the facility only.</p>
-<label for="fs">Wi-Fi name</label><input id="fs" type="text" name="ssid" required>
-<label for="fp">Password (at least 8 characters)</label><input id="fp" type="password" name="password" minlength="8" required autocomplete="new-password">
+<p class="muted">The Wi-Fi keeps the name <strong>{{.SetupSSID}}</strong>, with a password the hub makes. The next page shows it; afterwards the hub's admin page and <span class="mono">facility-hub/hub.txt</span> on the USB stick do.</p>
 <p><button>Make this hub the facility's Wi-Fi</button></p></form>{{end}}
 </div>{{end}}

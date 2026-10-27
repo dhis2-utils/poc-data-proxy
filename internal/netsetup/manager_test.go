@@ -75,7 +75,7 @@ func TestCableStopsSetupNotFacility(t *testing.T) {
 	if st := r.m.Status(); st.Mode != "cable" || len(st.Addresses) == 0 {
 		t.Fatalf("status %+v", st)
 	}
-	if err := r.m.MakeFacilityWifi("Clinic Staff", "longenough"); err != nil {
+	if _, _, err := r.m.MakeFacilityWifi(); err != nil {
 		t.Fatal(err)
 	}
 	r.tick(10 * time.Second)
@@ -155,24 +155,24 @@ func TestJoinedNetworkLostFor15Minutes(t *testing.T) {
 	}
 }
 
+// The facility's Wi-Fi keeps the hub's name, with a password the hub makes: 4 groups
+// of 4 letters and digits that do not look alike, about 80 bits.
 func TestFacilityWifi(t *testing.T) {
 	r := newRig(t)
 	r.tick(0)
 	r.tick(61 * time.Second)
-	if err := r.m.MakeFacilityWifi("Clinic Staff", "short"); err == nil {
-		t.Fatal("password of 5 characters accepted")
-	}
-	if err := r.m.MakeFacilityWifi("", "longenough"); err == nil {
-		t.Fatal("empty name accepted")
-	}
-	if err := r.m.MakeFacilityWifi("Clinic Staff", "longenough"); err != nil {
+	ssid, pw, err := r.m.MakeFacilityWifi()
+	if err != nil {
 		t.Fatal(err)
+	}
+	if ssid != "Hub-abc123" || !facilityPasswordForm(pw) {
+		t.Fatalf("facility Wi-Fi %q, password %q", ssid, pw)
 	}
 	if !r.nm.Up[FacilityConn] || r.nm.Up[SetupConn] || r.captiveFile() || r.m.Captive() {
 		t.Fatalf("up %v captive %v", r.nm.Up, r.captiveFile())
 	}
 	add := strings.Join(r.nm.Conns[FacilityConn], " ")
-	for _, want := range []string{"ssid Clinic Staff", "802-11-wireless.mode ap", "ipv4.method shared", "wifi-sec.psk longenough", "autoconnect yes"} {
+	for _, want := range []string{"ssid Hub-abc123 ", "802-11-wireless.mode ap", "ipv4.method shared", "wifi-sec.psk " + pw, "autoconnect yes"} {
 		if !strings.Contains(add, want) {
 			t.Errorf("facility connection lacks %q: %s", want, add)
 		}
@@ -181,7 +181,95 @@ func TestFacilityWifi(t *testing.T) {
 	if r.nm.Up[SetupConn] || !r.nm.Up[FacilityConn] {
 		t.Fatalf("up %v", r.nm.Up)
 	}
-	if st := r.m.Status(); st.Mode != "facility" || st.Name != "Clinic Staff" {
+	if st := r.m.Status(); st.Mode != "facility" || st.Name != "Hub-abc123" || st.FacilityPassword != pw {
+		t.Fatalf("status %+v", st)
+	}
+}
+
+func facilityPasswordForm(pw string) bool {
+	g := strings.Split(pw, "-")
+	if len(g) != 4 {
+		return false
+	}
+	for _, s := range g {
+		if len(s) != 4 || strings.Trim(s, "23456789abcdefghjkmnpqrstuvwxyz") != "" {
+			return false
+		}
+	}
+	return true
+}
+
+func TestFacilityPasswordSurvivesRestart(t *testing.T) {
+	r := newRig(t)
+	r.tick(0)
+	r.tick(61 * time.Second)
+	_, pw, _ := r.m.MakeFacilityWifi()
+	m2 := &Manager{R: r.nm, DataDir: r.m.DataDir, HubID: "hub-abc123", Now: r.m.Now, Delay: r.m.Delay}
+	m2.Tick(context.Background())
+	if st := m2.Status(); st.FacilityPassword != pw || pw == "" {
+		t.Fatalf("after a restart %q, before %q", st.FacilityPassword, pw)
+	}
+	if _, pw2, _ := m2.MakeFacilityWifi(); pw2 != pw {
+		t.Fatalf("made again: %q, before %q", pw2, pw)
+	}
+}
+
+// "New password" on the admin page: the facility's Wi-Fi starts again with a new one,
+// and every device joins again.
+func TestNewFacilityPassword(t *testing.T) {
+	r := newRig(t)
+	r.tick(0)
+	r.tick(61 * time.Second)
+	if _, _, err := r.m.NewFacilityPassword(); err == nil {
+		t.Fatal("a new password while the hub is not the facility's Wi-Fi")
+	}
+	_, pw, _ := r.m.MakeFacilityWifi()
+	n := r.nm.UpCount[FacilityConn]
+	ssid, pw2, err := r.m.NewFacilityPassword()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ssid != "Hub-abc123" || pw2 == pw || !facilityPasswordForm(pw2) {
+		t.Fatalf("new password %q (was %q) for %q", pw2, pw, ssid)
+	}
+	if add := strings.Join(r.nm.Conns[FacilityConn], " "); !strings.Contains(add, "wifi-sec.psk "+pw2) {
+		t.Fatalf("facility connection: %s", add)
+	}
+	if !r.nm.Up[FacilityConn] || r.nm.UpCount[FacilityConn] != n+1 {
+		t.Fatalf("not started again: up %v", r.nm.Up)
+	}
+	r.tick(10 * time.Second)
+	if st := r.m.Status(); st.FacilityPassword != pw2 {
+		t.Fatalf("status %+v", st)
+	}
+}
+
+// A hub made the facility's Wi-Fi under a name and password an admin chose (until
+// 2026-10-27) keeps them, until an admin makes a new password: then it takes the hub's
+// name too.
+func TestFacilityWifiChosenByAdminKept(t *testing.T) {
+	r := newRig(t)
+	r.m.save(func(s *saved) { s.Facility = "Clinic Staff" })
+	r.nm.Conns[FacilityConn] = []string{"connection", "add", "con-name", FacilityConn, "ssid", "Clinic Staff"}
+	r.nm.Up[FacilityConn] = true
+	r.tick(0)
+	r.tick(20 * time.Minute)
+	if st := r.m.Status(); st.Mode != "facility" || st.Name != "Clinic Staff" || st.FacilityPassword != "" {
+		t.Fatalf("status %+v", st)
+	}
+	if r.nm.UpCount[FacilityConn] != 0 {
+		t.Fatal("the admin's Wi-Fi was started again")
+	}
+	ssid, pw, err := r.m.NewFacilityPassword()
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := strings.Join(r.nm.Conns[FacilityConn], " ")
+	if ssid != "Hub-abc123" || !strings.Contains(add, "ssid Hub-abc123 ") || !strings.Contains(add, "wifi-sec.psk "+pw) {
+		t.Fatalf("after a new password: %q, %s", ssid, add)
+	}
+	r.tick(10 * time.Second)
+	if st := r.m.Status(); st.Name != "Hub-abc123" || st.FacilityPassword != pw {
 		t.Fatalf("status %+v", st)
 	}
 }

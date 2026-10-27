@@ -184,7 +184,8 @@ func (a *App) SetNet(m *netsetup.Manager) {
 }
 
 // hubInfo is facility-hub/hub.txt: what anyone holding the box needs to reach the hub.
-// The facility's own Wi-Fi password is left out (the facility chose it).
+// The facility Wi-Fi's password is in it when the hub made it, not when an admin chose
+// it (until 2026-10-27).
 func hubInfo(id string, st netsetup.Status) string {
 	addrs := "none"
 	if len(st.Addresses) > 0 {
@@ -194,6 +195,9 @@ func hubInfo(id string, st netsetup.Status) string {
 		"\nSetup Wi-Fi: " + st.SetupSSID + "\nSetup Wi-Fi password: " + st.SetupPassword + "\n"
 	if st.Mode == "facility" {
 		s += "Facility Wi-Fi: " + st.Name + "\n"
+		if st.FacilityPassword != "" {
+			s += "Facility Wi-Fi password: " + st.FacilityPassword + "\n"
+		}
 	}
 	return s
 }

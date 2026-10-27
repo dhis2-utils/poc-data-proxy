@@ -64,11 +64,59 @@ func TestNetworkSectionJoin(t *testing.T) {
 	}
 }
 
-func TestNetworkSectionFacilityTooShort(t *testing.T) {
-	e, _, nm, _ := netEnv(t)
-	got, _ := body(t, e, "nurse_a", "/hub/network/facility", url.Values{"ssid": {"Clinic Staff"}, "password": {"short"}})
-	if !strings.Contains(got, "at least 8 characters") || nm.Up[netsetup.FacilityConn] {
-		t.Fatalf("answered: %.300s", got)
+// Case C: the facility's Wi-Fi keeps the hub's name, with a password the hub makes,
+// which the page shows (the phone joins with it next). The setup page, open before
+// set-up to anyone on the network, does not show it afterwards.
+func TestNetworkSectionFacility(t *testing.T) {
+	e, _, nm, m := netEnv(t)
+	got, _ := body(t, e, "nurse_a", "/hub/network/facility", url.Values{"ssid": {"Clinic Staff"}, "password": {"longenough"}})
+	m.Tick(context.Background())
+	st := m.Status()
+	name := "Hub-" + strings.TrimPrefix(e.app.Hub.HubID(), "hub-")
+	if st.Mode != "facility" || st.Name != name || len(st.FacilityPassword) != 19 {
+		t.Fatalf("status %+v", st)
+	}
+	if !strings.Contains(got, name) || !strings.Contains(got, st.FacilityPassword) {
+		t.Fatalf("answered: %.600s", got)
+	}
+	add := strings.Join(nm.Conns[netsetup.FacilityConn], " ")
+	if !strings.Contains(add, "ssid "+name+" ") || !strings.Contains(add, "wifi-sec.psk "+st.FacilityPassword) {
+		t.Fatalf("facility connection: %s", add)
+	}
+	if _, page := e.web("nobody").do("GET", "/hub/setup", nil); strings.Contains(string(page), st.FacilityPassword) {
+		t.Fatal("the setup page shows the facility Wi-Fi's password")
+	}
+}
+
+// The admin page shows the facility Wi-Fi's password; "New password" starts the Wi-Fi
+// again with a new one.
+func TestFacilityWifiNewPassword(t *testing.T) {
+	e, _, nm, m := netEnv(t)
+	e.setup()
+	_, pw, _ := m.MakeFacilityWifi()
+	m.Tick(context.Background())
+	a := e.web("hub_admin")
+	a.login()
+	_, page := a.do("GET", "/hub/ui", nil)
+	for _, want := range []string{pw, "New password", "join again"} {
+		if !strings.Contains(string(page), want) {
+			t.Errorf("admin page lacks %q", want)
+		}
+	}
+	resp, err := a.postForm("/hub/ui/wifi-password", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	got := string(b)
+	m.Tick(context.Background())
+	pw2 := m.Status().FacilityPassword
+	if pw2 == pw || len(pw2) != 19 || !strings.Contains(got, pw2) {
+		t.Fatalf("new password %q (was %q); answered: %.600s", pw2, pw, got)
+	}
+	if add := strings.Join(nm.Conns[netsetup.FacilityConn], " "); !strings.Contains(add, "wifi-sec.psk "+pw2) || !nm.Up[netsetup.FacilityConn] {
+		t.Fatalf("facility connection: %s, up %v", add, nm.Up)
 	}
 }
 
@@ -98,11 +146,12 @@ func TestHubTxtOnStick(t *testing.T) {
 	if string(b) != want {
 		t.Fatalf("hub.txt:\n%s\nwant:\n%s", b, want)
 	}
-	m.MakeFacilityWifi("Clinic Staff", "longenough")
+	// Case C: the hub chose the facility Wi-Fi's password, so hub.txt carries it.
+	_, pw, _ := m.MakeFacilityWifi()
 	m.Tick(context.Background())
 	e.app.Stick.Tick(context.Background())
 	b, _ = os.ReadFile(filepath.Join(usb, "facility-hub", "hub.txt"))
-	if !strings.HasSuffix(string(b), "Facility Wi-Fi: Clinic Staff\n") || strings.Contains(string(b), "longenough") {
+	if !strings.HasSuffix(string(b), "Facility Wi-Fi: "+st.SetupSSID+"\nFacility Wi-Fi password: "+pw+"\n") {
 		t.Fatalf("hub.txt in case C:\n%s", b)
 	}
 }
