@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-10-27T13:22:12.147Z\n"
-"PO-Revision-Date: 2026-10-27T13:22:12.148Z\n"
+"POT-Creation-Date: 2026-10-27T14:45:23.058Z\n"
+"PO-Revision-Date: 2026-10-27T14:45:23.058Z\n"
 
 msgid "Approve the hub of {{- facility}}"
 msgstr "Approve the hub of {{- facility}}"
@@ -183,6 +183,16 @@ msgstr "For hub managers"
 
 msgid "Only hub managers and superusers approve hubs and give out move codes."
 msgstr "Only hub managers and superusers approve hubs and give out move codes."
+
+msgid "The hub settings could not be created"
+msgstr "The hub settings could not be created"
+
+msgid ""
+"Until they are, any user may create them, and hubs would trust what they "
+"write. Open the app again, or ask a superuser to."
+msgstr ""
+"Until they are, any user may create them, and hubs would trust what they "
+"write. Open the app again, or ask a superuser to."
 
 msgid "Hubs"
 msgstr "Hubs"

@@ -6,7 +6,8 @@ import { AccountsSettings, useAdminEntry } from '@/hubs/useHubs'
 
 /**
  * Creates the missing facility-hub-admin entries, protected, when a superuser or hub
- * manager opens the app (ensureAdminEntries). Once per visit; nothing is shown.
+ * manager opens the app (ensureAdminEntries). Once per visit; it returns the error
+ * when one could not be created, for the layout to show.
  */
 export const useEnsureAdminEntries = () => {
     const api = useApi()
@@ -16,7 +17,7 @@ export const useEnsureAdminEntries = () => {
         'facility-hub-admin',
         'accounts'
     )
-    useQuery({
+    const { error } = useQuery({
         queryKey: ['ensureAdminEntries'],
         enabled: canManage && !isLoading,
         staleTime: Infinity,
@@ -29,4 +30,5 @@ export const useEnsureAdminEntries = () => {
             return made
         },
     })
+    return { error }
 }

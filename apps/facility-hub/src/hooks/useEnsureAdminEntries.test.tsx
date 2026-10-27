@@ -13,9 +13,11 @@ import { FakeApi } from '@/hubaccount/fakeApi'
 const mockCentral = { api: new FakeApi() }
 jest.mock('@/api/useApi', () => ({ useApi: () => mockCentral.api }))
 
+const seen: { error?: unknown } = {}
+
 const open = () => {
     const Probe = () => {
-        useEnsureAdminEntries()
+        seen.error = useEnsureAdminEntries().error
         return null
     }
     const client = new QueryClient({
@@ -41,6 +43,7 @@ const settle = async () => {
 describe('useEnsureAdminEntries', () => {
     beforeEach(() => {
         mockCentral.api = new FakeApi()
+        seen.error = undefined
     })
 
     it('creates the missing entries when a hub manager opens the app', async () => {
@@ -73,6 +76,15 @@ describe('useEnsureAdminEntries', () => {
         expect(
             Object.keys(mockCentral.api.store['facility-hub-admin'] ?? {})
         ).toHaveLength(4)
+    })
+
+    it('reports an entry it could not create', async () => {
+        mockCentral.api.superuser = true
+        mockCentral.api.failNext['POST /dataStore/facility-hub-admin/release'] =
+            500
+        open()
+        await settle()
+        expect(seen.error).toBeInstanceOf(Error)
     })
 
     it('creates nothing when someone else opens the app', async () => {
