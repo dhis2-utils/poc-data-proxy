@@ -186,6 +186,11 @@ func (w *Worker) pullGroup(ctx context.Context, g []*puller, readers map[string]
 			if len(decided) == 0 {
 				continue
 			}
+			// Tracked entities belong to no program: only a pull of every program decides
+			// them, else a person listed only by a failed one would vanish.
+			if len(settled)+len(ownSettled[m.u.ID]) == len(programs) {
+				decided = append(decided, "")
+			}
 			seen := shared
 			if len(own[m.u.ID]) > 0 {
 				seen = maps.Clone(shared)

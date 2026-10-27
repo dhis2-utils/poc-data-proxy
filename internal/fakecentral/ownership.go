@@ -27,6 +27,16 @@ func (c *Central) Transfer(te, ou string) {
 	c.setOwner(te, ou)
 }
 
+// Move registers te at ou and makes ou its owner, as when a person moves away.
+func (c *Central) Move(te, ou string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if o := c.objects[te]; o != nil {
+		o["orgUnit"] = ou
+	}
+	c.setOwner(te, ou)
+}
+
 // setOwner moves ownership and, like DHIS2 2.42, bumps the tracked entity's updatedAt.
 func (c *Central) setOwner(te, ou string) {
 	c.owners[te] = ou

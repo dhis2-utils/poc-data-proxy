@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/core"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 	"github.com/dhis2/facility-hub/internal/store"
 )
@@ -60,7 +61,7 @@ func TestPushRetriesAnswersFromTheWay(t *testing.T) {
 }
 
 // A rate limit during a full pull says nothing about access: the users keep what they
-// see of the program.
+// see of the program, its people included (tracked entities belong to no program).
 func TestPullRateLimitKeepsAccess(t *testing.T) {
 	e := newEnv(t)
 	e.setup()
@@ -69,32 +70,75 @@ func TestPullRateLimitKeepsAccess(t *testing.T) {
 	a.login()
 	e.sync()
 	u, _ := h.Store.UserByName("nurse_a")
-	seen := func() int { // objects of the program the nurse sees
-		var slots []int64
-		for _, s := range h.Index.VisibleSlots(u.ID) {
-			slots = append(slots, int64(s))
-		}
-		o, _ := h.Store.SlotOrigins(slots)
-		n := 0
-		for _, v := range o {
-			if v[1] == fc.Program {
-				n++
-			}
-		}
-		return n
-	}
-	before := seen()
-	if before == 0 {
-		t.Fatal("the nurse sees nothing of the program")
+	before := seenOf(t, h, u.ID)
+	if before[fc.Program] == 0 || before[""] == 0 {
+		t.Fatalf("the nurse sees too little: %v", before)
 	}
 	e.central.FailPaths = map[string]int{"/api/tracker/trackedEntities": 429}
 	h.Cfg.FullPullInterval = time.Nanosecond // a full pull now
 	e.app.Worker.Cycle(context.Background()) // reports the 429s
 	h.Cfg.FullPullInterval = 7 * 24 * time.Hour
 	e.central.FailPaths = nil
-	if n := seen(); n != before {
-		t.Fatalf("the nurse sees %d objects of the program after a rate limit, %d before", n, before)
+	if after := seenOf(t, h, u.ID); after[fc.Program] != before[fc.Program] || after[""] != before[""] {
+		t.Fatalf("the nurse sees %v after a rate limit, %v before (program objects, tracked entities)", after, before)
 	}
+}
+
+// A person central no longer shows the nurse disappears from her view at the next
+// full pull that completes.
+func TestFullPullHidesWhoCentralNoLongerLists(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	h := e.app.Hub
+	a := e.web("nurse_a")
+	a.login()
+	e.sync()
+	u, _ := h.Store.UserByName("nurse_a")
+	te := h.Index.Get("SeedTe00001")
+	if te == nil || !h.Index.VisibleTo(te, u.ID) {
+		t.Fatal("the nurse does not see the seeded person")
+	}
+	e.central.Move("SeedTe00001", fc.OtherFacility)
+	h.Cfg.FullPullInterval = time.Nanosecond // a full pull now
+	e.sync()
+	h.Cfg.FullPullInterval = 7 * 24 * time.Hour
+	if h.Index.VisibleTo(h.Index.Get("SeedTe00001"), u.ID) {
+		t.Fatal("the nurse still sees a person central no longer lists for her")
+	}
+}
+
+// seenOf counts what userID sees by program; "" counts tracked entities.
+func seenOf(t *testing.T, h *core.Hub, userID int64) map[string]int {
+	t.Helper()
+	tes := map[int64]bool{}
+	rows, err := h.Store.DB().Query(`SELECT slot FROM objects WHERE kind = 'trackedEntity'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var s int64
+		rows.Scan(&s)
+		tes[s] = true
+	}
+	rows.Close()
+	var slots []int64
+	for _, s := range h.Index.VisibleSlots(userID) {
+		slots = append(slots, int64(s))
+	}
+	o, err := h.Store.SlotOrigins(slots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := map[string]int{}
+	for s, v := range o {
+		switch {
+		case tes[s]:
+			n[""]++
+		case v[1] != "":
+			n[v[1]]++
+		}
+	}
+	return n
 }
 
 func countOf(s []string, v string) int {

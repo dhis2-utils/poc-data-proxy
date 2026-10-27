@@ -245,7 +245,7 @@ func (h *Hub) PersistImport(userID int64, out *tracker.ImportOutcome, params str
 }
 
 // RemoveVisibilityExcept drops userID from central-origin objects of the given
-// programs (and objects without one) that a full pull did not list (spec 11.3). It
+// programs ("" for objects without one) that a full pull did not list (spec 11.3). It
 // starts from the user's bitmap in memory, so only the objects it may remove are
 // read: scanning the store for each user's full pull read the whole data file.
 func (h *Hub) RemoveVisibilityExcept(userID int64, programs []string, seen map[uint32]bool) int {
@@ -265,7 +265,7 @@ func (h *Hub) RemoveVisibilityExcept(userID int64, programs []string, seen map[u
 	}
 	changes := map[uint32]bool{}
 	for slot, o := range objs {
-		if o[0] != store.OriginCentral || (o[1] != "" && !slices.Contains(programs, o[1])) {
+		if o[0] != store.OriginCentral || !slices.Contains(programs, o[1]) {
 			continue
 		}
 		changes[uint32(slot)] = false
