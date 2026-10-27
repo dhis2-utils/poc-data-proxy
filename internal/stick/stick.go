@@ -298,6 +298,13 @@ func (s *Stick) writeSetupCode() error {
 		return nil // pinned or allow-list set-up: no code
 	}
 	text := "Facility hub " + s.H.HubID() + "\nSetup code: " + strings.TrimSpace(string(code)) + "\n"
+	if s.Info != nil { // the setup Wi-Fi too, from hub.txt: this is the file opened first
+		for _, l := range strings.SplitAfter(s.Info(), "\n") {
+			if strings.HasPrefix(l, "Setup Wi-Fi") {
+				text += l
+			}
+		}
+	}
 	path := filepath.Join(s.root(), "setup-code.txt")
 	if b, err := os.ReadFile(path); err == nil && string(b) == text {
 		return nil
