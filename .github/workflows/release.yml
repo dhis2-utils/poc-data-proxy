@@ -84,10 +84,12 @@ jobs:
             rm "bin/dhis2-hub-$VERSION-setup.exe"
             echo "No SIGN_CERT/SIGN_KEY secrets: the installer is left out of this release."
           fi
+      # Used by the later jobs of the same run; the release publishes the files.
       - uses: actions/upload-artifact@v4
         with:
           name: binaries
           path: bin/
+          retention-days: 1
 
   # The image holds the release's own linux/arm64 binary, the one release.json lists.
   image:

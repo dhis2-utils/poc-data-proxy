@@ -26,10 +26,13 @@ jobs:
           V="$(cat VERSION)-ci.$GITHUB_RUN_NUMBER"
           windows/build.sh "$V" out
           windows/check.sh "out/dhis2-hub-$V-setup.exe"
+      # Only the install job of the same run uses it: one push to any branch made one
+      # more installer kept 90 days, and they filled the artifact storage.
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
           path: out/dhis2-hub-*-setup.exe
+          retention-days: 1
 
   test:
     runs-on: windows-latest
