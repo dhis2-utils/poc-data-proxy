@@ -38,5 +38,10 @@ func ReadBody(r *http.Request, limit int64) ([]byte, error) {
 // requests). Everything is held in RAM on a small device.
 const MaxBody = 64 << 20
 
+// MaxAnonymousBody is the body limit for a request without a login: one is a login
+// or the start of one, a few hundred bytes. Anyone on the facility network can send
+// these, so they must not each buffer MaxBody.
+const MaxAnonymousBody = 64 << 10
+
 // NewUID returns a random DHIS2-style UID.
 func NewUID() string { return tracker.NewUID() }

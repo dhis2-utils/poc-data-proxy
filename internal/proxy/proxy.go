@@ -263,7 +263,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	status := 0
 	defer func() { p.H.ReqLog.Record(r, core.ClientKind(r), served, status) }()
 
-	body, err := core.ReadBody(r, core.MaxBody)
+	limit := int64(core.MaxBody)
+	if sess == nil {
+		limit = core.MaxAnonymousBody
+	}
+	body, err := core.ReadBody(r, limit)
 	if err != nil {
 		status = http.StatusRequestEntityTooLarge
 		p.H.WebError(w, status, "request body too large or unreadable", "")

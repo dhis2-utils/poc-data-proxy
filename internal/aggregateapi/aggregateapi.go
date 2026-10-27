@@ -47,7 +47,11 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		auth.WriteFailure(w, f)
 		return
 	}
-	body, err := core.ReadBody(r, core.MaxBody)
+	limit := int64(core.MaxBody)
+	if sess == nil {
+		limit = core.MaxAnonymousBody
+	}
+	body, err := core.ReadBody(r, limit)
 	if err != nil {
 		a.H.WebError(w, http.StatusRequestEntityTooLarge, "request body too large or unreadable", "")
 		return
