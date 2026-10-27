@@ -41,7 +41,7 @@ The same test code runs against any manifest.
 
 ### 2. Two kinds of central
 
-- **fake**: `internal/fakecentral`, in process, milliseconds per test, with fault injection (refusing tokens, disabled accounts, errors). Runs on every commit.
+- **fake**: `internal/fakecentral`, in process, milliseconds per test, with fault injection (refusing tokens, disabled accounts, errors). Run before every commit (AGENTS.md).
 - **live**: a real DHIS2 instance, provisioned by a profile. Any instance you can reach with a superuser account will do. Between hub and central sits an in-process **network switch** (`testkit.Netcut`): a proxy that can cut the line at the connection level, delay it or let it flap, so "offline" is a real network failure on any central.
 
 ### 3. Central is the oracle
@@ -75,6 +75,7 @@ Scripted Capture web runs (Playwright) and Android Capture runs (adb and the UI 
 | `go test ./...` | unit tests, fake-central end-to-end tests, and the live suite against the fake |
 | `go run ./cmd/hubtest provision -profile laos -url https://dhis2.example.org -admin user:password -out manifest.json` | turn a DHIS2 instance into a profile's shape and write its manifest. `synthetic` needs an empty instance; `sierra-leone` and `laos` need the matching demo database |
 | `HUB_MANIFEST=manifest.json HUB_REPORT=oracle.json go test ./internal/live/` | the live suite against that instance |
+| `HUB_MANIFEST=manifest.json go test ./internal/adversarial/` | the adversarial scenarios ([ADVERSARIAL-TESTING.md](ADVERSARIAL-TESTING.md)) against that instance; those that show a finding not fixed skip unless `HUB_FINDINGS=1` |
 
 On GitHub, `.github/workflows/test.yml` runs `go vet`, every Go test, and the race detector on `internal/e2e`, `internal/live`, `internal/tracker` and `internal/store`, with `swtpm` for the TPM tests; `windows.yml` and `macos.yml` add those systems. All three run by hand only (`gh workflow run test.yml --ref <branch>`), as the organisation's Actions spending is limited: run them before merging to main.
 

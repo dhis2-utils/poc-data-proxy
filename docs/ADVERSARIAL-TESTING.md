@@ -2,7 +2,7 @@
 
 A plan to break the hub before a country does: every worst case we can think of, run against a real DHIS2, with clients working on the hub while central, the network, the power and the users change under them. It builds on the suites that exist (TESTING.md) and lists only what they do not cover, or cover only against the fake central.
 
-Status: plan, 27 October 2026. Nothing below is built unless the "Today" column says so. The way of working: as much as possible in the sandbox first, building the tools and running scenarios side by side, so results come in from the first days; the physical sessions follow, one at a time, repeating on hardware what the sandbox found or could not reach.
+Status: plan, 27 October 2026; sandbox wave 1 under way ("Progress", below). The "Today" column is the state before it: what was built since is under "What to build first" and "Progress". The way of working: as much as possible in the sandbox first, building the tools and running scenarios side by side, so results come in from the first days; the physical sessions follow, one at a time, repeating on hardware what the sandbox found or could not reach.
 
 ## What counts as broken
 
@@ -289,7 +289,7 @@ How: the hub's old releases are the signed GitHub releases (or local builds of t
 1. **Central helpers for a real DHIS2**: metadata changes (compulsory, options, stage repeatable, program and data set assignment, closed dates, expiry, approvals), user changes (org units, disabled, password, groups, sharing, authorities), tokens, stopping and starting the instance. Today most of this exists only on the fake.
 2. **The ledger and its checker**, for every client.
 3. **The continuous clients on a real instance's metadata** (hubload with a manifest).
-4. **Network faults in the testkit proxy**: slow, lossy, half open, answer lost after central acted, flapping. `SetDelay` exists and is unused.
+4. **Network faults in the testkit proxy**: slow, lossy, half open, answer lost after central acted, flapping. Built 27 Oct in `testkit.Netcut` (`SetDelay`, `SetRate`, `HalfOpen`, `LoseAnswer`, `CutAnswer`, `CutRequest`, `Flap`).
 5. **A hard kill of the sandbox hub**, and a hub clock offset if it can be done without code in the hub that only tests use.
 6. **A second sandbox hub** for two-hub scenarios.
 7. **Playwright scripts that save** in Capture web and the Data Entry app, with a screenshot at every refusal; the existing scripts run again.
