@@ -322,7 +322,7 @@ Each scenario's result is recorded here: pass, fail with the finding, or decided
 
 | Session | Status | Date | Result |
 |---|---|---|---|
-| Sandbox wave 1 | not started | | |
+| Sandbox wave 1 | started | 27 Oct 2026 | A1, A2, A4, A5, B1, B2, B4, B6, B8 on synthetic 2.42 (`internal/adversarial`) |
 | Sandbox wave 2 | not started | | |
 | Sandbox wave 3 and soak | not started | | |
 | Physical 1: network | not started | | |
@@ -333,4 +333,12 @@ Each scenario's result is recorded here: pass, fail with the finding, or decided
 
 | Scenario | Result | Date | Finding or note |
 |---|---|---|---|
-| (none yet) | | | |
+| A1 | pass | 27 Oct | Central checks compulsory data elements when an event is completed (validation strategy ON_COMPLETE, the default): the active event is accepted, its completion refused (E1303) and kept. A later edit of a refused event is sent and judged on its own, not held behind the first. |
+| A2 | pass | 27 Oct | E1125, kept and reported; the event with an option that stays reaches central. |
+| A4 | pass | 27 Oct | The second event refused (E1039) and kept; after the sync the hub refuses a third one offline itself. |
+| A5 | pass | 27 Oct | Enrollment E1041, events E1029, kept; the offline person reaches central without the enrollment (atomicMode=OBJECT). Afterwards the hub answers the program's listings 503 offline, while central still lists the nurse 55 people there: a gap, not a leak. |
+| B1 | **fail** | 27 Oct | Central (2.42.7) keeps a personal access token's old capture scope after the user's org units change: the offline saves are accepted with the token, though central refuses the user's password login the same write (E1000). Offline the hub refuses the user (403); online it passes their listing through with the token and shows 82 people at the facility, where central answers the user 409. A leak through the hub (I3). `TestB1UserLosesFacility`, `HUB_FINDINGS=1`. |
+| B2 | **fail** | 27 Oct | Central (2.42.7) goes on accepting a disabled user's token (password: "Account disabled"). The saves are pushed; the hub never learns, and the user goes on working through it online and offline. On the fake, which refuses the token, the saves wait for a login that cannot come and one is pushed again every cycle. |
+| B4 | pass | 27 Oct | Saves wait, "needs online login"; after the user's online login, pushed by them. One push a cycle meanwhile, each answered 401. |
+| B6 | pass | 27 Oct | Enrollment and events refused (E1069, E1010) and kept; the person (type sharing kept) reaches central. Offline reads 403, an offline write refused "needs connection". |
+| B8 | **fail** | 27 Oct | Central deletes the user (their online data does not stop it) and answers their token 401. The hub holds the saves for an online login that cannot come, one pushed again every cycle; the Facility Hub app shows only "2 saves wait for their user to log in on the hub again". Nothing lost, nothing pushed as someone else; not listed as refused (I1, I5). |
