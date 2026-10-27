@@ -82,6 +82,9 @@ func (h *Hub) CheckProtection(ctx context.Context) {
 		if central.IsNetwork(err) {
 			return
 		}
+		if err == nil && o && path == RegistryPath(h.HubID()) {
+			o = !h.ProtectRegistry(ctx, h.HubAuth())
+		}
 		if err == nil && o {
 			open = append(open, strings.TrimPrefix(path, "/api/dataStore/"))
 		}
@@ -90,6 +93,37 @@ func (h *Hub) CheckProtection(ctx context.Context) {
 		slog.Warn("dataStore entries the hub acts on are writable by any user; protect them on central (docs/DEPLOYMENT.md)", "entries", open)
 	}
 	h.Store.SetMeta(MetaUnprotected, strings.Join(open, " "))
+}
+
+// ProtectRegistry shares this hub's registry entry as readable by all and writable by
+// the groups named in facility-hub-admin/accounts: the hub owners (set-up, take-over,
+// replacement), the hub accounts and the hub managers (approvals). A new entry is
+// writable by any user on 2.42; its owner (whoever set the hub up) may change its
+// sharing. Without a hub owners group named, the entry is left as it is: a staff
+// member could no longer take the hub over. It reports whether the entry is shared so.
+func (h *Hub) ProtectRegistry(ctx context.Context, auth central.Auth) bool {
+	var acc struct{ Group, Managers, Owners string }
+	if err := h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-admin/accounts", nil, auth, &acc); err != nil || acc.Owners == "" {
+		return false
+	}
+	var meta struct {
+		ID string `json:"id"`
+	}
+	if err := h.Central.JSON(ctx, "GET", RegistryPath(h.HubID())+"/metaData", nil, auth, &meta); err != nil {
+		return false
+	}
+	groups := []map[string]string{}
+	for _, g := range []string{acc.Owners, acc.Group, acc.Managers} {
+		if g != "" {
+			groups = append(groups, map[string]string{"id": g, "access": "rw------"})
+		}
+	}
+	body := map[string]any{"object": map[string]any{"publicAccess": "r-------", "userAccesses": []any{}, "userGroupAccesses": groups}}
+	if err := h.Central.JSON(ctx, "POST", "/api/sharing?type=dataStore&id="+url.QueryEscape(meta.ID), body, auth, nil); err != nil {
+		slog.Warn("the hub's registry entry is not protected", "err", err)
+		return false
+	}
+	return true
 }
 
 // Unprotected is what CheckProtection last found.

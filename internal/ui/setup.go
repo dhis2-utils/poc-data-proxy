@@ -415,6 +415,7 @@ func (u *UI) completeSetup(ctx context.Context, p *pendingSetup) (_ *core.Sessio
 		}
 		return nil, fmt.Errorf("registering hub: %w", err)
 	}
+	h.ProtectRegistry(ctx, hubAuth)
 	committed := false
 	defer func() {
 		// A set-up that fails from here, before the hub goes active, leaves nothing

@@ -1,10 +1,14 @@
 package e2e
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
+
+	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 )
 
 // Finding 5 (critical review 2026-10-27): on 2.42 any user may write the hub's dataStore
@@ -37,4 +41,58 @@ func TestHeartbeatReportsUnprotectedEntries(t *testing.T) {
 	if got, _ := e.central.DataStoreValue("facility-hub-status", e.app.Hub.HubID())["unprotected"].([]any); len(got) > 0 {
 		t.Errorf("heartbeat unprotected %v once all are protected", got)
 	}
+}
+
+// A new registry entry is writable by any user on 2.42. The hub owns its entry, and
+// shares it as readable by all and writable by the hub owners, the hub accounts and
+// the hub managers groups (facility-hub-admin/accounts), at set-up, or at the next
+// heartbeat for a hub set up before the groups were named.
+func TestHubProtectsItsRegistryEntry(t *testing.T) {
+	accounts := `{"group":"HubGrpAccts","managers":"HubGrpMgrs","owners":"HubGrpOwnrs"}`
+	unprotected := func(e *env) any {
+		return e.central.DataStoreValue("facility-hub-status", e.app.Hub.HubID())["unprotected"]
+	}
+	write := func(e *env, user string) int {
+		req, _ := http.NewRequest("PUT", e.cSrv.URL+"/api/dataStore/facility-hub-registry/"+e.app.Hub.HubID(), strings.NewReader(`{"status":"retired"}`))
+		req.SetBasicAuth(user, fc.Password)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	t.Run("at set-up", func(t *testing.T) {
+		e := newEnv(t)
+		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"accounts": json.RawMessage(accounts)}
+		protect(e, "facility-hub-admin", "accounts")
+		e.central.Users["nurse_a"].Groups = []string{"HubGrpOwnrs"}
+		e.setup()
+		if got, _ := unprotected(e).([]any); len(got) > 0 {
+			t.Errorf("heartbeat unprotected %v after set-up", got)
+		}
+		if code := write(e, "outsider_d"); code != http.StatusForbidden {
+			t.Errorf("a user outside the groups wrote the entry: %d", code)
+		}
+		// A hub owner still takes the hub over: the take-over writes the entry.
+		if err := e.app.Hub.TakeOverHubToken(context.Background(), "nurse_a", fc.Password); err != nil {
+			t.Errorf("take-over by a hub owner: %v", err)
+		}
+	})
+
+	t.Run("at the next heartbeat", func(t *testing.T) {
+		e := newEnv(t)
+		e.setup()
+		if got := fmt.Sprint(unprotected(e)); !strings.Contains(got, "facility-hub-registry/") {
+			t.Fatalf("heartbeat unprotected %v before the groups are named", got)
+		}
+		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"accounts": json.RawMessage(accounts)}
+		protect(e, "facility-hub-admin", "accounts")
+		e.sync()
+		if got, _ := unprotected(e).([]any); len(got) > 0 {
+			t.Errorf("heartbeat unprotected %v once the groups are named", got)
+		}
+	})
 }
