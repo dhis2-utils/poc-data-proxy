@@ -528,3 +528,11 @@ So a stolen hub's tokens are its users' access to central, for as long as they l
 
 The Facility Hub app's "Revoke all tokens of this hub" deletes them (`internal/core/tokens.go`, `TestTokensSharedWithManagersAndListed`, `TestRevokedHubDropsItsTokens`). Through the hub, a disabled user is still refused within minutes: the hub re-checks Basic credentials with central. 2.43 is to check.
 
+**Measured again on 2.42.7 (2026-10-27, docs/ADVERSARIAL-TESTING.md B1, B2, B8), with a different result:** central caches a token's login, with the user's access as it was, for one hour after it is made (`ApiTokenAuthManager`, `createApiKeyCache` with `expireAfterWrite(1, HOURS)`; the same in 2.43.2 and in the development branch), and only deleting the token clears it early. Within that hour a disabled user's token, or that of a user removed from the facility, still works with the old access; after it, the token is refused (401). Deleting a user who had created data went through, and their token was then refused. Which of the two 2.42 patches changed this, or whether the 2.42.6 test ran within the hour, was not checked.
+
+What it means for the hub (decided 2026-10-27: accepted, documented):
+- Through a token, a change of access on central reaches the hub between at once and an hour later; the hub's hourly access refresh reads with the user's token, so in the worst case the hub shows the old access for up to **two hours**.
+- An online login reads access with the user's password: fresh, at once.
+- Where it matters (someone leaving on bad terms), deleting the person's tokens on central ends it at once.
+- Saves of a user whose token central no longer accepts wait for their online login; one who cannot log in again (disabled, deleted) is handled as RECOVERY.md describes for refused changes.
+
