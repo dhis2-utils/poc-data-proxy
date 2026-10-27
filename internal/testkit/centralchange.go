@@ -254,3 +254,45 @@ func ref(v any) string {
 	s, _ := m["id"].(string)
 	return s
 }
+
+// Approval: the level and workflow ApproveDataSet makes. Central keeps them: once a
+// form was approved and unapproved, its approval audit refers to both, and central
+// refuses to delete them (E4030, a foreign key), so later runs use them again.
+const (
+	approvalLevel    = "AdvApprLev1"
+	approvalWorkflow = "AdvApprWfl1"
+)
+
+// ApproveDataSet approves a data set's period at the facility on central, as a
+// supervisor would. A data set without a workflow gets one, with one level at the
+// facility's org unit level. The approval and the data set's workflow are undone when
+// the test ends; the workflow and its level stay on central (approvalLevel).
+func (e *Env) ApproveDataSet(ds, pe string) {
+	e.T.Helper()
+	e.needLive("ApproveDataSet")
+	var cur struct {
+		PeriodType string               `json:"periodType"`
+		Workflow   *struct{ ID string } `json:"workflow"`
+	}
+	json.Unmarshal(e.centralDo("GET", "/api/dataSets/"+ds+"?fields=periodType,workflow[id]", nil), &cur)
+	wf := approvalWorkflow
+	if cur.Workflow != nil {
+		wf = cur.Workflow.ID
+	} else {
+		if st, _, _ := e.Central.Do("GET", "/api/dataApprovalLevels/"+approvalLevel, nil); st == 404 {
+			e.centralDo("POST", "/api/dataApprovalLevels", map[string]any{"id": approvalLevel, "name": "Adversarial approval",
+				"orgUnitLevel": strings.Count(e.M.Facility.Path, "/")})
+		}
+		if st, _, _ := e.Central.Do("GET", "/api/dataApprovalWorkflows/"+wf, nil); st == 404 {
+			e.centralDo("POST", "/api/dataApprovalWorkflows", map[string]any{"id": wf, "name": "Adversarial approval",
+				"periodType": cur.PeriodType, "dataApprovalLevels": []any{map[string]any{"id": approvalLevel}}})
+		}
+		e.patch("/api/dataSets/"+ds, map[string]any{"op": "add", "path": "/workflow", "value": map[string]any{"id": wf}})
+		e.T.Cleanup(func() {
+			e.Central.Do("PATCH", "/api/dataSets/"+ds, []any{map[string]any{"op": "remove", "path": "/workflow"}})
+		})
+	}
+	q := url.Values{"wf": {wf}, "pe": {pe}, "ou": {e.M.Facility.ID}}.Encode()
+	e.centralDo("POST", "/api/dataApprovals?"+q, nil)
+	e.T.Cleanup(func() { e.Central.Do("DELETE", "/api/dataApprovals?"+q, nil) })
+}
