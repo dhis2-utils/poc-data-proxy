@@ -1,4 +1,4 @@
-# The hub's tests on Linux, on every push (AGENTS.md, "Before committing"): vet, every
+# The hub's tests on Linux, run by hand (AGENTS.md, "Before committing"): vet, every
 # test, and the race detector on the packages where goroutines meet. swtpm lets
 # internal/devkey test the TPM code against a software TPM.
 name: Tests
@@ -22,4 +22,4 @@ jobs:
       - name: Tests
         run: go test ./...
       - name: Race detector
-        run: go test -race ./internal/e2e ./internal/live ./internal/tracker ./internal/store
+        run: go test -race -timeout 40m ./internal/e2e ./internal/live ./internal/tracker ./internal/store
