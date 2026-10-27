@@ -74,14 +74,17 @@ type Central struct {
 	// LoseResponse ("PUT /api/...": n) carries out the next n such requests but answers
 	// them with 502, as when the answer is lost on the way back.
 	LoseResponse map[string]int
-	delay        time.Duration // Struggle
-	failShare    float64
-	struggled    int                        // requests counted for failShare
-	passwords    map[string]string          // users created through the API, with their own password
-	readers      map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (read)
-	writers      map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (write)
-	creators     map[string]string          // dataStore entry id -> username who created it
-	public       map[string]string          // dataStore entry id -> public access its sharing sets
+	// CutResponse ("POST /api/...": n) carries out the next n such requests but cuts
+	// their answer off halfway, as when the connection drops while the hub reads it.
+	CutResponse map[string]int
+	delay       time.Duration // Struggle
+	failShare   float64
+	struggled   int                        // requests counted for failShare
+	passwords   map[string]string          // users created through the API, with their own password
+	readers     map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (read)
+	writers     map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (write)
+	creators    map[string]string          // dataStore entry id -> username who created it
+	public      map[string]string          // dataStore entry id -> public access its sharing sets
 	// HubWriters, when set, are the only users who may write the facility-hub-*
 	// dataStore namespaces (protected by sharing, as DEPLOYMENT.md advises).
 	HubWriters map[string]bool
@@ -323,7 +326,22 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if lose {
 		c.LoseResponse[r.Method+" "+r.URL.Path]--
 	}
+	cut := c.CutResponse[r.Method+" "+r.URL.Path] > 0
+	if cut {
+		c.CutResponse[r.Method+" "+r.URL.Path]--
+	}
 	c.mu.Unlock()
+	if cut { // done on central, but only half the answer reaches the hub
+		rec := httptest.NewRecorder()
+		c.serve(rec, r)
+		b := rec.Body.Bytes()
+		w.Header().Set("Content-Type", rec.Header().Get("Content-Type"))
+		w.Header().Set("Content-Length", strconv.Itoa(len(b)))
+		w.WriteHeader(rec.Code)
+		w.Write(b[:len(b)/2])
+		w.(http.Flusher).Flush()
+		panic(http.ErrAbortHandler)
+	}
 	if lose { // done on central, but the answer never reaches the hub
 		c.serve(httptest.NewRecorder(), r)
 		webMessage(w, http.StatusBadGateway, "the answer was lost", "")

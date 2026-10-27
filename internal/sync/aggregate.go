@@ -327,7 +327,7 @@ func (w *Worker) pushAggregate(ctx context.Context, e *store.OutboxEntry) (pushR
 		h.Store.SetNeedsLogin(e.UserID, true)
 		h.Store.NoteAttempt(e.Seq, "401 from central: needs online login")
 		return pushResult{userBlocked: true}, nil
-	case resp.StatusCode >= 500:
+	case resp.StatusCode >= 500 || onTheWay(resp.StatusCode):
 		h.Store.NoteAttempt(e.Seq, fmt.Sprintf("central returned %d", resp.StatusCode))
 		return pushResult{stop: true}, nil
 	}

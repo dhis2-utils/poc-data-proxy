@@ -258,13 +258,14 @@ func (w *Worker) pullFor(ctx context.Context, g []*puller, p string, full bool, 
 		case st == http.StatusUnauthorized:
 			h.Store.SetNeedsLogin(rep.u.ID, true)
 			return false, true, nil
-		case st >= 400 && st < 500:
+		case st >= 400 && st < 500 && !onTheWay(st):
 			// Central refuses this access the program: they lose what they saw of it,
 			// and the other pulls go on.
 			slog.Warn("pull refused by central", "user", rep.u.Username, "program", p, "err", perr)
 			return true, false, nil
 		default:
-			// A server error says nothing about access: keep what the users see.
+			// A server error, or a rate limit on the way, says nothing about access: keep
+			// what the users see.
 			slog.Warn("pull failed", "user", rep.u.Username, "program", p, "err", perr)
 			*failed = append(*failed, fmt.Errorf("pull %s/%s: %w", rep.u.Username, p, perr))
 			return false, false, nil

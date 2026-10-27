@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -766,5 +767,37 @@ func TestAggregateRetrySkipsReplacedEdit(t *testing.T) {
 	}
 	if n, _ := e.App.Hub.Store.UnresolvedIssues(10); len(n) != 0 {
 		t.Fatalf("the replaced edit's issue stays open: %d", len(n))
+	}
+}
+
+// A rate limit or a redirect on the way to central is not a refusal: the edit stays
+// pending and is pushed on the next cycle.
+func TestAggregatePushRetriesAnswersFromTheWay(t *testing.T) {
+	for _, status := range []int{429, 302} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			e, ag, nurse, _ := aggregateEnv(t)
+			e.NeedFake()
+			h := e.App.Hub
+			pe := aggPeriod(e, ag)
+			e.Offline()
+			nurse.PostDataValue("/api/"+h.APIMinor()+"/dataValues", cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "7"))
+			e.Online()
+			e.Fake.AggFail = map[string]int{"/api/dataValues": status}
+			e.Sync()
+			e.Fake.AggFail = nil
+			if n := h.Store.CountOutbox(store.OutboxPending); n != 1 {
+				t.Fatalf("pending after %d: %d", status, n)
+			}
+			if n := h.Store.CountIssues(); n != 0 {
+				t.Fatalf("%d refusals recorded", n)
+			}
+			e.Sync()
+			if val, _, _ := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "7" {
+				t.Fatalf("on central: %q", val)
+			}
+			if n := h.Store.CountIssues(); n != 0 {
+				t.Fatalf("%d refusals recorded", n)
+			}
+		})
 	}
 }

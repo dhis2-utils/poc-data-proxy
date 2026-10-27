@@ -151,7 +151,7 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 		h.Store.NoteAttempt(e.Seq, err.Error())
 		return pushResult{stop: true}, err // network: retry next cycle
 	}
-	rb, _ := io.ReadAll(resp.Body)
+	rb, rerr := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	refusedAt := "" // central's clock, for telling a later change on central apart
 	if d, err := http.ParseTime(resp.Header.Get("Date")); err == nil {
@@ -164,17 +164,19 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 		h.Store.NoteAttempt(e.Seq, "401 from central: needs online login")
 		slog.Warn("push: PAT rejected, user needs online login", "user", e.UserID)
 		return pushResult{userBlocked: true}, nil
-	case resp.StatusCode >= 500:
-		h.Store.NoteAttempt(e.Seq, fmt.Sprintf("central returned %d", resp.StatusCode))
+	case resp.StatusCode >= 500 || onTheWay(resp.StatusCode) || rerr != nil:
+		note := fmt.Sprintf("central returned %d", resp.StatusCode)
+		if rerr != nil {
+			note += ", cut off: " + rerr.Error() // central may have imported it: the resend updates
+		}
+		h.Store.NoteAttempt(e.Seq, note)
 		return pushResult{stop: true}, nil
 	}
 	persisted, errsByUID, perr := h.API().TrackerResult(resp.StatusCode, rb)
 	if perr != nil {
-		// A non-report answer (e.g. 400 parse error) rejects the whole entry.
-		for _, it := range send {
-			w.reject(e, it, nil, (&central.HTTPError{Status: resp.StatusCode, Body: rb}).Error(), refusedAt)
-		}
-		return pushResult{}, h.Store.FinishOutbox(e.Seq, store.OutboxRejected, perr.Error())
+		// Not an import report (a proxy's page, say): it says nothing about the saves.
+		h.Store.NoteAttempt(e.Seq, perr.Error())
+		return pushResult{stop: true}, nil
 	}
 	ok, bad := 0, len(blocked)
 	for _, it := range send {
@@ -208,6 +210,12 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 	}
 	slog.Info("pushed outbox entry", "seq", e.Seq, "ok", ok, "rejected", bad, "state", state)
 	return pushResult{}, h.Store.FinishOutbox(e.Seq, state, "")
+}
+
+// onTheWay: an answer from the way to central rather than about the request: a
+// redirect (not followed), a timeout or a rate limit. Try again next cycle, as for 5xx.
+func onTheWay(status int) bool {
+	return status/100 == 3 || status == http.StatusRequestTimeout || status == http.StatusTooManyRequests
 }
 
 func flat(items []*tracker.Item) tracker.M {
