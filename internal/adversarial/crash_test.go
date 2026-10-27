@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -126,7 +127,7 @@ func TestE3KillDuringFirstPull(t *testing.T) {
 	cen := e.Central.As(nurse.Username, e.M.Password)
 	type held map[string][]string // person -> enrollments and events
 	read := func(get func(path string) []byte, prog string) held {
-		q := url.Values{"program": {prog}, "orgUnits": {e.M.Facility.ID}, "pageSize": {"1000"},
+		q := url.Values{"program": {prog}, "orgUnits": {e.M.Facility.ID}, "paging": {"false"},
 			"fields": {"trackedEntity,enrollments[enrollment,program,events[event]]"}}
 		var res struct {
 			TEs []struct {
@@ -199,4 +200,63 @@ func TestE3KillDuringFirstPull(t *testing.T) {
 	if len(missing)+len(half) > 0 {
 		t.Errorf("after the kills the hub does not hold the facility as central does")
 	}
+}
+
+// E1, after the restart: the store is locked until a member of staff logs in, and
+// several arrive at once (the Android apps sync on their own). Each login unlocks the
+// store and rebuilds the index; saves made meanwhile must still be stored.
+func TestE1ConcurrentUnlockAfterRestart(t *testing.T) {
+	findings(t, "two logins that unlock the store at once each rebuild the index (core.Hub.Unlock, "+
+		"tracker.Index.Load); the second resets the next visibility slot while a save is being stored, and the "+
+		"next offline saves fail with 500 \"UNIQUE constraint failed: objects.slot\" (seen in TestE1KillDuringSaves)")
+	r := netStart(t)
+	r.e.Net.SetDown(true)
+	r.p.WaitFor("offline", time.Minute, tk.Offline)
+	failed := 0
+	for round := range 10 {
+		r.p.Kill()
+		r.p.Start()
+		// As in TestE1KillDuringSaves: web clients log in again while Android apps
+		// save with Basic auth, each a few saves in a row.
+		var wg sync.WaitGroup
+		for i := range 8 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				c := r.e.Android(tk.RoleNurse)
+				if i%2 == 0 {
+					c = r.e.Web([]string{tk.RoleNurse, tk.RoleRestricted}[i%4/2])
+					c.Try("POST", "/api/auth/login", map[string]string{"username": c.User, "password": r.e.M.Password})
+				}
+				w := &netWriter{r: r, c: c, web: i%2 == 0}
+				for range 5 {
+					w.once()
+				}
+			}()
+		}
+		wg.Wait()
+		for _, s := range r.ledger.all() {
+			if s.Status == 500 {
+				failed++
+			}
+			if !s.Confirmed && s.Status != 500 {
+				t.Logf("round %d: not confirmed: %d %s", round+1, s.Status, s.Err)
+			}
+		}
+		t.Logf("round %d: %d saves failed with 500 so far", round+1, failed)
+		r.ledger = &netLedger{saves: confirmedOnly(r.ledger.all())}
+	}
+	if n := r.p.Grep("UNIQUE constraint failed: objects.slot"); n > 0 || failed > 0 {
+		t.Errorf("%d saves failed with 500 after a restart; %d slot collisions in the log", failed, n)
+	}
+}
+
+func confirmedOnly(saves []netSave) []netSave {
+	var out []netSave
+	for _, s := range saves {
+		if s.Status != 500 {
+			out = append(out, s)
+		}
+	}
+	return out
 }

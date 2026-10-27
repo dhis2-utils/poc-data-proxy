@@ -243,3 +243,35 @@ func TestD11UplinkReturnsMidSave(t *testing.T) {
 	t.Logf("uplink while flapping: %s; %d more refused while down", callStats(calls, 90*time.Second), r.e.Net.Refused()-refused)
 	r.finish(5 * time.Minute)
 }
+
+// D11 and D3: while the link flaps, the hub must make progress on its outbox in the
+// windows it is up. Each reconnect starts a sync cycle that re-reads the catalog and
+// every user's access before it pushes; a window shorter than that pushes nothing.
+func TestD11PushProgressWhileFlapping(t *testing.T) {
+	findings(t, "while the uplink flaps (4 s up, 4 s down, 500 ms latency) the hub pushes almost nothing: "+
+		"each cycle starts with the catalog and access refresh (sync.Worker.cycle), the window closes before the "+
+		"push, the refresh never completes so it is never skipped; 2 imports in 90 s against 2400 saves queued")
+	r := netStart(t)
+	r.e.Net.SetDelay(500 * time.Millisecond)
+	stop := r.write(300 * time.Millisecond)
+	defer stop()
+	r.outage(10 * time.Second)
+	r.e.Net.SetDown(false)
+	r.e.Net.Calls()
+	unflap := r.e.Net.Flap(4*time.Second, 4*time.Second)
+	time.Sleep(90 * time.Second)
+	unflap()
+	r.e.Net.SetDelay(0)
+	pushes := 0
+	for _, c := range r.e.Net.Calls() {
+		if c.Method == "POST" && c.URL.Path == "/api/tracker" && c.URL.Query().Get("atomicMode") == "OBJECT" {
+			pushes++
+		}
+	}
+	t.Logf("%d pushes in 90 s of flapping, with %d up windows", pushes, 90/8)
+	stop()
+	r.finish(5 * time.Minute)
+	if pushes < 90/8 {
+		t.Errorf("fewer pushes than up windows: the outbox makes no progress while the link flaps")
+	}
+}
