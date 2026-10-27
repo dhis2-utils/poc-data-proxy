@@ -26,7 +26,12 @@ Two principles follow:
 
 The hub already stores a personal access token (PAT) for each user who has logged in, encrypted with the hub's data key. Once the hub is unlocked by anyone, it can push queued data as the original authors, with correct attribution. The person who unlocked it needs no tracker access at all.
 
-This only works while those PATs are valid. PAT expiry must be longer than any plausible offline period plus recovery time (for example one year, not 90 days). If an author's PAT has expired or the user is disabled, their entries wait until they log in online again, or go through a fallback (option F).
+This only works while those PATs are valid. PAT expiry must be longer than any plausible offline period plus recovery time (for example one year, not 90 days). If central stops accepting an author's token (PAT expired or revoked, user disabled or deleted), the hub marks the user "needs online login" and their entries wait for that login (decided 2026-10-27, built in `internal/sync/push.go`, tested in `internal/e2e/gone_test.go`):
+
+- **An online login within 7 days** clears the mark, and the entries are pushed as that user, as before.
+- **After 7 days** with the mark (the key file records when it was set), the hub refuses the entries itself, as it does any refusal central gives: they are kept on the hub, reported to `facility-hub-issues`, counted in the heartbeat under the error code `NO_LOGIN`, and listed on the Facility Hub app's Refusals page, with the reason "author could not log in online for 7 days after central stopped accepting their token (disabled, deleted or token expired)". What they held (an enrollment under a refused person, say) is blocked by them, as with central's refusals. A disabled or deleted user never logs in again, so these entries would otherwise wait for ever.
+- **Resend as another user.** A hub manager's Resend on such a group can name a user of the hub to send them as (`user` in the retry instruction). Each hub then makes those entries that user's and sends them with that user's token, so the records appear on central as created by that user. Only a user this hub knows and can push for (logged in online, token accepted): otherwise the hub applies nothing of that instruction and says why in its heartbeat (`retriesNotApplied`), shown next to the resend in the app. The hub checks no access of its own: central decides on each save with that user's token, and if it refuses, the save comes back refused with central's reason (the old `NO_LOGIN` issue is removed first).
+- Option F remains the fallback for a hub nobody can unlock.
 
 ## Options
 
