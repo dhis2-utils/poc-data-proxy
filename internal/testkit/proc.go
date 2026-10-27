@@ -40,13 +40,36 @@ type Proc struct {
 // in-process hub does not run. e.App is nil afterwards: use the Proc's Status.
 func (e *Env) Detach() *Proc {
 	e.T.Helper()
-	dir := e.T.TempDir()
-	p := &Proc{e: e, bin: filepath.Join(dir, "hub"), cfg: filepath.Join(dir, "hub.yaml"), Log: filepath.Join(dir, "hub.log"),
-		SyncInterval: 5 * time.Second, PingInterval: 2 * time.Second}
-	build := exec.Command("go", "build", "-o", p.bin, "github.com/dhis2/facility-hub/cmd/hub")
+	bin := filepath.Join(e.T.TempDir(), "hub")
+	build := exec.Command("go", "build", "-o", bin, "github.com/dhis2/facility-hub/cmd/hub")
 	if out, err := build.CombinedOutput(); err != nil {
 		e.T.Fatalf("building the hub: %v\n%s", err, out)
 	}
+	return e.detach(bin, false)
+}
+
+// DetachRelease runs a hub binary built elsewhere (an older release, to upgrade from)
+// as the Env's hub, on an empty data directory: the in-process hub's store is removed,
+// and the binary creates its own, to be set up through /hub/setup. The binary is
+// copied, so an upgrade can replace it as it replaces an installed one.
+func (e *Env) DetachRelease(bin string) *Proc {
+	e.T.Helper()
+	b, err := os.ReadFile(bin)
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	own := filepath.Join(e.T.TempDir(), "hub")
+	if err := os.WriteFile(own, b, 0o755); err != nil {
+		e.T.Fatal(err)
+	}
+	return e.detach(own, true)
+}
+
+func (e *Env) detach(bin string, fresh bool) *Proc {
+	e.T.Helper()
+	dir := filepath.Dir(bin)
+	p := &Proc{e: e, bin: bin, cfg: filepath.Join(dir, "hub.yaml"), Log: filepath.Join(dir, "hub.log"),
+		SyncInterval: 5 * time.Second, PingInterval: 2 * time.Second}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		e.T.Fatal(err)
@@ -58,6 +81,12 @@ func (e *Env) Detach() *Proc {
 	front := e.Srv.Listener.Addr().String()
 	e.stop()
 	e.App = nil
+	if fresh {
+		ents, _ := os.ReadDir(e.Dir)
+		for _, x := range ents {
+			os.RemoveAll(filepath.Join(e.Dir, x.Name()))
+		}
+	}
 	target, _ := url.Parse("http://" + p.addr)
 	rp := httputil.NewSingleHostReverseProxy(target)
 	rp.FlushInterval = -1

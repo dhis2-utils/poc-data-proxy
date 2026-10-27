@@ -2,11 +2,13 @@ package testkit
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -24,6 +26,7 @@ type Netcut struct {
 	rate    atomic.Int64                  // bytes per second each way; 0: unlimited
 	held    atomic.Pointer[chan struct{}] // half open while set: closed to release
 	refused atomic.Int64                  // requests cut while down
+	version atomic.Pointer[string]        // central's version as /api/system/info answers it (SetVersion)
 
 	mu     sync.Mutex
 	calls  []Call   // what the hub asked central, since the last Calls
@@ -105,6 +108,24 @@ func NewNetcut(target string) (*Netcut, error) {
 		if d := n.delay.Load(); d > 0 {
 			time.Sleep(time.Duration(d))
 		}
+		if v := n.version.Load(); v != nil && strings.HasSuffix(r.URL.Path, "/api/system/info") {
+			r.Header.Del("Accept-Encoding") // a plain answer, to rewrite
+			b := &buffered{header: http.Header{}, status: 200}
+			rp.ServeHTTP(b, r)
+			var info map[string]any
+			out := b.body.Bytes()
+			if json.Unmarshal(out, &info) == nil && info["version"] != nil {
+				info["version"] = *v
+				out, _ = json.Marshal(info)
+			}
+			for k, vs := range b.header {
+				w.Header()[k] = vs
+			}
+			w.Header().Del("Content-Length")
+			w.WriteHeader(b.status)
+			w.Write(out)
+			return
+		}
 		asked := *r.URL // the proxy rewrites r.URL
 		f := n.take(r)
 		record := func(status int, bytes int64) {
@@ -181,6 +202,16 @@ func (n *Netcut) SetDown(down bool)        { n.down.Store(down) }
 func (n *Netcut) Down() bool               { return n.down.Load() }
 func (n *Netcut) SetDelay(d time.Duration) { n.delay.Store(int64(d)) }
 func (n *Netcut) Close() error             { return n.srv.Close() }
+
+// SetVersion makes /api/system/info answer this version instead of central's, as
+// central would after an upgrade to it; "" ends it. Everything else stays central's.
+func (n *Netcut) SetVersion(v string) {
+	if v == "" {
+		n.version.Store(nil)
+	} else {
+		n.version.Store(&v)
+	}
+}
 
 // Refused counts the requests the hub made while the uplink was down.
 func (n *Netcut) Refused() int64 { return n.refused.Load() }
