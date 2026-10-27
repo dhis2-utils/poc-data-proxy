@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -47,7 +49,30 @@ func moveEnv(t *testing.T) (e *env, newURL string, down, redirect *atomic.Bool) 
 
 func announce(e *env, url string) {
 	e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"central-move": json.RawMessage(`{"url":"` + url + `"}`)}
+	protect(e, "facility-hub-admin", "central-move")
 	e.app.Hub.RefreshCatalog(context.Background())
+}
+
+// protect shares a dataStore entry as the Facility Hub app does: readable by all,
+// writable by administrators only.
+func protect(e *env, ns, key string) {
+	e.t.Helper()
+	var meta struct{ ID string }
+	do := func(method, path, body string, out any) {
+		req, _ := http.NewRequest(method, e.cSrv.URL+path, strings.NewReader(body))
+		req.SetBasicAuth("hub_admin", fc.Password)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			e.t.Fatalf("%s %s: %v %v", method, path, resp, err)
+		}
+		defer resp.Body.Close()
+		if out != nil {
+			json.NewDecoder(resp.Body).Decode(out)
+		}
+	}
+	do("GET", "/api/dataStore/"+ns+"/"+key+"/metaData", "", &meta)
+	do("POST", "/api/sharing?type=dataStore&id="+meta.ID, `{"object":{"publicAccess":"r-------","userAccesses":[],"userGroupAccesses":[]}}`, nil)
 }
 
 func (e *env) cycleOffline() {
@@ -129,6 +154,7 @@ func TestCentralMoveGuards(t *testing.T) {
 	t.Run("not yet", func(t *testing.T) {
 		e, newURL, down, _ := moveEnv(t)
 		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"central-move": json.RawMessage(`{"url":"` + newURL + `","from":"` + time.Now().Add(24*time.Hour).UTC().Format(time.RFC3339) + `"}`)}
+		protect(e, "facility-hub-admin", "central-move")
 		e.app.Hub.RefreshCatalog(context.Background())
 		down.Store(true)
 		e.cycleOffline()
@@ -182,5 +208,36 @@ func TestCentralMoveIgnoresHTTPRedirect(t *testing.T) {
 	}
 	if got := e.app.Hub.Central.BaseURL(); got == newURL {
 		t.Fatal("a plain-http redirect moved the hub")
+	}
+}
+
+// Finding 1 (critical review 2026-10-27): any user may write central-move until a
+// country protects it, and the hub's ID is public. A server that echoes the ID back
+// must get neither the hub's token nor the hub.
+func TestCentralMoveSendsNothingToAForgedAddress(t *testing.T) {
+	e, _, down, _ := moveEnv(t)
+	var tokens atomic.Int32
+	evil := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			tokens.Add(1)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"hubId": path.Base(r.URL.Path)})
+	}))
+	t.Cleanup(evil.Close)
+	req, _ := http.NewRequest("POST", e.cSrv.URL+"/api/dataStore/facility-hub-admin/central-move", strings.NewReader(`{"url":"`+evil.URL+`"}`))
+	req.SetBasicAuth("nurse_a", fc.Password) // a staff member, not an administrator
+	req.Header.Set("Content-Type", "application/json")
+	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != http.StatusCreated {
+		t.Fatalf("writing the announcement: %v %v", resp, err)
+	}
+	e.app.Hub.RefreshCatalog(context.Background())
+	down.Store(true)
+	e.cycleOffline()
+	if n := tokens.Load(); n > 0 {
+		t.Errorf("the hub sent its credentials to the announced server %d times", n)
+	}
+	if got := e.app.Hub.Central.BaseURL(); got != e.cSrv.URL {
+		t.Errorf("moved to a server that echoes its ID: %s", got)
 	}
 }

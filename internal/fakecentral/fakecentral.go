@@ -81,6 +81,7 @@ type Central struct {
 	readers      map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (read)
 	writers      map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (write)
 	creators     map[string]string          // dataStore entry id -> username who created it
+	public       map[string]string          // dataStore entry id -> public access its sharing sets
 	// HubWriters, when set, are the only users who may write the facility-hub-*
 	// dataStore namespaces (protected by sharing, as DEPLOYMENT.md advises).
 	HubWriters map[string]bool
@@ -990,19 +991,33 @@ func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
 	}
 	key, _ := url.PathUnescape(parts[1])
 	id := entryID(ns, key)
+	// Public access as 2.42 reports it: read and write until sharing sets it, read only
+	// in the namespaces protected with HubWriters.
+	pub, shared := c.public[id]
+	if !shared {
+		pub = "rw------"
+		if c.HubWriters != nil && strings.HasPrefix(ns, "facility-hub-") {
+			pub = "r-------"
+		}
+	}
 	if len(parts) == 3 && parts[2] == "metaData" {
+		var ownerUID string
+		if cr := c.Users[c.creators[id]]; cr != nil {
+			ownerUID = cr.UID
+		}
 		writeJSON(w, 200, map[string]any{"id": id, "namespace": ns, "key": key,
-			"createdBy": map[string]any{"username": c.creators[id]}})
+			"createdBy": map[string]any{"username": c.creators[id]},
+			"sharing":   map[string]any{"owner": ownerUID, "public": pub}})
 		return
 	}
 	// Shared with some users only; the superuser and the entry's owner (its creator)
 	// always have access, as on DHIS2.
 	owner := u.Username == "hub_admin" || c.creators[id] == u.Username
-	if rs := c.readers[id]; rs != nil && !rs[u.UID] && !owner {
+	if rs := c.readers[id]; rs != nil && !rs[u.UID] && !owner && pub[0] != 'r' {
 		webMessage(w, 403, "Access denied for key", "E1102")
 		return
 	}
-	if ws := c.writers[id]; c.readers[id] != nil && r.Method != "GET" && !ws[u.UID] && !owner {
+	if ws := c.writers[id]; c.readers[id] != nil && r.Method != "GET" && !ws[u.UID] && !owner && pub[1] != 'w' {
 		webMessage(w, 403, "Access denied for key", "E1102")
 		return
 	}
@@ -1041,6 +1056,7 @@ func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
 		delete(c.creators, id)
 		delete(c.readers, id)
 		delete(c.writers, id)
+		delete(c.public, id)
 		writeJSON(w, 200, map[string]any{"status": "OK"})
 	}
 }

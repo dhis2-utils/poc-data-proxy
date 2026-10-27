@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -17,7 +18,8 @@ import (
 // vouched for by the current central:
 //   - announced: facility-hub-admin/central-move {"url": ..., "from": RFC 3339}, read
 //     from the current central with the hub's token. The namespace must be writable by
-//     administrators only: hub owners write facility-hub-config and the others;
+//     administrators only: hub owners write facility-hub-config and the others. An
+//     entry any user may write (its public access, the default on 2.42) is not taken;
 //   - redirect: the current address, over verified TLS, answers with a permanent
 //     redirect to another host.
 //
@@ -27,7 +29,10 @@ import (
 // hub's registry entry. A hub whose hub.yaml pins the address never moves; one limited
 // to central_hosts moves only within them. Only then does the hub talk to it as
 // central; the check itself sends the hub's token, which the current central vouched
-// for by pointing to the new address.
+// for by pointing to the new address. No check can do without it (reading the
+// dataStore needs a login), and the hub's ID it compares is public: the check proves
+// the new server is up, not that it is central. That rests on who may write the
+// announcement.
 
 // MetaCentralNext is an announced new address, waiting for the old one to stop, and
 // MetaCentralNextFrom when it may be used.
@@ -42,11 +47,23 @@ func (h *Hub) refreshCentralMove(ctx context.Context) {
 		URL  string `json:"url"`
 		From string `json:"from"`
 	}
-	err := h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-admin/central-move", nil, h.HubAuth(), &m)
+	const path = "/api/dataStore/facility-hub-admin/central-move"
+	err := h.Central.JSON(ctx, "GET", path, nil, h.HubAuth(), &m)
 	if central.IsNetwork(err) {
 		return
 	}
 	next := strings.TrimRight(strings.TrimSpace(m.URL), "/")
+	if err == nil && next != "" {
+		var open bool
+		open, err = h.writableByAll(ctx, path)
+		if central.IsNetwork(err) {
+			return
+		}
+		if err == nil && open {
+			slog.Warn("central-move is writable by any user: its address is not used; protect facility-hub-admin (docs/DEPLOYMENT.md, section 6)", "url", next)
+			err = errors.New("unprotected")
+		}
+	}
 	if err != nil || next == h.Central.BaseURL() || !h.movable(next) {
 		h.Store.SetMeta(MetaCentralNext, "")
 		h.Store.SetMeta(MetaCentralNextFrom, "")

@@ -50,3 +50,17 @@ func (h *Hub) configState(stateKey string, v any) {
 		json.Unmarshal(b, v)
 	}
 }
+
+// writableByAll reports whether central lets any user write the dataStore entry at
+// path: its sharing's public access, as 2.42 shows it in the entry's metaData.
+func (h *Hub) writableByAll(ctx context.Context, path string) (bool, error) {
+	var meta struct {
+		Sharing struct {
+			Public string `json:"public"`
+		} `json:"sharing"`
+	}
+	if err := h.Central.JSON(ctx, "GET", path+"/metaData", nil, h.HubAuth(), &meta); err != nil {
+		return false, err
+	}
+	return len(meta.Sharing.Public) < 2 || meta.Sharing.Public[1] == 'w', nil
+}

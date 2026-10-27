@@ -172,10 +172,12 @@ func (c *Central) addToGroup(w http.ResponseWriter, p string) {
 }
 
 // shareEntry handles POST /api/sharing?type=dataStore&id=...: the entry becomes
-// readable by the listed users only (and the superuser).
+// readable by the listed users (and the superuser), and by all if its public access
+// says so.
 func (c *Central) shareEntry(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Object struct {
+			PublicAccess      string                        `json:"publicAccess"`
 			UserAccesses      []struct{ ID, Access string } `json:"userAccesses"`
 			UserGroupAccesses []struct{ ID, Access string } `json:"userGroupAccesses"`
 		} `json:"object"`
@@ -201,6 +203,10 @@ func (c *Central) shareEntry(w http.ResponseWriter, r *http.Request) {
 	}
 	c.readers[r.URL.Query().Get("id")] = rs
 	c.writers[r.URL.Query().Get("id")] = ws
+	if c.public == nil {
+		c.public = map[string]string{}
+	}
+	c.public[r.URL.Query().Get("id")] = (in.Object.PublicAccess + "--------")[:8]
 	c.mu.Unlock()
 	writeJSON(w, 200, map[string]any{"status": "OK"})
 }
