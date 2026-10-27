@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +32,7 @@ type netSave struct {
 	Confirmed bool // the hub answered with a report of everything stored
 	Online    bool // central answered (the hub's own answers carry X-Hub-Mode)
 	At        time.Time
+	Dur       time.Duration // how long the client waited
 	Status    int
 	Err       string
 }
@@ -198,7 +200,7 @@ func (w *netWriter) once() {
 		payload = pr.Payload
 	}
 	st, hdr, b, err := w.post(payload)
-	s.Status = st
+	s.Status, s.Dur = st, time.Since(s.At)
 	if err != nil {
 		s.Err = err.Error()
 	} else if (st == 401 || st == 302) && w.web {
@@ -464,6 +466,38 @@ func (r *netRun) keepLog() {
 	name := filepath.Join(dir, r.t.Name()+"-"+r.tag+".log")
 	if os.WriteFile(name, b, 0o644) == nil {
 		r.t.Logf("hub log kept in %s", name)
+	}
+}
+
+// waits summarises how long clients waited for saves made in [from, to).
+func (r *netRun) waits(from, to time.Time) string {
+	var ds []time.Duration
+	for _, s := range r.ledger.all() {
+		if !s.At.Before(from) && s.At.Before(to) {
+			ds = append(ds, s.Dur)
+		}
+	}
+	return durStats(ds)
+}
+
+func durStats(ds []time.Duration) string {
+	if len(ds) == 0 {
+		return "none"
+	}
+	slices.Sort(ds)
+	return fmt.Sprintf("%d, median %s, p90 %s, max %s", len(ds), ds[len(ds)/2].Round(time.Millisecond),
+		ds[len(ds)*9/10].Round(time.Millisecond), ds[len(ds)-1].Round(time.Millisecond))
+}
+
+// read times one search a nurse's Capture makes for the program at the facility.
+func (r *netRun) reader() func() (time.Duration, int, string) {
+	c := r.e.Web(tk.RoleNurse)
+	c.Try("POST", "/api/auth/login", map[string]string{"username": c.User, "password": r.e.M.Password})
+	q := url.Values{"program": {r.prog.ID}, "orgUnits": {r.e.M.Facility.ID}, "fields": {"trackedEntity,attributes"}, "pageSize": {"50"}}
+	return func() (time.Duration, int, string) {
+		t := time.Now()
+		st, h, _, _ := c.Try("GET", "/api/tracker/trackedEntities?"+q.Encode(), nil)
+		return time.Since(t), st, h.Get("X-Hub-Mode")
 	}
 }
 

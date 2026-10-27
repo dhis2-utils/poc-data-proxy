@@ -138,3 +138,108 @@ func TestD2OnlineSaveAnswerLost(t *testing.T) {
 		t.Errorf("no save passed through to central: the scenario did not test online saves (%s)", c)
 	}
 }
+
+// D4: a very slow uplink (2G: 20 kB/s, 2 s latency). Saves and reads made online wait
+// for central over it; after an outage the push and the pull must complete over it.
+func TestD4SlowLink(t *testing.T) {
+	r := netStart(t)
+	read := r.reader()
+	var fast []time.Duration
+	for range 5 {
+		d, _, _ := read()
+		fast = append(fast, d)
+	}
+	t.Logf("reads on a good link: %s", durStats(fast))
+
+	stop := r.write(time.Second) // logs the writers in on the good link
+	defer stop()
+	r.e.Net.SetDelay(2 * time.Second)
+	r.e.Net.SetRate(20_000)
+	r.e.Net.Calls()
+	start := time.Now()
+	login := r.e.Web(tk.RoleNurse)
+	st, _, _, err := login.Try("POST", "/api/auth/login", map[string]string{"username": login.User, "password": r.e.M.Password})
+	t.Logf("an online login on the slow link: %d %v, %s", st, err, time.Since(start).Round(time.Millisecond))
+	start = time.Now()
+	var slow []time.Duration
+	var local int
+	for time.Since(start) < 40*time.Second {
+		d, st, mode := read()
+		if st != 200 {
+			t.Errorf("read on the slow link: %d", st)
+		}
+		if mode != "" {
+			local++
+		}
+		slow = append(slow, d)
+	}
+	t.Logf("slow link, online: saves waited %s", r.waits(start, time.Now()))
+	t.Logf("slow link, online: reads waited %s; %d of %d answered by the hub", durStats(slow), local, len(slow))
+	t.Logf("hub status: %v", r.p.Status())
+
+	out := time.Now()
+	r.outage(20 * time.Second)
+	back := time.Now()
+	r.e.Net.SetDown(false) // still slow
+	before := r.p.Status()["lastPull"]
+	time.Sleep(30 * time.Second)
+	stop()
+	t.Logf("outage: saves waited %s", r.waits(out, back))
+	t.Logf("slow link, after the outage: saves waited %s", r.waits(back, time.Now()))
+	r.finish(10 * time.Minute)
+	r.p.WaitFor("a pull over the slow link", 10*time.Minute, func(s map[string]any) bool { return s["lastPull"] != before })
+	t.Logf("pull completed; %s since the link came back", time.Since(back).Round(time.Second))
+	t.Logf("uplink: %s", callStats(r.e.Net.Calls(), time.Since(start)))
+}
+
+// D5: the link goes half open while clients save online: packets stop, nothing is
+// reset. The hub's timeouts must free it; it goes offline, keeps saving locally, and
+// comes back when the link does.
+func TestD5HalfOpen(t *testing.T) {
+	r := netStart(t)
+	stop := r.write(500 * time.Millisecond)
+	defer stop()
+	time.Sleep(10 * time.Second)
+	r.e.Net.Calls()
+	release := r.e.Net.HalfOpen()
+	defer release()
+	held := time.Now()
+	r.p.WaitFor("offline", 5*time.Minute, tk.Offline)
+	t.Logf("offline %s after the link went half open", time.Since(held).Round(time.Second))
+	time.Sleep(90 * time.Second)
+	release()
+	back := time.Now()
+	r.p.WaitFor("online", 3*time.Minute, tk.Online)
+	t.Logf("online %s after the link came back", time.Since(back).Round(time.Second))
+	time.Sleep(10 * time.Second)
+	stop()
+	t.Logf("half open: saves waited %s", r.waits(held, back))
+	t.Logf("after: saves waited %s", r.waits(back, time.Now()))
+	r.finish(5 * time.Minute)
+	t.Logf("uplink: %s", callStats(r.e.Net.Calls(), time.Since(held)))
+}
+
+// D11: the uplink comes back (and drops again) while clients are in the middle of
+// saves: every 4 s for 90 s, with latency so saves overlap the switches. Each save
+// lands once.
+func TestD11UplinkReturnsMidSave(t *testing.T) {
+	r := netStart(t)
+	r.e.Net.SetDelay(500 * time.Millisecond)
+	stop := r.write(100 * time.Millisecond)
+	defer stop()
+	time.Sleep(5 * time.Second)
+	r.e.Net.Calls()
+	refused := r.e.Net.Refused()
+	start := time.Now()
+	unflap := r.e.Net.Flap(4*time.Second, 4*time.Second)
+	defer unflap()
+	time.Sleep(90 * time.Second)
+	unflap()
+	r.e.Net.SetDelay(0)
+	calls := r.e.Net.Calls()
+	time.Sleep(5 * time.Second)
+	stop()
+	t.Logf("flapping: saves waited %s", r.waits(start, start.Add(90*time.Second)))
+	t.Logf("uplink while flapping: %s; %d more refused while down", callStats(calls, 90*time.Second), r.e.Net.Refused()-refused)
+	r.finish(5 * time.Minute)
+}
