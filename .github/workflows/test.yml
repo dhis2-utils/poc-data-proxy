@@ -3,9 +3,8 @@
 # internal/devkey test the TPM code against a software TPM.
 name: Tests
 
+# By hand only (gh workflow run): the organisation's Actions spending is limited.
 on:
-  push:
-    branches: ["**"]
   workflow_dispatch:
 
 jobs:

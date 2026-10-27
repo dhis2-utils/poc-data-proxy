@@ -3,9 +3,8 @@
 # answers over HTTPS with its own authority, dhis2.local resolves to it) and removed.
 name: macOS
 
+# By hand only (gh workflow run): the organisation's Actions spending is limited.
 on:
-  push:
-    branches: ["**"]
   workflow_dispatch:
 
 jobs:

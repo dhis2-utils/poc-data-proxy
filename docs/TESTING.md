@@ -76,7 +76,7 @@ Scripted Capture web runs (Playwright) and Android Capture runs (adb and the UI 
 | `go run ./cmd/hubtest provision -profile laos -url https://dhis2.example.org -admin user:password -out manifest.json` | turn a DHIS2 instance into a profile's shape and write its manifest. `synthetic` needs an empty instance; `sierra-leone` and `laos` need the matching demo database |
 | `HUB_MANIFEST=manifest.json HUB_REPORT=oracle.json go test ./internal/live/` | the live suite against that instance |
 
-On GitHub, `.github/workflows/test.yml` runs `go vet`, every Go test, and the race detector on `internal/e2e`, `internal/live`, `internal/tracker` and `internal/store` on every push, with `swtpm` for the TPM tests; `windows.yml` and `macos.yml` add those systems.
+On GitHub, `.github/workflows/test.yml` runs `go vet`, every Go test, and the race detector on `internal/e2e`, `internal/live`, `internal/tracker` and `internal/store`, with `swtpm` for the TPM tests; `windows.yml` and `macos.yml` add those systems. All three run by hand only (`gh workflow run test.yml --ref <branch>`), as the organisation's Actions spending is limited: run them before merging to main.
 
 The Facility Hub app (`apps/facility-hub`) has its own tests: `pnpm test` there (the codes, sealing and approval steps against the values the hub's Go tests pin, flags, who sees which hub), and `pnpm exec eslint src` and `pnpm exec tsc --noEmit`.
 
@@ -107,7 +107,7 @@ It runs after every image build, in `image.yml` too (image/README.md). The hub's
   - every package builds and vets for windows/amd64 (`GOOS=windows GOARCH=amd64 go vet ./...`);
   - the Windows-only logic runs behind plain-Go tests: the upgrade's key handover, port choice, choosing the USB stick, the `dhis2.local` responder, and the service's arguments;
   - `windows/check.sh` checks a built installer: its signatures, `hub.exe` (64-bit, no console window), and what its script does.
-- **On GitHub** (`.github/workflows/windows.yml`), on every push:
+- **On GitHub** (`.github/workflows/windows.yml`), run by hand:
   - the Go tests on `windows-latest`;
   - the installer, installed silently for the whole PC, checked (the service runs, answers over HTTPS at `localhost` and `dhis2.local` with the hub's own authority), then uninstalled.
 - **On a Windows VM, by hand** (not done yet):
@@ -124,7 +124,7 @@ It runs after every image build, in `image.yml` too (image/README.md). The hub's
 
 ### macOS
 
-`.github/workflows/macos.yml` runs on every push:
+`.github/workflows/macos.yml`, run by hand:
 - the Go tests on `macos-latest`;
 - `macos/install.sh` with a binary built there, checked: the launchd agent runs and answers over HTTPS at `localhost` and `dhis2.local` (the hub's own responder next to macOS's), and the authority is in the System keychain;
 - the uninstall.
