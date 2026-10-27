@@ -32,10 +32,23 @@ func adb(timeout time.Duration, args ...string) (string, error) {
 	return string(out), err
 }
 
-// Available reports whether an emulator is attached.
+// Available reports whether an emulator or a device is attached.
 func (a *Android) Available() bool {
 	out, err := adb(15*time.Second, "devices")
 	return err == nil && strings.Contains(out, "\tdevice")
+}
+
+// HostFor returns the name under which the device reaches port on the machine that
+// runs adb: 10.0.2.2 from an emulator; from a device on USB, localhost, with adb
+// reverse forwarding the port over the cable.
+func (a *Android) HostFor(port string) (string, error) {
+	if out, _ := adb(15*time.Second, "shell", "getprop", "ro.kernel.qemu"); strings.TrimSpace(out) == "1" {
+		return "10.0.2.2", nil
+	}
+	if out, err := adb(15*time.Second, "reverse", "tcp:"+port, "tcp:"+port); err != nil {
+		return "", fmt.Errorf("adb reverse: %v %s", err, out)
+	}
+	return "localhost", nil
 }
 
 // Reset clears the app's data and starts it. Notifications are granted up front, so

@@ -13,13 +13,13 @@ import (
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
 
-// TestCaptureAndroid drives the real Android Capture app on the emulator through the
+// TestCaptureAndroid drives the real Android Capture app on an emulator or a device through the
 // hub (docs/TESTING.md): a first login online, then, with the app's data wiped and the
 // uplink cut, a first login and full download offline. It fails if the offline login
 // does not reach the home screen, and reports every request the hub refused offline
 // and how the record count differs from online. Set HUB_CLIENTS=1 to run it; it needs
-// an emulator (adb) and SANDBOX_HOST_PORT_2, the port the emulator reaches as
-// 10.0.2.2.
+// an emulator or a device on USB (adb) and SANDBOX_HOST_PORT_2, the port it reaches
+// the hub on (tk.Android.HostFor). It erases the app's data on the device.
 func TestCaptureAndroid(t *testing.T) {
 	port := os.Getenv("SANDBOX_HOST_PORT_2")
 	a := &tk.Android{Package: "com.dhis2"}
@@ -27,16 +27,20 @@ func TestCaptureAndroid(t *testing.T) {
 	case os.Getenv("HUB_CLIENTS") == "":
 		t.Skip("set HUB_CLIENTS=1 to drive the real Android Capture app")
 	case port == "" || !a.Available():
-		t.Skip("needs an emulator (adb) and SANDBOX_HOST_PORT_2")
+		t.Skip("needs an emulator or a device (adb) and SANDBOX_HOST_PORT_2")
 	}
 	e := tk.Start(t)
 	if !e.Live() {
 		t.Skip("needs a live central (HUB_MANIFEST)")
 	}
 	m := e.M
-	e.ServeOn(":"+port, "10.0.2.2")
+	host, err := a.HostFor(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.ServeOn(":"+port, host)
 	e.Setup()
-	server := "http://10.0.2.2:" + port
+	server := "http://" + host + ":" + port
 	nurse := m.Users[tk.RoleNurse]
 	program := m.Primary().Name
 
