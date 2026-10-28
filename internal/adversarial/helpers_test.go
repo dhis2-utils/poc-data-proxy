@@ -20,6 +20,8 @@ type scene struct {
 	*tk.Env
 	t *testing.T
 	l *tk.Ledger
+	// saved: metadata objects changeOwner put back when the test ends.
+	saved map[string]bool
 }
 
 func begin(t *testing.T) *scene {
