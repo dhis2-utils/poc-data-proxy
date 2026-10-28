@@ -151,6 +151,7 @@ func (p *Proc) writeConfig() {
 	if len(c.HubHosts) > 0 {
 		lines = append(lines, "hub_hosts: "+strings.Join(c.HubHosts, ","))
 	}
+	lines = append(lines, p.e.ProcConfig...)
 	if err := os.WriteFile(p.cfg, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
 		p.e.T.Fatal(err)
 	}

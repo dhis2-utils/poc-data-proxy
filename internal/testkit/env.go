@@ -37,6 +37,11 @@ type Env struct {
 	App     *app.App
 	Srv     *httptest.Server
 
+	// ProcConfig are extra "key: value" lines for the config of a hub that Detach
+	// moves to its own process, after the test defaults, so they win (a soak's
+	// field-like intervals).
+	ProcConfig []string
+
 	listen  string   // fixed address to serve on (ServeOn); default an ephemeral port
 	hosts   []string // extra hub host names
 	central string   // the central URL the hub is set up with (CentralAt); default the Netcut's
