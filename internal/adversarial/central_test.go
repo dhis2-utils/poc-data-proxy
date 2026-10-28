@@ -3,6 +3,7 @@ package adversarial
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -318,4 +319,53 @@ func (r *netRun) lostSince(t0 time.Time) missing {
 		}
 	}
 	return l
+}
+
+// N12: central upgraded from 2.42 to 2.43 while the hub holds saves made offline. The
+// uplink is down during the upgrade, as for any outage; central migrates its database
+// at its first start. Must hold: the queued saves reach the upgraded central once; the
+// hub talks to 2.43 after it (it supports both) and pulls what changes there; nothing
+// is lost. Run only on an instance made for it (HUB_MANIFEST of a 2.42 instance the
+// broker may upgrade): an upgrade cannot be undone.
+func TestN12CentralUpgraded(t *testing.T) {
+	if os.Getenv("HUB_UPGRADE_CENTRAL") == "" {
+		t.Skip("upgrades central for good: set HUB_UPGRADE_CENTRAL=2.43 on an instance made for it")
+	}
+	to := os.Getenv("HUB_UPGRADE_CENTRAL")
+	r := netStart(t)
+	version := func() string {
+		var info struct{ Version string }
+		if err := r.e.Central.JSON("GET", "/api/system/info", nil, &info); err != nil {
+			t.Fatal(err)
+		}
+		return info.Version
+	}
+	from := version()
+	if strings.HasPrefix(from, to) {
+		t.Skipf("central already runs %s", from)
+	}
+	stop := r.write(500 * time.Millisecond)
+	defer stop()
+	time.Sleep(10 * time.Second)
+	r.outage(10 * time.Second)
+
+	start := time.Now()
+	r.e.UpgradeCentral(to)
+	t.Logf("central upgraded from %s to %s in %s; the hub held %v saves", from, version(), time.Since(start).Round(time.Second),
+		r.p.Status()["pending"])
+	r.e.Net.SetDown(false)
+	r.p.WaitFor("online", 5*time.Minute, tk.Online)
+	stop()
+	r.finish(10 * time.Minute)
+
+	a := r.centralPerson("51")
+	r.pulls(2)
+	r.centralEdit(a, "52")
+	r.pulls(2)
+	if v := r.offlineValues(a.Event); v[0] != "52" {
+		t.Errorf("an event edited on the upgraded central: the hub shows %q offline, want 52", v[0])
+	}
+	if st := r.p.Status(); st["needsUpgrade"] == true {
+		t.Errorf("the hub says it needs an upgrade for %s: %v", to, st)
+	}
 }

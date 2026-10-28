@@ -1,8 +1,10 @@
 package testkit
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -32,12 +34,30 @@ func (e *Env) instance() string {
 }
 
 // broker runs a job on the instance (start, stop) and waits for it.
-func (e *Env) broker(op string) {
+func (e *Env) broker(op string) { e.T.Helper(); e.brokerJob(op, nil, 15*time.Minute) }
+
+// UpgradeCentral upgrades central in place to version (as "2.43") through the broker:
+// a new WAR on the same database, which migrates at its first start (10-25 minutes).
+// It cannot be undone; use an instance made for it.
+func (e *Env) UpgradeCentral(version string) {
+	e.T.Helper()
+	e.brokerJob("upgrade", map[string]string{"version": version}, 45*time.Minute)
+}
+
+func (e *Env) brokerJob(op string, body any, wait time.Duration) {
 	e.T.Helper()
 	base, tok := os.Getenv("DHIS2_BROKER_URL"), os.Getenv("DHIS2_BROKER_TOKEN")
-	call := func(method, path string, out any) error {
-		req, _ := http.NewRequest(method, strings.TrimRight(base, "/")+path, nil)
+	call := func(method, path string, in, out any) error {
+		var rd io.Reader
+		if in != nil {
+			b, _ := json.Marshal(in)
+			rd = bytes.NewReader(b)
+		}
+		req, _ := http.NewRequest(method, strings.TrimRight(base, "/")+path, rd)
 		req.Header.Set("Authorization", "Bearer "+tok)
+		if in != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return err
@@ -51,12 +71,12 @@ func (e *Env) broker(op string) {
 	var job struct {
 		Job struct{ ID, Status, Error string }
 	}
-	if err := call("POST", "/instances/"+e.instance()+"/"+op, &job); err != nil {
+	if err := call("POST", "/instances/"+e.instance()+"/"+op, body, &job); err != nil {
 		e.T.Fatal(err)
 	}
-	for end := time.Now().Add(15 * time.Minute); time.Now().Before(end); time.Sleep(3 * time.Second) {
+	for end := time.Now().Add(wait); time.Now().Before(end); time.Sleep(3 * time.Second) {
 		var j struct{ Status, Error string }
-		if err := call("GET", "/jobs/"+job.Job.ID, &j); err != nil {
+		if err := call("GET", "/jobs/"+job.Job.ID, nil, &j); err != nil {
 			e.T.Fatal(err)
 		}
 		switch j.Status {
@@ -67,7 +87,7 @@ func (e *Env) broker(op string) {
 			e.T.Fatalf("broker %s: %s %s", op, j.Status, j.Error)
 		}
 	}
-	e.T.Fatalf("broker %s: still running after 15 minutes", op)
+	e.T.Fatalf("broker %s: still running after %s", op, wait)
 }
 
 // StopCentral stops central (Tomcat and its database), as for maintenance. It is
