@@ -30,11 +30,12 @@ func (s *scene) offlineWork(c *tk.Client, name string) *tk.Person {
 }
 
 // noLeaks checks, online and offline, that the user sees through the hub no more
-// people at the facility than on central (I3).
+// people at the facility than on central (I3), comparing whole listings: pages are
+// ordered differently.
 func (s *scene) noLeaks(c *tk.Client) {
 	s.t.Helper()
 	p := s.M.Primary()
-	q := url.Values{"program": {p.ID}, "orgUnits": {s.M.Facility.ID}, "fields": {"trackedEntity"}, "pageSize": {"200"}}
+	q := url.Values{"program": {p.ID}, "orgUnits": {s.M.Facility.ID}, "fields": {"trackedEntity"}, "paging": {"false"}}
 	for _, offline := range []bool{false, true} {
 		if offline {
 			s.Offline()

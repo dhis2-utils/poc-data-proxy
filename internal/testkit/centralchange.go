@@ -198,7 +198,11 @@ func (e *Env) NewUserLike(role string) User {
 	cur["id"], cur["username"], cur["password"] = u.UID, u.Username, e.M.Password
 	cur["firstName"], cur["surname"] = "Adversarial", u.Username
 	e.centralDo("POST", "/api/users", cur)
-	e.T.Cleanup(func() { e.Central.Do("DELETE", "/api/users/"+u.UID, nil) })
+	e.T.Cleanup(func() {
+		if st, b, err := e.Central.Do("DELETE", "/api/users/"+u.UID, nil); err != nil || (st/100 != 2 && st != 404) {
+			e.T.Errorf("NOT UNDONE on central: user %s: %d %v %.300s", u.Username, st, err, b)
+		}
+	})
 	return u
 }
 
@@ -359,4 +363,40 @@ func (e *Env) ApproveDataSet(ds, pe string) {
 	q := url.Values{"wf": {wf}, "pe": {pe}, "ou": {e.M.Facility.ID}}.Encode()
 	e.centralDo("POST", "/api/dataApprovals?"+q, nil)
 	e.T.Cleanup(func() { e.Central.Do("DELETE", "/api/dataApprovals?"+q, nil) })
+}
+
+// SetField sets one field of a metadata object on central (a JSON patch: path is the
+// object's, e.g. /api/programs/<id>, and field a top-level property). The old value is
+// put back when the test ends, or earlier by calling the returned undo; a field that
+// had no value is removed again. A field that cannot be put back fails the test.
+func (e *Env) SetField(path, field string, v any) (undo func()) {
+	e.T.Helper()
+	e.needLive("SetField")
+	var cur map[string]any
+	json.Unmarshal(e.centralDo("GET", path+"?fields="+field, nil), &cur)
+	was, had := cur[field]
+	e.patch(path, replaceOp("/"+field, v))
+	done := false
+	undo = func() {
+		if done {
+			return
+		}
+		done = true
+		op := replaceOp("/"+field, was)
+		if !had {
+			op = map[string]any{"op": "remove", "path": "/" + field}
+		}
+		if st, b, err := e.Central.Do("PATCH", path, []any{op}); err != nil || st/100 != 2 {
+			e.T.Errorf("NOT UNDONE on central: %s %s back to %v: %d %v %.300s", path, field, was, st, err, b)
+		}
+	}
+	e.T.Cleanup(undo)
+	return undo
+}
+
+// SetUserPassword changes a user's password on central, as an administrator does.
+func (e *Env) SetUserPassword(u User, password string) {
+	e.T.Helper()
+	e.needLive("SetUserPassword")
+	e.patch("/api/users/"+u.UID, replaceOp("/password", password))
 }

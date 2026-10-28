@@ -2,6 +2,7 @@ package testkit
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -264,12 +265,17 @@ var nonceRe = regexp.MustCompile(`name="nonce" value="([^"]+)"`)
 // Client is a device using the hub: the web app (session cookie) or the Android app
 // (Basic auth on every request).
 type Client struct {
-	e     *Env
-	HTTP  *http.Client
-	Role  string
-	User  string
-	basic bool
+	e    *Env
+	HTTP *http.Client
+	Role string
+	User string
+	// Password, when set, is used instead of the manifest's (a password changed on
+	// central).
+	Password string
+	basic    bool
 }
+
+func (c *Client) password() string { return cmp.Or(c.Password, c.e.M.Password) }
 
 func (e *Env) user(role string) User {
 	e.T.Helper()
@@ -327,7 +333,7 @@ func (c *Client) try(method, path string, body any) (int, http.Header, []byte, e
 	req, _ := http.NewRequest(method, c.e.Srv.URL+path, rd)
 	req.Header.Set("Content-Type", "application/json")
 	if c.basic {
-		req.SetBasicAuth(c.User, c.e.M.Password)
+		req.SetBasicAuth(c.User, c.password())
 		req.Header.Set("User-Agent", "okhttp/4.12.0")
 	}
 	resp, err := c.HTTP.Do(req)
@@ -353,7 +359,7 @@ func (c *Client) JSON(method, path string, body any, want int) map[string]any {
 
 func (c *Client) Login() {
 	c.e.T.Helper()
-	st, b := c.Do("POST", "/api/auth/login", map[string]string{"username": c.User, "password": c.e.M.Password})
+	st, b := c.Do("POST", "/api/auth/login", map[string]string{"username": c.User, "password": c.password()})
 	if st != 200 || !bytes.Contains(b, []byte("SUCCESS")) {
 		c.e.T.Fatalf("login %s: %d %s", c.Role, st, b)
 	}
