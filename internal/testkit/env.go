@@ -236,8 +236,16 @@ func (e *Env) SetupAs(role string) {
 // SetupOnly sets the hub up as SetupAs does, without its first sync.
 func (e *Env) SetupOnly(role string) {
 	e.T.Helper()
-	c := e.Web(role)
-	resp, err := c.PostForm("/hub/setup", url.Values{"step": {"login"}, "username": {c.User}, "password": {e.M.Password}})
+	e.SetupOnlyAs(e.Web(role).User, e.M.Password)
+}
+
+// SetupOnlyAs is SetupOnly as any user of central, with their password.
+func (e *Env) SetupOnlyAs(username, password string) {
+	e.T.Helper()
+	jar, _ := cookiejar.New(nil)
+	c := &Client{e: e, Role: username, User: username, HTTP: &http.Client{Jar: jar,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	resp, err := c.PostForm("/hub/setup", url.Values{"step": {"login"}, "username": {c.User}, "password": {password}})
 	if err != nil {
 		e.T.Fatal(err)
 	}

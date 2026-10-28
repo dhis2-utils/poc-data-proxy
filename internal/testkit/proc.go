@@ -159,6 +159,14 @@ func (p *Proc) writeConfig() {
 // Start runs the hub process and waits until it answers.
 func (p *Proc) Start() {
 	p.e.T.Helper()
+	p.Launch()
+	p.WaitFor("the hub answers", time.Minute, func(map[string]any) bool { return true })
+}
+
+// Launch runs the hub process without waiting for it, as a service manager does: it
+// may exit at once.
+func (p *Proc) Launch() {
+	p.e.T.Helper()
 	if p.Running() {
 		p.e.T.Fatal("hub process already running")
 	}
@@ -175,7 +183,6 @@ func (p *Proc) Start() {
 	}
 	p.exited = make(chan struct{})
 	go func(cmd *exec.Cmd, ch chan struct{}) { cmd.Wait(); logf.Close(); close(ch) }(p.cmd, p.exited)
-	p.WaitFor("the hub answers", time.Minute, func(map[string]any) bool { return true })
 }
 
 // Kill ends the process with SIGKILL, as a power cut: nothing is flushed or closed,

@@ -28,9 +28,18 @@ type Netcut struct {
 	refused atomic.Int64                  // requests cut while down
 	version atomic.Pointer[string]        // central's version as /api/system/info answers it (SetVersion)
 
-	mu     sync.Mutex
-	calls  []Call   // what the hub asked central, since the last Calls
-	faults []*fault // one-shot faults on matching requests
+	mu       sync.Mutex
+	calls    []Call     // what the hub asked central, since the last Calls
+	faults   []*fault   // one-shot faults on matching requests
+	rewrites []*rewrite // answers changed until removed (Answer, Rewrite)
+}
+
+// rewrite changes central's answer to matching requests: with forward false, central
+// never sees the request.
+type rewrite struct {
+	match   func(*http.Request) bool
+	forward bool
+	change  func(status int, body []byte) (int, []byte)
 }
 
 // fault is applied to the next n requests that match.
@@ -114,6 +123,31 @@ func NewNetcut(target string) (*Netcut, error) {
 			time.Sleep(time.Duration(d))
 		}
 		asked := *r.URL // the proxy rewrites r.URL
+		if rw := n.rewriteFor(r); rw != nil {
+			at := time.Now()
+			status, body := 0, []byte(nil)
+			if rw.forward {
+				r.Header.Del("Accept-Encoding") // a plain answer, to rewrite
+				b := &buffered{header: http.Header{}, status: 200}
+				rp.ServeHTTP(b, r)
+				for k, vs := range b.header {
+					w.Header()[k] = vs
+				}
+				status, body = b.status, b.body.Bytes()
+			} else {
+				io.Copy(io.Discard, r.Body)
+				w.Header().Set("Content-Type", "application/json")
+			}
+			status, body = rw.change(status, body)
+			n.mu.Lock()
+			n.calls = append(n.calls, Call{Method: r.Method, URL: &asked, Status: status, Bytes: int64(len(body)), At: at,
+				Dur: time.Since(at), Sent: r.ContentLength, Fault: "rewrite"})
+			n.mu.Unlock()
+			w.Header().Del("Content-Length")
+			w.WriteHeader(status)
+			w.Write(body)
+			return
+		}
 		f := n.take(r)
 		at := time.Now()
 		record := func(status int, bytes int64) {
@@ -263,6 +297,72 @@ func (n *Netcut) add(kind string, count int, match func(*http.Request) bool) <-c
 	n.faults = append(n.faults, f)
 	n.mu.Unlock()
 	return f.hit
+}
+
+// Answer answers every request that matches with status and body itself, without
+// passing it to central, until the returned function is called: central failing some
+// requests (a 500 from a deadlock), or an endpoint gone in a new release.
+func (n *Netcut) Answer(match func(*http.Request) bool, status int, body string) (stop func()) {
+	return n.addRewrite(&rewrite{match: match, change: func(int, []byte) (int, []byte) { return status, []byte(body) }})
+}
+
+// Rewrite passes matching requests to central and changes its answer with change,
+// until the returned function is called: central's answers as a new release might
+// shape them.
+func (n *Netcut) Rewrite(match func(*http.Request) bool, change func(status int, body []byte) (int, []byte)) (stop func()) {
+	return n.addRewrite(&rewrite{match: match, forward: true, change: change})
+}
+
+func (n *Netcut) addRewrite(rw *rewrite) func() {
+	n.mu.Lock()
+	n.rewrites = append(n.rewrites, rw)
+	n.mu.Unlock()
+	return func() {
+		n.mu.Lock()
+		defer n.mu.Unlock()
+		for i, x := range n.rewrites {
+			if x == rw {
+				n.rewrites = append(n.rewrites[:i], n.rewrites[i+1:]...)
+				return
+			}
+		}
+	}
+}
+
+func (n *Netcut) rewriteFor(r *http.Request) *rewrite {
+	n.mu.Lock()
+	rws := append([]*rewrite(nil), n.rewrites...)
+	n.mu.Unlock()
+	for _, rw := range rws {
+		if rw.match(r) {
+			return rw
+		}
+	}
+	return nil
+}
+
+// BodyHas matches a request whose body contains s; the body is kept for central.
+func BodyHas(s string) func(*http.Request) bool {
+	return func(r *http.Request) bool {
+		if r.Body == nil {
+			return false
+		}
+		b, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(b))
+		return bytes.Contains(b, []byte(s))
+	}
+}
+
+// All matches a request every one of the matchers matches.
+func All(ms ...func(*http.Request) bool) func(*http.Request) bool {
+	return func(r *http.Request) bool {
+		for _, m := range ms {
+			if !m(r) {
+				return false
+			}
+		}
+		return true
+	}
 }
 
 // take returns the fault for this request, if any, and counts it.
