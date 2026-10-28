@@ -124,19 +124,7 @@ func netPrepare(t *testing.T) *netRun {
 	if !e.Live() {
 		t.Skip("adversarial scenarios run against a real DHIS2 (HUB_MANIFEST)")
 	}
-	r := newRun(t, e)
-	e.Setup()
-	for _, role := range []string{tk.RoleNurse, tk.RoleRestricted} {
-		if _, ok := e.M.User(role); ok {
-			e.Web(role).Login()
-		}
-	}
-	e.Sync()
-	r.p = e.Detach()
-	t.Cleanup(r.keepLog)
-	r.p.WaitFor("online", time.Minute, tk.Online)
-	t.Logf("run tag %s; hub log %s", r.tag, r.p.Log)
-	return r
+	return newRun(t, e)
 }
 
 // newRun is a run's clients and ledger for the Env's primary program, writing in a
