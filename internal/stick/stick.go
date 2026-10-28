@@ -1,5 +1,6 @@
 // Package stick keeps the hub's USB stick (docs/RECOVERY.md, option C2): before set-up
-// it carries the setup code; after, a copy of the store that a new disk restores from.
+// it carries the setup code (in hub.txt); after, a copy of the store that a new disk
+// restores from.
 package stick
 
 import (
@@ -40,10 +41,27 @@ type Status struct {
 // MetaChoice is the drive a staff member chose for the copy (usb_dir: auto).
 const MetaChoice = "usb_choice"
 
-// MetaStick is the mark of the box's own stick, also in facility-hub/<hub ID>/stick-id
+// MetaStick is the mark of the box's own stick, also in facility-hub/<hub ID>/.stick-id
 // on it: once set up, the hub copies only to the stick holding it. The stick in the
 // box before set-up gets it, or one a staff member takes on later (Choose).
 const MetaStick = "usb_stick"
+
+// markFile holds the mark on the stick: hidden, so a Mac does not show it. Sticks
+// marked before 2026-10-28 have it as oldMarkFile, renamed when read.
+const markFile, oldMarkFile = ".stick-id", "stick-id"
+
+// readMark reads the mark in the hub's folder d on the stick.
+func readMark(d string) ([]byte, error) {
+	path := filepath.Join(d, markFile)
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		old := filepath.Join(d, oldMarkFile)
+		if b, err = os.ReadFile(old); err == nil {
+			os.Rename(old, path)
+		}
+	}
+	return b, err
+}
 
 // Stick runs on its own timer, so a slow or failing stick never delays a save.
 type Stick struct {
@@ -140,9 +158,8 @@ func (s *Stick) mark(dir string, renew bool) error {
 	if err := os.MkdirAll(d, 0o700); err != nil {
 		return err
 	}
-	path := filepath.Join(d, "stick-id")
-	if b, err := os.ReadFile(path); err != nil || string(b) != tok {
-		if err := atomicfile.Write(path, []byte(tok), 0o600); err != nil {
+	if b, err := readMark(d); err != nil || string(b) != tok {
+		if err := atomicfile.Write(filepath.Join(d, markFile), []byte(tok), 0o600); err != nil {
 			return err
 		}
 	}
@@ -168,7 +185,7 @@ func (s *Stick) own() bool {
 		}
 		return s.mark(s.dir(), false) == nil
 	}
-	got, err := os.ReadFile(filepath.Join(s.hubDir(), "stick-id"))
+	got, err := readMark(s.hubDir())
 	return err == nil && subtle.ConstantTimeCompare(got, []byte(want)) == 1
 }
 
@@ -223,14 +240,11 @@ func (s *Stick) Tick(ctx context.Context) {
 	if !st.Present || !st.Writable {
 		return
 	}
-	var err error
-	if s.Info != nil {
-		err = s.writeInfo(s.Info())
-	}
+	os.Remove(filepath.Join(s.root(), "setup-code.txt")) // before 2026-10-28; now in hub.txt
+	err := s.writeInfo(s.info())
 	if s.H.Mode() == core.ModeSetup {
-		err = errors.Join(err, s.writeSetupCode(), s.mark(s.dir(), false))
+		err = errors.Join(err, s.mark(s.dir(), false))
 	} else {
-		os.Remove(filepath.Join(s.root(), "setup-code.txt")) // used: it no longer works
 		err = errors.Join(err, s.mirror())
 	}
 	if err != nil {
@@ -278,8 +292,26 @@ func (s *Stick) check() Status {
 	return st
 }
 
-// writeSetupCode puts the setup code and hub ID on the stick while the hub waits to be
-// set up: whoever holds the box can then set it up, and no one else on the network.
+// info is the text of facility-hub/hub.txt: Info, or the hub's ID without it; while
+// the hub waits to be set up, with its setup code after the first line, so whoever
+// holds the box can set it up, and no one else on the network. Once set up, the code
+// no longer works and its line goes.
+func (s *Stick) info() string {
+	text := "Facility hub " + s.H.HubID() + "\n"
+	if s.Info != nil {
+		text = s.Info()
+	}
+	if s.H.Mode() != core.ModeSetup {
+		return text
+	}
+	code, err := devkey.ReadFile(s.H.SetupCodePath())
+	if err != nil {
+		return text // pinned or allow-list set-up: no code
+	}
+	first, rest, _ := strings.Cut(text, "\n")
+	return first + "\nSetup code: " + strings.TrimSpace(string(code)) + "\n" + rest
+}
+
 // writeInfo keeps facility-hub/hub.txt current.
 func (s *Stick) writeInfo(text string) error {
 	if err := os.MkdirAll(s.root(), 0o700); err != nil {
@@ -289,26 +321,6 @@ func (s *Stick) writeInfo(text string) error {
 	if b, err := os.ReadFile(path); err == nil && string(b) == text {
 		return nil
 	}
-	return atomicfile.Write(path, []byte(text), 0o600)
-}
-
-func (s *Stick) writeSetupCode() error {
-	code, err := devkey.ReadFile(s.H.SetupCodePath())
-	if err != nil {
-		return nil // pinned or allow-list set-up: no code
-	}
-	text := "Facility hub " + s.H.HubID() + "\nSetup code: " + strings.TrimSpace(string(code)) + "\n"
-	if s.Info != nil { // the setup Wi-Fi too, from hub.txt: this is the file opened first
-		for _, l := range strings.SplitAfter(s.Info(), "\n") {
-			if strings.HasPrefix(l, "Setup Wi-Fi") {
-				text += l
-			}
-		}
-	}
-	path := filepath.Join(s.root(), "setup-code.txt")
-	if b, err := os.ReadFile(path); err == nil && string(b) == text {
-		return nil
-	}
-	slog.Info("setup code written to the USB stick", "hub", s.H.HubID())
+	slog.Info("hub.txt written to the USB stick", "hub", s.H.HubID(), "setupCode", strings.Contains(text, "\nSetup code: "))
 	return atomicfile.Write(path, []byte(text), 0o600)
 }

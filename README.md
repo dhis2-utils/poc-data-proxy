@@ -91,7 +91,7 @@ The hub has no facility-specific configuration. It reads one small image-default
 
 | Key | Meaning |
 |---|---|
-| `central_url` | Central DHIS2 base URL; optional. Without it (the generic image), set-up asks for central's address and the setup code first (`setup-code.txt` on the USB stick, or `data_dir/setup-token`), checks the server (https, a trusted certificate) and shows its name before anyone logs in. With it and without `central_hosts`, set-up always uses it |
+| `central_url` | Central DHIS2 base URL; optional. Without it (the generic image), set-up asks for central's address and the setup code first (in `facility-hub/hub.txt` on the USB stick, or `data_dir/setup-token`), checks the server (https, a trusted certificate) and shows its name before anyone logs in. With it and without `central_hosts`, set-up always uses it |
 | `central_hosts` | Hosts setup may point a hub at (`hmis.example.org, *.hmis.example.org`); setup then asks for an `https://` URL on them. With neither key, setup needs the token in `data_dir/setup-token` (printed on the label) |
 | `network` | `networkmanager` (the Pi image): the hub manages its network through NetworkManager, with the setup Wi-Fi and case C (`internal/netsetup`). Empty (default): the machine's network as it is |
 | `mdns` | `true`: the hub answers `dhis2.local` itself (Windows, macOS; the Pi image has avahi). Default `false` |

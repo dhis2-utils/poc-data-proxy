@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/dhis2/facility-hub/internal/config"
+	"github.com/dhis2/facility-hub/internal/devkey"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 	"github.com/dhis2/facility-hub/internal/hubtls"
 	"github.com/dhis2/facility-hub/internal/stick"
@@ -43,34 +44,53 @@ func stickEnv(t *testing.T, codeMode bool) (*env, string) {
 	return e, usb
 }
 
-// Before set-up, the hub writes its setup code and ID to the stick in the box; once
-// set up, it removes the file (a used code no longer works).
+// Before set-up, the hub writes its setup code to the stick in the box, in hub.txt
+// (one file: the one whoever sets the hub up opens); once set up, the code's line goes
+// (a used code no longer works). A setup-code.txt of an earlier version goes too.
 func TestSetupCodeOnStick(t *testing.T) {
 	e, usb := stickEnv(t, true)
-	// As on a Pi (app.SetNet): hub.txt with the setup Wi-Fi. setup-code.txt repeats
-	// it, since whoever sets the hub up opens that file first, but not the facility
-	// Wi-Fi (case C): that file is for set-up only.
-	e.app.Stick.Info = func() string {
+	os.WriteFile(filepath.Join(usb, "facility-hub", "setup-code.txt"), []byte("old"), 0o600)
+	// As on a Pi (app.SetNet): hub.txt with the setup Wi-Fi.
+	info := func() string {
 		return "Facility hub " + e.app.Hub.HubID() + "\nOpen: http://dhis2.local\nAddresses: none\n" +
-			"Setup Wi-Fi: Hub-Test\nSetup Wi-Fi password: 12345678\n" +
-			"Facility Wi-Fi: Hub-Test\nFacility Wi-Fi password: k7mp-x2qd-9wtr-b4nz\n"
+			"Setup Wi-Fi: Hub-Test\nSetup Wi-Fi password: 12345678\n"
 	}
+	e.app.Stick.Info = info
 	e.app.Stick.Tick(context.Background())
-	b, err := os.ReadFile(filepath.Join(usb, "facility-hub", "setup-code.txt"))
+	b, err := os.ReadFile(filepath.Join(usb, "facility-hub", "hub.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	code, _ := os.ReadFile(filepath.Join(e.dir, "setup-token"))
 	c := strings.TrimSpace(string(code))
-	if !strings.Contains(string(b), c) || !strings.Contains(string(b), e.app.Hub.HubID()) ||
-		!strings.Contains(string(b), "Setup Wi-Fi: Hub-Test\nSetup Wi-Fi password: 12345678\n") ||
-		strings.Contains(string(b), "k7mp-x2qd-9wtr-b4nz") {
-		t.Fatalf("setup-code.txt: %s", b)
+	first, rest, _ := strings.Cut(info(), "\n")
+	if want := first + "\nSetup code: " + c + "\n" + rest; string(b) != want {
+		t.Fatalf("hub.txt:\n%s\nwant:\n%s", b, want)
+	}
+	if _, err := os.Stat(filepath.Join(usb, "facility-hub", "setup-code.txt")); err == nil {
+		t.Fatal("an old setup-code.txt is still on the stick")
 	}
 	// 6 digits: it only proves that whoever sets the hub up holds the box, and wrong
 	// codes are throttled (50, then one per 15 minutes, from every device together).
 	if len(c) != 6 || strings.Trim(c, "0123456789") != "" {
 		t.Fatalf("setup code %q", c)
+	}
+
+	// Without a network section (Windows), hub.txt is the hub's ID and the code; once
+	// set up, the ID only.
+	e, usb = stickEnv(t, false)
+	if err := devkey.WriteFile(e.app.Hub.SetupCodePath(), []byte("123456\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e.app.Stick.Tick(context.Background())
+	id := e.app.Hub.HubID()
+	if b, _ := os.ReadFile(filepath.Join(usb, "facility-hub", "hub.txt")); string(b) != "Facility hub "+id+"\nSetup code: 123456\n" {
+		t.Fatalf("hub.txt before set-up:\n%s", b)
+	}
+	e.setup()
+	e.app.Stick.Tick(context.Background())
+	if b, _ := os.ReadFile(filepath.Join(usb, "facility-hub", "hub.txt")); string(b) != "Facility hub "+id+"\n" {
+		t.Fatalf("hub.txt once set up:\n%s", b)
 	}
 }
 
@@ -530,7 +550,7 @@ func TestStickForeignGetsNothing(t *testing.T) {
 	}
 	// A copy of the box's stick's folders, without its mark, is no better.
 	os.MkdirAll(filepath.Join(usb, "facility-hub", id), 0o700)
-	os.WriteFile(filepath.Join(usb, "facility-hub", id, "stick-id"), []byte("guess"), 0o600)
+	os.WriteFile(filepath.Join(usb, "facility-hub", id, ".stick-id"), []byte("guess"), 0o600)
 	e.app.Stick.Tick(context.Background())
 	if files, _ := filepath.Glob(filepath.Join(usb, "facility-hub", id, "*")); len(files) != 1 {
 		t.Fatalf("a stick with a wrong mark got %v", files)
@@ -556,7 +576,7 @@ func TestStickReplaced(t *testing.T) {
 	}
 	resp.Body.Close()
 	e.app.Stick.Tick(context.Background())
-	for _, f := range []string{"keys.db", "state.rec", "stick-id"} {
+	for _, f := range []string{"keys.db", "state.rec", ".stick-id"} {
 		if _, err := os.Stat(filepath.Join(usb, "facility-hub", id, f)); err != nil {
 			t.Fatalf("the new stick: %v (status %+v)", err, e.app.Stick.Status())
 		}
@@ -585,7 +605,7 @@ func TestStickReplaced(t *testing.T) {
 func TestStickMarkedAfterUpgrade(t *testing.T) {
 	e, usb, id := stickWithSaves(t)
 	e.app.Hub.Store.SetMeta(stick.MetaStick, "") // as before marks
-	os.Remove(filepath.Join(usb, "facility-hub", id, "stick-id"))
+	os.Remove(filepath.Join(usb, "facility-hub", id, ".stick-id"))
 	box := swapStick(t, usb, "")
 	e.app.Stick.Tick(context.Background())
 	if entries, _ := os.ReadDir(usb); len(entries) != 0 || !e.app.Stick.Status().Unknown {
@@ -595,5 +615,25 @@ func TestStickMarkedAfterUpgrade(t *testing.T) {
 	e.app.Stick.Tick(context.Background())
 	if st := e.app.Stick.Status(); st.Unknown || e.app.Hub.Store.Meta(stick.MetaStick) == "" {
 		t.Fatalf("the hub's own stick was not taken on: %+v", st)
+	}
+}
+
+// A stick marked before the mark was hidden (stick-id, not .stick-id) is still the
+// box's own; its mark is renamed.
+func TestStickOldMarkName(t *testing.T) {
+	e, usb, id := stickWithSaves(t)
+	dir := filepath.Join(usb, "facility-hub", id)
+	if err := os.Rename(filepath.Join(dir, ".stick-id"), filepath.Join(dir, "stick-id")); err != nil {
+		t.Fatal(err)
+	}
+	e.app.Stick.Tick(context.Background())
+	if st := e.app.Stick.Status(); st.Unknown || !st.Writable {
+		t.Fatalf("the box's stick with its old mark: %+v", st)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".stick-id")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "stick-id")); err == nil {
+		t.Fatal("the old mark is still there")
 	}
 }

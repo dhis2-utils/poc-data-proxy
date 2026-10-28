@@ -18,7 +18,7 @@ import (
 // boot; the depot prints it on the label.
 
 // The setup code is 6 digits: it only proves that whoever sets the hub up holds the
-// box (setup-code.txt on its USB stick), and wrong codes are throttled (auth: 50, then
+// box (facility-hub/hub.txt on its USB stick), and wrong codes are throttled (auth: 50, then
 // one per 15 minutes, from every device together), so guessing takes years.
 const tokenDigits = 6
 
@@ -60,7 +60,7 @@ func checkSetupToken(h *core.Hub, given string) error {
 	want := norm.Replace(strings.TrimSpace(string(b)))
 	given = norm.Replace(strings.ToUpper(strings.TrimSpace(given)))
 	if subtle.ConstantTimeCompare([]byte(given), []byte(want)) != 1 {
-		return errors.New("wrong setup code: use the one in setup-code.txt on the hub's USB stick")
+		return errors.New("wrong setup code: use the one in facility-hub/hub.txt on the hub's USB stick")
 	}
 	return nil
 }
