@@ -55,8 +55,18 @@ class Device:
             return
         path = resp.url[len(HUB):]
         if "/tracker" in path.split("?")[0]:
-            self.result["tracker"].append({"user": self.user, "phase": self.phase, "method": resp.request.method,
-                                           "status": resp.status, "path": path[:200]})
+            entry = {"user": self.user, "phase": self.phase, "method": resp.request.method,
+                     "status": resp.status, "path": path[:200]}
+            if resp.request.method == "GET" and resp.status == 200:
+                try:  # what the pull returned: how many, and whether the run's client is among them
+                    body = resp.text()
+                    entry["count"] = len(json.loads(body).get("trackedEntities") or [])
+                    entry["hasClient"] = SURNAME in body
+                    with open(os.path.join(OUT, f"pull-{self.user}-{self.phase}.json"), "w") as f:
+                        f.write(body)
+                except Exception:
+                    pass
+            self.result["tracker"].append(entry)
         if resp.status >= 400 and resp.status != 404 and not path.endswith(".map"):
             self.result["failed"].append({"user": self.user, "phase": self.phase, "status": resp.status,
                                           "path": path[:300]})
@@ -83,9 +93,9 @@ class Device:
     def ready(self):
         """Wait until the app shows its start screen. The app's admin can ask every
         device to reload (a banner, then a reload): do it now rather than mid-form."""
-        for _ in range(5):
-            try:
-                self.app.get_by_role("button", name="Register New Client").wait_for(timeout=WAIT)
+        for _ in range(WAIT // 10_000):
+            try:  # short waits: self.app is chosen again each time, once the shell's frame is there
+                self.app.get_by_role("button", name="Register New Client").wait_for(timeout=10_000)
                 self.page.wait_for_timeout(2000)
                 reload = self.app.get_by_role("button", name="Reload now")
                 if not (reload.count() and reload.first.is_visible()):
