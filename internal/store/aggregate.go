@@ -217,7 +217,8 @@ func (s *Store) FinishOutboxIfUnchanged(seq int64, state, lastError string, push
 				return err
 			}
 		}
-		if _, err := tx.Exec(`UPDATE outbox SET state=?, attempts=attempts+1, last_error_enc=? WHERE seq=?`, state, errCT, seq); err != nil {
+		if _, err := tx.Exec(`UPDATE outbox SET state=?, attempts=attempts+1, last_error_enc=?, sent_at=iif(?=?, ?, sent_at) WHERE seq=?`,
+			state, errCT, state, OutboxSynced, Now(), seq); err != nil {
 			return err
 		}
 		finished = true

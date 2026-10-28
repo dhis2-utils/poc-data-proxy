@@ -407,8 +407,19 @@ func issueGroup(h *core.Hub, is *store.Issue) (program string, codes map[string]
 
 // retry is a resend instruction from the Facility Hub app (facility-hub-admin/retries).
 // User, if given, is the hub user to send the saves as instead of their authors.
+// Since, if given, is a date-time: the hub sends again every outbox entry central
+// accepted at or after it (central restored from a backup taken then, RECOVERY.md),
+// and Kind, Program and Code are not used.
 type retry struct {
-	ID, Kind, Program, Code, At, User string
+	ID, Kind, Program, Code, At, User, Since string
+}
+
+// parseSince reads a retry's since: RFC 3339, or without a zone as UTC.
+func parseSince(v string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
+		return t, nil
+	}
+	return time.Parse("2006-01-02T15:04:05", v)
 }
 
 const (
@@ -420,7 +431,8 @@ const (
 // app after central was fixed: this hub's saves refused with that kind, programme and
 // error code, and what they blocked, are sent again as their authors, or as the user
 // the instruction names, once per instruction, when the hub first sees it. Central's
-// new answer stands.
+// new answer stands. An instruction with since sends again what central accepted
+// since then instead (central restored from a backup).
 func (w *Worker) applyRetries(ctx context.Context) error {
 	h := w.H
 	var v struct {
@@ -486,6 +498,22 @@ func (w *Worker) applyRetries(ctx context.Context) error {
 					slog.Warn("retry from the Facility Hub app not applied", "id", r.ID, "reason", kept[r.ID])
 					continue
 				}
+			}
+			if r.Since != "" {
+				since, err := parseSince(r.Since)
+				if err != nil {
+					kept[r.ID] = "since is not a date-time: " + r.Since
+					slog.Warn("retry from the Facility Hub app not applied", "id", r.ID, "reason", kept[r.ID])
+					continue
+				}
+				n, err := h.Store.RequeueSentSince(since, as)
+				if err != nil {
+					return err
+				}
+				reassigned = reassigned || (as != 0 && n > 0)
+				slog.Info("retry from the Facility Hub app: sent again what central accepted since", "id", r.ID,
+					"since", since.UTC().Format(time.RFC3339), "as", r.User, "entries", n)
+				continue
 			}
 			uids, seqs := map[string]bool{}, map[int64]bool{}
 			for _, is := range issues {

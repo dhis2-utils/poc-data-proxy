@@ -189,7 +189,8 @@ func (s *Store) FinishOutbox(seq int64, state, lastError string) error {
 			return err
 		}
 	}
-	_, err := s.write(`UPDATE outbox SET state=?, attempts=attempts+1, last_error_enc=? WHERE seq=?`, state, ct, seq)
+	_, err := s.write(`UPDATE outbox SET state=?, attempts=attempts+1, last_error_enc=?, sent_at=iif(?=?, ?, sent_at) WHERE seq=?`,
+		state, ct, state, OutboxSynced, Now(), seq)
 	return err
 }
 
@@ -220,6 +221,37 @@ func (s *Store) CountOutbox(state string) int {
 	var n int
 	s.DB().QueryRow(`SELECT count(*) FROM outbox WHERE state=?`, state).Scan(&n)
 	return n
+}
+
+// RequeueSentSince puts back in the queue every outbox entry central accepted at or
+// after since (a retry with since, after central was restored from a backup): the
+// entries go back to pending, and so do their objects the hub holds as synced. A
+// userID other than 0 makes those entries that user's. Entries accepted before
+// sent_at was recorded count from when they were made. It returns the entries
+// requeued.
+func (s *Store) RequeueSentSince(since time.Time, userID int64) (int, error) {
+	var as any // NULL keeps the author
+	if userID != 0 {
+		as = userID
+	}
+	at := since.UTC().Format(time.RFC3339Nano)
+	var n int
+	err := s.Tx(context.Background(), func(tx *sql.Tx) error {
+		sent := `SELECT seq FROM outbox WHERE state=? AND iif(sent_at='', created_at, sent_at) >= ?`
+		if _, err := tx.Exec(`UPDATE objects SET sync_state=? WHERE sync_state=? AND uid IN (SELECT uid FROM outbox_objects WHERE seq IN (`+sent+`))`,
+			SyncPending, SyncSynced, OutboxSynced, at); err != nil {
+			return err
+		}
+		res, err := tx.Exec(`UPDATE outbox SET state=?, failing_since='', user_id=coalesce(?, user_id) WHERE seq IN (`+sent+`)`,
+			OutboxPending, as, OutboxSynced, at)
+		if err != nil {
+			return err
+		}
+		k, _ := res.RowsAffected()
+		n = int(k)
+		return nil
+	})
+	return n, err
 }
 
 // Requeue sends refused saves again (a retry from the Facility Hub app): the refused

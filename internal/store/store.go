@@ -226,6 +226,10 @@ CREATE INDEX agg_forms_ds ON agg_forms(data_set, fetched_at);
 	// such an entry is refused after a day instead of retried for ever (push.go). A
 	// new column with a constant default: existing rows are not rewritten.
 	`ALTER TABLE outbox ADD COLUMN failing_since TEXT NOT NULL DEFAULT '';`,
+	// 4: when central accepted an outbox entry, so a retry with since sends again what
+	// a central restored from a backup lost (push.go, RECOVERY.md). A new column with a
+	// constant default: existing rows are not rewritten.
+	`ALTER TABLE outbox ADD COLUMN sent_at TEXT NOT NULL DEFAULT '';`,
 }
 
 // DataPath is the data file that belongs to the key file at path.

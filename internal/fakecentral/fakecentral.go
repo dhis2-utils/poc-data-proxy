@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -235,6 +236,37 @@ func (c *Central) Object(uid string) tracker.M {
 		return out
 	}
 	return nil
+}
+
+// Backup is a copy of central's tracker data (Backup, Restore).
+type Backup struct {
+	objects map[string]tracker.M
+	kinds   map[string]string
+	order   []string
+	owners  map[string]string
+}
+
+// Backup copies central's tracker data, as a database backup would.
+func (c *Central) Backup() *Backup {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	b := &Backup{objects: map[string]tracker.M{}, kinds: maps.Clone(c.kinds), order: slices.Clone(c.order), owners: maps.Clone(c.owners)}
+	for uid, o := range c.objects {
+		b.objects[uid] = deepCopy(o)
+	}
+	return b
+}
+
+// Restore puts back the tracker data of a backup: what was written since is gone. The
+// dataStore stays as it is, so a test can write instructions to the hub after it.
+func (c *Central) Restore(b *Backup) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.objects = map[string]tracker.M{}
+	for uid, o := range b.objects {
+		c.objects[uid] = deepCopy(o)
+	}
+	c.kinds, c.order, c.owners = maps.Clone(b.kinds), slices.Clone(b.order), maps.Clone(b.owners)
 }
 
 // Order returns object UIDs in the order they were first stored.
