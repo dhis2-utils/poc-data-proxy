@@ -108,6 +108,7 @@ The hub checks offline only what it can know; central decides on push. In each s
 | C7 | A relationship to a person the hub does not hold | Refused clearly or accepted as central | S | none |
 | C8 | Break the glass online, then the uplink drops | The temporary access ends as central's does; nothing more is shown offline | S | fake (TestBreakTheGlass) |
 | C9 | An enrollment completed on central while events are added offline | As central decides | S | none |
+| C10 | A one-time referral (Capture's referral that leaves the owner as it is): a person referred from or to the facility, online and offline; the referred event made and then completed at the receiving facility | The receiving facility sees what central lets it see and no more, online and offline; the referral's event reaches central once; the owner does not change | S, C | none |
 
 ### D. The network
 
