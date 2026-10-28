@@ -115,7 +115,6 @@ func TestH1CentralDownForMaintenance(t *testing.T) {
 // The other part, a hub that supports the new major pushing as before, needs central
 // really upgraded (see the plan's Progress).
 func TestH3CentralVersionNotSupported(t *testing.T) {
-	finding(t, "H3/N13: on a central version it does not support, the hub refuses every tracker read and save online (503 needs upgrade) instead of passing them through")
 	r := netStart(t)
 	read := r.reader()
 	stop := r.write(300 * time.Millisecond)

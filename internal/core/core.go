@@ -189,8 +189,10 @@ func (h *Hub) OutboxWaiting() bool {
 // PassThrough reports whether tracker requests go to central: it is reachable, and the
 // outbox has nothing waiting to be pushed. Until the outbox is pushed after an outage,
 // central lacks what was written offline: reads there would not show it, and a write
-// that refers to it would fail or overtake it.
-func (h *Hub) PassThrough() bool { return h.Online() && !h.OutboxWaiting() }
+// that refers to it would fail or overtake it. On a central version this release does
+// not support, the outbox waits for the release that does, and everything passes
+// through while online (spec 12a).
+func (h *Hub) PassThrough() bool { return h.Online() && (h.API() == nil || !h.OutboxWaiting()) }
 
 // MarkOffline flags an answer the hub gave itself because central is unreachable,
 // for clients that want to show it (FINDINGS: offline search scope).

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/core"
+	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 	"github.com/dhis2/facility-hub/internal/upgrade"
 )
 
@@ -423,5 +424,50 @@ func TestUnconfirmedUpgradeTakesNoSaves(t *testing.T) {
 		if e.central.Object(te) == nil {
 			t.Errorf("%s not pushed after the health check", te)
 		}
+	}
+}
+
+// N13/H3: on a central version this release does not support, the hub passes tracker
+// and aggregate requests through while online, also with saves queued; those stay
+// queued. Once a release is chosen, the upgrade does not push them (the push needs the
+// version's handling): the new release does.
+func TestNeedsUpgradePassesThrough(t *testing.T) {
+	e, rs := upgradeEnv(t)
+	nurse := e.android("nurse_a")
+	e.offline()
+	nurse.json("POST", postSync, newPatient("NupTe000001", "NupEn000001", "Queued", "NAT-7171", nil), 200)
+	e.central.SetVersion("2.44.0")
+	e.online()
+	e.app.Worker.Cycle(context.Background()) // "hub needs upgrade"
+	if e.app.Hub.API() != nil {
+		t.Fatal("2.44 is supported")
+	}
+	if st, b := nurse.do("GET", "/api/tracker/trackedEntities?program="+fc.Program+"&orgUnit="+fc.Facility, nil); st != 200 {
+		t.Fatalf("an online read: %d %s", st, b)
+	}
+	nurse.json("POST", postSync, newPatient("NupTe000002", "NupEn000002", "Online", "NAT-7172", nil), 200)
+	if e.central.Object("NupTe000002") == nil {
+		t.Error("an online save did not reach central")
+	}
+	agg := "GET /api/dataEntry/dataValues"
+	before := e.central.RequestCount(agg)
+	nurse.do("GET", "/api/dataEntry/dataValues?ds=x&pe=202601&ou="+fc.Facility, nil)
+	if e.central.RequestCount(agg) == before {
+		t.Error("an online aggregate read was not passed through")
+	}
+
+	rs.publish("0.3.0", "0.3.0")
+	e.choose(`{"version":"0.3.0","pilotHubs":[],"percent":100}`)
+	e.app.Worker.Cycle(context.Background())
+	e.downloaded()
+	e.app.Worker.Cycle(context.Background()) // the upgrade: this test binary is no hub, so it stops at the migration
+	if r := lastUpgrade(e); r["to"] != "0.3.0" || !strings.Contains(fmt.Sprint(r["reason"]), "migration") {
+		t.Fatalf("last upgrade %v", r)
+	}
+	if e.central.Object("NupTe000001") != nil {
+		t.Error("pushed to a central this release does not support")
+	}
+	if p, _ := e.app.Hub.Store.PendingOutbox(); len(p) != 1 {
+		t.Fatalf("pending saves %d, want 1", len(p))
 	}
 }

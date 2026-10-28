@@ -175,14 +175,21 @@ func (u *Upgrader) check(ctx context.Context) error {
 	// author must log in online again may never push; they carry over in the store
 	// copy, so they do not hold back the upgrade, which may be a security fix
 	// (REVIEW-2 F3). The status page and heartbeat report them as stuck.
-	pending, err := u.Drain(ctx)
-	if err != nil {
-		return fmt.Errorf("outbox not drained: %w", err)
-	}
-	if stuck := u.H.StuckOutbox(); pending > stuck {
-		return fmt.Errorf("outbox not drained (%d pending)", pending)
-	} else if stuck > 0 {
-		slog.Warn("upgrading with stuck outbox entries; their authors must log in online", "entries", stuck)
+	// On a central version this release does not support, nothing can be pushed: the
+	// outbox goes over in the store copy, and the new release pushes it (N13).
+	if u.H.API() == nil {
+		slog.Warn("upgrading without pushing the outbox: this release does not support central's version",
+			"central", u.H.ServerVersion(), "pending", u.H.Store.CountOutbox(store.OutboxPending))
+	} else {
+		pending, err := u.Drain(ctx)
+		if err != nil {
+			return fmt.Errorf("outbox not drained: %w", err)
+		}
+		if stuck := u.H.StuckOutbox(); pending > stuck {
+			return fmt.Errorf("outbox not drained (%d pending)", pending)
+		} else if stuck > 0 {
+			slog.Warn("upgrading with stuck outbox entries; their authors must log in online", "entries", stuck)
+		}
 	}
 	// Refuse local writes from here on, so the store copy is complete.
 	u.H.FreezeLocalWrites()

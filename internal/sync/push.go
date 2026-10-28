@@ -36,6 +36,11 @@ func (w *Worker) Push(ctx context.Context) error {
 	if h.Upgrading.Load() {
 		return nil
 	}
+	if h.API() == nil {
+		// Central's import reports are read through the version's handling: the
+		// outbox waits for a release that supports central.
+		return fmt.Errorf("hub needs upgrade: central runs %s", h.ServerVersion())
+	}
 	entries, err := h.Store.PendingOutbox()
 	if err != nil {
 		return err

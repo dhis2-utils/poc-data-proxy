@@ -169,6 +169,13 @@ func New() *Central {
 // SetDown makes every request fail at the connection level (a cut uplink).
 func (c *Central) SetDown(down bool) { c.down.Store(down) }
 
+// SetVersion changes the DHIS2 version central reports, as after an upgrade.
+func (c *Central) SetVersion(v string) {
+	c.mu.Lock()
+	c.Version = v
+	c.mu.Unlock()
+}
+
 // now is the current time as DHIS2 writes it: in the server's time zone, without an
 // offset.
 func (c *Central) now() string {

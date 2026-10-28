@@ -564,13 +564,13 @@ func TestN5HealthCheckFailsAfterMigration(t *testing.T) {
 // through; no queued save lost; after the hub is upgraded to a release that supports
 // central (here: the uplink's answer is central's again), they push.
 //
-// Found: online, the hub refuses tracker reads (503 "needs connection: hub needs
-// upgrade") instead of passing them through; and once the country chooses a new
-// release, the hub crashes as it drains its outbox for the upgrade (push.go reads
+// Found 27 October: online, the hub refused tracker reads (503 "needs connection: hub
+// needs upgrade") instead of passing them through; and once the country chose a new
+// release, the hub crashed as it drained its outbox for the upgrade (push.go read
 // central's import report through h.API(), nil for an unsupported version), at every
-// start, until central's version is supported again.
+// start. Fixed 28 October: online it passes through, and the upgrade leaves the queue
+// to the new release.
 func TestN13UnsupportedMajor(t *testing.T) {
-	finding(t, "N13: a hub that needs upgrade crashes at every start once a release is chosen (nil API in the upgrade's drain), and refuses online reads instead of passing them through")
 	ch := newChannel(t)
 	cur := ch.build("", "0.1.0")
 	next := ch.build("", "0.2.0")
