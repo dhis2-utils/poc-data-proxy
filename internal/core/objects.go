@@ -368,7 +368,7 @@ func (h *Hub) ShareByRules(uids []string) {
 // hides them from everyone offline, and every user's visibility of them is cleared.
 func (h *Hub) ApplyTransfer(teUID, program, owner string) error {
 	if owner == h.Facility() {
-		return nil // a transfer in: the next pull brings it
+		return nil // a transfer in: the ownership check brings it back (sync.checkOwnership)
 	}
 	var objs []*tracker.Obj
 	if te := h.Index.Get(teUID); te != nil && owner != "" {

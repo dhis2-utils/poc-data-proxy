@@ -83,6 +83,30 @@ func TestTransferThroughHub(t *testing.T) {
 	}
 }
 
+// TestTransferBackOnCentral: a person transferred out through the hub and back on
+// central (C4, docs/ADVERSARIAL-TESTING.md). Central bumps the person's updatedAt at a
+// transfer, but a fetch of the person through another scope (here an online read
+// without the program; on synthetic 2.42 another user's type pull) takes the bump
+// before the program's pull lists them, so that pull finds them current and leaves the
+// hub's owner as it was. The ownership check finds them.
+func TestTransferBackOnCentral(t *testing.T) {
+	e, nurse := ownershipEnv(t)
+	e.Setup()
+	register(t, nurse)
+	e.Sync()
+	if st, b := nurse.Do("PUT", "/api/tracker/ownership/transfer?trackedEntity="+seedTE+"&program="+fc.Program+"&ou="+fc.OtherFacility, nil); st != 200 {
+		t.Fatalf("transfer online through the hub: %d %s", st, b)
+	}
+	e.Fake.Transfer(seedTE, fc.Facility)
+	if st, b := nurse.Do("GET", "/api/tracker/trackedEntities/"+seedTE+"?fields=*", nil); st != 200 {
+		t.Fatalf("online read of the person: %d %s", st, b)
+	}
+	e.Sync()
+	if s, o, ev := seesOffline(t, e, nurse); !s || !o || !ev {
+		t.Errorf("after a transfer back on central and a sync: search %v, open %v, events %v; want all", s, o, ev)
+	}
+}
+
 func TestBreakTheGlass(t *testing.T) {
 	e, nurse := ownershipEnv(t)
 	e.Fake.Transfer(seedTE, fc.OtherFacility) // registered here, owned elsewhere

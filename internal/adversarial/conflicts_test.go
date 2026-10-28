@@ -345,12 +345,12 @@ func TestC4TransferredThroughHubAndOnCentral(t *testing.T) {
 	s.expect(nil, tk.OnCentral)
 }
 
-// y: through the hub to the sibling, then on central back to the facility. The hub
-// holds the person as the sibling's: a transfer leaves the person's updatedAt as it
-// was, so neither an incremental nor a full pull fetches them again, and they stay
-// hidden offline until changed on central.
+// y: through the hub to the sibling, then on central back to the facility. Central
+// gives the person a new updatedAt at the transfer, but another user's type pull
+// fetched them first, so the program's pull found them current and the hub held them
+// as the sibling's, hidden offline, even after a full pull (C4, FINDINGS.md). The
+// ownership check now finds them.
 func TestC4TransferredBackOnCentral(t *testing.T) {
-	finding(t, "C4: a person transferred out through the hub and back on central stays hidden offline, even after a full pull, until changed on central")
 	s, p, transfer, _ := transferScene(t)
 	nurse := s.connect(s.M.Users[tk.RoleNurse].Username)
 	y := s.register(nurse, p, "AdvC4y")
@@ -361,11 +361,7 @@ func TestC4TransferredBackOnCentral(t *testing.T) {
 	}
 	s.TransferOwnership(y.TE, p.ID, s.M.Facility.ID)
 	s.reconnect(2)
-	if !s.sameOwner(p, y) {
-		s.App.Hub.Cfg.FullPullInterval = 0
-		s.reconnect(1)
-		t.Logf("after a full pull: the same as central: %v", s.sameOwner(p, y))
-	}
+	s.sameOwner(p, y)
 }
 
 // transferScene sets a hub up for the C4 scenarios: the protected program, a client

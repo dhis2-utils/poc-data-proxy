@@ -257,11 +257,29 @@ func (ix *Index) AttributeValueTaken(attr, value, te string) bool {
 // EnrolledTEs returns the tracked entities with a synced enrollment in program owned by
 // owner (the ownership check).
 func (ix *Index) EnrolledTEs(program, owner string) []string {
+	return ix.enrolledTEs(sqlEnrolledOwned, program, owner)
+}
+
+// EnrolledElsewhere returns the tracked entities with a synced enrollment in program
+// owned by another org unit than owner, or by none known: people the hub still holds,
+// hidden, after a transfer out (the ownership check, which shows them again if central
+// lists them as owner's).
+func (ix *Index) EnrolledElsewhere(program, owner string) []string {
+	return ix.enrolledTEs(sqlEnrolledElsewhere, program, owner)
+}
+
+const (
+	sqlEnrolledOwned = `SELECT DISTINCT te_uid FROM objects WHERE kind = 'enrollment' AND program = ?
+ AND owner_org_unit = ? AND sync_state = ?`
+	sqlEnrolledElsewhere = `SELECT DISTINCT te_uid FROM objects WHERE kind = 'enrollment' AND program = ?
+ AND owner_org_unit <> ? AND sync_state = ?`
+)
+
+func (ix *Index) enrolledTEs(q, program, owner string) []string {
 	if ix.store == nil || !ix.store.Unlocked() {
 		return nil
 	}
-	rows, err := ix.store.DB().Query(`SELECT DISTINCT te_uid FROM objects WHERE kind = 'enrollment' AND program = ?
- AND owner_org_unit = ? AND sync_state = ?`, program, owner, store.SyncSynced)
+	rows, err := ix.store.DB().Query(q, program, owner, store.SyncSynced)
 	if err != nil {
 		return nil
 	}

@@ -31,7 +31,7 @@ func (w *Worker) Pull(ctx context.Context) error {
 		return err
 	}
 	var failed []error
-	readers := map[string]central.Auth{} // program -> a user whose pull of it succeeded
+	readers := map[string]*puller{} // program -> a user whose pull of it succeeded
 	// Users central answers alike share one listing (access.List.GroupKey): listing
 	// per user was most of what a hub asked of central (docs/PERFORMANCE.md).
 	groups := map[string][]*puller{}
@@ -88,7 +88,7 @@ func (p *puller) accJSON() string {
 // pullGroup pulls the view of users with the same access, listing as the first of
 // them and applying the result to all. It returns only network errors; others are
 // added to failed.
-func (w *Worker) pullGroup(ctx context.Context, g []*puller, readers map[string]central.Auth, failed *[]error) error {
+func (w *Worker) pullGroup(ctx context.Context, g []*puller, readers map[string]*puller, failed *[]error) error {
 	h := w.H
 	cat := h.Catalog()
 	acc := g[0].acc
@@ -212,7 +212,7 @@ func (w *Worker) pullGroup(ctx context.Context, g []*puller, readers map[string]
 // change. ok: the pull decided the program's visibility. stop: the listing user can
 // no longer pull.
 func (w *Worker) pullFor(ctx context.Context, g []*puller, p string, full bool, seen map[uint32]bool,
-	readers map[string]central.Auth, failed *[]error) (ok, stop bool, err error) {
+	readers map[string]*puller, failed *[]error) (ok, stop bool, err error) {
 	h := w.H
 	rep := g[0]
 	after := ""
@@ -277,7 +277,7 @@ func (w *Worker) pullFor(ctx context.Context, g []*puller, p string, full bool, 
 		}
 	}
 	if _, ok := readers[p]; !ok && !strings.HasPrefix(p, "tet:") && (pm == nil || !pm.Event) {
-		readers[p] = rep.auth
+		readers[p] = rep
 	}
 	if maxUpdated == "" {
 		maxUpdated = after
@@ -471,15 +471,20 @@ const ownershipVerifyMax = 500
 // longer lists as owned by it: a transfer out does not show in incremental pulls, and
 // waiting for the daily full pull would leave the person visible offline. Per program
 // it lists the owned tracked entities' identifiers (as a user who just pulled it), and
-// each held one missing from the list is read once to learn its owner. Runs at most
-// every ownership_check_interval.
-func (w *Worker) checkOwnership(ctx context.Context, api compat.API, facility string, readers map[string]central.Auth) error {
+// each held one missing from the list is read once to learn its owner. The other way
+// round, people the hub holds as owned elsewhere that central lists as the facility's
+// again (transferred back) are fetched again, which makes the facility their owner,
+// and shown to the users the local rules allow: no pull would fetch them, once another
+// scope's fetch has taken the updatedAt the transfer gave them (C4, FINDINGS.md). Runs
+// at most every ownership_check_interval.
+func (w *Worker) checkOwnership(ctx context.Context, api compat.API, facility string, readers map[string]*puller) error {
 	h := w.H
 	if last := store.ParseTime(h.Store.Private("last_ownership_check")); !last.IsZero() && time.Since(last) < h.Cfg.OwnershipCheckInterval {
 		return nil
 	}
 	verified := 0
-	for program, auth := range readers {
+	for program, r := range readers {
+		auth := r.auth
 		owned := map[string]bool{}
 		for page := 1; ; page++ {
 			items, more, err := w.getPage(ctx, api, auth, api.OwnedPath(facility, program, page, ownedPageSize), page, ownedPageSize)
@@ -515,12 +520,43 @@ func (w *Worker) checkOwnership(ctx context.Context, api compat.API, facility st
 				}
 			}
 		}
+		if err := w.transferredBack(ctx, api, r, facility, program, owned); err != nil {
+			return err
+		}
 	}
 	h.Store.SetPrivate("last_ownership_check", store.Now())
 	return nil
 }
 
 const ownedPageSize = 10000
+
+// transferredBack fetches again, as r, the people the hub holds as owned elsewhere in
+// program that central lists as owned by the facility, and shares them by the local
+// rules (checkOwnership).
+func (w *Worker) transferredBack(ctx context.Context, api compat.API, r *puller, facility, program string, owned map[string]bool) error {
+	h := w.H
+	back := slices.DeleteFunc(h.Index.EnrolledElsewhere(program, facility), func(te string) bool { return !owned[te] })
+	if len(back) == 0 {
+		return nil
+	}
+	if err := w.fetchStale(ctx, api, r.auth, r.u.ID, facility, program, &staleSet{tes: back}, map[uint32]bool{}); err != nil {
+		return err
+	}
+	var uids []string
+	for _, te := range back {
+		for _, e := range h.Index.EnrollmentsOf(te) {
+			if e.Program == program && e.OwnerOrgUnit == facility {
+				uids = append(uids, e.UID)
+				for _, ev := range h.Index.EventsOf(e.UID) {
+					uids = append(uids, ev.UID)
+				}
+			}
+		}
+	}
+	h.ShareByRules(uids)
+	slog.Info("ownership moved back", "program", program, "trackedEntities", len(back), "objects", len(uids))
+	return nil
+}
 
 // ownerOf reads who owns te in program: "" when the user may not open it there
 // (owned where they have no access) or it is gone.
