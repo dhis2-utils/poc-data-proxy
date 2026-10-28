@@ -64,6 +64,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		res, err := a.Proxy.Forward(r.Context(), r, body, up)
 		if err == nil {
 			if sess != nil && r.Method != http.MethodGet && res.Status/100 == 2 {
+				a.H.NoteSave(true)
 				a.learn(r, body, sess)
 			}
 			proxy.Write(w, a.Proxy.Localize(r, res))
@@ -283,6 +284,7 @@ func (a *API) queue(w http.ResponseWriter, sess *core.Session, ed *aggregate.Edi
 		a.H.WebError(w, http.StatusInternalServerError, "could not save the edit", "")
 		return false
 	}
+	a.H.NoteSave(false)
 	return true
 }
 

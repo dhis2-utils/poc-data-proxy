@@ -91,6 +91,9 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if a.H.PassThrough() {
 		res, err := a.Proxy.Forward(r.Context(), r, body, a.Proxy.Upstream(sess))
 		if err == nil {
+			if coll, _ := split(r.URL.Path); r.Method == http.MethodPost && coll == "" && res.Status/100 == 2 {
+				a.H.NoteSave(true)
+			}
 			a.learn(sess, r, body, res)
 			proxy.Write(w, a.Proxy.Localize(r, res))
 			return
@@ -370,10 +373,14 @@ func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Ses
 			keep.Set(k, "true")
 		}
 	}
-	if _, err := a.H.PersistImport(sess.UserID, out, keep.Encode()); err != nil {
+	seq, err := a.H.PersistImport(sess.UserID, out, keep.Encode())
+	if err != nil {
 		slog.Error("persist offline import", "err", err)
 		a.H.WebError(w, 500, "could not store import: "+err.Error(), "")
 		return
+	}
+	if seq > 0 {
+		a.H.NoteSave(false)
 	}
 	status, report := a.H.API().ImportReport(out)
 	if !async {

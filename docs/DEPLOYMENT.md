@@ -370,9 +370,10 @@ A hub only serves its own facility. A community health worker's tablet that visi
     - sync cycles;
     - outages and minutes offline, and the longest outage;
     - the peak of pending changes;
-    - the lowest free disk.
+    - the lowest free disk;
+    - saves passed straight to central while online (`savedOnline`), and saves stored on the hub and sent later from the outbox (`savedOffline`): tracker imports and aggregate edits, one per request (built 2026-10-28, `TestSavesCountedInHeartbeat`, `TestAggregateSavesCounted`).
 
-  The history shows how much time a hub spends online and offline. It lives in the same key, about 14 KB at 90 days, so the namespace still holds one key per hub.
+  The history shows how much time a hub spends online and offline, and how much staff work through it offline. It lives in the same key, about 14 KB at 90 days, so the namespace still holds one key per hub. The two save counts add at most 3.4 KB at 90 days (four-digit counts every day), less on days without saves, which leave them out.
 - **The Facility Hub app** (first version built 2026-10-18, `apps/facility-hub`, [FACILITY-HUB-APP.md](FACILITY-HUB-APP.md)), a DHIS2 app the national team installs on central in App Management. It lists hubs from `facility-hub-registry` with their latest heartbeat, approves hubs' own accounts, gives out move codes, chooses and stages the hub version (2026-10-19), holds the country's other hub settings (retention, token lifetime) and resends refused saves (`facility-hub-admin/retries`). It flags:
   - no heartbeat for more than 2 days;
   - pending data older than 1 day;

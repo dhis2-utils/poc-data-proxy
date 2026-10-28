@@ -63,6 +63,10 @@ export type Day = {
     longestOfflineMinutes: number
     pendingPeak: number
     diskFreeMinBytes?: number
+    /** Saves passed straight to central while online. */
+    savedOnline?: number
+    /** Saves stored on the hub and sent later from its outbox. */
+    savedOffline?: number
 }
 
 export type FlagKind =

@@ -22,6 +22,7 @@ import { useCanManage } from '@/hooks/useCanManage'
 import { flagSentence } from '@/hubs/flagText'
 import { ago, gb, when } from '@/hubs/format'
 import { parseMiss } from '@/hubs/misses'
+import { saveTotals } from '@/hubs/saves'
 import {
     AccountsSettings,
     useAdminEntry,
@@ -69,6 +70,7 @@ export const HubPage = () => {
     }
     const hb = detail.data?.heartbeat
     const history = [...(hb?.history ?? [])].reverse()
+    const saves = saveTotals(hb?.history)
     const issues = detail.data?.issues ?? []
     const facility =
         hub.orgUnit?.displayName ??
@@ -140,6 +142,26 @@ export const HubPage = () => {
                     <dd>{when(hb?.lastSync)}</dd>
                     <dt>{i18n.t('Last error')}</dt>
                     <dd>{hb?.lastError || '—'}</dd>
+                    <dt>{i18n.t('Saved online')}</dt>
+                    <dd>
+                        {i18n.t(
+                            '{{- today}} today, {{- last30}} in the last 30 days',
+                            {
+                                today: saves.today.online,
+                                last30: saves.last30.online,
+                            }
+                        )}
+                    </dd>
+                    <dt>{i18n.t('Saved offline, sent later')}</dt>
+                    <dd>
+                        {i18n.t(
+                            '{{- today}} today, {{- last30}} in the last 30 days',
+                            {
+                                today: saves.today.offline,
+                                last30: saves.last30.offline,
+                            }
+                        )}
+                    </dd>
                     <dt>{i18n.t('Pending saves')}</dt>
                     <dd>{hb?.pendingOutbox ?? '—'}</dd>
                     <dt>{i18n.t('Refused changes')}</dt>
@@ -208,6 +230,12 @@ export const HubPage = () => {
                                     {i18n.t('Longest outage (min)')}
                                 </DataTableColumnHeader>
                                 <DataTableColumnHeader>
+                                    {i18n.t('Saved online')}
+                                </DataTableColumnHeader>
+                                <DataTableColumnHeader>
+                                    {i18n.t('Saved offline, sent later')}
+                                </DataTableColumnHeader>
+                                <DataTableColumnHeader>
                                     {i18n.t('Pending peak')}
                                 </DataTableColumnHeader>
                                 <DataTableColumnHeader>
@@ -226,6 +254,12 @@ export const HubPage = () => {
                                     </DataTableCell>
                                     <DataTableCell>
                                         {d.longestOfflineMinutes}
+                                    </DataTableCell>
+                                    <DataTableCell>
+                                        {d.savedOnline ?? 0}
+                                    </DataTableCell>
+                                    <DataTableCell>
+                                        {d.savedOffline ?? 0}
                                     </DataTableCell>
                                     <DataTableCell>
                                         {d.pendingPeak}

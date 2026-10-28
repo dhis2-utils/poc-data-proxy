@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/aggregate"
+	"github.com/dhis2/facility-hub/internal/core"
 	"github.com/dhis2/facility-hub/internal/store"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
@@ -826,5 +827,33 @@ func TestAggregateAuthorGoneResentAsAnother(t *testing.T) {
 	e.Sync()
 	if val, by, _ := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "5" || by != clerk.User {
 		t.Fatalf("after the resend central has %q by %q, want 5 by %s", val, by, clerk.User)
+	}
+}
+
+// Aggregate edits count in the heartbeat's history with tracker saves: one passed to
+// central while online, one stored and sent later from the outbox.
+func TestAggregateSavesCounted(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	pe := aggPeriod(e, ag)
+	day := func() core.Day {
+		h := e.App.Hub.History()
+		if len(h) == 0 {
+			t.Fatal("no history")
+		}
+		return h[len(h)-1]
+	}
+	before := day()
+	v := "/api/" + e.App.Hub.APIMinor() + "/dataValues"
+	if st, b := nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "31")); st/100 != 2 {
+		t.Fatalf("online value: %d %s", st, b)
+	}
+	e.Offline()
+	if st, b := nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Integer, ag.COC, "value", "32")); st != 201 {
+		t.Fatalf("offline value: %d %s", st, b)
+	}
+	e.Online()
+	e.Sync()
+	if d := day(); d.SavedOnline-before.SavedOnline != 1 || d.SavedOffline-before.SavedOffline != 1 {
+		t.Fatalf("today: %+v (before %+v); want one more online and one more offline", d, before)
 	}
 }

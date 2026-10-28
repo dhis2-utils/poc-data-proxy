@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-10-27T14:45:23.058Z\n"
-"PO-Revision-Date: 2026-10-27T14:45:23.058Z\n"
+"POT-Creation-Date: 2026-10-28T07:23:56.838Z\n"
+"PO-Revision-Date: 2026-10-28T07:23:56.856Z\n"
 
 msgid "Approve the hub of {{- facility}}"
 msgstr "Approve the hub of {{- facility}}"
@@ -436,6 +436,15 @@ msgstr "Last sync"
 
 msgid "Last error"
 msgstr "Last error"
+
+msgid "Saved online"
+msgstr "Saved online"
+
+msgid "{{- today}} today, {{- last30}} in the last 30 days"
+msgstr "{{- today}} today, {{- last30}} in the last 30 days"
+
+msgid "Saved offline, sent later"
+msgstr "Saved offline, sent later"
 
 msgid "Pending saves"
 msgstr "Pending saves"

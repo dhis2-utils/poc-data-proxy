@@ -27,6 +27,10 @@ type Day struct {
 	LongestOffline int    `json:"longestOfflineMinutes"`
 	PendingPeak    int    `json:"pendingPeak"`
 	DiskFreeMin    uint64 `json:"diskFreeMinBytes,omitempty"`
+	// Saves (tracker imports and aggregate edits, one per request) passed straight to
+	// central while online, and stored on the hub to be sent later from the outbox.
+	SavedOnline  int `json:"savedOnline,omitempty"`
+	SavedOffline int `json:"savedOffline,omitempty"`
 }
 
 // History is the hub's daily history, oldest first.
@@ -109,5 +113,18 @@ func (h *Hub) NoteOffline(from, to time.Time) {
 	h.updateHistory(to, func(d *Day) {
 		d.Outages++
 		d.LongestOffline = max(d.LongestOffline, int(to.Sub(from).Minutes()))
+	})
+}
+
+// NoteSave counts a save in today's history: passed to central (online) or stored in
+// the outbox to be sent later. It rewrites the history, 1.2 ms a save with 90 days
+// (x86 sandbox, 2026-10-28); a busy HC IV saves a few thousand times a day.
+func (h *Hub) NoteSave(online bool) {
+	h.updateHistory(time.Now(), func(d *Day) {
+		if online {
+			d.SavedOnline++
+		} else {
+			d.SavedOffline++
+		}
 	})
 }
