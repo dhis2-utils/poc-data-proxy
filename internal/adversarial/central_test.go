@@ -233,16 +233,13 @@ func (r *netRun) offlineValues(events ...string) []string {
 
 // H4: central restored from a backup. The backup is taken while the hub works; the hub
 // then pushes its outbox and passes saves through, and pulls an edit made on central;
-// then central's database is restored from the backup and central restarted, and
-// someone edits on central again. Must hold: what the hub pushed is not lost; its
-// watermarks skip nothing.
+// then, while the uplink is down and saves queue on the hub, central's database is
+// restored from the backup and central restarted, and someone edits on central again.
 //
-// What the hub sent after the backup is gone from central. The recovery step in
-// RECOVERY.md, a resend instruction with since set to the backup's time, sends the
-// hub's outbox entries again (FINDINGS.md, H4). Saves passed through online are not
-// in the outbox: they are counted apart. Two things are logged, not checked: the hub
-// does not notice central went back in time, and an edit made on central and lost in
-// the restore stays on the hub.
+// What central accepted after the backup is central's to restore: the hub does not
+// send it again (decided 2026-10-28, RECOVERY.md). Must hold: what the hub had not
+// sent when central was restored reaches central; what was there before the backup
+// stays; the hub's watermarks skip nothing changed after the restore.
 func TestH4CentralRestoredFromBackup(t *testing.T) {
 	r := netStart(t)
 	stop := r.write(300 * time.Millisecond)
@@ -264,65 +261,30 @@ func TestH4CentralRestoredFromBackup(t *testing.T) {
 	r.p.WaitFor("drained", 3*time.Minute, tk.Drained)
 	t.Logf("before the restore, the hub offline shows a %v", r.offlineValues(a.Event))
 
+	// Saves the hub has not sent when central is restored: they are the hub's to deliver.
+	t1 := time.Now()
+	queue := r.write(300 * time.Millisecond)
+	defer queue()
+	r.outage(20 * time.Second)
 	restore := time.Now()
 	r.e.RestoreCentral(dump)
 	t.Logf("central restored to %s and restarted in %s", t0.Format("15:04:05"), time.Since(restore).Round(time.Second))
+	queue()
+	r.e.Net.SetDown(false)
 	r.p.WaitFor("online", 3*time.Minute, tk.Online)
+	r.p.WaitFor("drained", 3*time.Minute, tk.Drained)
 	r.centralEdit(b, "43")
 	r.pulls(2)
-	r.p.WaitFor("drained", 3*time.Minute, tk.Drained)
 	t.Logf("ledger: %s", r.ledger.summary())
+	if queued := r.lostSince(t1); len(queued.byHub) > 0 {
+		t.Errorf("I1: %d saves the hub had not sent when central was restored are not on central", len(queued.byHub))
+	}
 	lost := r.lostSince(t0)
-	t.Logf("after the restore, registrations confirmed but not on central: %s", lost)
-	if len(lost.byHub) > 0 {
-		t.Logf("the hub, offline, for the first of them: %v", first(r.offlineValues(lost.byHub...)))
+	if len(lost.before) > 0 {
+		t.Errorf("I1: %d registrations confirmed before the backup are not on central", len(lost.before))
 	}
+	t.Logf("accepted by central after the backup and lost with the restore, central's to restore: %s", lost)
 	t.Logf("hub log lines about the restore: %d", r.p.Grep("back in time"))
-
-	// The recovery step: a resend instruction with since, the backup's time.
-	r.e.Net.Calls()
-	retries := map[string]any{"retries": []any{map[string]any{"id": "adv-h4-" + tk.UID(), "since": t0.UTC().Format(time.RFC3339),
-		"at": time.Now().UTC().Format(time.RFC3339), "by": "adversarial"}}}
-	if err := r.e.Central.JSON("PUT", "/api/dataStore/facility-hub-admin/retries", retries, nil); err != nil {
-		if err := r.e.Central.JSON("POST", "/api/dataStore/facility-hub-admin/retries", retries, nil); err != nil {
-			t.Fatal(err)
-		}
-	}
-	r.pulls(3)
-	r.p.WaitFor("drained", 3*time.Minute, tk.Drained)
-	r.pulls(1)
-	pushes := 0
-	for _, c := range r.e.Net.Calls() {
-		if c.Method == "POST" && c.URL.Path == "/api/tracker" && c.URL.Query().Get("atomicMode") == "OBJECT" {
-			pushes++
-		}
-	}
-	c := r.check()
-	t.Logf("central after the resend: %s", c)
-	left := r.lostSince(t0)
-	t.Logf("after the resend (%d pushes), registrations confirmed but not on central: %s", pushes, left)
-	if len(left.byHub) > 0 {
-		t.Errorf("I1: %d registrations the hub confirmed offline are not on central after the resend", len(left.byHub))
-	}
-	if len(left.before) > 0 {
-		t.Errorf("I1: %d registrations confirmed before the backup are not on central", len(left.before))
-	}
-	if len(left.passed) > 0 {
-		t.Logf("%d registrations passed through to central online after the backup are lost: they were never in the outbox", len(left.passed))
-	}
-	if len(lost.byHub) > 0 {
-		vals := r.offlineValues(lost.byHub...)
-		hidden := 0
-		for _, v := range vals {
-			if strings.Contains(v, " ") { // a status, not a value
-				hidden++
-			}
-		}
-		t.Logf("the hub, offline, for the resent ones: %v", first(vals))
-		if hidden > 0 {
-			t.Errorf("%d of the %d resent registrations are not shown offline", hidden, len(vals))
-		}
-	}
 	vals := r.offlineValues(a.Event, b.Event)
 	t.Logf("event edited on central after the backup (central now %q): the hub shows %q; edited after the restore (central %q): the hub shows %q",
 		value(r.central("events", a.Event, "event,dataValues"), r.de), vals[0], value(r.central("events", b.Event, "event,dataValues"), r.de), vals[1])

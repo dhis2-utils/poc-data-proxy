@@ -223,37 +223,6 @@ func (s *Store) CountOutbox(state string) int {
 	return n
 }
 
-// RequeueSentSince puts back in the queue every outbox entry central accepted at or
-// after since (a retry with since, after central was restored from a backup): the
-// entries go back to pending, and so do their objects the hub holds as synced. A
-// userID other than 0 makes those entries that user's. Entries accepted before
-// sent_at was recorded count from when they were made. It returns the entries
-// requeued.
-func (s *Store) RequeueSentSince(since time.Time, userID int64) (int, error) {
-	var as any // NULL keeps the author
-	if userID != 0 {
-		as = userID
-	}
-	at := since.UTC().Format(time.RFC3339Nano)
-	var n int
-	err := s.Tx(context.Background(), func(tx *sql.Tx) error {
-		sent := `SELECT seq FROM outbox WHERE state=? AND iif(sent_at='', created_at, sent_at) >= ?`
-		if _, err := tx.Exec(`UPDATE objects SET sync_state=? WHERE sync_state=? AND uid IN (SELECT uid FROM outbox_objects WHERE seq IN (`+sent+`))`,
-			SyncPending, SyncSynced, OutboxSynced, at); err != nil {
-			return err
-		}
-		res, err := tx.Exec(`UPDATE outbox SET state=?, failing_since='', user_id=coalesce(?, user_id) WHERE seq IN (`+sent+`)`,
-			OutboxPending, as, OutboxSynced, at)
-		if err != nil {
-			return err
-		}
-		k, _ := res.RowsAffected()
-		n = int(k)
-		return nil
-	})
-	return n, err
-}
-
 // Requeue sends refused saves again (a retry from the Facility Hub app): the refused
 // objects go back to pending, and so do the refused or partly refused outbox entries
 // holding them, or named by seq (aggregate edits). A userID other than 0 makes those

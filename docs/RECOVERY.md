@@ -35,35 +35,9 @@ This only works while those PATs are valid. PAT expiry must be longer than any p
 
 ## Central restored from a backup
 
-When central's database is restored from a backup, central loses everything written after the backup. That includes what the hubs sent in that time. Each hub still holds those saves, and their payloads stay in its outbox, but it holds them as sent and does not send them again by itself. After its next full pull it also hides offline the people central no longer lists (built 2026-10-28, `internal/sync/push.go`; tested in `internal/e2e/retries_test.go`; `TestH4CentralRestoredFromBackup` checks it against DHIS2).
+When central's database is restored from a backup, central loses everything written after the backup, including what the hubs sent in that time. The hubs do not send it again (decided 2026-10-28): once central has accepted data, its backup and recovery are central's, and central's backups have to be recent enough. A hub answers for what central has not seen yet: saves still waiting in its outbox when central is restored reach central as usual (`TestH4CentralRestoredFromBackup`).
 
-After you restore central, tell the hubs to send again what central accepted after the backup. Do this right after central is back, before staff work on central again: a save sent again replaces a later edit of the same record made on central.
-
-1. Note the time the backup started, with its time zone. A few minutes earlier is safe: a save that central still holds is only updated again.
-2. Open the Datastore Manager app on central.
-3. Open the namespace `facility-hub-admin` and the key `retries`. If the key does not exist, create it with the value `{"retries": []}`.
-4. Add one object to the `retries` list. Keep the objects already in the list.
-5. Give it a new `id`, and the backup's time as `since`:
-
-   ```json
-   {
-     "id": "restore-2026-10-27",
-     "since": "2026-10-27T02:00:00+03:00",
-     "at": "2026-10-28T08:15:00+03:00",
-     "by": "admin"
-   }
-   ```
-
-6. Save the key.
-
-`since` is an RFC 3339 date-time. Without a time zone it is read as UTC. `at` is when you wrote the instruction, and `by` is your username: the Facility Hub app lists the instruction with them among the earlier resends. Each hub applies an instruction once, at its next sync, and sends the entries again as their authors. Pushes create or update, so a record central still holds is only updated. Once they are sent, the next pull shows the people offline again. A hub that cannot apply the instruction (its `since` is not a date-time) says why in its heartbeat (`retriesNotApplied`).
-
-Limits:
-
-- `since` reaches back at most 30 days. A change under way makes the hub delete sent outbox entries after 30 days; for an older backup, the hubs no longer hold the earlier entries to send.
-- Saves that went straight to central while the hub was online are not in the outbox. The hub cannot send them again; they are lost with the restore, like work done on central directly.
-- An outbox entry sent before the hub recorded when central accepted it (releases before 28 October 2026) counts from when it was made. One made before `since` and sent after it is not sent again.
-- An edit made on central and lost in the restore stays on the hubs that pulled it, until the record changes again.
+After its next full pull, a hub hides offline the people central no longer has, as for any deletion. An edit made on central and lost in the restore stays on the hubs that pulled it until the record changes again.
 
 ## Options
 
