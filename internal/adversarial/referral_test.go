@@ -37,23 +37,6 @@ func TestC10OneTimeReferral(t *testing.T) {
 	outsider := s.Central.As(m.Users[tk.RoleOutsider].Username, m.Password)
 	today := time.Now().UTC().Format("2006-01-02")
 
-	// The referral payload: the origin event at from, the scheduled event at to.
-	referral := func(p tk.Program, rt, enr, fromStage, toStage, fromOU, toOU string) (origin, referred string, payload map[string]any) {
-		origin, referred = tk.UID(), tk.UID()
-		rel := tk.UID()
-		rels = append(rels, rel)
-		ev := s.event(p, fromStage, enr, origin, p.EventValues[fromStage])["events"].([]any)[0].(map[string]any)
-		ev["orgUnit"] = fromOU
-		payload = map[string]any{
-			"events": []any{ev, map[string]any{"event": referred, "enrollment": enr, "program": p.ID,
-				"programStage": toStage, "orgUnit": toOU, "status": "SCHEDULE", "scheduledAt": today}},
-			"relationships": []any{map[string]any{"relationship": rel, "relationshipType": rt,
-				"from": map[string]any{"event": map[string]any{"event": origin}},
-				"to":   map[string]any{"event": map[string]any{"event": referred}}}},
-		}
-		return
-	}
-
 	// To the facility. People the sibling owns, registered there, referred by sibling
 	// staff on central.
 	type case_ struct {
@@ -72,7 +55,7 @@ func TestC10OneTimeReferral(t *testing.T) {
 		s.atSibling(pr)
 		s.CentralComplete(c.p, pr)
 		s.CentralImport(pr.Payload)
-		o, r, payload := referral(c.p, c.rt, pr.Enrollment, c.from, c.to, m.Sibling.ID, m.Facility.ID)
+		o, r, payload := s.referral(c.p, c.rt, pr.Enrollment, c.from, c.to, m.Sibling.ID, m.Facility.ID, &rels)
 		st, b, err := outsider.Do("POST", tk.SyncImport, payload)
 		t.Logf("%s: the sibling refers %s to the facility on central: %d %v %.300s", c.p.ID, pr.TE, st, err, b)
 		if st != 200 {
@@ -160,12 +143,12 @@ func TestC10OneTimeReferral(t *testing.T) {
 	a := s.register(nurse, open, "AdvC10outA")
 	z := s.register(nurse, open, "AdvC10outZ")
 	s.Sync()
-	_, refA, payA := referral(open, openType, a.Enrollment, openFrom, openTo, m.Facility.ID, m.Sibling.ID)
+	_, refA, payA := s.referral(open, openType, a.Enrollment, openFrom, openTo, m.Facility.ID, m.Sibling.ID, &rels)
 	if st, b := s.save(nurse, "a referral to the sibling online", payA); st != 200 {
 		t.Errorf("the hub refused a referral to the sibling online: %d %.300s", st, b)
 	}
 	s.Offline()
-	_, refZ, payZ := referral(open, openType, z.Enrollment, openFrom, openTo, m.Facility.ID, m.Sibling.ID)
+	_, refZ, payZ := s.referral(open, openType, z.Enrollment, openFrom, openTo, m.Facility.ID, m.Sibling.ID, &rels)
 	stZ, bZ := s.save(nurse, "a referral to the sibling offline", payZ)
 	t.Logf("offline referral to the sibling: %d %v", stZ, errorCodes(bZ))
 	s.noRepeats(s.reconnect(3))
@@ -226,6 +209,26 @@ func TestC10OneTimeReferral(t *testing.T) {
 		finding(t, "C10: a referred-in event the nurse completed online is listed offline in the facility's events; central does not list it there (it opens it by uid)")
 		t.Errorf("I3: offline the hub lists the referred-in event %s in the facility's events; central does not", in[0].referred)
 	}
+}
+
+// referral is the payload Capture sends for a one-time referral: the origin event at
+// fromOU, the referred event scheduled in toStage at toOU, and the relationship from
+// the first to the second (its uid added to rels).
+func (s *scene) referral(p tk.Program, rt, enr, fromStage, toStage, fromOU, toOU string, rels *[]string) (origin, referred string, payload map[string]any) {
+	origin, referred = tk.UID(), tk.UID()
+	rel := tk.UID()
+	*rels = append(*rels, rel)
+	ev := s.event(p, fromStage, enr, origin, p.EventValues[fromStage])["events"].([]any)[0].(map[string]any)
+	ev["orgUnit"] = fromOU
+	payload = map[string]any{
+		"events": []any{ev, map[string]any{"event": referred, "enrollment": enr, "program": p.ID,
+			"programStage": toStage, "orgUnit": toOU, "status": "SCHEDULE",
+			"scheduledAt": time.Now().UTC().Format("2006-01-02")}},
+		"relationships": []any{map[string]any{"relationship": rel, "relationshipType": rt,
+			"from": map[string]any{"event": map[string]any{"event": origin}},
+			"to":   map[string]any{"event": map[string]any{"event": referred}}}},
+	}
+	return
 }
 
 // atSibling moves a new person's payload to the sibling facility: registered and
@@ -295,4 +298,80 @@ func (s *scene) referredEvents(enrollment, stage, ou string) int {
 		}
 	}
 	return n
+}
+
+// C10 in the protected program: sibling staff refer a person the sibling owns to the
+// facility. The nurse cannot open the referral until she breaks the glass (temporary
+// ownership, on central through the hub online); then she opens the referred event and
+// completes it, as Capture would. Offline the hub must not show what she reached
+// through temporary ownership: it must not outlive the connection (core.UpsertCentral),
+// and the hub cannot tell when central ends it.
+func TestC10ProtectedAfterBreakingTheGlass(t *testing.T) {
+	s := begin(t)
+	if !s.Live() {
+		t.Skip("referrals on a real DHIS2")
+	}
+	m := s.M
+	p := s.protected()
+	stage := p.Stages[len(p.Stages)-1]
+	var rels []string
+	rt := s.referralType(stage, stage, &rels)
+	nurse := s.connect(m.Users[tk.RoleNurse].Username)
+	asNurse := s.Central.As(nurse.User, m.Password)
+
+	pr := m.NewPerson(p, "AdvC10glass")
+	s.atSibling(pr)
+	s.CentralComplete(p, pr)
+	s.CentralImport(pr.Payload)
+	_, ref, payload := s.referral(p, rt, pr.Enrollment, stage, stage, m.Sibling.ID, m.Facility.ID, &rels)
+	if st, b, err := s.Central.As(m.Users[tk.RoleOutsider].Username, m.Password).Do("POST", tk.SyncImport, payload); st != 200 {
+		t.Fatalf("the sibling's referral on central: %d %v %.300s", st, err, b)
+	}
+	s.Sync()
+
+	byUID := []string{
+		"/api/tracker/events/" + ref + "?fields=*",
+		"/api/tracker/trackedEntities/" + pr.TE + "?program=" + p.ID + "&fields=*",
+		"/api/tracker/enrollments/" + pr.Enrollment + "?fields=*",
+	}
+	listing := "/api/tracker/events?orgUnit=" + m.Facility.ID + "&program=" + p.ID + "&fields=event&paging=false"
+	look := func(when string) (shown []string) {
+		t.Helper()
+		for _, path := range byUID {
+			hst, _ := nurse.Do("GET", path, nil)
+			cst, _, _ := asNurse.Do("GET", path, nil)
+			t.Logf("%s: %s: hub %d, central %d", when, path, hst, cst)
+			if hst == 200 {
+				shown = append(shown, path)
+			}
+		}
+		if x := s.leaks(nurse, listing, "events", "event"); len(x) > 0 {
+			t.Logf("%s: the hub lists %v at the facility; central does not", when, x)
+			shown = append(shown, listing)
+		}
+		return shown
+	}
+	look("online, before the glass")
+	st, b := nurse.Do("POST", "/api/tracker/ownership/override?trackedEntity="+pr.TE+"&program="+p.ID+
+		"&reason=referred+for+follow-up", nil)
+	t.Logf("break the glass through the hub: %d %.200s", st, b)
+	if st != 200 {
+		t.Fatal("breaking the glass through the hub failed")
+	}
+	look("online, after the glass") // Capture opens the person and the event: the hub sees the reads
+	if st, b := s.save(nurse, "the nurse completes the referral online, after the glass", map[string]any{
+		"events": []any{map[string]any{"event": ref, "enrollment": pr.Enrollment, "program": p.ID,
+			"programStage": stage, "orgUnit": m.Facility.ID, "status": "COMPLETED",
+			"occurredAt": time.Now().UTC().Format("2006-01-02"), "scheduledAt": time.Now().UTC().Format("2006-01-02"),
+			"dataValues": values(p.EventValues[stage])}}}); st != 200 {
+		t.Errorf("completing the referral through the hub online: %d %.300s", st, b)
+	}
+	if o := s.CentralOwner(pr.TE, p.ID); o != m.Sibling.ID {
+		t.Errorf("the owner on central is %s, want the sibling", o)
+	}
+	s.Offline()
+	if shown := look("offline"); len(shown) > 0 {
+		finding(t, "C10: a referred-in event of a protected program, completed online after breaking the glass, is served and listed offline; central answers the nurse 404 for it")
+		t.Errorf("I3: offline the hub shows what the nurse reached by temporary ownership: %v", shown)
+	}
 }
