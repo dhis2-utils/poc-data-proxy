@@ -479,7 +479,7 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		if u.Authorities != nil {
 			auths = u.Authorities
 		}
-		writeJSON(w, 200, map[string]any{"id": u.UID, "username": u.Username, "organisationUnits": ous,
+		writeJSON(w, 200, map[string]any{"id": u.UID, "username": u.Username, "firstName": "Fake", "surname": u.Username, "organisationUnits": ous,
 			"teiSearchOrganisationUnits": search, "dataViewOrganisationUnits": view, "authorities": auths, "userGroups": groups})
 	case p == "/api/me/changePassword" && r.Method == "PUT":
 		c.changePassword(w, r, u)

@@ -363,6 +363,12 @@ func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Ses
 	rt := a.H.Runtime()
 	im := &tracker.Importer{Ix: a.H.Index, V: v, Username: u.Username, UserUID: u.UserUID, DefaultAOC: rt.DefaultAOC,
 		Strategy: strategy, Now: a.H.CentralNow(), AtomicAll: q.Get("atomicMode") != "OBJECT"}
+	// The author's names, from the /api/me kept at their online login.
+	if me, _ := a.H.Store.GetCache(sess.UserID, "GET", auth.MeCacheKey); me != nil {
+		var names struct{ FirstName, Surname string }
+		json.Unmarshal(me.Body, &names)
+		im.FirstName, im.Surname = names.FirstName, names.Surname
+	}
 	out := im.Import(payload)
 	// Flags that only switch off checks or side effects on central: the hub runs
 	// neither offline, and central must skip them on push as the client asked

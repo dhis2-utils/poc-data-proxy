@@ -80,12 +80,16 @@ func (o *ImportOutcome) Stats() (total Stats, byType map[string]Stats) {
 
 // Importer validates a payload against the index for one user.
 type Importer struct {
-	Ix         *Index
-	V          *Viewer
-	Username   string
-	UserUID    string
-	DefaultAOC string // default attribute option combo UID
-	Strategy   string // CREATE, UPDATE, CREATE_AND_UPDATE
+	Ix       *Index
+	V        *Viewer
+	Username string
+	UserUID  string
+	// FirstName and Surname complete the author in the hub's own copy, as central
+	// names it (createdBy, updatedBy); never in what is pushed. eRegisters drops a
+	// record whose author lacks them (FINDINGS.md, I7c).
+	FirstName, Surname string
+	DefaultAOC         string // default attribute option combo UID
+	Strategy           string // CREATE, UPDATE, CREATE_AND_UPDATE
 	// AtomicAll rejects the whole payload if any object fails (atomicMode=ALL, central's
 	// default). Accepting part of it left orphan tracked entities (FINDINGS.md).
 	AtomicAll   bool
@@ -183,6 +187,16 @@ func (im *Importer) existing(it *Item) (*Obj, []ErrorReport) {
 	return old, nil
 }
 
+// author is the user who writes, as central gives createdBy and updatedBy. It goes
+// into the hub's copy only: the outbox keeps what the client sent.
+func (im *Importer) author() M {
+	by := M{"uid": im.UserUID, "username": im.Username}
+	if im.FirstName != "" || im.Surname != "" {
+		by["firstName"], by["surname"] = im.FirstName, im.Surname
+	}
+	return by
+}
+
 func (im *Importer) newObj(it *Item, old *Obj) *Obj {
 	now := DHIS2Time(im.Now)
 	data := it.Data
@@ -200,10 +214,10 @@ func (im *Importer) newObj(it *Item, old *Obj) *Obj {
 	} else {
 		data = clone(it.Data)
 		data["createdAt"] = now
-		data["createdBy"] = M{"uid": im.UserUID, "username": im.Username}
+		data["createdBy"] = im.author()
 	}
 	data["updatedAt"] = now
-	data["updatedBy"] = M{"uid": im.UserUID, "username": im.Username}
+	data["updatedBy"] = im.author()
 	im.normalise(it.Kind, data)
 	o := &Obj{UID: it.UID, Kind: it.Kind, OwnerOrgUnit: im.V.Facility, UpdatedAt: now, Origin: store.OriginLocal,
 		SyncState: store.SyncPending, Data: data}

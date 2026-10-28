@@ -292,6 +292,8 @@ Offline:
 4. Append one outbox entry per request, owned by the authoring user. If the entry references objects that are still pending in an earlier entry, set `depends_on_seq`.
 5. Return an import report in the target version's format, with stats and per-object errors. Use the same error codes as DHIS2 where they apply (for example E1000 for access). Record these against fixtures.
 
+The hub passes a client's write to central unchanged: the outbox keeps the payload the client sent (with identifiers the hub assigned where the client left them out), and the push sends it as it is. The copy the hub keeps and serves offline adds what central would add itself: `createdAt`, `updatedAt`, and the author in `createdBy` and `updatedBy`. The author carries first name and surname as central gives them, because eRegisters drops records without them (FINDINGS.md, "Found by adversarial testing" 9). That is an exception: the hub should not change anything between a client and central. If another client needs a field the hub cannot answer as central does, ask the app to relax its check first.
+
 `async=true` returns 400 offline in the POC.
 
 ### 10.3 Generated attribute values
