@@ -26,11 +26,16 @@ type pushResult struct {
 	stop        bool
 }
 
-// Push sends pending outbox entries in seq order.
+// Push sends pending outbox entries in seq order. It sends nothing while local writes
+// are frozen for an upgrade: what it marked as sent would be marked in a store that a
+// rollback, or the swap, throws away, and be pushed again.
 func (w *Worker) Push(ctx context.Context) error {
 	w.pushMu.Lock()
 	defer w.pushMu.Unlock()
 	h := w.H
+	if h.Upgrading.Load() {
+		return nil
+	}
 	entries, err := h.Store.PendingOutbox()
 	if err != nil {
 		return err

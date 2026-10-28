@@ -460,59 +460,98 @@ func TestN4KilledDuringUpgrade(t *testing.T) {
 	r.finish(5 * time.Minute)
 }
 
-// N5: the new release fails its health check after the migration ran: here central
-// stops answering (a half-open uplink) as the new release starts, so its check of
-// central times out, while clients go on saving. Must hold: back on the old binary and
-// the old store, and nothing written in between is lost.
+// N5: the new release's health check after the migration ran. First central stops
+// answering (a half-open uplink) as the new release starts: the check tests the hub
+// itself, so the release is kept. Then a release that fails its check (built with
+// healthFail) starts with the uplink down, while clients go on saving. Must hold: back
+// on the old binary and the old store, and nothing confirmed in between is lost: until
+// its check has passed, a new release takes no save of its own (clients get "the hub is
+// upgrading" and retry) and pushes nothing.
 //
-// Found: the new release serves staff while its health check runs, and the rollback
-// puts back the store copied before the migration: what staff saved on the new release
-// meanwhile is gone (upgrade.confirm; cmd/hub serves before AfterBoot has decided).
+// Found 27 October: the check also required central, so a good release rolled back
+// when central was slow, and saves the new release had confirmed were lost with its
+// store (53 registrations). Fixed 28 October.
 func TestN5HealthCheckFailsAfterMigration(t *testing.T) {
-	finding(t, "N5: saves confirmed by the new release before its health check fails are lost in the rollback")
 	ch := newChannel(t)
 	old := ch.build(fromRelease(), "0.1.0")
-	next := ch.build("", "0.2.0")
-	hold := t.TempDir()
-	ch.publish("0.2.0", wrapper(t, hold, next))
+	good := ch.build("", "0.2.0")
+	bad := ch.build("", "0.3.0", "-X main.healthFail=true")
+	holdGood, holdBad := t.TempDir(), t.TempDir()
+	ch.publish("0.2.0", wrapper(t, holdGood, good))
 	r := releaseStart(t, old)
 	e, p := r.e, r.p
 	stop := r.write(200 * time.Millisecond)
-	defer stop()
+	defer func() { stop() }()
+	login := func(s map[string]any) {
+		if s["locked"] == true {
+			t.Logf("the hub starts locked: staff log in")
+			c := e.Web(tk.RoleNurse)
+			c.Try("POST", "/api/auth/login", map[string]string{"username": c.User, "password": e.M.Password})
+		}
+	}
 
-	touch(t, filepath.Join(hold, "hold-start"))
+	// 1. Central stops answering as the new release starts: the release is kept.
+	touch(t, filepath.Join(holdGood, "hold-start"))
 	choose(e, "0.2.0", p.Status()["hubId"].(string))
-	waitFile(t, filepath.Join(hold, "at-start"), 3*time.Minute)
+	waitFile(t, filepath.Join(holdGood, "at-start"), 3*time.Minute)
 	release := e.Net.HalfOpen()
 	swapped := time.Now()
-	os.Remove(filepath.Join(hold, "hold-start"))
-	// The new release starts, checks its health, fails and rolls back to the old one.
+	os.Remove(filepath.Join(holdGood, "hold-start"))
 	end := time.Now().Add(2 * time.Minute)
+	for p.Grep("upgrade result=") == 0 && time.Now().Before(end) {
+		time.Sleep(200 * time.Millisecond)
+	}
+	decided := time.Now()
+	release()
+	t.Logf("with central half-open, the upgrade decided %s after the swap: ok %d, failed %d; saves meanwhile: %s",
+		decided.Sub(swapped).Round(time.Millisecond), p.Grep("upgrade result=ok"), p.Grep("upgrade result=failed"), r.waits(swapped, decided))
+	if p.Grep("upgrade result=ok from=0.1.0 to=0.2.0") != 1 || p.Grep("upgrade result=failed") != 0 {
+		t.Fatalf("with central half-open the new release was not kept:\n%s", p.Tail(40))
+	}
+	login(p.WaitFor("0.2.0", time.Minute, func(s map[string]any) bool { return s["version"] == "0.2.0" }))
+	// What the half-open uplink held back is pushed first: with clients saving as fast
+	// as the hub pushes, the outbox would not empty, and the next upgrade waits for it.
+	stop()
+	p.WaitFor("the outbox to drain", 5*time.Minute, tk.Drained)
+	stop = r.write(200 * time.Millisecond)
+
+	// 2. A release that fails its health check, started with the uplink down: staff
+	// save on the hub itself.
+	ch.publish("0.3.0", wrapper(t, holdBad, bad))
+	touch(t, filepath.Join(holdBad, "hold-start"))
+	choose(e, "0.3.0", p.Status()["hubId"].(string))
+	waitFile(t, filepath.Join(holdBad, "at-start"), 3*time.Minute)
+	e.Net.SetDown(true)
+	swapped = time.Now()
+	os.Remove(filepath.Join(holdBad, "hold-start"))
+	end = time.Now().Add(2 * time.Minute)
 	for p.Grep("upgrade result=failed") == 0 && time.Now().Before(end) {
 		time.Sleep(200 * time.Millisecond)
 	}
 	rolled := time.Now()
-	release()
-	t.Logf("rolled back %s after the swap; saves meanwhile: %s", rolled.Sub(swapped).Round(time.Millisecond), r.waits(swapped, rolled))
-	if p.Grep("upgrade result=failed") == 0 {
+	if p.Grep("upgrade result=failed from=0.2.0 to=0.3.0") == 0 {
 		t.Fatalf("no rollback logged:\n%s", p.Tail(40))
 	}
-	var during []netSave
+	login(p.WaitFor("the old release", time.Minute, func(s map[string]any) bool { return s["version"] == "0.2.0" }))
+	time.Sleep(10 * time.Second) // saves on the old release, offline
+	e.Net.SetDown(false)
+	var upgrading, byHub int
 	for _, s := range r.ledger.all() {
-		if s.Confirmed && !s.At.Before(swapped) && s.At.Before(rolled) {
-			during = append(during, s)
+		if s.At.Before(swapped) || !s.At.Before(rolled) {
+			continue
+		}
+		if strings.Contains(s.Err, "upgrading") {
+			upgrading++
+		}
+		if s.Confirmed && !s.Online {
+			byHub++
 		}
 	}
-	t.Logf("%d saves confirmed between the swap and the rollback (by the hub itself: %d)", len(during),
-		len(slices.DeleteFunc(slices.Clone(during), func(s netSave) bool { return s.Online })))
-	if s := p.WaitFor("the old release", time.Minute, func(s map[string]any) bool { return s["version"] == "0.1.0" }); s["locked"] == true {
-		t.Logf("the old release starts locked after the rollback: staff log in")
-		c := e.Web(tk.RoleNurse)
-		c.Try("POST", "/api/auth/login", map[string]string{"username": c.User, "password": e.M.Password})
-	}
+	t.Logf("rolled back %s after the swap; saves meanwhile: %s; refused as upgrading %d, confirmed by the hub %d",
+		rolled.Sub(swapped).Round(time.Millisecond), r.waits(swapped, rolled), upgrading, byHub)
 	time.Sleep(10 * time.Second)
 	stop()
-	if v := p.Status()["version"]; v != "0.1.0" {
+	if v := p.Status()["version"]; v != "0.2.0" {
 		t.Errorf("after the rollback the hub runs %v", v)
 	}
 	r.finish(5 * time.Minute)

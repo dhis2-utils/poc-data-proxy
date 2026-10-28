@@ -348,3 +348,72 @@ func TestUpgradeCutShortKeepsStore(t *testing.T) {
 		t.Fatalf("pending saves after the restart: %d, %v", len(p), err)
 	}
 }
+
+// swappedTo leaves the marker of an upgrade to version that has swapped in this
+// binary and not been confirmed yet, with an old store to roll back to.
+func (e *env) swappedTo(version string) (prev string) {
+	prev = filepath.Join(e.dir, "hub.db.prev")
+	os.WriteFile(prev, []byte("the old store"), 0o600)
+	mk, _ := json.Marshal(upgrade.Marker{State: "swapped", From: "0.0.9", To: version, ExePath: filepath.Join(e.dir, "x"),
+		PrevBinary: filepath.Join(e.dir, "y"), PrevStore: prev})
+	os.WriteFile(filepath.Join(e.dir, "upgrade.json"), mk, 0o600)
+	return prev
+}
+
+// N5 (docs/ADVERSARIAL-TESTING.md): a new release whose central is slow or down at its
+// first start is kept. Its health check tests the hub itself; central is not part of it.
+func TestUpgradeConfirmedWithCentralDown(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.web("nurse_a").login()
+	e.swappedTo("0.1.0")
+	e.offline()
+	e.app.Upgrader.AfterBoot(context.Background(), e.srv.URL+"/hub/status")
+	if r := lastUpgrade(e); r["result"] != "ok" {
+		t.Fatalf("with central down the upgrade is %v", r)
+	}
+}
+
+// N5: until its health check has passed, a new release takes no save of its own and
+// pushes nothing: a rollback would put back the old store, and lose the one and push
+// the other again. Saves get the hub's "upgrading" answer, and clients retry.
+func TestUnconfirmedUpgradeTakesNoSaves(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.offline()
+	a.json("POST", postSync, newPatient("UpgTe000001", "UpgEn000001", "Queued", "NAT-6161", nil), 200)
+	e.swappedTo("0.1.0")
+	e.stop()
+	e.start() // the new release, before AfterBoot has checked it
+	a = e.web("nurse_a")
+	a.login()
+	e.offline()
+	if st, b := a.do("POST", postSync, newPatient("UpgTe000002", "UpgEn000002", "During", "NAT-6162", nil)); st != http.StatusServiceUnavailable ||
+		!strings.Contains(string(b), "upgrading") {
+		t.Fatalf("an offline save before the health check: %d %s", st, b)
+	}
+	e.online()
+	e.sync()
+	if e.central.Object("UpgTe000001") != nil {
+		t.Fatal("the new release pushed before its health check")
+	}
+	if p, _ := e.app.Hub.Store.PendingOutbox(); len(p) != 1 {
+		t.Fatalf("pending saves %d, want 1", len(p))
+	}
+
+	e.app.Upgrader.AfterBoot(context.Background(), e.srv.URL+"/hub/status")
+	if r := lastUpgrade(e); r["result"] != "ok" {
+		t.Fatalf("last upgrade %v", r)
+	}
+	e.offline()
+	a.json("POST", postSync, newPatient("UpgTe000003", "UpgEn000003", "After", "NAT-6163", nil), 200)
+	e.online()
+	e.sync()
+	for _, te := range []string{"UpgTe000001", "UpgTe000003"} {
+		if e.central.Object(te) == nil {
+			t.Errorf("%s not pushed after the health check", te)
+		}
+	}
+}

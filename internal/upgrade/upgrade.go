@@ -536,6 +536,16 @@ func (u *Upgrader) AfterBoot(ctx context.Context, selfStatusURL string) {
 	u.confirm(ctx, selfStatusURL, path, mk)
 }
 
+// Unconfirmed reports whether this start runs a version an upgrade has swapped in and
+// not yet health-checked. Until the check passes, the hub takes no local writes and
+// pushes nothing (core.FreezeLocalWrites): a rollback puts the old store back, which
+// would lose the one and push the other a second time (adversarial N5).
+func Unconfirmed(dataDir, version string) bool {
+	b, err := os.ReadFile(filepath.Join(dataDir, "upgrade.json"))
+	var mk Marker
+	return err == nil && json.Unmarshal(b, &mk) == nil && mk.State == "swapped" && mk.To == version
+}
+
 // confirm health-checks a swapped-in version: it keeps it, or rolls back.
 func (u *Upgrader) confirm(ctx context.Context, selfStatusURL, path string, mk Marker) {
 	reason := u.healthCheck(ctx, selfStatusURL)
@@ -543,6 +553,7 @@ func (u *Upgrader) confirm(ctx context.Context, selfStatusURL, path string, mk M
 		os.Remove(path)
 		removeStore(mk.PrevStore)
 		u.record(Result{Result: "ok", From: mk.From, To: mk.To})
+		u.H.ThawLocalWrites() // frozen since the start (Unconfirmed)
 		return
 	}
 	slog.Error("upgrade health check failed, rolling back", "reason", reason)
@@ -568,7 +579,9 @@ func (u *Upgrader) confirm(ctx context.Context, selfStatusURL, path string, mk M
 	}
 }
 
-// healthCheck: store opens, central reachable, /hub/status responds (spec 12a).
+// healthCheck: the store opens and /hub/status responds. Central is not part of it: a
+// good release that met a slow or unreachable central would roll back (adversarial
+// N5), and the hub works offline anyway.
 func (u *Upgrader) healthCheck(ctx context.Context, statusURL string) string {
 	if u.HealthFail {
 		return "forced failure (test build)"
@@ -579,9 +592,6 @@ func (u *Upgrader) healthCheck(ctx context.Context, statusURL string) string {
 	var n int
 	if err := u.H.Store.DB().QueryRowContext(ctx, `SELECT count(*) FROM objects`).Scan(&n); err != nil {
 		return "store: " + err.Error()
-	}
-	if !u.H.Monitor.Probe(ctx, u.H.Central.BaseURL()) {
-		return "central not reachable"
 	}
 	client := &http.Client{Timeout: 10 * time.Second, Transport: insecureTransport()}
 	var lastErr error
