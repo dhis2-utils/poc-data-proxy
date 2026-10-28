@@ -161,6 +161,8 @@ docker run --rm -v "$PWD/perf/results:/results" --entrypoint hubload facility-hu
 
 Run the first command with `-setup -fill` the first time only. Keep one confirmed file per storage across the cuts: each verify checks everything confirmed so far. Tried in the sandbox with the hub killed hard (`kill -9`) in the middle of an offline load: 85 of 85 confirmed records were there after the restart. A killed process is not a power cut (the operating system still writes what the hub handed it), so the boards' runs are the real test. Test with and without a UPS or supercapacitor module, if one is part of the kit (DEPLOYMENT.md, options under consideration).
 
+Against a real central, `cmd/hubdrive` does the same end to end: `hubdrive run` saves through the hub (HTTPS, `-ca` the hub's `ca.crt`) as staff users, as Capture web and Android clients, through power cuts and uplink cuts, and writes every save to a ledger; `hubdrive check` then reads each one on central, as `internal/adversarial` does, and reports what is lost, partial, duplicated or wrong. Its defaults are Ngelehun CHC's Child Programme on the demo central. `TestDriveThroughFaults` runs it against a hub process with the uplink cut and a `kill -9`. With the synthetic 2.42 profile, 168 saves were confirmed (138 of them by the hub offline), 0 were lost, and one event deleted on central was reported lost.
+
 ### 6. Real clients (optional)
 
 The scripted Capture web, Android and eRegisters runs (TESTING.md) against a board, with the board's hub in place of the test kit's: the same flows, at real speed, with real devices on the LAN.
