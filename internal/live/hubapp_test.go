@@ -32,12 +32,19 @@ func appZip(t *testing.T) string {
 // installApp installs the app on central, as the national team does in App Management.
 func installApp(t *testing.T, e *tk.Env, zip string) {
 	t.Helper()
+	if err := uploadApp(e, zip); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// uploadApp is installApp for steps that run outside the test's goroutine.
+func uploadApp(e *tk.Env, zip string) error {
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
 	part, _ := w.CreateFormFile("file", filepath.Base(zip))
 	f, err := os.Open(zip)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	io.Copy(part, f)
 	f.Close()
@@ -47,12 +54,13 @@ func installApp(t *testing.T, e *tk.Env, zip string) {
 	req.Header.Set("Content-Type", w.FormDataContentType())
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		t.Fatalf("installing the app: %d", resp.StatusCode)
+		return fmt.Errorf("installing %s: %d", filepath.Base(zip), resp.StatusCode)
 	}
+	return nil
 }
 
 type appResult struct {

@@ -28,12 +28,24 @@ func TestCaptureWeb(t *testing.T) {
 	if !e.Live() {
 		t.Skip("needs a live central (HUB_MANIFEST)")
 	}
-	m := e.M
 	e.Setup()
 	nurse := e.Web(tk.RoleNurse)
 	nurse.Login()
 	e.Sync()
+	out := t.TempDir()
+	if p := os.Getenv("HUB_REPORT"); p != "" {
+		out = filepath.Join(filepath.Dir(p), "capture-web")
+		os.MkdirAll(out, 0o755)
+	}
+	checkCaptureWeb(t, e, out)
+}
 
+// checkCaptureWeb runs clients/capture_web.py as the nurse, logged in at the hub, and
+// checks what TestCaptureWeb describes; screenshots and the result go to out.
+func checkCaptureWeb(t *testing.T, e *tk.Env, out string) {
+	t.Helper()
+	m := e.M
+	nurse := e.Web(tk.RoleNurse)
 	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var err error
 		switch r.URL.Path {
@@ -48,11 +60,6 @@ func TestCaptureWeb(t *testing.T) {
 	}))
 	defer control.Close()
 
-	out := t.TempDir()
-	if p := os.Getenv("HUB_REPORT"); p != "" {
-		out = filepath.Join(filepath.Dir(p), "capture-web")
-		os.MkdirAll(out, 0o755)
-	}
 	var progs []string
 	for _, p := range m.Programs {
 		progs = append(progs, p.ID)

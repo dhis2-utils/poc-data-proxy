@@ -97,7 +97,7 @@ def main():
                     out[f"rows:{prog}"] = app().locator("table tbody tr").count()
                     page.screenshot(path=os.path.join(OUT, f"{tag}-{prog}.png"))
                 if ENROLLMENT:
-                    page.goto(f"{HUB}/dhis-web-capture/index.html#/enrollment?enrollmentId={ENROLLMENT}",
+                    page.goto(f"{HUB}/dhis-web-capture/index.html#/enrollment?enrollmentId={ENROLLMENT}&orgUnitId={OU}&programId={PROGRAMS[0]}",
                               wait_until="networkidle", timeout=120000)
                     page.wait_for_timeout(3000)
                     out["dashboard"] = app().locator("body").inner_text()[:2000]
