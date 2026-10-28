@@ -94,6 +94,10 @@ func TestOracle(t *testing.T) {
 				known[why]++
 				continue
 			}
+			if why := shownWithoutProgram(direct, o, q, hb); why != "" {
+				known[why]++
+				continue
+			}
 			if o.Verdict == tk.Leak || o.Verdict == tk.Missing || o.Verdict == tk.Differs || o.Verdict == tk.Lenient {
 				bad = append(bad, o)
 			}
@@ -125,6 +129,62 @@ func TestOracle(t *testing.T) {
 		t.Errorf("%s %s %s (central %d, hub %d) %v %s", o.Verdict, o.User, o.Path, o.Central, o.Hub,
 			short(o.Objects), o.Detail)
 	}
+}
+
+// shownWithoutProgram accepts one leak by design (decided 2026-10-28): a person opened
+// with a program central does not show them in for this user (owned elsewhere), whom
+// the hub answers with no enrollment or owner in that program and only attributes
+// central gives the same user without the program. The hub cannot tell "enrolled
+// elsewhere" from "not enrolled" for a person it holds without that enrollment, and
+// refusing would stop enrolling a known person offline. Central is asked once more,
+// without the program, only for such an answer.
+func shownWithoutProgram(direct *tk.Central, o tk.Outcome, q tk.Query, hubBody []byte) string {
+	if o.Verdict != tk.Leak || !q.Single || q.Kind != "trackedEntities" || strings.HasPrefix(q.Program, "tet:") {
+		return ""
+	}
+	var hub struct {
+		Attributes    []struct{ Attribute, Value string }
+		Enrollments   []struct{ Program string }
+		ProgramOwners []struct{ Program string }
+	}
+	if json.Unmarshal(hubBody, &hub) != nil {
+		return ""
+	}
+	for _, e := range hub.Enrollments {
+		if e.Program == q.Program {
+			return ""
+		}
+	}
+	for _, po := range hub.ProgramOwners {
+		if po.Program == q.Program {
+			return ""
+		}
+	}
+	u, err := url.Parse(q.Path)
+	if err != nil {
+		return ""
+	}
+	v := u.Query()
+	v.Del("program")
+	u.RawQuery = v.Encode()
+	st, b, err := direct.Do("GET", u.String(), nil)
+	if err != nil || st != 200 {
+		return ""
+	}
+	var central struct{ Attributes []struct{ Attribute, Value string } }
+	if json.Unmarshal(b, &central) != nil {
+		return ""
+	}
+	shown := map[string]string{}
+	for _, a := range central.Attributes {
+		shown[a.Attribute] = a.Value
+	}
+	for _, a := range hub.Attributes {
+		if v, ok := shown[a.Attribute]; !ok || v != a.Value {
+			return ""
+		}
+	}
+	return "a person owned elsewhere opened with that program: the hub shows what central shows without the program, no enrollment (decided 2026-10-28)"
 }
 
 // knownGap names a difference the hub accepts by design or has not closed yet, so

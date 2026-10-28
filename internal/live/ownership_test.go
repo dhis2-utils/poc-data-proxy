@@ -64,6 +64,28 @@ func TestTransferOnCentral(t *testing.T) {
 	}
 }
 
+// A person registered at the facility and transferred away on central before the hub
+// first pulls: the facility's staff do not find them through the program, nor see
+// their enrollment or events. Opened by UID with the program, the hub answers with no
+// enrollment or owner in it (accepted, decided 2026-10-28, docs/FINDINGS.md): it holds
+// the person without that enrollment, and cannot tell it from someone not enrolled.
+func TestTransferredBeforeSetup(t *testing.T) {
+	e, nurse := ownershipEnv(t)
+	e.Fake.Transfer(seedTE, fc.OtherFacility)
+	e.Setup()
+	register(t, nurse)
+	e.Sync()
+	if s, _, ev := seesOffline(t, e, nurse); s || ev {
+		t.Errorf("transferred away before the first pull: search %v, events %v; want neither", s, ev)
+	}
+	e.Offline()
+	defer e.Online()
+	if st, b := nurse.Do("GET", "/api/tracker/trackedEntities/"+seedTE+"?program="+fc.Program+"&fields=*", nil); st == 200 &&
+		(strings.Contains(string(b), seedEnr) || strings.Contains(string(b), fc.Program)) {
+		t.Errorf("opened with the program, the hub shows the enrollment or owner: %s", b)
+	}
+}
+
 func TestTransferThroughHub(t *testing.T) {
 	e, nurse := ownershipEnv(t)
 	e.Setup()
