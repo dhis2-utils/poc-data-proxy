@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-10-28T07:23:56.838Z\n"
-"PO-Revision-Date: 2026-10-28T07:23:56.856Z\n"
+"POT-Creation-Date: 2026-10-28T13:26:30.993Z\n"
+"PO-Revision-Date: 2026-10-28T13:26:30.994Z\n"
 
 msgid "Approve the hub of {{- facility}}"
 msgstr "Approve the hub of {{- facility}}"
@@ -386,6 +386,18 @@ msgstr "Could not load the hubs"
 msgid "Hubs waiting for their own account"
 msgstr "Hubs waiting for their own account"
 
+msgid ""
+"Dismiss removes a request that will never be approved, such as an old one "
+"of a hub that no longer exists. A hub that is still running asks again by "
+"itself at its next refresh."
+msgstr ""
+"Dismiss removes a request that will never be approved, such as an old one "
+"of a hub that no longer exists. A hub that is still running asks again by "
+"itself at its next refresh."
+
+msgid "Not dismissed"
+msgstr "Not dismissed"
+
 msgid "None."
 msgstr "None."
 
@@ -400,6 +412,9 @@ msgstr "Set up by"
 
 msgid "Set up"
 msgstr "Set up"
+
+msgid "Dismiss"
+msgstr "Dismiss"
 
 msgid "Could not load the hub"
 msgstr "Could not load the hub"

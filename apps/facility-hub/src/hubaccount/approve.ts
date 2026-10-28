@@ -307,3 +307,17 @@ const account = async (
     )
     return uid
 }
+
+/**
+ * Dismisses a hub's request for an account (an old one, of a hub that no longer
+ * exists): only accountRequested changes. A hub still running asks again by itself at
+ * its next refresh (internal/core refreshAccount: "no request in the registry").
+ */
+export const dismiss = async (api: Api, hubID: string): Promise<void> => {
+    const regPath = `/dataStore/facility-hub-registry/${encodeURIComponent(hubID)}`
+    const entry = (await api.request('GET', regPath)) as Record<string, unknown>
+    if (entry.accountRequested !== true || entry.account != null) {
+        throw new Error('Not waiting for an account')
+    }
+    await api.request('PUT', regPath, { ...entry, accountRequested: false })
+}

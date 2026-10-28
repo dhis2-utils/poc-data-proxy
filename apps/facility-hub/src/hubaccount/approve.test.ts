@@ -6,7 +6,7 @@ import { x25519 } from '@noble/curves/ed25519.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { utf8ToBytes } from '@noble/hashes/utils.js'
-import { approve, fromBase64, toBase64 } from './approve'
+import { approve, dismiss, fromBase64, toBase64 } from './approve'
 import { accountCode } from './codes'
 import { FakeApi } from './fakeApi'
 
@@ -233,5 +233,29 @@ describe('approve', () => {
             expect(toBase64(bytes)).toBe(Buffer.from(bytes).toString('base64'))
             expect(fromBase64(toBase64(bytes))).toEqual(bytes)
         }
+    })
+})
+
+describe('dismiss', () => {
+    it('drops the request only: a hub still running asks again by itself', async () => {
+        const api = waiting()
+        const before = { ...api.entry('facility-hub-registry', hubID)! }
+        await dismiss(api, hubID)
+        expect(api.entry('facility-hub-registry', hubID)).toEqual({
+            ...before,
+            accountRequested: false,
+        })
+        expect(Object.values(api.users)).toEqual([])
+    })
+
+    it('leaves a hub that is no longer waiting alone', async () => {
+        const api = waiting()
+        const reg = api.entry('facility-hub-registry', hubID)!
+        reg.account = { username: hubID, box: 'x' }
+        const before = JSON.stringify(reg)
+        await expect(dismiss(api, hubID)).rejects.toThrow('Not waiting')
+        expect(JSON.stringify(api.entry('facility-hub-registry', hubID))).toBe(
+            before
+        )
     })
 })
