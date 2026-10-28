@@ -233,9 +233,8 @@ func (u *Upgrader) check(ctx context.Context) error {
 		return err
 	}
 	ok = true
-	// A swap that fails exits and restarts on the old binary: this version is then not
-	// tried again every cycle (after a success the hub runs it, and the mark is moot).
-	u.H.Store.SetMeta("upgrade_skip", m.Version)
+	// A swap that fails exits and restarts on the old binary: AfterBoot then lets this
+	// version be tried once more, not every cycle.
 	slog.Info("upgrading", "from", u.H.Version, "to", m.Version)
 	u.Shutdown()
 	// From here a failure exits, and the service manager starts the hub again: on the
@@ -510,11 +509,20 @@ func (u *Upgrader) AfterBoot(ctx context.Context, selfStatusURL string) {
 		return
 	case "swapped":
 		if mk.To != u.H.Version {
-			// The old binary runs: the upgrade stopped before the new one started, and
-			// Recover put the old store back.
+			// The old binary runs: the upgrade stopped before the new one started (a
+			// power cut, say), and Recover put the old store back. Such a stop says
+			// nothing against the release, which may be the only one there is: it is
+			// tried once more, and skipped after a second stop.
 			os.Remove(path)
-			u.H.Store.SetMeta("upgrade_skip", mk.To)
-			u.record(Result{Result: "failed", From: mk.From, To: mk.To, Reason: "the upgrade stopped before " + mk.To + " started"})
+			reason := "the upgrade stopped before " + mk.To + " started"
+			if u.H.Store.Meta("upgrade_cut") == mk.To {
+				u.H.Store.SetMeta("upgrade_skip", mk.To)
+				reason += ", a second time"
+			} else {
+				u.H.Store.SetMeta("upgrade_cut", mk.To)
+				reason += "; it is tried once more"
+			}
+			u.record(Result{Result: "failed", From: mk.From, To: mk.To, Reason: reason})
 			return
 		}
 	default:

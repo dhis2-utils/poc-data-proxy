@@ -235,7 +235,9 @@ func TestG1UpgradeWithQueuedSaves(t *testing.T) {
 // migrates the store copy, while the store and binary are swapped, at the re-exec, and
 // during the new release's health check. Must hold: after each, the hub comes back on
 // the old or the new release with the store that release migrated, never in between;
-// it can still upgrade afterwards; nothing confirmed is lost.
+// it can still upgrade afterwards; nothing confirmed is lost. A release whose swap was
+// cut short is tried once more without a new choice (since 28 October; the release
+// before this tree skips it at once).
 func TestE4KillDuringUpgrade(t *testing.T) {
 	u := upgradeStart(t)
 	stop := u.write(300 * time.Millisecond)
@@ -314,12 +316,21 @@ func TestE4KillDuringUpgrade(t *testing.T) {
 	before := ino()
 	round("at the re-exec (binary replaced)", next, func() bool { return ino() != before })
 
+	// From here the hub runs this tree: a swap cut short is tried again by itself, and
+	// that second try is cut during its health check.
 	next = "0.4.0"
 	u.offer(next)
-	round("during the health check", next, func() bool {
+	round("during the swap, on this tree", next, func() bool { return exists(filepath.Join(dir, "hub.db.prev")) })
+	if o := outcomes[len(outcomes)-1]; o.after != o.from || !strings.Contains(o.note, "tried once more") {
+		t.Errorf("a swap cut short on this tree: back on %s, %q; want %s and a second try", o.after, o.note, o.from)
+	}
+	round("during the health check of the second try", next, func() bool {
 		s := u.p.Status()
 		return s != nil && s["version"] == next && exists(filepath.Join(dir, "upgrade.json"))
 	})
+	if o := outcomes[len(outcomes)-1]; o.after != next {
+		t.Errorf("the second try of %s ended on %s", next, o.after)
+	}
 
 	// Afterwards, an upgrade runs to its end.
 	u.offer("0.5.0")
