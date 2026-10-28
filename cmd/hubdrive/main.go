@@ -58,11 +58,21 @@ type hubFlags struct {
 
 func addHubFlags(fs *flag.FlagSet, timeout time.Duration) hubFlags {
 	return hubFlags{
-		hub:      fs.String("hub", "", "the hub, e.g. https://192.168.8.20 (the address on the hub's start page)"),
+		hub:      fs.String("hub", "", "the hub, e.g. 192.168.8.20 or https://192.168.8.20 (the address on the hub's start page)"),
 		ca:       fs.String("ca", "", "the hub's certificate authority (ca.crt, from the hub's start page or /hub/ca.crt)"),
 		insecure: fs.Bool("insecure", false, "do not check the hub's certificate"),
 		timeout:  fs.Duration("timeout", timeout, "how long a client waits for one answer of the hub"),
 	}
+}
+
+// url is the hub's address without a trailing slash; an address without a scheme,
+// such as 192.168.1.100, is taken as https.
+func (h hubFlags) url() string {
+	u := strings.TrimRight(*h.hub, "/")
+	if u != "" && !strings.Contains(u, "://") {
+		u = "https://" + u
+	}
+	return u
 }
 
 // transport is the hub's TLS set-up: its own authority, or no check at all.

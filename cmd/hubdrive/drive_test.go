@@ -176,3 +176,19 @@ func TestCAFile(t *testing.T) {
 		}
 	}
 }
+
+// TestHubAddress takes the hub's address as it is written on its start page, with
+// or without a scheme.
+func TestHubAddress(t *testing.T) {
+	for in, want := range map[string]string{
+		"192.168.1.100":         "https://192.168.1.100",
+		"192.168.1.100:8443/":   "https://192.168.1.100:8443",
+		"https://192.168.8.20/": "https://192.168.8.20",
+		"http://localhost:8080": "http://localhost:8080",
+	} {
+		h := hubFlags{hub: &in}
+		if got := h.url(); got != want {
+			t.Errorf("-hub %s: %s, want %s", in, got, want)
+		}
+	}
+}

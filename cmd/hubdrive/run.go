@@ -111,7 +111,7 @@ func runMain(args []string) error {
 	if err != nil {
 		return err
 	}
-	c := runConfig{Hub: strings.TrimRight(*hf.hub, "/"), RT: rt, Timeout: *hf.timeout, Password: *password,
+	c := runConfig{Hub: hf.url(), RT: rt, Timeout: *hf.timeout, Password: *password,
 		Program: *program, OrgUnit: *ou, TET: *tet, FirstAttr: *first, LastAttr: *last, RegStage: *regStage, RegDE: *regDE,
 		EventStage: *evStage, EventDE: *evDE, Pace: *pace, Tag: *tag, Ledger: *ledger}
 	for _, u := range strings.Split(*users, ",") {

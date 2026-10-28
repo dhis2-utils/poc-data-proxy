@@ -59,7 +59,7 @@ func checkMain(args []string) error {
 			return err
 		}
 		hub = &http.Client{Transport: rt, Timeout: *hf.timeout}
-		waitDrained(l, hub, strings.TrimRight(*hf.hub, "/"), *wait)
+		waitDrained(l, hub, hf.url(), *wait)
 	}
 	res, err := check(&dhis{base: strings.TrimRight(*central, "/"), user: *admin, pw: *adminPw,
 		http: &http.Client{Timeout: 2 * time.Minute}}, recs)
@@ -73,8 +73,8 @@ func checkMain(args []string) error {
 	}
 	l.Print(res)
 	if hub != nil {
-		state, pending := hubState(hub, strings.TrimRight(*hf.hub, "/"))
-		l.Printf("hub now: %s, %s pending, %s refused by central", state, pending, rejected(hub, strings.TrimRight(*hf.hub, "/")))
+		state, pending := hubState(hub, hf.url())
+		l.Printf("hub now: %s, %s pending, %s refused by central", state, pending, rejected(hub, hf.url()))
 		if len(res.Lost) > 0 && pending != "0" {
 			l.Print("the hub still has saves to send: check again once it has sent them")
 		}
