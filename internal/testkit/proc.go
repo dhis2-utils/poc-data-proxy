@@ -169,7 +169,7 @@ func (p *Proc) Start() {
 	}
 	p.cmd = exec.Command(p.bin, "serve", "-config", p.cfg)
 	p.cmd.Stdout, p.cmd.Stderr = logf, logf
-	p.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // Kill ends its children too
+	ownGroup(p.cmd) // Kill ends its children too
 	if err := p.cmd.Start(); err != nil {
 		p.e.T.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func (p *Proc) Start() {
 // and the processes it started (an upgrade's migration) die with it.
 func (p *Proc) Kill() {
 	if p.Running() {
-		syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
+		killGroup(p.cmd)
 		<-p.exited
 	}
 }

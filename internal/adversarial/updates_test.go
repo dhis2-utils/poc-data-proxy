@@ -14,7 +14,6 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
@@ -435,7 +434,9 @@ func TestN4KilledDuringUpgrade(t *testing.T) {
 	p.Kill()
 	var n int
 	fmt.Sscan(pid, &n)
-	syscall.Kill(n, syscall.SIGKILL)
+	if mig, err := os.FindProcess(n); err == nil {
+		mig.Kill()
+	}
 	touch(t, filepath.Join(hold, "hold-start"))
 	os.Remove(filepath.Join(hold, "hold-migrate"))
 	time.Sleep(2 * time.Second)
