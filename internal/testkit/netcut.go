@@ -48,6 +48,11 @@ type Call struct {
 	Status int
 	Bytes  int64
 	Fault  string // the fault applied, if any
+	// At is when the request passed the link's latency; Dur how long central took to
+	// answer it from then, transfers included; Sent the request body's size.
+	At   time.Time
+	Dur  time.Duration
+	Sent int64
 }
 
 // Calls returns the requests the hub made to central so far, and forgets them.
@@ -110,8 +115,9 @@ func NewNetcut(target string) (*Netcut, error) {
 		}
 		asked := *r.URL // the proxy rewrites r.URL
 		f := n.take(r)
+		at := time.Now()
 		record := func(status int, bytes int64) {
-			c := Call{Method: r.Method, URL: &asked, Status: status, Bytes: bytes}
+			c := Call{Method: r.Method, URL: &asked, Status: status, Bytes: bytes, At: at, Dur: time.Since(at), Sent: r.ContentLength}
 			if f != nil {
 				c.Fault = f.kind
 			}
