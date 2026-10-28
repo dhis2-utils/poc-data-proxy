@@ -346,7 +346,7 @@ Built 2026-10-19 (`internal/hubtls`, `internal/ui/start.go`, the stick's `tls.re
 
 A device keeps one server URL per account, so moving it to the hub is a one-time step per device:
 
-1. **Before switching, sync everything to central** while online. Unsynced data on a device must not be stranded under the old server.
+1. **Before switching, sync everything to central** while online. Unsynced data on a device must not be stranded under the old server. Capture keeps one database per account and does not warn about unsynced data when staff log out or add an account; the hub's account then looks complete without those records, and staff may register the people again (adversarial I3c, 28 October). Logging in to the old account again where central is reachable and syncing recovers them.
 2. **Android:** log out and log in again with the hub's address. The Capture app supports multiple accounts, so the central account can stay for fallback, but staff should use only one. Users must not end up entering data in both.
 3. **Browsers:** replace the central bookmark with the hub's.
 4. **Training point:** "At this facility, always open DHIS2 through the hub address." Using central directly still works while online, but that data does not appear on the hub until the hub's next pull, so other users will not see it if the internet then drops.
