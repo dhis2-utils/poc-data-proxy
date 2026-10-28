@@ -208,9 +208,23 @@ func (a *Android) Screenshot(path string) error {
 // Login takes a freshly reset Capture app through server selection and login, and
 // waits for the home screen, scrolled to program (by name).
 func (a *Android) Login(server, user, password, program string, timeout time.Duration) ([]Node, error) {
-	_, nodes, err := a.Wait(time.Minute, "Server URL")
+	seen, nodes, err := a.Wait(time.Minute, "Server URL", "LOG IN", "Save password to Google")
 	if err != nil {
 		return nil, err
+	}
+	if seen == "Save password to Google" { // left over from an earlier login
+		for _, b := range []string{"Never", "Not now"} {
+			if n, ok := Find(nodes, b); ok {
+				a.Tap(n)
+				break
+			}
+		}
+		if seen, nodes, err = a.Wait(time.Minute, "Server URL", "LOG IN"); err != nil {
+			return nil, err
+		}
+	}
+	if seen == "LOG IN" {
+		return a.loginOld(nodes, server, user, password, program, timeout)
 	}
 	n, _ := Find(nodes, "Server URL")
 	a.Tap(n)
@@ -220,12 +234,25 @@ func (a *Android) Login(server, user, password, program string, timeout time.Dur
 	if _, nodes, err = a.Wait(time.Minute, "Log in"); err != nil {
 		return nil, err
 	}
+	// The form moves while the server's name settles in above it: read it again, and
+	// read the password field again after typing the user (a tap on the old place
+	// once typed the password into the user field).
+	time.Sleep(2 * time.Second)
+	if nodes, err = a.Screen(); err != nil {
+		return nil, err
+	}
 	fields := OfClass(nodes, "EditText")
 	if len(fields) < 2 {
 		return nil, fmt.Errorf("login screen has %d text fields", len(fields))
 	}
 	a.Tap(fields[0])
 	a.Type(user)
+	if nodes, err = a.Screen(); err != nil {
+		return nil, err
+	}
+	if fields = OfClass(nodes, "EditText"); len(fields) < 2 {
+		return nil, fmt.Errorf("login screen has %d text fields", len(fields))
+	}
 	a.Tap(fields[1])
 	a.Type(password)
 	a.Key("111") // escape: hide the keyboard so the button is on screen
@@ -234,15 +261,50 @@ func (a *Android) Login(server, user, password, program string, timeout time.Dur
 	}
 	n, _ = Find(nodes, "Log in")
 	a.Tap(n)
+	return a.afterLogin(program, timeout)
+}
+
+// loginOld fills in the one-screen login of Capture before 3.3 (server, user and
+// password together, "LOG IN").
+func (a *Android) loginOld(nodes []Node, server, user, password, program string, timeout time.Duration) ([]Node, error) {
+	fields := append(OfClass(nodes, "AutoCompleteTextView"), OfClass(nodes, "EditText")...)
+	if len(fields) < 3 {
+		return nil, fmt.Errorf("login screen has %d text fields", len(fields))
+	}
+	a.Tap(fields[0])
+	adb(15*time.Second, append([]string{"shell", "input", "keyevent", "123"}, strings.Fields(strings.Repeat("67 ", 30))...)...) // "https://" is filled in
+	a.Type(server)
+	a.Tap(fields[1])
+	a.Type(user)
+	a.Tap(fields[2])
+	a.Type(password)
+	// Back hides the keyboard; escape would commit the keyboard's suggestion, a
+	// trailing space, into the password.
+	a.Key("4")
+	time.Sleep(time.Second)
+	if nodes, err := a.Screen(); err == nil {
+		if n, ok := Find(nodes, "LOG IN"); ok {
+			a.Tap(n)
+		}
+	}
+	return a.afterLogin(program, timeout)
+}
+
+// afterLogin waits for the home screen after a login, answering the app's questions.
+func (a *Android) afterLogin(program string, timeout time.Duration) ([]Node, error) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		seen, nodes, err := a.Wait(time.Until(deadline), "Not now", "No filters applied", "Wrong", "error", "failed")
+		seen, nodes, err := a.Wait(time.Until(deadline), "Not now", "Save password to Google", "No filters applied", "Wrong", "error", "failed", "incorrect")
 		switch {
 		case err != nil:
 			return nodes, err
-		case seen == "Not now": // the anonymous-statistics question
+		case seen == "Not now": // the anonymous-statistics question; Google's password offer
 			n, _ := Find(nodes, "Not now")
 			a.Tap(n)
+		case seen == "Save password to Google": // offered again: "Never" instead of "Not now"
+			if n, ok := Find(nodes, "Never"); ok {
+				a.Tap(n)
+			}
 		case seen == "No filters applied": // the home screen's filter bar
 			return a.ScrollTo(program, 15)
 		default:
@@ -254,14 +316,15 @@ func (a *Android) Login(server, user, password, program string, timeout time.Dur
 
 var countRe = regexp.MustCompile(`^(\d+) `)
 
-// HomeCount reads the record count under a program on the home screen ("36 Person").
+// HomeCount reads the record count under a program on the home screen ("36 Person"),
+// not the time of its last sync ("1 hours ago").
 func HomeCount(nodes []Node, program string) (int, bool) {
 	for i, n := range nodes {
 		if n.Text != program {
 			continue
 		}
 		for _, m := range nodes[i+1 : min(i+4, len(nodes))] {
-			if c := countRe.FindStringSubmatch(m.Text); c != nil {
+			if c := countRe.FindStringSubmatch(m.Text); c != nil && !strings.HasSuffix(m.Text, " ago") {
 				v, _ := strconv.Atoi(c[1])
 				return v, true
 			}
