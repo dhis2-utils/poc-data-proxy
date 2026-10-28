@@ -217,6 +217,11 @@ func (w *Worker) cycle(ctx context.Context) error {
 	if _, err := h.Store.PruneCache(30 * 24 * time.Hour); err != nil {
 		errs = append(errs, fmt.Errorf("cache: %w", err))
 	}
+	if n, err := h.Store.PruneSentOutbox(); err != nil {
+		errs = append(errs, fmt.Errorf("sent outbox: %w", err))
+	} else if n > 0 {
+		slog.Info("removed sent outbox entries", "entries", n, "sentBefore", store.SentOutboxKept)
+	}
 	if err := w.publishTokens(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("registry tokens: %w", err))
 	}

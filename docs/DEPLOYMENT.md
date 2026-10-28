@@ -77,6 +77,8 @@ One generic image per release (built 2026-10-19: `image/`, see image/README.md).
 
 The image holds **no secrets**. Each hub gets its own data key, hub ID and signing key pair at first boot and setup. Patient data on the SSD is encrypted by the hub itself: it is in a data file encrypted with AES-256-XTS under the data key, so full-disk encryption is optional.
 
+The outbox keeps each offline save after central accepted it, for 30 days from when it was sent (`store.SentOutboxKept`), so it can still be sent again. The sync cycle then deletes it. Refused, partly refused and waiting saves stay until they are resolved. Before 2026-10-28 the hub deleted no outbox entry, so it kept a copy of every offline save past the retention a country set. A save sent before that date counts from when it was made.
+
 **What is not encrypted** (security review 2026-10-20, S1), all in the data folder and readable only by the hub's account. On a machine with a TPM 2.0 (a TPM board on the Pi, most PCs), the hub seals a device key in the TPM and the items marked *sealed* are encrypted with it (`internal/devkey`, built 2026-10-20):
 
 - **The key file:** hub ID, mode, central URL, the proxy, and each user's username and key slot. Each slot lets someone holding the disk test password guesses offline; with a TPM, the slots on the disk are bound to the device key (*sealed*), and only the USB stick's copy opens with a password alone.

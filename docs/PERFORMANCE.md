@@ -312,6 +312,8 @@ Changing an event moves its own and its tracked entity's `updatedAt`, not its en
 
 Still to measure: the same on `pi5`. Pruning a hub that already holds five years is a one-off of about half an hour at the HC IV size. It runs at the first sync cycle after a window is set, and offline writes wait for one transaction of 1 000 rows at most.
 
+Sent outbox entries are deleted 30 days after central accepted them (docs/DEPLOYMENT.md). Until 2026-10-28 none were deleted, so the first sync cycle after that upgrade deletes the backlog. In process (x86 sandbox, `internal/store`), 295 000 sent entries of 1.5 KB took 24 s in one transaction, with every save waiting behind it; in transactions of 1 000 entries they took 4.9 s, 16 ms each. A cycle with nothing to delete spends 6 ms on it.
+
 ## Security of the SQLite index
 
 - **Confidentiality unchanged.** The data file is encrypted page by page (AES-256-XTS, key derived from the data key, which exists only in memory), so the index columns are as encrypted at rest as everything else in it.

@@ -290,3 +290,46 @@ func (s *Store) Requeue(uids []string, seqs []int64, userID int64) (int, error) 
 	})
 	return n, err
 }
+
+// SentOutboxKept is how long an entry central accepted stays in the outbox after it
+// was sent: long enough to send it again (a resend from the Facility Hub app), not
+// for ever, since each entry is a copy of a save with patient data.
+const SentOutboxKept = 30 * 24 * time.Hour
+
+// PruneSentOutbox deletes the entries central accepted more than SentOutboxKept ago,
+// with their object lists. Refused, partly refused and pending entries stay until they
+// are resolved. An entry sent before sent_at existed counts from its creation.
+// Issues may still name a deleted entry's seq: they are open by their object's state
+// (tracker) or their entry's refused state (aggregate), and neither is a sent entry.
+//
+// It deletes pruneBatch entries per transaction, so a save waits for one batch at
+// most. The first run after an upgrade has years of entries: 295 000 sent entries of
+// 1.5 KB took 24 s in one transaction, with every save queued behind it, and 4.9 s in
+// batches (16 ms each); a run with nothing to delete took 6 ms (x86 sandbox,
+// 2026-10-28).
+func (s *Store) PruneSentOutbox() (int64, error) {
+	cutoff := time.Now().Add(-SentOutboxKept).UTC().Format(time.RFC3339Nano)
+	const sent = `SELECT seq FROM outbox WHERE state = ? AND (CASE sent_at WHEN '' THEN created_at ELSE sent_at END) < ?
+ ORDER BY seq LIMIT ?`
+	var total int64
+	for {
+		var n int64
+		err := s.Tx(context.Background(), func(tx *sql.Tx) error {
+			if _, err := tx.Exec(`DELETE FROM outbox_objects WHERE seq IN (`+sent+`)`, OutboxSynced, cutoff, pruneBatch); err != nil {
+				return err
+			}
+			res, err := tx.Exec(`DELETE FROM outbox WHERE seq IN (`+sent+`)`, OutboxSynced, cutoff, pruneBatch)
+			if err != nil {
+				return err
+			}
+			n, _ = res.RowsAffected()
+			return nil
+		})
+		total += n
+		if err != nil || n < pruneBatch {
+			return total, err
+		}
+	}
+}
+
+const pruneBatch = 1000
