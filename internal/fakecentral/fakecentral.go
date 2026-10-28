@@ -83,14 +83,17 @@ type Central struct {
 	// CutResponse ("POST /api/...": n) carries out the next n such requests but cuts
 	// their answer off halfway, as when the connection drops while the hub reads it.
 	CutResponse map[string]int
-	delay       time.Duration // Struggle
-	failShare   float64
-	struggled   int                        // requests counted for failShare
-	passwords   map[string]string          // users created through the API, with their own password
-	readers     map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (read)
-	writers     map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (write)
-	creators    map[string]string          // dataStore entry id -> username who created it
-	public      map[string]string          // dataStore entry id -> public access its sharing sets
+	// StallResponse ("GET /apps/...": n) starts the next n such answers and then holds
+	// them until the hub gives up on them, as when the client that asked went away.
+	StallResponse map[string]int
+	delay         time.Duration // Struggle
+	failShare     float64
+	struggled     int                        // requests counted for failShare
+	passwords     map[string]string          // users created through the API, with their own password
+	readers       map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (read)
+	writers       map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (write)
+	creators      map[string]string          // dataStore entry id -> username who created it
+	public        map[string]string          // dataStore entry id -> public access its sharing sets
 	// HubWriters, when set, are the only users who may write the facility-hub-*
 	// dataStore namespaces (protected by sharing, as DEPLOYMENT.md advises).
 	HubWriters map[string]bool
@@ -343,7 +346,20 @@ func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if cut {
 		c.CutResponse[r.Method+" "+r.URL.Path]--
 	}
+	stall := c.StallResponse[r.Method+" "+r.URL.Path] > 0
+	if stall {
+		c.StallResponse[r.Method+" "+r.URL.Path]--
+	}
 	c.mu.Unlock()
+	if stall {
+		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("<html>"))
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+		return
+	}
 	if cut { // done on central, but only half the answer reaches the hub
 		rec := httptest.NewRecorder()
 		c.serve(rec, r)
@@ -424,6 +440,13 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(p, "/apps/"):
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(`<html><meta name="dhis2-base-url" content="http://` + r.Host + `">global shell ` + p + "</html>"))
+		return
+	case strings.HasPrefix(p, "/dhis-web-login/"): // public
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte("<html>login app</html>"))
+		return
+	case p == "/" && c.user(r) == nil: // as central: anonymous, to the login app
+		http.Redirect(w, r, "/dhis-web-login/", http.StatusFound)
 		return
 	case strings.HasPrefix(p, "/dhis-web-capture/"):
 		w.Header().Set("Content-Type", "text/html")

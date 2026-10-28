@@ -77,7 +77,7 @@ func (p *Proxy) Forward(ctx context.Context, r *http.Request, body []byte, a cen
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		p.H.Monitor.ReportFailure(err)
+		p.H.Central.Failed(ctx, err)
 		return nil, central.ErrNetwork
 	}
 	h := resp.Header.Clone()

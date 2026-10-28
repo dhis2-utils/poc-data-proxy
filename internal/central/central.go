@@ -173,12 +173,19 @@ func (c *Client) Do(ctx context.Context, method, pathAndQuery string, body []byt
 	auth.Apply(req.Header)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		if ctx.Err() == nil || isTimeout(err) {
-			c.Monitor.ReportFailure(err)
-		}
+		c.Failed(ctx, err)
 		return nil, fmt.Errorf("%w: %v", ErrNetwork, err)
 	}
 	return resp, nil
+}
+
+// Failed reports a request to central that failed without an answer, or whose answer
+// could not be read, as central unreachable: unless the client that asked went away
+// and cancelled it (a browser leaving the page, as on logout).
+func (c *Client) Failed(ctx context.Context, err error) {
+	if ctx.Err() == nil || isTimeout(err) {
+		c.Monitor.ReportFailure(err)
+	}
 }
 
 func isTimeout(err error) bool {
@@ -230,7 +237,7 @@ func (c *Client) JSON(ctx context.Context, method, pathAndQuery string, in any, 
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		c.Monitor.ReportFailure(err)
+		c.Failed(ctx, err)
 		return fmt.Errorf("%w: %v", ErrNetwork, err)
 	}
 	if resp.StatusCode/100 != 2 {
