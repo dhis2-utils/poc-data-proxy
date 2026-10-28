@@ -163,6 +163,10 @@ class Browser:
         except Exception as e:
             status = f"no request ({str(e)[:80]})"
         self.page.wait_for_timeout(4000)
+        for _ in range(60):  # the app retries a failed request before it says so
+            if "Running validation" not in " ".join(self.shown()):
+                break
+            self.page.wait_for_timeout(1000)
         return status, self.shown()
 
     def completion(self):

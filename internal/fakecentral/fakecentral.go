@@ -602,6 +602,9 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		c.shareEntry(w, r)
 	case strings.HasPrefix(p, "/api/dataStore/"):
 		c.dataStore(w, r, u)
+	case strings.HasPrefix(p, "/api/validation/dataSet/") || strings.HasPrefix(p, "/api/42/validation/dataSet/"):
+		// The Data Entry app's "Run validation": no rules here, so no violations.
+		writeJSON(w, 200, map[string]any{"validationRuleViolations": []any{}, "commentRequiredViolations": []any{}})
 	default:
 		webMessage(w, 404, "not found in fake central: "+p, "")
 	}

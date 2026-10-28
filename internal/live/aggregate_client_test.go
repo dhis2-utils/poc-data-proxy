@@ -226,6 +226,7 @@ func TestAggregateDataEntryApp(t *testing.T) {
 // rule and runs validation again; the hub restarts; she changes the value and clears
 // another, leaving the form incomplete; the clerk sees the draft offline; after
 // reconnection central has the last values as the nurse's and the form incomplete.
+// Validation offline needs a connection (the hub replayed the online answer before).
 func TestDataEntryAppDrafts(t *testing.T) {
 	d := newDataEntry(t, true)
 	e, ag := d.e, d.ag
@@ -282,16 +283,13 @@ func TestDataEntryAppDrafts(t *testing.T) {
 	}
 	t.Logf("screenshots and results in %s", out)
 
-	// Offline, the hub answers the validation request from its cache of the online
-	// answer, made before the values changed: a wrong "no alerts".
+	// Offline, validation needs central: the hub does not replay the online answer,
+	// made before the values changed (it showed "No validation alerts" here). The
+	// app tries four times, then says so.
 	shown := fmt.Sprint(s["validate offline: shown"])
-	if strings.Contains(shown, "No validation alerts") {
-		if os.Getenv("HUB_FINDINGS") == "" {
-			t.Skip("FINDING: offline, validation shows the online result from before the edit: " + shown +
-				" (HUB_FINDINGS=1 runs it)")
-		}
-		t.Errorf("validation offline after an edit that breaks the rule: %s (status %v; screenshot %s)",
-			shown, s["validate offline: status"], filepath.Join(out, "2-validated-offline.png"))
+	if st, _ := s["validate offline: status"].(float64); st != 503 || !strings.Contains(shown, "Validation could not be run") {
+		t.Errorf("validation offline after an edit that breaks the rule: %v %s (screenshot %s)",
+			s["validate offline: status"], shown, filepath.Join(out, "2-validated-offline.png"))
 	}
 }
 

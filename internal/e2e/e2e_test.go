@@ -940,6 +940,27 @@ func TestOfflineStaticCache(t *testing.T) {
 	}
 }
 
+// Validation results depend on the form's values, which may change offline: the
+// hub never replays an online answer, it says "needs connection" (adversarial I6c:
+// the Data Entry app showed "No validation alerts" for values central flags).
+func TestValidationNeedsConnectionOffline(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	for _, path := range []string{"/api/validation/dataSet/" + fc.AggDataSet + "?pe=202610&ou=" + fc.Facility,
+		"/api/42/validation/dataSet/" + fc.AggDataSet + "?pe=202610&ou=" + fc.Facility} {
+		if st, b := a.do("GET", path, nil); st != 200 {
+			t.Fatalf("online %s: %d %s", path, st, b)
+		}
+		e.offline()
+		if st, b := a.do("GET", path, nil); st != 503 || !strings.Contains(string(b), "needs connection") {
+			t.Errorf("offline %s: %d %s, want 503 needs connection", path, st, b)
+		}
+		e.online()
+	}
+}
+
 func issueID(issues []*store.Issue, uid string) string {
 	for _, is := range issues {
 		if is.ObjectUID == uid {

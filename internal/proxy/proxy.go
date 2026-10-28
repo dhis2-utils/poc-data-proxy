@@ -144,6 +144,12 @@ func cacheable(r *http.Request, status int) bool {
 
 var meRe = regexp.MustCompile(`^/api/([0-9]{2}/)?me(\.json)?$`)
 
+// validationRe: central's validation of data the hub may have changed since
+// (validation/dataSet/<ds>, run by the Data Entry app). An online answer replayed
+// offline could say "no alerts" for values that break a rule, so it is not cached
+// and offline needs a connection (FINDINGS.md, I6c).
+var validationRe = regexp.MustCompile(`^/api/([0-9]{2}/)?validation/`)
+
 // selectFields applies a top-level DHIS2 fields selection ("authorities",
 // "settings[keyUiLocale]") to a JSON object, as central does for /api/me. Fields the
 // object lacks are left out ("userCredentials[userRoles]" gives {} on 2.42).
@@ -286,7 +292,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		res, err := p.Forward(r.Context(), r, body, p.Upstream(sess))
 		if err == nil {
-			if r.Method == http.MethodGet && cacheable(r, res.Status) && len(res.Body) <= maxCacheBody &&
+			if r.Method == http.MethodGet && cacheable(r, res.Status) && len(res.Body) <= maxCacheBody && !validationRe.MatchString(r.URL.Path) &&
 				p.H.Store.Unlocked() && (cacheUser(sess) > 0 || sess == nil) {
 				if err := p.H.Store.PutCache(cacheUser(sess), r.Method, r.URL.RequestURI(),
 					&store.CachedResponse{Status: res.Status, Header: res.Header, Body: res.Body}); err != nil {
@@ -324,6 +330,10 @@ func (p *Proxy) serveOffline(w http.ResponseWriter, r *http.Request, sess *core.
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte("pong")) // the hub is the client's server; it is reachable
 		return 200
+	}
+	if validationRe.MatchString(r.URL.Path) {
+		p.H.NeedsConnection(w, "validation runs on central")
+		return 503
 	}
 	uri := r.URL.RequestURI()
 	cached, err := p.H.Store.GetCache(cacheUser(sess), r.Method, uri)
