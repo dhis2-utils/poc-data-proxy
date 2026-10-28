@@ -2,6 +2,7 @@ package fakecentral
 
 import (
 	"cmp"
+	"fmt"
 	"net/http"
 	"slices"
 	"time"
@@ -105,6 +106,23 @@ func (c *Central) getTE(w http.ResponseWriter, r *http.Request, u *User, uid str
 	te["enrollments"] = orEmpty(enrs)
 	te["relationships"] = []any{}
 	writeJSON(w, 200, te)
+}
+
+// getEvent answers GET /api/tracker/events/{uid}: an event of a person the user may
+// read (ownership, temporary ownership), else 404 as central.
+func (c *Central) getEvent(w http.ResponseWriter, u *User, uid string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ev := c.objects[uid]
+	if ev == nil || c.kinds[uid] != "event" || !canSeeEvent(u, ev) {
+		webMessage(w, 404, "Event with id "+uid+" could not be found.", "")
+		return
+	}
+	if en := c.objects[fmt.Sprint(ev["enrollment"])]; en != nil && !c.canRead(u, fmt.Sprint(en["trackedEntity"])) {
+		webMessage(w, 404, "Event with id "+uid+" could not be found.", "")
+		return
+	}
+	writeJSON(w, 200, deepCopy(ev))
 }
 
 // transfer answers PUT /api/tracker/ownership/transfer?trackedEntity=&program=&ou=

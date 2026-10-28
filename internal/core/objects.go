@@ -24,6 +24,7 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 		return nil, nil
 	}
 	items := tracker.Flatten(payload)
+	cat := h.Catalog()
 	// Everything the batch refers to, read in one go, with the payloads merges need.
 	var refs []string
 	for _, it := range items {
@@ -116,8 +117,13 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 			if forceFacility {
 				break
 			}
+			// A tracker event is the facility's when its enrollment is: one at this
+			// facility of a person owned elsewhere (a referral, an event opened by
+			// breaking the glass) is central's to show, online only. An event program's
+			// event is the facility's when it is at the facility.
+			eventProgram := cat != nil && cat.Programs[o.Program] != nil && cat.Programs[o.Program].Event
 			if e := get(it.Enrollment); skipped[it.Enrollment] || (e != nil && e.OwnerOrgUnit != facility) ||
-				!(ou == facility || owned(it.Enrollment)) {
+				!(owned(it.Enrollment) || (eventProgram && ou == facility)) {
 				continue
 			}
 		case store.KindRelationship:

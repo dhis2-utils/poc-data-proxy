@@ -574,6 +574,8 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		if uid := strings.TrimPrefix(p, "/api/tracker/trackedEntities/"); !c.gen.getTE(w, r, uid) {
 			c.getTE(w, r, u, uid)
 		}
+	case strings.HasPrefix(p, "/api/tracker/events/") && r.Method == "GET":
+		c.getEvent(w, u, strings.TrimPrefix(p, "/api/tracker/events/"))
 	case p == "/api/tracker/ownership/transfer" && r.Method == "PUT":
 		c.transfer(w, r, u)
 	case p == "/api/tracker/ownership/override" && r.Method == "POST":

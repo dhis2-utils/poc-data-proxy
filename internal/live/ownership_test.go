@@ -154,3 +154,61 @@ func TestBreakTheGlass(t *testing.T) {
 		t.Errorf("offline after the temporary ownership expired: search %v, open %v, events %v; want none", s, o, ev)
 	}
 }
+
+// eventAloneOffline reads one of the person's events by its uid through the hub
+// online, then writes it, as Capture does on the event's own page (a referral the
+// facility receives: an event here, the person owned elsewhere). The hub does not
+// hold the enrollment, so it must not serve or list the event offline: the
+// facility does not own it, and only central decides who sees it (C10 in
+// docs/ADVERSARIAL-TESTING.md). It reports what the hub shows offline.
+func eventAloneOffline(t *testing.T, e *tk.Env, nurse *tk.Client) (open, listed bool) {
+	t.Helper()
+	const ev = "SeedEv00001"
+	if st, b := nurse.Do("GET", "/api/tracker/events/"+ev+"?fields=*", nil); st != 200 {
+		t.Fatalf("online, the event by its uid: %d %s", st, b)
+	}
+	st, b := nurse.Do("POST", tk.SyncImport, map[string]any{"events": []any{map[string]any{"event": ev,
+		"enrollment": seedEnr, "program": fc.Program, "programStage": fc.Stage1, "orgUnit": fc.Facility,
+		"status": "COMPLETED", "occurredAt": "2026-10-28"}}})
+	if st != 200 {
+		t.Fatalf("online, completing the event: %d %s", st, b)
+	}
+	e.Offline()
+	defer e.Online()
+	st, _ = nurse.Do("GET", "/api/tracker/events/"+ev+"?fields=event", nil)
+	_, b = nurse.Do("GET", "/api/tracker/events?orgUnit="+fc.Facility+"&program="+fc.Program+"&fields=event&paging=false", nil)
+	return st == 200, strings.Contains(string(b), ev)
+}
+
+// TestEventOwnedElsewhereReadOnline: open program, the person owned by another
+// facility in the nurse's search scope; she may read and write their event at this
+// facility online.
+func TestEventOwnedElsewhereReadOnline(t *testing.T) {
+	e := tk.Start(t)
+	e.NeedFake()
+	nurse := e.AndroidUser("nurse_a")
+	e.Fake.Users["nurse_a"].SearchOrgUnits = []string{fc.Facility, fc.OtherFacility}
+	e.Fake.Transfer(seedTE, fc.OtherFacility)
+	e.Setup()
+	register(t, nurse)
+	e.Sync()
+	if open, listed := eventAloneOffline(t, e, nurse); open || listed {
+		t.Errorf("offline, the event of a person owned elsewhere: opens %v, listed %v; want neither", open, listed)
+	}
+}
+
+// TestBreakTheGlassEventAlone: as TestBreakTheGlass, with the event read and written
+// on its own after breaking the glass.
+func TestBreakTheGlassEventAlone(t *testing.T) {
+	e, nurse := ownershipEnv(t)
+	e.Fake.Transfer(seedTE, fc.OtherFacility)
+	e.Setup()
+	register(t, nurse)
+	e.Sync()
+	if st, b := nurse.Do("POST", "/api/tracker/ownership/override?trackedEntity="+seedTE+"&program="+fc.Program+"&reason=emergency", nil); st != 200 {
+		t.Fatalf("break the glass through the hub: %d %s", st, b)
+	}
+	if open, listed := eventAloneOffline(t, e, nurse); open || listed {
+		t.Errorf("offline after breaking the glass online: the event opens %v, listed %v; want neither", open, listed)
+	}
+}

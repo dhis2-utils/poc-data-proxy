@@ -191,23 +191,10 @@ func TestC10OneTimeReferral(t *testing.T) {
 	s.Offline()
 	st, b = nurse.Do("GET", "/api/tracker/events/"+refA+"?fields=status,orgUnit", nil)
 	t.Logf("offline, the completed referral as the nurse sees it: %d %.200s", st, b)
-	extra := append(compare(nurse, probes(refOut)), compare(nurse, probes(in[0]))...)
-	var others []string
-	for _, x := range extra {
-		if x != in[0].referred {
-			others = append(others, x)
-		}
-	}
-	if len(others) > 0 {
-		t.Errorf("I3: offline the hub lists %v that central does not list to the nurse", others)
-	}
-	if len(extra) > len(others) {
-		// Central lists a program's events by the owner's org unit, so the referral,
-		// whose person the sibling owns, is not in the facility's list; the nurse
-		// opens it by its uid. The hub keeps what the nurse saved online and lists it
-		// by the event's org unit.
-		finding(t, "C10: a referred-in event the nurse completed online is listed offline in the facility's events; central does not list it there (it opens it by uid)")
-		t.Errorf("I3: offline the hub lists the referred-in event %s in the facility's events; central does not", in[0].referred)
+	// The referred-in event the nurse completed online stays central's to show: the
+	// hub does not hold its enrollment, so it neither lists nor opens it offline.
+	if extra := append(compare(nurse, probes(refOut)), compare(nurse, probes(in[0]))...); len(extra) > 0 {
+		t.Errorf("I3: offline the hub lists %v that central does not list to the nurse", extra)
 	}
 }
 
@@ -371,7 +358,6 @@ func TestC10ProtectedAfterBreakingTheGlass(t *testing.T) {
 	}
 	s.Offline()
 	if shown := look("offline"); len(shown) > 0 {
-		finding(t, "C10: a referred-in event of a protected program, completed online after breaking the glass, is served and listed offline; central answers the nurse 404 for it")
 		t.Errorf("I3: offline the hub shows what the nurse reached by temporary ownership: %v", shown)
 	}
 }
