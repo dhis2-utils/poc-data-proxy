@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -46,6 +47,28 @@ type channel struct {
 	srv      *httptest.Server
 	rate     atomic.Int64  // bytes per second for binaries; 0: unlimited
 	fetching chan struct{} // receives when a hub starts downloading a binary
+
+	mu     sync.Mutex
+	served []served // what hubs fetched
+}
+
+// served is one file a hub fetched from the release source.
+type served struct {
+	At   time.Time
+	Path string
+}
+
+// fetched returns the paths fetched since t that contain s.
+func (c *channel) fetched(since time.Time, s string) []served {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []served
+	for _, f := range c.served {
+		if !f.At.Before(since) && strings.Contains(f.Path, s) {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 func newChannel(t *testing.T) *channel {
@@ -62,6 +85,9 @@ func newChannel(t *testing.T) *channel {
 	c.pub = strings.TrimSpace(string(b))
 	files := http.FileServer(http.Dir(filepath.Join(c.dir, "channel")))
 	c.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c.mu.Lock()
+		c.served = append(c.served, served{time.Now(), r.URL.Path})
+		c.mu.Unlock()
 		if strings.Contains(r.URL.Path, "/hub-") {
 			select {
 			case c.fetching <- struct{}{}:

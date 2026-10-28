@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -247,4 +249,23 @@ func (s *scene) shows(c *tk.Client, kind, uid string) (online, offline int) {
 		}
 	}
 	return
+}
+
+func names(paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		out = append(out, filepath.Base(p))
+	}
+	return out
+}
+
+// lastLine is the last line of log that contains s, from s on.
+func lastLine(log, s string) string {
+	lines := strings.Split(log, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if _, after, ok := strings.Cut(lines[i], s); ok {
+			return s + after
+		}
+	}
+	return ""
 }
