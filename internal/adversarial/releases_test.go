@@ -245,6 +245,7 @@ func TestG2NewReleaseFails(t *testing.T) {
 	if p.Grep("upgrade result=failed from=0.2.0 to=0.3.5") == 0 {
 		t.Errorf("the rollback from 0.3.5 is not reported:\n%s", p.Tail(20))
 	}
+	p.Stop() // the service manager's last start runs the rolled-back hub
 	r.restart()
 	rolled = time.Now()
 	r.cycles(4)

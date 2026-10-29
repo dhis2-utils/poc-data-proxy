@@ -236,17 +236,24 @@ func TestN14PushReportReshaped(t *testing.T) {
 	r.e.Net.Calls()
 	back := time.Now()
 	r.e.Net.SetDown(false)
-	r.p.WaitFor("pushed", 3*time.Minute, func(s map[string]any) bool { return s["pending"] == float64(0) && s["syncing"] == false })
-	reshape()
+	// An answer without bundleReport says nothing about the saves: the hub keeps them
+	// queued and tries again (refused only after a day), so the queue does not drain
+	// while the report is reshaped.
+	time.Sleep(time.Minute)
 	pushes, rewritten := pushesOf(r.e.Net.Calls())
 	s := r.p.Status()
 	made, on := r.offlineSaves(start, back)
-	t.Logf("pushed with the report reshaped: %d pushes (%d reshaped); pending %v, rejected %v; %d of %d offline registrations on central; "+
+	t.Logf("a minute with the report reshaped: %d pushes (%d reshaped); pending %v, rejected %v; %d of %d offline registrations on central; "+
 		"log: %d rejected objects (%d 'not persisted by central')", pushes, rewritten, s["pending"], s["rejected"], on, len(made),
 		r.p.Grep("msg=\"object rejected\""), r.p.Grep("not persisted by central"))
+	if s["rejected"] != float64(0) {
+		t.Errorf("I8: %v objects refused while central's report was reshaped; want them kept and retried", s["rejected"])
+	}
+	reshape()
+	r.p.WaitFor("pushed", 3*time.Minute, func(s map[string]any) bool { return s["pending"] == float64(0) && s["syncing"] == false })
 	r.pulls(2)
 	s = r.p.Status()
-	t.Logf("after two pulls: rejected %v", s["rejected"])
+	t.Logf("after central answers as before and two pulls: pending %v, rejected %v", s["pending"], s["rejected"])
 	if s["rejected"] != float64(0) {
 		// Found 28 October: compat v42 TrackerResult took any answer with a status for an
 		// import report, and an object it did not find in bundleReport.typeReportMap as
