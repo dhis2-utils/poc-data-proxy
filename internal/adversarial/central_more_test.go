@@ -248,11 +248,10 @@ func TestN14PushReportReshaped(t *testing.T) {
 	s = r.p.Status()
 	t.Logf("after two pulls: rejected %v", s["rejected"])
 	if s["rejected"] != float64(0) {
-		// Found 28 October: compat v42 TrackerResult takes any answer with a status for an
-		// import report, and an object it does not find in bundleReport.typeReportMap as
-		// not persisted (push.go): every object is refused, though central stored it, and
-		// the later edits of those objects are refused as blocked by them, never sent.
-		finding(t, "N14: a reshaped import report is read as central refusing everything")
+		// Found 28 October: compat v42 TrackerResult took any answer with a status for an
+		// import report, and an object it did not find in bundleReport.typeReportMap as
+		// not persisted: every object was refused, though central stored it. Fixed 29
+		// October: an answer without bundleReport that is no refusal is no import report.
 		t.Errorf("I8: %v objects central stored stay listed as refused on the hub after a reshaped report", s["rejected"])
 	}
 	r.finish(3 * time.Minute)

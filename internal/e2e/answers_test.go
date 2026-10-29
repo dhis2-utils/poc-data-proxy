@@ -1,7 +1,11 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -223,5 +227,50 @@ func TestPushGoesOnPastAFailingImport(t *testing.T) {
 	}
 	if o := h.Index.Get("BadTe000001"); o == nil || o.SyncState != store.SyncRejected {
 		t.Fatalf("not marked refused: %+v", o)
+	}
+}
+
+// An import report of a shape the hub does not know (bundleReport renamed, as a new
+// major might) is no import report: it says nothing about the saves, which stay
+// pending and are not marked refused (N14).
+func TestPushReshapedReportIsNoReport(t *testing.T) {
+	e := newEnv(t)
+	var reshape atomic.Bool
+	e.cSrv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !reshape.Load() || r.Method != "POST" || r.URL.Path != "/api/tracker" {
+			e.central.ServeHTTP(w, r)
+			return
+		}
+		rec := httptest.NewRecorder()
+		e.central.ServeHTTP(rec, r)
+		w.Header().Set("Content-Type", rec.Header().Get("Content-Type"))
+		w.WriteHeader(rec.Code)
+		w.Write(bytes.ReplaceAll(rec.Body.Bytes(), []byte(`"bundleReport"`), []byte(`"importReport"`)))
+	})
+	e.setup()
+	h := e.app.Hub
+	a := e.web("nurse_a")
+	a.login()
+	e.offline()
+	a.json("POST", postSync, newPatient("ShpTe000001", "ShpEn000001", "Shape", "", nil), 200)
+	reshape.Store(true)
+	e.online()
+	e.sync()
+	if n := h.Store.CountIssues(); n != 0 {
+		t.Fatalf("%d refusals after a reshaped report", n)
+	}
+	if o := h.Index.Get("ShpTe000001"); o == nil || o.SyncState == store.SyncRejected {
+		t.Fatalf("marked refused: %+v", o)
+	}
+	if n := h.Store.CountOutbox(store.OutboxPending); n != 1 {
+		t.Fatalf("pending after a reshaped report: %d", n)
+	}
+	reshape.Store(false)
+	e.sync()
+	if n := h.Store.CountOutbox(store.OutboxPending); n != 0 {
+		t.Fatalf("pending after central answered as before: %d", n)
+	}
+	if o := h.Index.Get("ShpTe000001"); o == nil || o.SyncState != store.SyncSynced {
+		t.Fatalf("not synced: %+v", o)
 	}
 }

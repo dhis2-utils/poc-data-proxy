@@ -126,9 +126,11 @@ type importReport struct {
 // TrackerResult: an object was persisted iff it is in bundleReport objectReports with
 // no errors. With atomicMode=OBJECT central answers 200/OK even when everything failed,
 // and children of a failed parent may be ignored without an error report of their own.
+// Only a refusal (status ERROR) comes without a bundleReport: any other answer without
+// one is of a shape the hub does not know, and says nothing about the objects.
 func (v42) TrackerResult(status int, body []byte) (map[string]bool, map[string][]tracker.ErrorReport, error) {
 	var r importReport
-	if err := json.Unmarshal(body, &r); err != nil || r.Status == "" {
+	if err := json.Unmarshal(body, &r); err != nil || r.Status == "" || (r.BundleReport == nil && r.Status != "ERROR") {
 		return nil, nil, fmt.Errorf("unexpected import response (HTTP %d)", status)
 	}
 	persisted := map[string]bool{}

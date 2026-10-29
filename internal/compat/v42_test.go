@@ -1,6 +1,7 @@
 package compat
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -148,6 +149,12 @@ func TestTrackerResultFromFixtures(t *testing.T) {
 	persisted, errs, _ := api.TrackerResult(f.Response.Status, f.Response.Body)
 	if len(persisted) != 0 || len(errs) != 2 {
 		t.Fatalf("unique conflict: persisted %v errs %v", persisted, errs)
+	}
+	// A report without bundleReport that is no refusal is of an unknown shape (N14).
+	ok := load(t, "tracker_post_success_nested.json")
+	reshaped := bytes.ReplaceAll(ok.Response.Body, []byte(`"bundleReport"`), []byte(`"importReport"`))
+	if _, _, err := api.TrackerResult(ok.Response.Status, reshaped); err == nil {
+		t.Fatal("a reshaped report read as an import report")
 	}
 }
 
