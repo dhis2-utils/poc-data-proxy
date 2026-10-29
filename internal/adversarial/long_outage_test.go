@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -26,11 +27,32 @@ import (
 // afterwards, by the cycles alone; the tokens still work (every save on central by
 // its author); the outbox and the data directory stay within what the disk holds.
 func TestD9ThreeWeeksOffline(t *testing.T) {
-	const days = 21
 	want := 3000
 	if n, err := strconv.Atoi(os.Getenv("HUB_D9_SAVES")); err == nil && n > 0 {
 		want = n
 	}
+	longOutage(t, 21, want)
+}
+
+// TestWeekOfflineCentral is D9 at a large facility's volume: a week offline with
+// HUB_WEEK_LIVE_SAVES saves (default 21 000: a busy HC IV's 3 000 a day,
+// docs/PERFORMANCE.md, "A week offline at HC IV size"), then the reconnection, timed
+// cycle by cycle, with central's import times. A measurement as well as a check:
+// HUB_WEEK=1 runs it.
+func TestWeekOfflineCentral(t *testing.T) {
+	if os.Getenv("HUB_WEEK") == "" {
+		t.Skip("a measurement: HUB_WEEK=1 runs it")
+	}
+	want := 21000
+	if n, err := strconv.Atoi(os.Getenv("HUB_WEEK_LIVE_SAVES")); err == nil && n > 0 {
+		want = n
+	}
+	longOutage(t, 7, want)
+}
+
+// longOutage is an outage of days days with want saves made through the hub, then the
+// reconnection by the sync cycles alone (D9).
+func longOutage(t *testing.T, days, want int) {
 	r := netPrepare(t)
 	e := r.e
 	e.Setup()
@@ -46,7 +68,12 @@ func TestD9ThreeWeeksOffline(t *testing.T) {
 	e.Offline()
 	start := time.Now()
 	stop := r.write(0)
-	for len(r.ledger.all()) < want {
+	next := want / 10
+	for n := 0; n < want; n = len(r.ledger.all()) {
+		if n >= next {
+			t.Logf("offline: %d saves after %s; data directory %.1f MB", n, time.Since(start).Round(time.Second), dirMB(e.Dir))
+			next += want / 10
+		}
 		time.Sleep(time.Second)
 	}
 	stop()
@@ -54,21 +81,25 @@ func TestD9ThreeWeeksOffline(t *testing.T) {
 	t.Logf("offline work: %s in %s; outbox %d entries pending, %d objects pending; data directory %.1f MB",
 		r.ledger.summary(), work.Round(time.Second), h.Store.CountOutbox(store.OutboxPending),
 		h.Store.CountObjects(store.SyncPending), dirMB(e.Dir))
+	all := r.ledger.all()
+	tenth := max(len(all)/10, 1)
+	t.Logf("offline saves, the first tenth: %s; the last tenth: %s", r.waits(all[0].At, all[tenth].At),
+		r.waits(all[len(all)-tenth].At, time.Now()))
 
-	// Central's work during the three weeks: people registered there, one edited.
+	// Central's work during the outage: people registered there, one edited.
 	var onCentral []netSave
 	for i := range 100 {
 		onCentral = append(onCentral, r.centralPerson(strconv.Itoa(10+i%50)))
 	}
 	r.centralEdit(onCentral[0], "99")
 
-	// Three weeks pass on the hub.
+	// The outage passes on the hub.
 	back := func(d time.Duration) string { return time.Now().Add(-d).UTC().Format(time.RFC3339) }
 	db := h.Store.DB()
-	if _, err := db.Exec(`UPDATE pull_state SET last_pull_at=?, last_full_at=?`, back(days*24*time.Hour), back(days*24*time.Hour)); err != nil {
+	if _, err := db.Exec(`UPDATE pull_state SET last_pull_at=?, last_full_at=?`, back(time.Duration(days)*24*time.Hour), back(time.Duration(days)*24*time.Hour)); err != nil {
 		t.Fatalf("moving the hub's last pulls back: %v", err)
 	}
-	// Pending entry n of N made on day 21*n/N.
+	// Pending entry n of N made on day days*n/N.
 	rows, err := db.Query(`SELECT seq FROM outbox WHERE state=? ORDER BY seq`, store.OutboxPending)
 	if err != nil {
 		t.Fatal(err)
@@ -94,18 +125,20 @@ func TestD9ThreeWeeksOffline(t *testing.T) {
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	h.Store.SetPrivate("last_pull", back(days*24*time.Hour))
-	h.Store.SetPrivate("last_push", back(days*24*time.Hour))
+	h.Store.SetPrivate("last_pull", back(time.Duration(days)*24*time.Hour))
+	h.Store.SetPrivate("last_push", back(time.Duration(days)*24*time.Hour))
 
 	// The uplink returns: the cycles alone must push and pull everything.
 	e.Online()
 	e.Net.Calls()
 	reconnect := time.Now()
 	var cycles []string
+	var allCalls []tk.Call
 	for i := 0; ; i++ {
 		c := time.Now()
 		err := e.App.Worker.Cycle(context.Background())
 		calls := e.Net.Calls()
+		allCalls = append(allCalls, calls...)
 		pushes := 0
 		for _, x := range calls {
 			if x.Method == "POST" && x.URL.Path == "/api/tracker" {
@@ -123,8 +156,9 @@ func TestD9ThreeWeeksOffline(t *testing.T) {
 			t.Fatalf("the outbox did not drain in 30 cycles: %v", cycles)
 		}
 	}
-	t.Logf("after three weeks offline: pushed and pulled in %d cycles, %s; data directory %.1f MB; stuck %d, refused %d",
-		len(cycles), time.Since(reconnect).Round(time.Second), dirMB(e.Dir), h.StuckOutbox(), h.Store.CountObjects(store.SyncRejected))
+	t.Logf("after %d days offline: pushed and pulled in %d cycles, %s; data directory %.1f MB; stuck %d, refused %d",
+		days, len(cycles), time.Since(reconnect).Round(time.Second), dirMB(e.Dir), h.StuckOutbox(), h.Store.CountObjects(store.SyncRejected))
+	pushTimes(t, allCalls)
 	for _, u := range []string{tk.RoleNurse, tk.RoleRestricted} {
 		if mu, ok := e.M.User(u); ok {
 			su, _ := h.Store.UserByName(mu.Username)
@@ -178,4 +212,45 @@ func dirMB(dir string) float64 {
 		return nil
 	})
 	return float64(n) / (1 << 20)
+}
+
+// pushTimes reports central's side of a reconnection: how long it took to answer each
+// push (one outbox entry each), over the whole push and at its start and end, and what
+// else the hub asked meanwhile.
+func pushTimes(t *testing.T, calls []tk.Call) {
+	var reg, upd, all []time.Duration
+	var first, last time.Time
+	other := map[string]int{}
+	var otherDur time.Duration
+	for _, c := range calls {
+		if c.Method == "POST" && c.URL.Path == "/api/tracker" && c.URL.Query().Get("atomicMode") == "OBJECT" {
+			all = append(all, c.Dur)
+			if c.Sent > 500 { // a registration (person, enrollment, event); an update is about 300 bytes
+				reg = append(reg, c.Dur)
+			} else {
+				upd = append(upd, c.Dur)
+			}
+			if first.IsZero() {
+				first = c.At
+			}
+			last = c.At.Add(c.Dur)
+			continue
+		}
+		other[kindOf(c)]++
+		otherDur += c.Dur
+	}
+	if len(all) == 0 {
+		return
+	}
+	var sum time.Duration
+	for _, d := range all {
+		sum += d
+	}
+	tenth := max(len(all)/10, 1)
+	t.Logf("pushes: %d from %s to %s (%s), %.1f a second; central answered in %s in all; registrations %s; updates %s",
+		len(all), first.Format("15:04:05"), last.Format("15:04:05"), last.Sub(first).Round(time.Second),
+		float64(len(all))/last.Sub(first).Seconds(), sum.Round(time.Second), durStats(reg), durStats(upd))
+	t.Logf("central's answers to pushes, the first tenth: %s; the last tenth: %s", durStats(slices.Clone(all[:tenth])),
+		durStats(slices.Clone(all[len(all)-tenth:])))
+	t.Logf("other requests: %d, %s of central's time: %v", len(calls)-len(all), otherDur.Round(time.Second), other)
 }

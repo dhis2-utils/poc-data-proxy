@@ -64,7 +64,14 @@ func (c *Central) Generate(s Scale) {
 		p := g.program(j)
 		g.byProgram[p] = append(g.byProgram[p], int32(j))
 	}
+	// The generated users read and write the generated programs' stages too: events
+	// saved in an enrollment registered through the hub reach central.
 	all := map[string]bool{Stage1: true, Stage2: true, Stage3: true}
+	for p := 0; p < s.Programs; p++ {
+		for st := 0; st < 3; st++ {
+			all[GenStage(p, st)] = true
+		}
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for i := 0; i < s.Users; i++ {

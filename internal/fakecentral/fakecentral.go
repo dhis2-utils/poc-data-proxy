@@ -825,6 +825,19 @@ func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 	}
 	c.mu.Lock()
 	c.teLists = append(c.teLists, r.URL.RawQuery)
+	// Each person's enrollments and each enrollment's events, in the order stored: one
+	// pass, so a listing costs the same with tens of thousands of objects held.
+	enrsOf, evsOf := map[string][]string{}, map[string][]string{}
+	for _, x := range c.order {
+		switch c.kinds[x] {
+		case "enrollment":
+			te := tracker.Str(c.objects[x], "trackedEntity")
+			enrsOf[te] = append(enrsOf[te], x)
+		case "event":
+			en := tracker.Str(c.objects[x], "enrollment")
+			evsOf[en] = append(evsOf[en], x)
+		}
+	}
 	var tes []tracker.M
 	for _, uid := range c.order {
 		o := c.objects[uid]
@@ -840,17 +853,17 @@ func (c *Central) listTEs(w http.ResponseWriter, r *http.Request, u *User) {
 		te := deepCopy(o)
 		var enrs []any
 		latest := tracker.Str(te, "updatedAt")
-		for _, eu := range c.order {
+		for _, eu := range enrsOf[uid] {
 			e := c.objects[eu]
-			if c.kinds[eu] != "enrollment" || e["trackedEntity"] != uid || (e["deleted"] == true && !withDeleted) {
-				continue
+			if (e["deleted"] == true && !withDeleted) || (!byType && tracker.Str(e, "program") != q.Get("program")) {
+				continue // a program's listing holds only its enrollments
 			}
 			en := deepCopy(e)
 			latest = max(latest, tracker.Str(en, "updatedAt"))
 			var evs []any
-			for _, vu := range c.order {
+			for _, vu := range evsOf[eu] {
 				ev := c.objects[vu]
-				if c.kinds[vu] == "event" && ev["enrollment"] == eu && canSeeEvent(u, ev) && (ev["deleted"] != true || withDeleted) {
+				if canSeeEvent(u, ev) && (ev["deleted"] != true || withDeleted) {
 					evs = append(evs, deepCopy(ev))
 					latest = max(latest, tracker.Str(ev, "updatedAt"))
 				}
