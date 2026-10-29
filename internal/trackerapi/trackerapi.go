@@ -60,6 +60,9 @@ var collections = map[string]string{"trackedEntities": store.KindTrackedEntity, 
 	"events": store.KindEvent, "relationships": store.KindRelationship}
 
 // ServeHTTP handles /api/tracker and /api/tracker/*.
+// largeImport lets one tracker body above core.LargeTrackerBody be handled at a time.
+var largeImport = make(chan struct{}, 1)
+
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sess, f := a.Auth.Identify(r)
 	if f != nil {
@@ -83,6 +86,11 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.H.WebError(w, http.StatusRequestEntityTooLarge, "request body too large or unreadable", "")
 		return
+	}
+	if len(body) > core.LargeTrackerBody {
+		// One large import at a time: each costs several times its size in memory.
+		largeImport <- struct{}{}
+		defer func() { <-largeImport }()
 	}
 
 	// Online writes go to central even during an upgrade: central holds them, and

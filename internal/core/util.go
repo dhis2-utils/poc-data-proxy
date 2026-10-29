@@ -40,11 +40,15 @@ const MaxBody = 64 << 20
 
 // MaxTrackerBody is the body limit for /api/tracker. An import costs 7 to 15 times its
 // size in memory while it is decoded and answered (adversarial I8c: 60 MB took a hub
-// from 174 to 605 MB). Android posts all it holds in one request, so the limit is far
-// above what a tablet sends: a person with an enrollment and three events is about
-// 7 kB as central serves them, so 4 MB holds some 500 people. Six at once still fit a
-// 1 GB Pi.
-const MaxTrackerBody = 4 << 20
+// from 174 to 605 MB). Android Capture (2.41 and later) posts all it holds unsynced in
+// one request and cannot split it after a refusal, so the limit leaves a tablet room for
+// a long time offline: a person with an enrollment and three events is about 7 kB, so
+// 16 MB holds some 2 000 people. Bodies above LargeTrackerBody are imported one at a
+// time (trackerapi), so a few at once still fit a 1 GB Pi.
+const (
+	MaxTrackerBody   = 16 << 20
+	LargeTrackerBody = 4 << 20
+)
 
 // MaxAnonymousBody is the body limit for a request without a login: one is a login
 // or the start of one, a few hundred bytes. Anyone on the facility network can send

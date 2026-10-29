@@ -31,9 +31,9 @@ func TestAnonymousBodyLimit(t *testing.T) {
 
 // I8c (adversarial, 29 October): a 60 MB tracker payload took the hub from 174 to 605
 // MB, six at once to 5.7 GB. A tracker import costs 7 to 15 times its size in memory
-// while it is decoded and answered, so /api/tracker takes at most 4 MB, online and
-// offline: some 500 people with their enrollments and events, more than a tablet
-// gathers in weeks away from the hub.
+// while it is decoded and answered, so /api/tracker takes at most 16 MB, online and
+// offline: some 2 000 people with their enrollments and events. Android posts all it
+// holds unsynced in one request, so a lower limit could leave a tablet stuck.
 func TestTrackerBodyLimit(t *testing.T) {
 	e := newEnv(t)
 	e.setup()
@@ -62,16 +62,16 @@ func TestTrackerBodyLimit(t *testing.T) {
 		return resp.StatusCode
 	}
 	e.android("nurse_a").do("GET", "/api/me", nil)
-	big, fits := events(5), events(3)
+	big, fits := events(17), events(6)
 	for _, down := range []bool{false, true} {
 		if down {
 			e.offline()
 		}
 		if st := post(big); st != http.StatusRequestEntityTooLarge {
-			t.Errorf("offline=%v: a 5 MB tracker payload: %d, want 413", down, st)
+			t.Errorf("offline=%v: a 17 MB tracker payload: %d, want 413", down, st)
 		}
 		if st := post(fits); st == http.StatusRequestEntityTooLarge {
-			t.Errorf("offline=%v: a 3 MB tracker payload refused as too large", down)
+			t.Errorf("offline=%v: a 6 MB tracker payload (a long time offline on a tablet) refused as too large", down)
 		}
 	}
 }
