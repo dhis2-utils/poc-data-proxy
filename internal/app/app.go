@@ -33,6 +33,7 @@ import (
 
 type App struct {
 	Hub      *core.Hub
+	Proxy    *proxy.Proxy
 	Handler  http.Handler
 	Worker   *hubsync.Worker
 	Upgrader *upgrade.Upgrader
@@ -95,6 +96,7 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 	}
 	a := &auth.Auth{H: h}
 	px := &proxy.Proxy{H: h, Auth: a}
+	a.AfterWebLogin = px.ReplayAfterLogin
 	tr := &trackerapi.API{H: h, Auth: a, Proxy: px}
 	ag := &aggregateapi.API{H: h, Auth: a, Proxy: px}
 	worker := &hubsync.Worker{H: h}
@@ -163,7 +165,7 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 			px.ServeHTTP(w, r)
 		}
 	})
-	a2 := &App{Hub: h, Handler: logRequests(cfg, recoverer(countMisses(h, root))), Worker: worker, Upgrader: up, Stick: stick.New(h),
+	a2 := &App{Hub: h, Proxy: px, Handler: logRequests(cfg, recoverer(countMisses(h, root))), Worker: worker, Upgrader: up, Stick: stick.New(h),
 		StorePath: storePath, ui: u}
 	u.ChooseUSB = a2.Stick.Choose
 	if cfg.MDNS {
@@ -223,6 +225,7 @@ func (a *App) Start(ctx context.Context) {
 }
 
 func (a *App) Close() error {
+	a.Proxy.StopReplays()
 	a.Hub.ReqLog.Close()
 	return a.Hub.Store.Close()
 }

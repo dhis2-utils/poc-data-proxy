@@ -27,6 +27,8 @@ import (
 type Proxy struct {
 	H    *core.Hub
 	Auth *auth.Auth
+
+	replay replays // replay.go
 }
 
 const maxCacheBody = 64 << 20

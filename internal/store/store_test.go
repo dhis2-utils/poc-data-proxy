@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -190,5 +191,40 @@ func TestNeedsLoginSince(t *testing.T) {
 	s.SetNeedsLogin(id, false)
 	if u, _ = s.UserByID(id); u.NeedsLogin || u.NeedsLoginSince != "" {
 		t.Fatalf("cleared: needs login %v since %q", u.NeedsLogin, u.NeedsLoginSince)
+	}
+}
+
+// The replay at login loads for a user what clients of any user asked for recently
+// and they have no fresh copy of; copies it loaded itself are not sources, so a
+// request seen once is not repeated for ever.
+func TestReplaySources(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.SetDK(mustKey(t)); err != nil {
+		t.Fatal(err)
+	}
+	put := func(user int64, url string, replayed bool) {
+		if err := s.PutCache(user, "GET", url, &CachedResponse{Status: 200, Body: []byte("{}"), Replayed: replayed}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(1, "/api/programs", false)
+	put(1, "/api/userSettings", false)
+	put(2, "/api/optionSets", true)    // loaded for user 2 at their login
+	put(0, "/api/loginConfig", false)  // anonymous
+	put(3, "/api/userSettings", false) // user 3 has it fresh
+	now := time.Now()
+	got, err := s.ReplaySources(3, now.Add(-time.Hour), now.Add(-time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got, " ") != "/api/programs" {
+		t.Fatalf("sources for user 3: %v", got)
+	}
+	if got, _ := s.ReplaySources(3, now.Add(time.Hour), now); len(got) != 0 {
+		t.Fatalf("not seen since: %v", got)
 	}
 }

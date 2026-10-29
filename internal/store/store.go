@@ -230,6 +230,11 @@ CREATE INDEX agg_forms_ds ON agg_forms(data_set, fetched_at);
 	// SentOutboxKept later (PruneSentOutbox). A new column with a constant default:
 	// existing rows are not rewritten.
 	`ALTER TABLE outbox ADD COLUMN sent_at TEXT NOT NULL DEFAULT '';`,
+	// 5: cached responses the hub loaded for a user at their login rather than for a
+	// request of theirs (proxy/replay.go): only requests clients made are loaded for
+	// others, so one seen once is not repeated for ever. A new column with a constant
+	// default: existing rows are not rewritten.
+	`ALTER TABLE http_cache ADD COLUMN replayed INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // DataPath is the data file that belongs to the key file at path.

@@ -16,6 +16,7 @@ type CachedResponse struct {
 	Header    http.Header
 	Body      []byte
 	FetchedAt string
+	Replayed  bool // loaded at the user's login, not for a request of theirs
 }
 
 func cacheAAD(userID int64, method, url string) string {
@@ -33,11 +34,35 @@ func (s *Store) PutCache(userID int64, method, url string, r *CachedResponse) er
 	if err != nil {
 		return err
 	}
-	_, err = s.write(`INSERT INTO http_cache(user_id, method, url, status, headers_enc, body_enc, fetched_at)
-VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id, method, url) DO UPDATE SET status=excluded.status,
- headers_enc=excluded.headers_enc, body_enc=excluded.body_enc, fetched_at=excluded.fetched_at`,
-		userID, method, url, r.Status, hct, bct, Now())
+	_, err = s.write(`INSERT INTO http_cache(user_id, method, url, status, headers_enc, body_enc, fetched_at, replayed)
+VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id, method, url) DO UPDATE SET status=excluded.status,
+ headers_enc=excluded.headers_enc, body_enc=excluded.body_enc, fetched_at=excluded.fetched_at, replayed=excluded.replayed`,
+		userID, method, url, r.Status, hct, bct, Now(), r.Replayed)
 	return err
+}
+
+// ReplaySources lists the GETs clients of any user made since seen, most recent
+// first, that userID has no copy of fetched since fresh. Copies loaded at a login
+// (Replayed) are not sources.
+func (s *Store) ReplaySources(userID int64, seen, fresh time.Time) ([]string, error) {
+	f := func(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+	rows, err := s.DB().Query(`SELECT url FROM http_cache c WHERE method='GET' AND replayed=0 AND user_id>0
+ AND fetched_at>=? AND NOT EXISTS (SELECT 1 FROM http_cache m
+ WHERE m.user_id=? AND m.method='GET' AND m.url=c.url AND m.fetched_at>=?)
+ GROUP BY url ORDER BY max(fetched_at) DESC`, f(seen), userID, f(fresh))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
 }
 
 // PruneCache deletes cached responses not refreshed for maxAge. Entries in use are

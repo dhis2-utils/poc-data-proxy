@@ -403,6 +403,9 @@ func TestPerUserMetadataNotShared(t *testing.T) {
 	a.login()
 	b := e.web("nurse_b")
 	b.login()
+	// nurse_b's screens load at login (proxy.ReplayAfterLogin) before nurse_a opens
+	// these: what is checked is that nurse_b never gets nurse_a's copy.
+	e.app.Proxy.WaitReplays()
 	perUser := []string{
 		"/api/42/organisationUnits?fields=id&withinUserHierarchy=true",
 		"/api/organisationUnits/" + fc.Facility + "?fields=id,displayName",

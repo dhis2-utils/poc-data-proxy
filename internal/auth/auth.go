@@ -25,6 +25,10 @@ import (
 type Auth struct {
 	H   *core.Hub
 	thr throttle
+
+	// AfterWebLogin runs after a browser's online login of a hub user (the proxy's
+	// replay of the apps' requests). Android Capture keeps its own metadata.
+	AfterWebLogin func(*core.Session)
 }
 
 // Failure is a login answer to send back verbatim.
@@ -109,6 +113,9 @@ func (a *Auth) loginWeb(ctx context.Context, req LoginRequest, rawBody []byte) (
 			}
 			cookie := centralCookie(resp)
 			sess := a.registerOnline(ctx, req.Username, req.Password, central.Auth{Cookie: cookie})
+			if a.AfterWebLogin != nil {
+				a.AfterWebLogin(sess)
+			}
 			return sess, a.api().LoginSuccess(a.relative(body.RedirectURL)), nil
 		}
 		if !central.IsNetwork(err) {
