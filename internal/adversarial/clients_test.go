@@ -210,7 +210,7 @@ func TestI8cMalformedPayloads(t *testing.T) {
 }
 
 // I8c, large payloads: one of 60 MB (300 000 events of a program central does not
-// have) and one of 70 MB, and six at once of 60 MB and of 3 MB, online and offline.
+// have) and one of 70 MB, and six at once of 60, 15 and 3 MB, online and offline (15 MB: just under the limit, imported one at a time).
 // Must hold as TestI8cMalformedPayloads, with the hub's memory bounded: it runs on a
 // Pi 4 with 1 GB. Found 29 October: within the 64 MB limit, one of 60 MB took the hub
 // from 174 to 605 MB, six at once to 5.7 GB. Fixed: /api/tracker takes at most 4 MB
@@ -231,7 +231,7 @@ func TestI8cLargePayloads(t *testing.T) {
 		if down {
 			r.p.WaitFor("offline", time.Minute, tk.Offline)
 		}
-		for _, mb := range []int{60, 3} {
+		for _, mb := range []int{60, 15, 3} {
 			var wg sync.WaitGroup
 			var mu sync.Mutex
 			var statuses []int
