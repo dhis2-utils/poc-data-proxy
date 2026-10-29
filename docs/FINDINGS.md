@@ -597,6 +597,11 @@ Found on 2026-10-27 by the adversarial scenarios (`internal/adversarial`), run a
 
 Also seen: the oracle's first page of an event program's list breaks ties in a different order from central (the hub by UID, central by creation time) when many events share a date.
 
+**Open** (from the soak in the sandbox, M1, 29 October, 2.42.7; docs/PERFORMANCE.md, "Ten hours in the sandbox"; not decided):
+
+- **Concurrent online logins of one user leave tokens on central.** After a restart a user's clients log in again within the same second, and each login runs `core.EnsurePAT` (from `auth.registerOnline`) with no lock per user. Each creates a token; the hub keeps the last, and the others stay valid on central until they expire. They are missing from the hub's registry entry, so the Facility Hub app cannot revoke them. Reproduced: `TestM1ConcurrentLoginsMakeOneToken`, 4 logins, 2 tokens, twice.
+- **A person saved during a full pull is hidden from its author offline until the next pull.** A save passed on to central while a full pull lists its program is not in that listing. `RemoveVisibilityExcept` (`sync.pullGroup`) then removes it from its author. Reproduced: `TestM1SaveDuringFullPullStaysVisible`, 6 of 107 people 503 offline after the full pull, all visible after the next pull; none with nothing saved meanwhile (`TestM1FullPullKeepsSavedVisible`). Not explained: the soak's last full pull, with no saves running, also removed 51 objects for its three users.
+
 **DHIS2's side, to explore before the hub changes** (decided 2026-10-28):
 
 - **A value into an approved form** (J1, 2.43.2). As the nurse, `POST /api/dataValues` answers 201 while the form is approved (`APPROVED_HERE`); reproduced with curl, without the hub. A value entered offline before the approval therefore lands in approved data when the hub pushes it, with no refusal. The Data Entry app shows the form locked, and after its next sync the hub refuses new offline values (E2017). Whether central should refuse it is to be checked with DHIS2; the hub does not check approval before pushing.

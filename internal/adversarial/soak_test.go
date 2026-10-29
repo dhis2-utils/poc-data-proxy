@@ -931,3 +931,182 @@ func soakRecheck(t *testing.T, dir string) {
 		t.Errorf("invariants broken: %s", c)
 	}
 }
+
+// Found in M1: when one user logs in online through several clients at once (after a
+// restart, a web app, its reader and an Android app all log in again), each login
+// runs core.EnsurePAT on the same stored user and creates a token on central. The
+// hub keeps the last; the others stay on central, unlisted in the hub's registry
+// entry (so the Facility Hub app cannot revoke them) until they expire. In the soak,
+// three logins of the nurse in the same second after a restart made two tokens.
+// Reproduced 29 Oct on synthetic 2.42, twice: 4 concurrent logins, 2 tokens each time.
+func TestM1ConcurrentLoginsMakeOneToken(t *testing.T) {
+	finding(t, "concurrent online logins of one user each create a PAT on central (core.EnsurePAT, called from auth.registerOnline, has no per-user lock)")
+	e := tk.Start(t)
+	if !e.Live() {
+		t.Skip("adversarial scenarios run against a real DHIS2 (HUB_MANIFEST)")
+	}
+	e.Setup()
+	nurse, _ := e.M.User(tk.RoleNurse)
+	cen := e.Central.As(nurse.Username, e.M.Password)
+	tokens := func() []string {
+		var res struct {
+			Tokens []struct{ ID string } `json:"apiToken"`
+		}
+		if err := cen.JSON("GET", "/api/apiToken?fields=id&paging=false", nil, &res); err != nil {
+			t.Fatalf("listing the nurse's tokens on central: %v", err)
+		}
+		var out []string
+		for _, x := range res.Tokens {
+			out = append(out, x.ID)
+		}
+		return out
+	}
+	before := tokens()
+	const logins = 4
+	var wg sync.WaitGroup
+	statuses := make([]int, logins)
+	for i := range logins {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c := e.Web(tk.RoleNurse)
+			statuses[i], _, _, _ = c.Try("POST", "/api/auth/login", map[string]string{"username": c.User, "password": e.M.Password})
+		}()
+	}
+	wg.Wait()
+	created := slices.DeleteFunc(tokens(), func(id string) bool { return slices.Contains(before, id) })
+	t.Cleanup(func() {
+		for _, id := range created {
+			cen.Do("DELETE", "/api/apiToken/"+id, nil)
+		}
+	})
+	t.Logf("%d concurrent online logins of %s (answers %v): %d tokens created on central %v", logins, nurse.Username, statuses, len(created), created)
+	if len(created) != 1 {
+		t.Errorf("%d tokens created for one user; the hub holds one, the other %d stay on central", len(created), len(created)-1)
+	}
+}
+
+// Seen in M1: each full pull "removed visibility" of a few objects (2–7) for a user
+// while staff kept saving. A save made online while a full pull lists its program is
+// marked visible to its author, but is not in the listing taken before it; the full
+// pull then removes what it did not list (sync.pullGroup, RemoveVisibilityExcept).
+// Like every set-up here, it registers a hub for the facility, which retires any
+// other hub of the facility on that central: not while a soak runs there.
+// Checks, offline, that the author still sees each person they registered online
+// during a full pull, and again after the next incremental pull.
+//
+// Reproduced 29 Oct on synthetic 2.42: 6 of 107 people were hidden from her (503
+// offline) after the full pull, all visible again after the next pull; in the field
+// that is up to a sync interval (15 minutes) after each weekly full pull. With nothing
+// saved during the full pull (TestM1FullPullKeepsSavedVisible) none was hidden.
+func TestM1SaveDuringFullPullStaysVisible(t *testing.T) {
+	finding(t, "a person registered online while a full pull lists the program is hidden from its author offline until the next pull (sync.pullGroup's RemoveVisibilityExcept removes what the listing, taken before the save, did not include)")
+	r := netPrepare(t)
+	e := r.e
+	e.Setup()
+	nurse := e.Web(tk.RoleNurse)
+	nurse.Login()
+	e.Sync()
+	e.Net.SetDelay(150 * time.Millisecond) // a full pull long enough to save during it
+	e.App.Hub.Cfg.FullPullInterval = time.Nanosecond
+	done := make(chan error, 1)
+	go func() { done <- e.App.Worker.Cycle(t.Context()) }()
+	w := &netWriter{r: r, c: nurse, web: true}
+	for running := true; running; {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("full pull: %v", err)
+			}
+			running = false
+		default:
+			w.once()
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+	e.Net.SetDelay(0)
+	e.App.Hub.Cfg.FullPullInterval = 7 * 24 * time.Hour
+	var during []netSave
+	for _, s := range r.ledger.all() {
+		if s.Confirmed && !s.Update && s.Online {
+			during = append(during, s)
+		}
+	}
+	if len(during) == 0 {
+		t.Fatal("no save passed through to central during the full pull")
+	}
+	hidden := func() []string {
+		e.Offline()
+		defer e.Online()
+		var out []string
+		for _, s := range during {
+			if st, _ := nurse.Do("GET", "/api/tracker/trackedEntities/"+s.TE+"?program="+r.prog.ID+"&fields=trackedEntity", nil); st != 200 {
+				out = append(out, fmt.Sprintf("%s (%d)", s.TE, st))
+			}
+		}
+		return out
+	}
+	afterFull := hidden()
+	e.Sync() // incremental
+	afterNext := hidden()
+	t.Logf("%d people registered online by %s during a full pull; offline, hidden from them after it: %d %v; after the next incremental pull: %d %v",
+		len(during), nurse.User, len(afterFull), afterFull, len(afterNext), afterNext)
+	if len(afterFull) > 0 {
+		t.Errorf("I1/I8: %d of %d people the nurse registered online during a full pull are hidden from her offline after it (%d still after the next pull)",
+			len(afterFull), len(during), len(afterNext))
+	}
+}
+
+// The same check with nothing saved during the full pull: the soak's writers save
+// online, then offline (pushed), then a full pull. Tells a race with the listing apart from
+// a full pull that drops what the hub itself stored.
+func TestM1FullPullKeepsSavedVisible(t *testing.T) {
+	r := netPrepare(t)
+	e := r.e
+	e.Setup()
+	nurse := e.Web(tk.RoleNurse)
+	nurse.Login()
+	e.Sync()
+	ws := r.writers() // as in the soak: the nurse and the restricted user on the web, the nurse on Android
+	for range 20 {
+		for _, w := range ws {
+			w.once()
+		}
+	}
+	e.Offline()
+	for range 20 {
+		for _, w := range ws {
+			w.once()
+		}
+	}
+	e.Online()
+	e.Sync() // pushes the offline ones, incremental pull
+	e.Sync()
+	e.App.Hub.Cfg.FullPullInterval = time.Nanosecond
+	e.Sync()
+	e.App.Hub.Cfg.FullPullInterval = 7 * 24 * time.Hour
+	var saved []netSave
+	for _, s := range r.ledger.all() {
+		if s.Confirmed && !s.Update {
+			saved = append(saved, s)
+		}
+	}
+	e.Offline()
+	var hidden []string
+	clients := map[string]*tk.Client{}
+	for _, role := range []string{tk.RoleNurse, tk.RoleRestricted} {
+		c := e.Web(role)
+		c.Login()
+		clients[c.User] = c
+	}
+	for _, s := range saved {
+		if st, _ := clients[s.User].Do("GET", "/api/tracker/trackedEntities/"+s.TE+"?program="+r.prog.ID+"&fields=trackedEntity", nil); st != 200 {
+			hidden = append(hidden, fmt.Sprintf("%s by %s (online=%v, %d)", s.TE, s.User, s.Online, st))
+		}
+	}
+	e.Online()
+	t.Logf("%d registrations, none during the full pull; hidden offline from their author after it: %d %v", len(saved), len(hidden), hidden)
+	if len(hidden) > 0 {
+		t.Errorf("a full pull with no concurrent saves hid %d of %d registrations from their author", len(hidden), len(saved))
+	}
+}
