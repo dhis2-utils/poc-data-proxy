@@ -188,7 +188,7 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 		h.Store.NoteAttempt(e.Seq, "401 from central: needs online login")
 		slog.Warn("push: PAT rejected, user needs online login", "user", e.UserID)
 		return pushResult{userBlocked: true}, nil
-	case resp.StatusCode >= 500 || onTheWay(resp.StatusCode) || rerr != nil:
+	case resp.StatusCode > 500 || onTheWay(resp.StatusCode) || rerr != nil:
 		note := fmt.Sprintf("central returned %d", resp.StatusCode)
 		if rerr != nil {
 			note += ", cut off: " + rerr.Error() // central may have imported it: the resend updates
@@ -196,14 +196,23 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 		h.Store.NoteAttempt(e.Seq, note)
 		return pushResult{stop: true}, nil
 	}
-	persisted, errsByUID, perr := h.API().TrackerResult(resp.StatusCode, rb)
+	// A plain 500 is central failing on this import (a bug or a lock its payload trips),
+	// not central or the way to it down (502-504): the entries after it go on, those
+	// that depend on it wait (DependsOnSeq), and it is refused after a day as below.
+	failed := resp.StatusCode == http.StatusInternalServerError
+	var persisted map[string]bool
+	var errsByUID map[string][]tracker.ErrorReport
+	perr := fmt.Errorf("central returned %d", resp.StatusCode)
+	if !failed {
+		persisted, errsByUID, perr = h.API().TrackerResult(resp.StatusCode, rb)
+	}
 	if perr != nil {
 		// Not an import report (a proxy's page, say): it says nothing about the saves,
 		// so they are tried again. After a day of such answers the entry is refused, so
 		// it does not hold up the saves after it for ever, and a manager sees why.
 		if time.Since(h.Store.FailingSince(e.Seq)) < 24*time.Hour {
 			h.Store.NoteAttempt(e.Seq, perr.Error())
-			return pushResult{stop: true}, nil
+			return pushResult{stop: !failed}, nil
 		}
 		msg := (&central.HTTPError{Status: resp.StatusCode, Body: rb}).Error()
 		for _, it := range send {

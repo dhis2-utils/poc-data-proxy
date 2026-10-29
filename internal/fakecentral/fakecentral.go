@@ -6,6 +6,7 @@
 package fakecentral
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -146,6 +147,9 @@ type Central struct {
 	ClockSkew time.Duration
 	// AggFail makes an aggregate path answer this status (tests).
 	AggFail map[string]int
+	// FailImportsOf makes a tracker import whose body holds this UID answer this
+	// status, as when one payload trips a bug or a lock on central (tests).
+	FailImportsOf map[string]int
 }
 
 // MoveFacility gives the facility a new org unit path ("/root/<district>/<facility>"),
@@ -412,6 +416,15 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 	c.mu.Lock()
 	c.Requests[r.Method+" "+r.URL.Path]++
 	fail := c.FailPaths[r.URL.Path]
+	if len(c.FailImportsOf) > 0 && r.Method == "POST" && r.URL.Path == "/api/tracker" {
+		b, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(b))
+		for uid, st := range c.FailImportsOf {
+			if bytes.Contains(b, []byte(uid)) {
+				fail = st
+			}
+		}
+	}
 	failHTML := c.FailHTML[r.URL.Path]
 	drop := c.DropPaths[r.URL.Path]
 	delay := c.delay

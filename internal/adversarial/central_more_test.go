@@ -82,12 +82,9 @@ func TestH8CentralFailsSomeImports(t *testing.T) {
 		"pending %v, rejected %v; of %d registrations the hub took offline, %d on central", poison.TE,
 		poison.At.Format("15:04:05.000"), pushes, failed, s["pending"], s["rejected"], len(made), on)
 	if on < len(made)-1 {
-		// Found 28 October: a 5xx ends the push cycle (push.go, onTheWay and >= 500:
-		// pushResult{stop: true}) and is retried at the next with no limit, unlike an
-		// answer that is not an import report (refused after a day, outbox.go
-		// FailingSince). While it waits, the outbox is not empty, so the hub answers every
-		// save and read itself online too (core.PassThrough): nothing reaches central.
-		finding(t, "H8: one import central answers 500 to holds up the whole outbox for ever")
+		// Found 28 October: a 5xx ended the push cycle and was retried at the next with
+		// no limit, so nothing behind it reached central. Fixed 29 October: after a plain
+		// 500 the push goes on to the next entry, and the entry is refused after a day.
 		t.Errorf("I5: one import central fails holds up the rest: %d of %d other offline registrations reached central in 2 minutes",
 			on, len(made)-1)
 	}

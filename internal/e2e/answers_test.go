@@ -187,3 +187,41 @@ func TestPushRefusesAfterADayOfOtherAnswers(t *testing.T) {
 		t.Fatalf("not marked refused: %+v", o)
 	}
 }
+
+// One import central answers 500 to (a bug or a lock its payload trips) does not hold
+// up the saves after it (H8): they go on; it is tried again each cycle, and refused
+// after a day of 500s, as an answer that is no import report is.
+func TestPushGoesOnPastAFailingImport(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	h := e.app.Hub
+	a := e.web("nurse_a")
+	a.login()
+	e.offline()
+	a.json("POST", postSync, newPatient("BadTe000001", "BadEn000001", "Bad", "", nil), 200)
+	a.json("POST", postSync, newPatient("GooTe000001", "GooEn000001", "Good", "", nil), 200)
+	e.central.FailImportsOf = map[string]int{"BadTe000001": 500}
+	e.online()
+	e.sync()
+	if e.central.Object("GooTe000001") == nil {
+		t.Fatal("the save after the failing import did not reach central")
+	}
+	if n := h.Store.CountOutbox(store.OutboxPending); n != 1 {
+		t.Fatalf("pending after the 500: %d", n)
+	}
+	if n := h.Store.CountIssues(); n != 0 {
+		t.Fatalf("%d refusals after the first 500", n)
+	}
+	// A day later, still 500.
+	day := time.Now().Add(-25 * time.Hour).UTC().Format(time.RFC3339)
+	if _, err := h.Store.DB().Exec(`UPDATE outbox SET failing_since = ? WHERE failing_since <> ''`, day); err != nil {
+		t.Fatal(err)
+	}
+	e.sync()
+	if n := h.Store.CountOutbox(store.OutboxPending); n != 0 {
+		t.Fatalf("still pending after a day of 500s: %d", n)
+	}
+	if o := h.Index.Get("BadTe000001"); o == nil || o.SyncState != store.SyncRejected {
+		t.Fatalf("not marked refused: %+v", o)
+	}
+}
