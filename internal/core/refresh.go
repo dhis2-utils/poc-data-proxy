@@ -339,6 +339,9 @@ func (h *Hub) RefreshCatalog(ctx context.Context) error {
 	}
 	h.refreshCentralMove(ctx)
 	h.refreshAccount(ctx)
+	if perr := h.refreshFacilityPath(ctx); central.IsNetwork(perr) {
+		return perr
+	}
 	complete := err == nil
 	if cat == nil {
 		cat = &access.Catalog{Programs: map[string]*access.ProgramMeta{}, TETAttributes: map[string][]access.AttrMeta{}}
@@ -382,6 +385,25 @@ func (h *Hub) RefreshCatalog(ctx context.Context) error {
 		return fmt.Errorf("catalog with hub token: %w", err)
 	}
 	return nil
+}
+
+// refreshFacilityPath keeps the facility's path as central has it: a facility moved
+// to another district changes who is its staff (access.List.InFacility), and the
+// access refresh after the catalog's applies it (A12).
+func (h *Hub) refreshFacilityPath(ctx context.Context) error {
+	facility := h.Facility()
+	if facility == "" {
+		return nil
+	}
+	var ou struct {
+		Path string `json:"path"`
+	}
+	err := h.Central.JSON(ctx, "GET", central.Q("/api/organisationUnits/"+url.PathEscape(facility), "fields", "path"), nil, h.HubAuth(), &ou)
+	if err != nil || !strings.HasSuffix(ou.Path, "/"+facility) || ou.Path == h.Runtime().FacilityPath {
+		return err
+	}
+	slog.Info("the facility's path changed on central", "was", h.Runtime().FacilityPath, "now", ou.Path)
+	return h.UpdateRuntime(func(rt *Runtime) { rt.FacilityPath = ou.Path })
 }
 
 // AddUserPrograms merges the programs one user can see into the catalog (at login,

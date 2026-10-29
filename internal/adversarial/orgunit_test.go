@@ -92,12 +92,11 @@ func nextMonth(pe string) string {
 // hold: users' scope recomputed; nothing leaks. The district officer of the old
 // district loses the facility on central; one of the new district gains it.
 //
-// The hub keeps the facility's path from its set-up (core.Runtime.FacilityPath) and
-// decides with it who is facility staff (access.List.InFacility): after the move,
-// offline it shows the old district's officer every person at the facility, where
-// central answers 403, and refuses the new district's officer (a gap).
+// The hub decides with the facility's path who is facility staff
+// (access.List.InFacility). It kept the path from set-up, so after the move it showed
+// the old district's officer every person at the facility offline, where central
+// answers 403 (FINDINGS.md). The catalog refresh now reads the path again.
 func TestA12FacilityMovesDistrict(t *testing.T) {
-	finding(t, "A12: after the facility moves to another district, offline the hub shows the old district's officer the facility's people (it keeps the path from set-up)")
 	s, north, south, other := movedFacility(t)
 	p := s.M.Primary()
 	listing := "/api/tracker/trackedEntities?" + url.Values{"program": {p.ID}, "orgUnits": {s.M.Facility.ID},

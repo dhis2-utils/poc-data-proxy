@@ -96,7 +96,8 @@ type Central struct {
 	public        map[string]string          // dataStore entry id -> public access its sharing sets
 	// HubWriters, when set, are the only users who may write the facility-hub-*
 	// dataStore namespaces (protected by sharing, as DEPLOYMENT.md advises).
-	HubWriters map[string]bool
+	HubWriters   map[string]bool
+	facilityPath string // MoveFacility
 	// OnlyEnrollOnce: the TB program allows one enrollment ever (central's E1016).
 	OnlyEnrollOnce bool
 	fetched        map[string]int // tracked entity -> times fetched by uid
@@ -145,6 +146,24 @@ type Central struct {
 	ClockSkew time.Duration
 	// AggFail makes an aggregate path answer this status (tests).
 	AggFail map[string]int
+}
+
+// MoveFacility gives the facility a new org unit path ("/root/<district>/<facility>"),
+// as when it moves to another district.
+func (c *Central) MoveFacility(path string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.facilityPath = path
+}
+
+// ouPath is an org unit's path: "/root/<id>", or the facility's as MoveFacility set it.
+func (c *Central) ouPath(ou string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if ou == Facility && c.facilityPath != "" {
+		return c.facilityPath
+	}
+	return "/root/" + ou
 }
 
 func New() *Central {
@@ -478,7 +497,7 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 			if ou == District {
 				level = 3
 			}
-			ous = append(ous, map[string]any{"id": ou, "name": ou, "level": level, "code": "OU_" + ou, "path": "/root/" + ou})
+			ous = append(ous, map[string]any{"id": ou, "name": ou, "level": level, "code": "OU_" + ou, "path": c.ouPath(ou)})
 		}
 		groups := []any{}
 		for _, g := range u.Groups {
@@ -559,7 +578,7 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 	case p == "/api/categoryOptionCombos":
 		writeJSON(w, 200, map[string]any{"categoryOptionCombos": []any{map[string]any{"id": DefaultAOC}}})
 	case p == "/api/organisationUnits/"+Facility:
-		writeJSON(w, 200, map[string]any{"id": Facility, "name": "Ngelehun CHC", "code": "OU_559"})
+		writeJSON(w, 200, map[string]any{"id": Facility, "name": "Ngelehun CHC", "code": "OU_559", "path": c.ouPath(Facility)})
 	case p == "/api/tracker/events" && isEventProgram(r.URL.Query().Get("program")):
 		c.listProgramEvents(w, r, u)
 	case p == "/api/tracker/events" && c.gen != nil && strings.HasPrefix(r.URL.Query().Get("program"), "GenEvP"):
