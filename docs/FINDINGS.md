@@ -536,6 +536,80 @@ What it means for the hub (decided 2026-10-27: accepted, documented):
 - Where it matters (someone leaving on bad terms), deleting the person's tokens on central ends it at once.
 - Saves of a user whose token central no longer accepts wait for their online login. If none comes within 7 days (a user disabled or deleted), the hub refuses them itself under the code `NO_LOGIN`, and a hub manager can resend them as another user of the hub (RECOVERY.md, "What already helps").
 
+## Images and files
+
+Checked on 29 October on DHIS2 2.43.2 (the eRegisters instance), with a hub in front: `TestFileValues`, `TestFileSizes`, `TestCaptureWebFiles` and `TestFileUploadOffline` in `internal/live/files_test.go` (`HUB_FILES=1`; they add an IMAGE and a FILE_RESOURCE data element to the primary program's first stage and an IMAGE attribute to the program, and take them out at the end). Central's side was also read in its code (2.41.10.1, 2.42.7.1, 2.43.2.1), the Android side in the SDK (`develop`, 14 October), Capture web's in capture-app (`master`).
+
+**Recommended (for decision): a limitation, documented.** Images and files need a connection to be added and to be viewed. The hub keeps no files, and it gets no mechanism for them until a programme it serves needs one (AGENTS.md).
+
+**How central does it:**
+
+- **The file goes first.** A client uploads it (`POST /api/fileResources`, multipart field `file`, domain `DATA_VALUE` by default). Central answers 202 with the file's UID, `storageStatus` PENDING; it is STORED a second or two later. The tracker save then carries that UID as the value.
+- **Central checks the UID at the save.**
+  - A UID it does not have is refused: E1302 for a data element, E1007 for an attribute.
+  - A file already used by another object is refused with E1009.
+  - The save marks the file as assigned. The storage status is not checked.
+- **A client may choose the UID** (`?uid=`; measured). A second upload with the same UID gets 409 E1119.
+- **Limits.**
+  - `max.file_upload_size` in dhis.conf, 10 000 000 bytes by default. Measured: 10 000 001 bytes refused with 409.
+  - A list of file types: an `.bin` file is refused with E6101.
+- **Reads.**
+  - The bytes come from `/api/tracker/events/{ev}/dataValues/{de}/file` or `/image?dimension=small|medium|large|original`, and from `/api/tracker/trackedEntities/{te}/attributes/{at}/image`. Central answers 409 while the file is PENDING.
+  - `/api/fileResources/{uid}/data` refuses every data value file to everyone (403 E1006), the superuser included.
+  - `/api/fileResources/{uid}` gives the name and size (Capture web shows a file's name from it).
+- **Files never saved.** Central's daily clean-up (02:00) deleted files not assigned to anything 2 days after their upload. The latest patches (2.41.10.1, 2.42.7.1, 2.43.2.1) no longer do this for data value files (DHIS2-21427). On an earlier patch, a file uploaded online and saved offline more than 2 days later would be refused at push with E1302.
+
+**What the hub does today** (measured, Android client, 3.5 MB PNG and 2 MB PDF):
+
+| Request | Online | Offline |
+|---|---|---|
+| `POST /api/fileResources` | passed to central: 202 | 503 "needs connection: POST /api/fileResources is not available offline" |
+| `GET /api/tracker/…/file`, `…/image` | passed to central, not cached: 200, the same bytes | 503 "needs connection", also for files read online |
+| `GET /api/fileResources/{uid}` (name) | passed to central, cached per user | from the cache if the user read it online, else 503 |
+| `GET /api/fileResources/{uid}/data` | central's 403 | 503 (a 403 is not cached) |
+| A save naming a file uploaded online | central | accepted. At push central takes it and assigns the file |
+| A save naming a file central does not have | central refuses it (E1302) | accepted (the hub does not check). At push central refuses it with E1302, kept as a refused change |
+| Aggregate `/api/dataValues/file` | passed to central | 409 "needs connection" |
+
+- **Between reconnection and the push**, the hub answers tracker requests itself (`core.PassThrough`), so file reads still get 503 while the hub is online. This usually lasts one cycle.
+- **Sizes.** 9 999 000 bytes went through the hub in 1.5 s. Central refused 10 000 001 bytes (409) and a non-allowed type (409 E6101). The hub refuses bodies over 64 MB with 413 (`core.MaxBody`).
+- **Memory.** The hub buffers the whole upload and the whole answer of a download (`proxy.Forward`). Only caching has a size limit (64 MB). A download is bounded only by what central stored, which is 10 MB by default. A central whose `max.file_upload_size` is raised raises what one download costs the hub.
+
+**What the clients do with that:**
+
+- **Capture web** uploads a file the moment it is picked: a direct request, outside its offline queue, while the field says "Uploading image".
+  - Any failure (offline, 503, 413) shows the same toast, "Async field update failed". The hub's message goes only to the browser console.
+  - The field stays empty. The form still saves, without the image, unless the field is mandatory.
+  - It shows images from `/api/tracker/…/image?dimension=small` and links files to `…/file`. The hub caches neither, and Capture has no service worker for them, so offline every image is missing, including those seen online.
+  - Measured (`TestCaptureWebFiles`, Capture 107.3.1 on 2.43.2, a 3.5 MB PNG). Online through the hub, the event's image showed, and an image picked for a new event uploaded (202) and saved (200). Offline, the same image did not show: its `…/image?dimension=small` got 503. An image picked offline got 503, and Capture showed "Async field update failed" beside an empty "Select image" button. "Save without completing" then saved the event without the image (200). Capture's header still said "Online", since the hub answers.
+- **Android Capture** (from the SDK code; to run on the tablet, below) keeps the file on the tablet.
+  - The file is compressed unless the program's setting asks for the original.
+  - At sync it uploads the file before the tracker data, then swaps its own UID for central's.
+  - If the upload fails (the hub offline: 503), only that person or event is left out of the sync and tried again at the next one. The rest syncs, and nothing is lost or nulled.
+  - So through an offline hub, records with a new image stay on the tablet until the hub is online again. Until then other devices do not see them.
+  - Downloads take images in small or medium size (at most 6 MB) and files at most 6 MB. A 503 is skipped silently, so a tablet that synced from an offline hub has no images.
+  - Aggregate file values: the upload has no per-item catch, so a failure probably stops the whole aggregate upload. This is from the code, not run.
+
+**How often programmes use them:** rarely, as far as could be checked.
+- eRegisters (Uganda, the hub's first target): none of 5 218 data elements or 40 attributes is IMAGE or FILE_RESOURCE.
+- The Sierra Leone demo (play, dev): 11 of 1 062 data elements are FILE_RESOURCE, 3 of them in tracker ("Birth certificate", "Documentation", "TB treatment card"). None is IMAGE, and no attribute is.
+- Laos was not checked.
+
+**Options considered:**
+
+1. **A limitation, documented** (recommended). No hub code.
+   - The hub's answers are already clear: 503 "needs connection" for uploads and file reads. Capture web does not queue the upload. Android retries the record at the next sync without blocking the rest.
+   - What staff must know: an image or file added offline in Capture web is not saved, and the toast says only "Async field update failed". In the Android app it waits on the tablet until the hub is online.
+   - Small optional change, about an hour: pass file reads (`GET /api/tracker/…/file|image`) to central while online with the outbox waiting. They would then work as soon as the uplink is back, as other online reads do.
+2. **Offline support.** About 3–5 days with tests, for upload and push alone.
+   - The hub would accept `POST /api/fileResources` offline, stream the file to an encrypted file on disk (not into memory), and answer 202 with a UID it chooses.
+   - It would queue an outbox entry that comes before the save that refers to the file, then push `POST /api/fileResources?uid=<that UID>` as the author, taking E1119 as "already there".
+   - It would serve its own copy offline from `/api/tracker/…/file|image`, in sizes (the hub would have to resize images itself: central makes small, medium and large), and delete the copy once central has the file.
+   - Showing images seen online, offline, would be a second mechanism, about 1–2 days: a per-user cache of tracker file reads, tied to who may see the event.
+   - Risks: disk on an SD card, at up to 10 MB a file; a file pushed whose save central then refuses (left unassigned on central); the outbox order, file before save, across users.
+
+Not measured: memory with several large downloads at once on a Pi (the 10 MB default bounds each). Android was not run (no tablet attached); the steps are in docs/ADVERSARIAL-TESTING.md, "Images and files on Android".
+
 ## Found by adversarial testing (docs/ADVERSARIAL-TESTING.md)
 
 Found on 2026-10-27 by the adversarial scenarios (`internal/adversarial`), run against DHIS2 2.42.7 with the testkit's network switch between the hub and central. The result of each scenario is in ADVERSARIAL-TESTING.md, "Progress".

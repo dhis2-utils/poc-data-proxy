@@ -360,6 +360,16 @@ A hub only serves its own facility. A community health worker's tablet that visi
 - Android syncs with the hub every 30 minutes or by hand (spec 5.1). For quick hand-over between a tablet and another user, staff press "Sync" after finishing a patient. This needs training.
 - Web users see each other's work immediately, because every web request goes to the hub.
 
+### Images and files
+
+The hub keeps no images or files (IMAGE and FILE_RESOURCE values; FINDINGS.md, "Images and files"). Online they work through the hub as on central, up to central's size limit (`max.file_upload_size`, 10 MB by default). Offline:
+
+- **Capture web** cannot add an image or file. It shows "Async field update failed" and saves the form without it. No image shows offline, not even one seen online.
+- **The Android app** keeps an image or file added offline on the tablet. The record it belongs to syncs once the hub is online again, and until then other devices do not see that record.
+- **Training point:** "Photos and documents need the internet. Add them when the hub is online, or add them later to the record."
+
+Where a programme relies on photos or documents (for example a scanned birth certificate), tell the country before rollout.
+
 ## 6. Running the fleet
 
 ### Monitoring

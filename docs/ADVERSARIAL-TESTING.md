@@ -197,6 +197,25 @@ The hub checks offline only what it can know; central decides on push. In each s
 | I8c | A client sends malformed or very large payloads | Refused, the hub survives | S | partly |
 | I9c | Many devices at once start their first download after a reset | The hub serves them; no device times out for ever | S, P | perf only |
 | I10c | Capture app upgraded on central while the hub is offline | The cached app keeps working offline; the new one loads online | C | none |
+| I11c | Images and files: added and viewed online and offline, in Capture web and on Android | As FINDINGS, "Images and files": nothing saved that central does not get, nothing silently lost | C | live (`internal/live/files_test.go`); Android steps below, not run |
+
+#### Images and files on Android (I11c, to run on the tablet)
+
+What the SDK code says will happen (FINDINGS.md, "Images and files"): the tablet keeps a picked image or file and uploads it at sync, before the record that refers to it. When the hub is offline, the upload gets 503, and only that record is left out of the sync and tried again at the next one. Images are downloaded at sync, in small or medium size; a 503 skips them silently.
+
+1. **Fields.** On the instance, run `HUB_FILES=1 HUB_FILES_KEEP=1 go test ./internal/live -run TestFileValues$` once. It leaves an image and a file field ("Hub test image", "Hub test file") in the first stage of the primary program, and a "Hub test photo" attribute in the program. Put them back by hand at the end, or run the test again without `HUB_FILES_KEEP`.
+2. **Online.** Log the tablet in to the hub's account as the nurse and sync. Add an event in that stage with a photo from the camera and a PDF in the file field, then sync.
+   - On central: the event has both values, and `/api/fileResources/<uid>` is `assigned` and `STORED`.
+   - Note the photo's `contentLength`, to see how much the app compressed it.
+3. **Offline, viewing.** Cut the hub's uplink. Open the event from step 2: is the photo shown? (It was downloaded at the sync, if the download ran after the event existed on central.) Open a person registered on central with a photo.
+4. **Offline, adding.** Add one event with a photo and one without, then sync.
+   - Expected: the event without the photo reaches the hub (the hub page's outbox counts it); the event with the photo stays unsynced on the tablet.
+   - Record the sync icon, the sync dialog and the app's error log.
+   - On a second device (or Capture web), offline: the event without the photo is there, the other is not.
+5. **Back online.** Restore the uplink and sync the tablet. Expected: the photo event reaches central through the hub, as the nurse, with the photo assigned. Nothing is duplicated, and no value is empty.
+6. **First download from an offline hub.** Wipe the app's data, log in to the hub with the uplink cut (as in `TestCaptureAndroid`) and download. Expected: everything but the images. Then go online, sync, and check that the images arrive.
+7. **Too large.** Online, pick a PDF over 10 MB in the file field and sync. Central refuses it (409, `max.file_upload_size`). Record what the app shows, and whether the rest of the sync goes through.
+8. **Aggregate**, if a data set has a FILE_RESOURCE element: with the hub offline, enter a file value and another value, then sync. The SDK's aggregate upload has no per-item catch, so the whole aggregate sync may stop. Record what reaches the hub.
 
 ### J. Aggregate data
 

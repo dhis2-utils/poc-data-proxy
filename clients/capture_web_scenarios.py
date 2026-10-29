@@ -15,6 +15,9 @@ Run by internal/live/capture_web_scenarios_test.go, which starts the hub and pas
               logging out between, and each later one alone in a fresh browser
     update    USER, ENROLLMENT (I10c, N18): Capture updated on central while the hub is
               offline; the steps "install" and "offline"/"online" come from the test
+    files     USER, ENROLLMENT, EVENT, STAGE_NAME, IMAGE_LABEL, IMAGE_PATH (FINDINGS.md,
+              "Images and files"): an event's image seen online and offline, and an
+              image picked for a new event online and offline
 Prints one JSON object. Exits non-zero only if the browser itself fails.
 """
 import json
@@ -181,6 +184,81 @@ class Capture:
         out["shows"] = self.text()[:2500]
         return out
 
+    def view_event(self, event, tag):
+        """An event's page: which of its images the browser could show."""
+        n = len(R["requests"])
+        a = self.open(f"/enrollmentEventEdit?eventId={event}&orgUnitId={OU}", settle=2000)
+        try:
+            a.wait_for_selector("text=" + os.environ.get("IMAGE_LABEL", "Image"), timeout=60000)
+        except Exception:
+            pass
+        self.page.wait_for_timeout(5000)
+        out = {"images": self.app().evaluate(
+            "() => [...document.images].filter(i => /image|blob:/.test(i.src)).map("
+            "i => ({src: i.src.replace(location.origin, '').slice(0, 160), shown: i.complete && i.naturalWidth > 0}))"),
+            "requests": [r for r in R["requests"][n:] if re.search(r"/image|/file|fileResources", r["path"])]}
+        out["alerts"] = self.alerts()
+        self.shot(tag)
+        out["shows"] = self.text()[:1500]
+        return out
+
+    def pick_image(self, stage, label, path, tag):
+        """A new event in stage with an image picked in the field labelled label, saved
+        without completing: what the upload and the save get, and what Capture shows."""
+        a = self.app()
+        out = {}
+        a.locator("button", has_text="New event").first.click(timeout=90000)  # a large program loads slowly
+        a.locator("[data-test=program-stage-selector-button]", has_text=stage).first.click(timeout=15000)
+        a.get_by_placeholder("yyyy-mm-dd").first.fill(time.strftime("%Y-%m-%d"))
+        a.get_by_placeholder("yyyy-mm-dd").first.press("Tab")
+        field = a.locator(f"text={label}").first.locator("xpath=following::input[@type='file'][1]")
+        try:
+            with self.page.expect_response(lambda r: "fileResources" in r.url and r.request.method == "POST",
+                                           timeout=60000) as resp:
+                field.set_input_files(path, timeout=15000)
+            out["upload"] = resp.value.status
+            out["uploadAnswer"] = resp.value.text()[:300]
+        except Exception as e:
+            out["upload"] = 0
+            out["uploadAnswer"] = f"no request: {e}"[:300]
+        self.page.wait_for_timeout(3000)
+        out["alertsAfterPick"] = self.alerts()
+        self.shot(tag + "-picked")
+        out["fieldShows"] = self.text()[:2000]
+        try:
+            with self.page.expect_response(lambda r: "/api/" in r.url and "tracker" in r.url
+                                           and r.request.method == "POST", timeout=60000) as resp:
+                a.locator("button", has_text="Save without completing").first.click(timeout=15000)
+            out["save"] = resp.value.status
+            out["saveAnswer"] = resp.value.text()[:300]
+        except Exception as e:
+            out["save"] = 0
+            out["saveAnswer"] = f"no request: {e}"[:300]
+        self.page.wait_for_timeout(3000)
+        out["alerts"] = self.alerts()
+        self.shot(tag + "-saved")
+        out["shows"] = self.text()[:1500]
+        return out
+
+
+def files(ctx):
+    """Images: an event's image online and offline, and a new image picked online and
+    offline (FINDINGS.md, "Images and files")."""
+    user, enr, ev = os.environ["USER"], os.environ["ENROLLMENT"], os.environ["EVENT"]
+    stage, label, img = os.environ["STAGE_NAME"], os.environ["IMAGE_LABEL"], os.environ["IMAGE_PATH"]
+    c = Capture(ctx)
+    R["login"] = c.login(user)
+    PHASE["name"] = "online"
+    c.dashboard(enr)
+    R["steps"]["online-view"] = c.view_event(ev, "files-online-view")
+    c.dashboard(enr)
+    R["steps"]["online-pick"] = c.pick_image(stage, label, img, "files-online-pick")
+    control("offline")
+    R["steps"]["offline-view"] = c.view_event(ev, "files-offline-view")
+    c.dashboard(enr)
+    R["steps"]["offline-pick"] = c.pick_image(stage, label, img, "files-offline-pick")
+    control("online")
+
 
 def refusals(ctx):
     """I1c: each refusal the hub gives a save, as Capture shows it."""
@@ -327,7 +405,7 @@ def main():
                 if ACTION == "users":
                     users(ctx, browser)
                 else:
-                    {"refusals": refusals, "update": update}[ACTION](ctx)
+                    {"refusals": refusals, "update": update, "files": files}[ACTION](ctx)
             except Exception as e:  # report, do not crash: the Go test reads the JSON
                 R["exception"] = f"{PHASE['name']}: {e}"[:1500]
                 try:
