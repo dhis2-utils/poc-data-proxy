@@ -5,6 +5,7 @@
 <span class="sp"></span><span class="mono">hub {{.Status.hubId}} · v{{.Status.version}}</span><a href="/hub/logout">Log out</a></header>
 <main>
 {{with .Msg}}<div class="msg">{{.}}</div>{{end}}
+{{with .Housekeeping}}<div class="err">The hub's housekeeping fails: {{.}}. Its heartbeat, reports of refused changes and programme list stop until a staff member takes it over under "The hub's own account" below. Staff saves are not affected.</div>{{end}}
 <div class="card"><div class="grid">
 <div class="stat"><b>{{.Status.pending}}</b><span>pending objects</span></div>
 <div class="stat"><b>{{.Status.rejected}}</b><span>rejected objects</span></div>

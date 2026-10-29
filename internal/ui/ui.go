@@ -294,7 +294,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"Forced": h.Monitor.ForcedOffline(), "UplinkSwitch": h.Cfg.UplinkSwitch, "Upgrade": upgrade, "Central": h.Central.BaseURL(),
 		"ServerVersion": h.ServerVersion(), "Msg": r.URL.Query().Get("msg"),
 		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour), "Orphans": h.Store.PendingWithoutUser(),
-		"Offline": !h.Online(), "AccountCode": h.AccountCode(),
+		"Offline": !h.Online(), "AccountCode": h.AccountCode(), "Housekeeping": h.Stats.HousekeepingError(),
 		"Reach": reachText(h.Reach()), "Proxy": h.Proxy(), "Net": u.netView(true),
 	})
 }

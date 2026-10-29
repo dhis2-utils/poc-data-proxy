@@ -214,12 +214,21 @@ type SyncStats struct {
 	// CycleStart is when the running or last sync cycle began; Syncing whether one runs.
 	CycleStart string
 	Syncing    bool
+	// Housekeeping says why the hub's own token does not work, when it does not.
+	Housekeeping string
 }
 
 func (s *SyncStats) Set(fn func(*SyncStats)) {
 	s.mu.Lock()
 	fn(s)
 	s.mu.Unlock()
+}
+
+// HousekeepingError is why the hub's own token does not work; "" when it does.
+func (s *SyncStats) HousekeepingError() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Housekeeping
 }
 
 func (s *SyncStats) Get() (lastPush, lastPull, lastSync, lastErr string) {

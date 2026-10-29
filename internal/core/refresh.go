@@ -233,6 +233,16 @@ func (h *Hub) EnsurePAT(ctx context.Context, u *store.User, with central.Auth, p
 // pat_expiry_days after setup. A PAT may create a PAT on 2.42
 // (testdata/2.42/apiToken_create_with_pat.json).
 func (h *Hub) RenewHubToken(ctx context.Context) error {
+	return h.renewHubToken(ctx, false)
+}
+
+// ReplaceHubToken makes a new hub token now: central refused the current one (401),
+// deleted on central though the hub's own account still works (G9).
+func (h *Hub) ReplaceHubToken(ctx context.Context) error {
+	return h.renewHubToken(ctx, true)
+}
+
+func (h *Hub) renewHubToken(ctx context.Context, now bool) error {
 	h.tokenMu.Lock()
 	defer h.tokenMu.Unlock()
 	rt := h.Runtime()
@@ -240,7 +250,7 @@ func (h *Hub) RenewHubToken(ctx context.Context) error {
 		return nil
 	}
 	exp, _ := time.Parse(time.RFC3339, rt.HubTokenExp) // unreadable: renew now
-	if !h.renewToken(exp) {
+	if !now && !h.renewToken(exp) {
 		return nil
 	}
 	newExp := time.Now().Add(h.TokenLife())

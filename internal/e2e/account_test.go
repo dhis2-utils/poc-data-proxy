@@ -589,3 +589,37 @@ func TestMoveKeyNeverPublic(t *testing.T) {
 		t.Fatalf("the move key was written before its entry was restricted: %v", v)
 	}
 }
+
+// G9: the hub's token deleted on central while its own account still works: the hub
+// makes a new one with the account at the next cycle, not only near its expiry.
+func TestHubTokenDeletedIsReplacedWithTheAccount(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.adopt()
+	h := e.app.Hub
+	old := h.Runtime().HubToken
+	e.central.RevokeToken(h.Runtime().HubTokenUID)
+	e.sync()
+	rt := h.Runtime()
+	if rt.HubToken == old || !e.central.TokenValid(rt.HubToken) || e.central.TokenOwner(rt.HubToken) != h.HubID() {
+		t.Fatalf("the hub's token was not replaced with its account (owner %q)", e.central.TokenOwner(rt.HubToken))
+	}
+	if hb := e.central.DataStoreValue("facility-hub-status", h.HubID()); hb["hubTokenOwner"] != h.HubID() {
+		t.Fatalf("no heartbeat after the token was replaced: %v", hb)
+	}
+}
+
+// G9: a hub token central refuses that the hub cannot replace (no account of its own)
+// is said on the admin page, with what to do.
+func TestHubTokenRefusedShownOnTheAdminPage(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	h := e.app.Hub
+	e.central.RevokeToken(h.Runtime().HubTokenUID)
+	e.app.Worker.Cycle(context.Background())
+	a := e.web("hub_admin")
+	a.login()
+	if _, page := a.do("GET", "/hub/ui", nil); !strings.Contains(string(page), "housekeeping fails") {
+		t.Fatal("the admin page does not say the hub's housekeeping fails")
+	}
+}

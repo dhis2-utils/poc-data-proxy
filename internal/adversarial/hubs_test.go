@@ -287,12 +287,10 @@ func TestG9HubAccountRevoked(t *testing.T) {
 	t.Logf("registry entry (%d): status %v, accountRequested %v, hubTokenOwner %v", st, reg["status"], reg["accountRequested"], reg["hubTokenOwner"])
 	s.expect(nil, "on central as saved")
 	if stuck {
-		// Found 28 October: RenewHubToken (core/refresh.go) replaces the hub's token only
-		// when it nears its expiry; a token deleted on central answers 401 to every
-		// housekeeping call, and the password of the hub's own account, which still
-		// works, is used only inside that expiry branch. Nothing on the hub page says
-		// the housekeeping fails.
-		finding(t, "G9: a hub whose own token is deleted on central does not make a new one with its account")
+		// Found 28 October: the hub's token was replaced only near its expiry, so a token
+		// deleted on central left every housekeeping call at 401, though the hub's own
+		// account still worked. Fixed 29 October: a 401 to the hub's token makes a new one
+		// at once with the account; the hub page says when that fails.
 		t.Errorf("the hub's housekeeping stays down after its token was deleted, though its account works")
 	}
 }

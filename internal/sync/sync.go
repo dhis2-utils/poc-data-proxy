@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"math/rand/v2"
 	"strings"
 	stdsync "sync"
@@ -141,7 +142,22 @@ func (w *Worker) Cycle(ctx context.Context) error {
 func (w *Worker) cycle(ctx context.Context) error {
 	h := w.H
 	var errs []error
-	if _, err := h.RefreshServerVersion(ctx, h.HubAuth()); err != nil {
+	_, err := h.RefreshServerVersion(ctx, h.HubAuth())
+	if central.Status(err) == http.StatusUnauthorized {
+		// The hub's token is refused (deleted on central): a new one now, with the hub's
+		// own account, rather than near its expiry. Shown on the hub page until it works.
+		if err = h.ReplaceHubToken(ctx); err == nil {
+			_, err = h.RefreshServerVersion(ctx, h.HubAuth())
+		}
+		housekeeping := ""
+		if err != nil {
+			housekeeping = "central refuses the hub's token and the hub could not make a new one (" + err.Error() + ")"
+		}
+		h.Stats.Set(func(s *core.SyncStats) { s.Housekeeping = housekeeping })
+	} else if err == nil {
+		h.Stats.Set(func(s *core.SyncStats) { s.Housekeeping = "" })
+	}
+	if err != nil {
 		if central.IsNetwork(err) {
 			return err
 		}
