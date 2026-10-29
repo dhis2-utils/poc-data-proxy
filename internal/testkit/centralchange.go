@@ -400,3 +400,65 @@ func (e *Env) SetUserPassword(u User, password string) {
 	e.needLive("SetUserPassword")
 	e.patch("/api/users/"+u.UID, replaceOp("/password", password))
 }
+
+// InputPeriod is one data input period of a data set: the period, and when entry
+// opens and closes (central's wall clock, "2006-01-02T15:04:05.000"; "" for none).
+type InputPeriod struct{ Period, Opening, Closing string }
+
+// SetDataInputPeriods replaces a data set's data input periods (none: entry allowed
+// in every period, as before).
+func (e *Env) SetDataInputPeriods(ds string, periods ...InputPeriod) {
+	e.T.Helper()
+	e.needLive("SetDataInputPeriods")
+	var was []any
+	e.putOwner("/api/dataSets/"+ds, func(o map[string]any) {
+		was = asAnyList(o["dataInputPeriods"])
+		var dips []any
+		for _, p := range periods {
+			d := map[string]any{"period": map[string]any{"id": p.Period}}
+			if p.Opening != "" {
+				d["openingDate"] = p.Opening
+			}
+			if p.Closing != "" {
+				d["closingDate"] = p.Closing
+			}
+			dips = append(dips, d)
+		}
+		o["dataInputPeriods"] = dips
+	})
+	e.T.Cleanup(func() {
+		e.putOwner("/api/dataSets/"+ds, func(o map[string]any) { o["dataInputPeriods"] = was })
+	})
+}
+
+// SetDataSetField sets one of a data set's own fields (expiryDays, validCompleteOnly,
+// openFuturePeriods ...), put back when the test ends.
+func (e *Env) SetDataSetField(ds, field string, v any) {
+	e.T.Helper()
+	e.needLive("SetDataSetField")
+	var was any
+	e.putOwner("/api/dataSets/"+ds, func(o map[string]any) { was, o[field] = o[field], v })
+	e.T.Cleanup(func() { e.putOwner("/api/dataSets/"+ds, func(o map[string]any) { o[field] = was }) })
+}
+
+// RemoveDataSetFromOrgUnit unassigns a data set from an org unit.
+func (e *Env) RemoveDataSetFromOrgUnit(ds, ou string) {
+	e.T.Helper()
+	e.needLive("RemoveDataSetFromOrgUnit")
+	path := "/api/dataSets/" + ds + "/organisationUnits/" + ou
+	e.centralDo("DELETE", path, nil)
+	e.T.Cleanup(func() { e.Central.Do("POST", path, nil) })
+}
+
+// SetDataElementCombo gives a data element another category combination, so the
+// option combinations of its old one are no longer its own (as when an administrator
+// disaggregates a data element). Put back when the test ends.
+func (e *Env) SetDataElementCombo(de, combo string) {
+	e.T.Helper()
+	e.needLive("SetDataElementCombo")
+	var was any
+	e.putOwner("/api/dataElements/"+de, func(o map[string]any) {
+		was, o["categoryCombo"] = o["categoryCombo"], map[string]any{"id": combo}
+	})
+	e.T.Cleanup(func() { e.putOwner("/api/dataElements/"+de, func(o map[string]any) { o["categoryCombo"] = was }) })
+}
