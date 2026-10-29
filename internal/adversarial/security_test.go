@@ -465,13 +465,26 @@ func TestL2OfflinePasswordGuessing(t *testing.T) {
 	}
 	// Basic auth while the account is locked out. The nurse's tablet logged in with
 	// Basic earlier, so the hub holds that credential in its cache (live for up to 12
-	// hours, idle 1 hour, core/sessions.go). Guesses over Basic: how fast are they
-	// answered, and do the right and wrong passwords answer alike?
+	// hours, idle 1 hour, core/sessions.go). Guesses over Basic from another device on
+	// the facility network, locked out as this one is: how fast are they answered, and
+	// do the right and wrong passwords answer alike? (They told them apart, FINDINGS.md.)
+	device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.RemoteAddr = "10.66.0.9:40000" // the other device's address, as the hub sees it
+		s.App.Handler.ServeHTTP(w, r)
+	}))
+	defer device.Close()
+	for i := 0; i < 5; i++ {
+		req, _ := http.NewRequest("POST", device.URL+"/api/auth/login",
+			strings.NewReader(`{"username":"`+user+`","password":"guess-`+tk.UID()+`"}`))
+		req.Header.Set("Content-Type", "application/json")
+		if resp, err := http.DefaultClient.Do(req); err == nil {
+			resp.Body.Close()
+		}
+	}
 	basicGuess := func(pw string) (int, time.Duration) {
-		c := s.AndroidUser(user)
 		start := time.Now()
-		req, _ := http.NewRequest("GET", s.Srv.URL+"/api/me?fields=id", nil)
-		req.SetBasicAuth(c.User, pw)
+		req, _ := http.NewRequest("GET", device.URL+"/api/me?fields=id", nil)
+		req.SetBasicAuth(user, pw)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -500,8 +513,10 @@ func TestL2OfflinePasswordGuessing(t *testing.T) {
 			s.t.Logf("L2 throttle: the nurse's device is locked out (429); the clerk is unaffected (200)")
 		}
 	}
+	if st, _ := nurse.Do("GET", "/api/me?fields=id", nil); st != 200 {
+		t.Errorf("L2: during the lockout the nurse's own tablet, with its cached credential, got %d, want 200", st)
+	}
 	if oracle {
-		finding(t, "L2: during a lockout the hub answers a Basic guess of a staff password whose tablet credential it caches: wrong 429 at once, right 200; the throttle becomes a fast guessing oracle (auth.LoginBasic checks the cache before the throttle)")
 		t.Errorf("L2: locked-out account, Basic auth: %d wrong guesses all refused fast (%v) while the right password is accepted (%d): the lockout tells right from wrong without Argon2 or central", guesses, wrongCodes, rightSt)
 	}
 }

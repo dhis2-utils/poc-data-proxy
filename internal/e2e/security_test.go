@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -170,6 +171,60 @@ func TestLoginThrottle(t *testing.T) {
 		t.Fatalf("locked-out Basic login: got %d, want 429", st)
 	}
 	e.web("nurse_a").login()
+}
+
+// L2: during a lockout, Basic auth answers a right and a wrong password alike (429),
+// though the hub caches the right one from the staff member's tablet: otherwise the
+// lockout told them apart, at once. The tablet itself, at its own address, goes on
+// working with its cached credential, even when its address is locked out too.
+func TestBasicLockoutAnswersRightAndWrongAlike(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	tablet := e.android("nurse_b")
+	if st, b := tablet.do("GET", "/api/me", nil); st != 200 {
+		t.Fatalf("the tablet's first request: %d %s", st, b)
+	}
+	// Another device on the facility network (the hub sees its address).
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.RemoteAddr = "10.66.0.9:40000"
+		e.app.Handler.ServeHTTP(w, r)
+	}))
+	defer other.Close()
+	try := func(srv, method, path, pw string, body any) int {
+		t.Helper()
+		var rd io.Reader
+		if body != nil {
+			b, _ := json.Marshal(body)
+			rd = bytes.NewReader(b)
+		}
+		req, _ := http.NewRequest(method, srv+path, rd)
+		req.Header.Set("Content-Type", "application/json")
+		if pw != "" {
+			req.SetBasicAuth("nurse_b", pw)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	for _, srv := range []string{other.URL, e.srv.URL} { // both addresses locked out
+		for range 5 {
+			if st := try(srv, "POST", "/api/auth/login", "", map[string]string{"username": "nurse_b", "password": "guess"}); st != 401 {
+				t.Fatalf("a wrong password: %d, want 401", st)
+			}
+		}
+	}
+	if st := try(other.URL, "GET", "/api/me", "guess-2", nil); st != 429 {
+		t.Errorf("locked out, a wrong Basic password from another device: %d, want 429", st)
+	}
+	if st := try(other.URL, "GET", "/api/me", fc.Password, nil); st != 429 {
+		t.Errorf("locked out, the right Basic password from another device: %d, want 429 as for a wrong one", st)
+	}
+	if st, b := tablet.do("GET", "/api/me", nil); st != 200 {
+		t.Errorf("locked out, the tablet with its cached credential: %d %s, want 200", st, b)
+	}
 }
 
 // M8, REVIEW-2 F1: nobody at the setup page can choose the central server. With

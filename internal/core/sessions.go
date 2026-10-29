@@ -25,6 +25,8 @@ type Session struct {
 	lastSeen time.Time
 	// verified is when central last accepted a cached Basic credential.
 	verified time.Time
+	// BasicFrom is the client address a cached Basic credential was verified from.
+	BasicFrom string
 	// Upstream is a memory-only credential (central session cookie or Basic) used for
 	// pass-through when the user has no stored PAT, e.g. while the store is locked.
 	Upstream central.Auth
@@ -159,9 +161,10 @@ func (s *Sessions) DropUser(username string) {
 	}
 }
 
-func (s *Sessions) SetBasic(user, pw string, sess *Session) {
+func (s *Sessions) SetBasic(user, pw, src string, sess *Session) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	sess.BasicFrom = src
 	for k, v := range s.basic { // one cached credential per user
 		if v.Username == user {
 			delete(s.basic, k)

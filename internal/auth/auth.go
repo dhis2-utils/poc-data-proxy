@@ -123,19 +123,22 @@ func (a *Auth) loginWeb(ctx context.Context, req LoginRequest, rawBody []byte) (
 }
 
 // LoginBasic handles HTTP Basic auth (Android and API clients) from src. It runs the
-// online or offline login the first time a credential is seen (spec 7.1).
+// online or offline login the first time a credential is seen (spec 7.1). During a
+// lockout a cached credential passes only from the address it was verified from, so
+// the staff member's tablet goes on working, while from elsewhere the right password
+// gets 429 as a wrong one does (L2).
 func (a *Auth) LoginBasic(ctx context.Context, src, username, password string) (*core.Session, *Failure) {
-	if cached, _ := a.H.Sessions.Basic(username, password); cached == nil {
+	if cached, _ := a.H.Sessions.Basic(username, password); cached == nil || cached.BasicFrom != src {
 		if f := a.throttled(src, username); f != nil {
 			return nil, f
 		}
 	}
-	sess, f := a.loginBasic(ctx, username, password)
+	sess, f := a.loginBasic(ctx, src, username, password)
 	a.count(src, username, f)
 	return sess, f
 }
 
-func (a *Auth) loginBasic(ctx context.Context, username, password string) (*core.Session, *Failure) {
+func (a *Auth) loginBasic(ctx context.Context, src, username, password string) (*core.Session, *Failure) {
 	cached, fresh := a.H.Sessions.Basic(username, password)
 	if cached != nil && (fresh || !a.H.Online()) {
 		return cached, nil
@@ -163,7 +166,7 @@ func (a *Auth) loginBasic(ctx context.Context, username, password string) (*core
 				return cached, nil
 			}
 			sess := a.registerOnline(ctx, username, password, auth)
-			a.H.Sessions.SetBasic(username, password, sess)
+			a.H.Sessions.SetBasic(username, password, src, sess)
 			return sess, nil
 		}
 		if !central.IsNetwork(err) {
@@ -175,7 +178,7 @@ func (a *Auth) loginBasic(ctx context.Context, username, password string) (*core
 	}
 	sess, f := a.loginOffline(username, password)
 	if f == nil {
-		a.H.Sessions.SetBasic(username, password, sess)
+		a.H.Sessions.SetBasic(username, password, src, sess)
 	}
 	return sess, f
 }
