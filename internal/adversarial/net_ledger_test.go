@@ -102,6 +102,15 @@ type netRun struct {
 func netStart(t *testing.T) *netRun {
 	t.Helper()
 	r := netPrepare(t)
+	r.begin()
+	return r
+}
+
+// begin is netStart for a run prepared by netPrepare (whose Env a scenario may change
+// first, such as central's address).
+func (r *netRun) begin() {
+	t := r.t
+	t.Helper()
 	e := r.e
 	e.Setup()
 	for _, role := range []string{tk.RoleNurse, tk.RoleRestricted} {
@@ -114,7 +123,6 @@ func netStart(t *testing.T) *netRun {
 	t.Cleanup(r.keepLog)
 	r.p.WaitFor("online", time.Minute, tk.Online)
 	t.Logf("run tag %s; hub log %s", r.tag, r.p.Log)
-	return r
 }
 
 // netPrepare picks what the writers save, for a hub not yet set up.

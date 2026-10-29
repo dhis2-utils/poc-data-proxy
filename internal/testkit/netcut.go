@@ -27,6 +27,7 @@ type Netcut struct {
 	held    atomic.Pointer[chan struct{}] // half open while set: closed to release
 	refused atomic.Int64                  // requests cut while down
 	version atomic.Pointer[string]        // central's version as /api/system/info answers it (SetVersion)
+	portal  atomic.Pointer[string]        // a captive portal answers instead of central (SetPortal)
 
 	mu       sync.Mutex
 	calls    []Call     // what the hub asked central, since the last Calls
@@ -108,6 +109,14 @@ func NewNetcut(target string) (*Netcut, error) {
 		if n.down.Load() {
 			n.refused.Add(1)
 			cut(w)
+			return
+		}
+		if p := n.portal.Load(); p != nil {
+			n.mu.Lock()
+			n.calls = append(n.calls, Call{Method: r.Method, URL: r.URL, Status: portalStatus(*p), Fault: "portal", At: time.Now()})
+			n.mu.Unlock()
+			io.Copy(io.Discard, r.Body)
+			servePortal(w, *p)
 			return
 		}
 		if h := n.held.Load(); h != nil {
@@ -249,6 +258,44 @@ func (n *Netcut) SetVersion(v string) {
 		return
 	}
 	n.version.Store(&v)
+}
+
+// Captive portals, as SetPortal names them.
+const (
+	PortalPage     = "page"     // 200 with the portal's login page for every request
+	PortalRedirect = "redirect" // 302 to the portal's login page on another host
+)
+
+// SetPortal puts a captive portal in front of the internet: every request is answered
+// by it ("" removes it). Nothing reaches central.
+func (n *Netcut) SetPortal(kind string) {
+	if kind == "" {
+		n.portal.Store(nil)
+		return
+	}
+	n.portal.Store(&kind)
+}
+
+func portalStatus(kind string) int {
+	if kind == PortalRedirect {
+		return http.StatusFound
+	}
+	return http.StatusOK
+}
+
+const portalHTML = `<!DOCTYPE html><html><head><title>Hotspot login</title></head><body>` +
+	`<h1>Welcome to the hotspot</h1><form method="post" action="/login"><input name="voucher"><button>Connect</button></form></body></html>`
+
+func servePortal(w http.ResponseWriter, kind string) {
+	if kind == PortalRedirect {
+		w.Header().Set("Location", "http://hotspot.portal.example/login?dst=central")
+		w.WriteHeader(http.StatusFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	io.WriteString(w, portalHTML)
 }
 
 var versionRe = regexp.MustCompile(`"version"\s*:\s*"[^"]*"`)

@@ -205,6 +205,36 @@ func (p *Proc) signal(sig syscall.Signal) {
 	<-p.exited
 }
 
+// Pid is the process's id, or 0 when it does not run.
+func (p *Proc) Pid() int {
+	if !p.Running() {
+		return 0
+	}
+	return p.cmd.Process.Pid
+}
+
+// RSSMB is the process's resident memory in MB (Linux; 0 elsewhere or when it does
+// not run).
+func (p *Proc) RSSMB() float64 { return p.procStatus("VmRSS:") }
+
+// PeakRSSMB is the most resident memory the process has had, in MB (Linux).
+func (p *Proc) PeakRSSMB() float64 { return p.procStatus("VmHWM:") }
+
+func (p *Proc) procStatus(key string) float64 {
+	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", p.Pid()))
+	if err != nil {
+		return 0
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if f := strings.Fields(l); len(f) >= 2 && f[0] == key {
+			var kb float64
+			fmt.Sscan(f[1], &kb)
+			return kb / 1024
+		}
+	}
+	return 0
+}
+
 // Bin is the binary the process runs, and starts from: an upgrade replaces it.
 func (p *Proc) Bin() string { return p.bin }
 

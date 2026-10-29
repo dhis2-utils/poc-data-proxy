@@ -37,10 +37,11 @@ type Env struct {
 	App     *app.App
 	Srv     *httptest.Server
 
-	listen string   // fixed address to serve on (ServeOn); default an ephemeral port
-	hosts  []string // extra hub host names
-	recMu  sync.Mutex
-	rec    []Request
+	listen  string   // fixed address to serve on (ServeOn); default an ephemeral port
+	hosts   []string // extra hub host names
+	central string   // the central URL the hub is set up with (CentralAt); default the Netcut's
+	recMu   sync.Mutex
+	rec     []Request
 }
 
 // Request is one answer the hub gave, as recorded for Requests.
@@ -95,7 +96,7 @@ func (e *Env) Config() config.Config {
 	c := config.Default()
 	c.TPM = false           // the same files on every machine; internal/devkey tests the TPM
 	c.HeartbeatInterval = 0 // tests read the heartbeat after each sync
-	c.CentralURL = e.Net.URL()
+	c.CentralURL = e.CentralURL()
 	c.DataDir = e.Dir
 	c.TLS = false
 	c.SyncInterval = time.Hour // tests run cycles by hand
@@ -189,8 +190,25 @@ func (e *Env) Reboot() {
 
 func (e *Env) probe() {
 	ctx := context.Background()
-	e.App.Hub.Monitor.Probe(ctx, e.Net.URL())
-	e.App.Hub.Monitor.Probe(ctx, e.Net.URL())
+	e.App.Hub.Monitor.Probe(ctx, e.CentralURL())
+	e.App.Hub.Monitor.Probe(ctx, e.CentralURL())
+}
+
+// CentralURL is the address the hub is given for central: the Netcut's, or what
+// CentralAt set.
+func (e *Env) CentralURL() string {
+	if e.central != "" {
+		return e.central
+	}
+	return e.Net.URL()
+}
+
+// CentralAt gives the hub another address for central, such as a host name that
+// resolves to a Front before the Netcut (DNS and certificate scenarios). Call it
+// before Setup: it reboots the hub.
+func (e *Env) CentralAt(u string) {
+	e.central = strings.TrimRight(u, "/")
+	e.Reboot()
 }
 
 // Offline cuts the uplink; Online restores it.
