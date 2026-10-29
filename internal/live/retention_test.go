@@ -494,32 +494,13 @@ func TestRetentionWindowLive(t *testing.T) {
 	c := tk.NewCentral(e.M.CentralURL, e.M.Users[tk.RoleNurse].Username, e.M.Password)
 	api := e.App.Hub.API()
 	want := map[string]bool{}
-	for i, path := range []string{api.ActivePath(e.M.Facility.ID, program, 1, 10000), api.ListPath(e.M.Facility.ID, program, cutoff, 1, 10000)} {
-		// The pull's own listings, with the fields this check reads.
-		u, _ := url.Parse(path)
-		q := u.Query()
-		q.Set("fields", "trackedEntity,enrollments[program,status,updatedAt,deleted]")
-		u.RawQuery = q.Encode()
-		path = u.String()
-		start := time.Now()
-		st, b, err := c.Do("GET", path, nil)
-		if err != nil || st != 200 {
-			t.Fatalf("central refused a listing: %s: %d %v %.500s", path, st, err, b)
-		}
-		if i == 0 {
-			t.Logf("active-enrollment listing on central: %v, %d bytes", time.Since(start), len(b))
-		}
-		var body map[string]any
-		json.Unmarshal(b, &body)
-		for _, x := range asList(body["trackedEntities"]) {
-			te := x.(map[string]any)
-			for _, en := range asList(te["enrollments"]) {
-				m := en.(map[string]any)
-				if m["program"] == program && m["deleted"] != true &&
-					(m["status"] == "ACTIVE" || tracker.Str(m, "updatedAt") >= cutoff) {
-					want[tracker.Str(te, "trackedEntity")] = true
-				}
-			}
+	// The pull's own listings, with the fields this check reads, every page: a
+	// facility of a live instance grows past one page with the scenarios run on it.
+	const size = 10000
+	for page := 1; ; page++ {
+		paths := []string{api.ActivePath(e.M.Facility.ID, program, page, size), api.ListPath(e.M.Facility.ID, program, cutoff, page, size)}
+		if listWindow(t, c, paths, page == 1, program, cutoff, want) < size {
+			break
 		}
 	}
 	e.Offline()
@@ -535,6 +516,43 @@ func TestRetentionWindowLive(t *testing.T) {
 		t.Errorf("listed by central's window, not offline: %s", te)
 	}
 	t.Logf("%d people in %s with a %d-month window", len(got), program, months)
+}
+
+// listWindow adds to want the people central lists on these pages, as the nurse, whose
+// enrollment in program is active or changed since cutoff, and returns the length of
+// the longest page.
+func listWindow(t *testing.T, c *tk.Central, paths []string, first bool, program, cutoff string, want map[string]bool) int {
+	t.Helper()
+	longest := 0
+	for i, path := range paths {
+		u, _ := url.Parse(path)
+		q := u.Query()
+		q.Set("fields", "trackedEntity,enrollments[program,status,updatedAt,deleted]")
+		u.RawQuery = q.Encode()
+		path = u.String()
+		start := time.Now()
+		st, b, err := c.Do("GET", path, nil)
+		if err != nil || st != 200 {
+			t.Fatalf("central refused a listing: %s: %d %v %.500s", path, st, err, b)
+		}
+		if i == 0 && first {
+			t.Logf("active-enrollment listing on central: %v, %d bytes", time.Since(start), len(b))
+		}
+		var body map[string]any
+		json.Unmarshal(b, &body)
+		longest = max(longest, len(asList(body["trackedEntities"])))
+		for _, x := range asList(body["trackedEntities"]) {
+			te := x.(map[string]any)
+			for _, en := range asList(te["enrollments"]) {
+				m := en.(map[string]any)
+				if m["program"] == program && m["deleted"] != true &&
+					(m["status"] == "ACTIVE" || tracker.Str(m, "updatedAt") >= cutoff) {
+					want[tracker.Str(te, "trackedEntity")] = true
+				}
+			}
+		}
+	}
+	return longest
 }
 
 // Review fix: an online read through the hub stores what central returns as the
