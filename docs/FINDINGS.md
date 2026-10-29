@@ -570,6 +570,24 @@ Found on 2026-10-27 by the adversarial scenarios (`internal/adversarial`), run a
 - **A misleading message on a first login offline**: a user the hub has not served through the Android app online sees "The URL provided is not a DHIS2 server." (the cached `/api/system/info` is per user).
 - **Fewer reserved values through an offline hub**: a tablet gets at most half the hub's pool per request (75 of the default 150, against Android's 100 from central). Capture's sheet then says "Saved!" above "There are no more reserved values" for a person not saved; that wording is the app's.
 
+**Open, from wave 3** (28–29 October; no hub code changed overnight; each gated with `finding(...)`, reproducible with `HUB_FINDINGS=1`; proposed fixes for decision):
+
+1. **The facility moved to another district: the old district keeps seeing it offline** (A12, a leak). The hub keeps the facility's path from set-up (`internal/ui/setup.go`), and every "is this facility staff" check uses it. Proposed: re-read the path at the catalog refresh and update it when it changed.
+2. **One import central answers 500 to holds up everything behind it** (H8). `pushEntry` stops the cycle on any 5xx and retries for ever; the one-day rule does not apply; meanwhile the hub keeps answering online saves itself. Proposed: for a plain 500, note `FailingSince` and go on to the next entry (dependants already wait), refused after a day.
+3. **A release that cannot start is never rolled back** (G2). `upgrade.Recover` runs inside the new binary. Proposed: count starts in the marker first thing in `serve`; after about three without a confirmed upgrade, roll back and skip the version; back it with the service manager's restart limit.
+4. **A reshaped import report is read as central refusing everything** (N14, push). Proposed: a report without `bundleReport` (status not ERROR) is not an import report: retried, the one-day rule applies.
+5. **A deleted hub token is never replaced, though the hub's account still works** (G9); housekeeping fails silently. Proposed: renew at once on a 401 to the hub token, and show failing housekeeping on the admin page.
+6. **A replaced hub still takes aggregate values offline** (G7). Proposed: the `Retired()` refusal in `aggregateapi` as in `trackerapi`.
+7. **Program expiry not read** (A10): expired events are taken offline and refused at push. Proposed: the program's expiry fields in the catalog and an E1047 check that respects `F_EDIT_EXPIRED`.
+8. **A lost authority not applied offline** (B5): reopening completed events is taken offline and refused at push. Proposed: refuse it offline (E1083) when the stored authorities lack `F_UNCOMPLETE_EVENT`.
+9. **Android's old password works online for up to 5 minutes** after central changed it (B3), from the cached credential. Proposed: drop the user's cached credentials when central refuses their web login.
+10. **A reset rewrites the registry entry without fields the app shows** (G6, N23), `tokens` among them. Proposed: edit the entry (`EditRegistry`) instead of replacing it.
+11. **A mislabelled release manifest is recorded every cycle; refused manifests fetched every cycle** (G3, minor). Proposed: remember it once, as for unsigned manifests.
+12. **Cached metadata replayed offline after central changed it** (A15). To measure first: whether Capture reloads metadata offline.
+13. **Documentation:** all staff passwords changed while the hub was locked (G11): the old password offline unlocks it; not in RECOVERY.md or on the hub page. Release key rotation (N8) is not documented.
+
+Also seen: the oracle's first page of an event program's list breaks ties in a different order from central (the hub by UID, central by creation time) when many events share a date.
+
 **DHIS2's side, to explore before the hub changes** (decided 2026-10-28):
 
 - **A value into an approved form** (J1, 2.43.2). As the nurse, `POST /api/dataValues` answers 201 while the form is approved (`APPROVED_HERE`); reproduced with curl, without the hub. A value entered offline before the approval therefore lands in approved data when the hub pushes it, with no refusal. The Data Entry app shows the form locked, and after its next sync the hub refuses new offline values (E2017). Whether central should refuse it is to be checked with DHIS2; the hub does not check approval before pushing.
