@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -31,10 +32,12 @@ import (
 	"github.com/dhis2/facility-hub/internal/upgrade"
 )
 
-// Set with -ldflags "-X main.version=0.2.0 -X main.healthFail=true".
+// Set with -ldflags "-X main.version=0.2.0 -X main.healthFail=true". startFail makes
+// serve exit at every start (test builds: a release that cannot start, adversarial G2).
 var (
 	version    = "0.0.0-dev" // builds set it: VERSION, or VERSION-ci.<run> on CI
 	healthFail = "false"
+	startFail  = "false"
 )
 
 func main() {
@@ -110,6 +113,13 @@ func serveCtx(ctx context.Context, cfgPath string) error {
 		return err
 	}
 	logToFile(cfg.DataDir)
+	// A swapped-in release that keeps exiting before its health check is rolled back.
+	if err := upgrade.CountStart(cfg.DataDir, filepath.Join(cfg.DataDir, "hub.db"), version); err != nil {
+		return err
+	}
+	if startFail == "true" {
+		return errors.New("this release cannot start (test build)")
+	}
 	setMemoryLimit()
 
 	var srv *http.Server

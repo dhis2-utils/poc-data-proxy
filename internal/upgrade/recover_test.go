@@ -108,3 +108,40 @@ func TestRecoverRollbackCutShort(t *testing.T) {
 		}
 	}
 }
+
+// G2 (adversarial, 28 October): a release that exits at every start never reached its
+// health check, and Recover, which runs in it, left it alone. Each start of a swapped-in
+// release that is not confirmed is counted; after maxStarts the next start puts the old
+// store and binary back and exits, and the old release reports the failure.
+func TestReleaseThatCannotStartRollsBack(t *testing.T) {
+	h := newCrashHub(t, "swapped")
+	if err := swapStore(h.live, h.next, h.prev); err != nil {
+		t.Fatal(err)
+	}
+	if err := CountStart(h.dir, h.live, "0.1.0"); err != nil { // not the swapped-in version
+		t.Fatal(err)
+	}
+	for i := 1; i <= maxStarts; i++ {
+		if err := CountStart(h.dir, h.live, "0.2.0"); err != nil {
+			t.Fatalf("start %d: %v", i, err)
+		}
+		storeIs(t, h.live, "new", fmt.Sprintf("start %d", i))
+	}
+	if err := CountStart(h.dir, h.live, "0.2.0"); err == nil {
+		t.Fatalf("start %d: the release that cannot start is kept", maxStarts+1)
+	}
+	storeIs(t, h.live, "old", "rolled back")
+	if b, _ := os.ReadFile(h.exe); string(b) != "hub 0.1.0" {
+		t.Errorf("the binary is %q", b)
+	}
+	var mk Marker
+	b, _ := os.ReadFile(filepath.Join(h.dir, "upgrade.json"))
+	if json.Unmarshal(b, &mk); mk.State != "rolledback" || mk.Reason == "" {
+		t.Errorf("marker %s", b)
+	}
+	// The old binary starts on the old store; AfterBoot reports the failure and skips it.
+	if err := Recover(h.dir, h.live, "0.1.0"); err != nil {
+		t.Fatal(err)
+	}
+	storeIs(t, h.live, "old", "old release")
+}

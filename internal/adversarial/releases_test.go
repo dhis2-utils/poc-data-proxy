@@ -150,25 +150,12 @@ func TestG3G4ReleasesRefused(t *testing.T) {
 	}
 }
 
-// crasher is a release binary that exits at once when it is to serve, as a release
-// that cannot start on this machine (a panic at start, a missing library, the wrong
-// architecture); the upgrade's migration of the store copy runs the real binary.
-func crasher(t *testing.T, bin string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "hub-crasher")
-	script := fmt.Sprintf("#!/bin/sh\ncase \"$1\" in\nserve) echo 'panic: this release cannot start here' >&2; exit 2 ;;\nesac\nexec %q \"$@\"\n", bin)
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 // G2: the new release fails. First one that starts but fails its health check, taken
 // while clients save online with saves queued: it must roll back on its own with
 // nothing lost, report the failure, and not be tried again. Then one that cannot
-// start at all: the service manager starts the hub again and again (systemd:
-// Restart=always, every 5 s). Must hold: back on the old release by itself, data
-// intact.
+// start at all: it exits before its health check, and the service manager starts the
+// hub again and again (systemd: Restart=always, every 5 s). Must hold: back on the old
+// release by itself, data intact, the version not tried again.
 func TestG2NewReleaseFails(t *testing.T) {
 	ch := newChannel(t)
 	cur := ch.build("", "0.2.0")
@@ -208,8 +195,9 @@ func TestG2NewReleaseFails(t *testing.T) {
 	r.finish(5 * time.Minute)
 	stop = r.write(300 * time.Millisecond)
 
-	// 2. A release that cannot start.
-	ch.publish("0.3.5", crasher(t, good))
+	// 2. A release that cannot start: it exits at every start, before its health check.
+	bad = ch.build("", "0.3.5", "-X main.startFail=true")
+	ch.publish("0.3.5", bad)
 	choose(e, "0.3.5", hubID)
 	end = time.Now().Add(5 * time.Minute)
 	for p.Running() && time.Now().Before(end) {
@@ -219,7 +207,7 @@ func TestG2NewReleaseFails(t *testing.T) {
 		t.Fatalf("the hub did not switch to 0.3.5:\n%s", p.Tail(30))
 	}
 	died := time.Now()
-	t.Logf("the new release exited at its start: %s", lastLine(p.Tail(5), "panic:"))
+	t.Logf("the new release exited at its start: %s", lastLine(p.Tail(5), "cannot start"))
 	// The service manager starts the hub again, 5 s after each exit, for 2 minutes.
 	starts, answered := 0, false
 	for time.Since(died) < 2*time.Minute {
@@ -244,35 +232,24 @@ func TestG2NewReleaseFails(t *testing.T) {
 	files, _ := filepath.Glob(filepath.Join(e.Dir, "hub.db*"))
 	t.Logf("after %d starts by the service manager: the hub answers %v; marker %s; store files %v",
 		starts, answered, strings.Join(strings.Fields(string(marker)), " "), names(files))
+	// Found 28 October: upgrade.Recover, which puts the old store back, runs in the new
+	// binary and left a swapped-in To version alone; AfterBoot's health check never ran.
+	// Fixed 29 October: the new binary counts its starts (upgrade.CountStart) and rolls
+	// back after three.
 	if !answered {
-		// Found 28 October: upgrade.Recover, which puts the old store back, runs in the
-		// new binary (app.New), and leaves a swapped-in To version alone; AfterBoot's
-		// health check never runs. Nothing outside the new binary rolls back.
-		finding(t, "G2: a release that cannot start is never rolled back")
-		t.Errorf("I6: a release that cannot start leaves the hub down: %d starts in 2 minutes, none answered; "+
-			"the old binary is at bin/hub.prev and the old store at hub.db.prev, nothing rolls back", starts)
-		// By hand, as an administrator would: put the old binary back. The hub then
-		// puts the old store back itself (upgrade.Recover), and tries the release once
-		// more (a stop before the new release started says nothing against it).
-		prev, err := os.ReadFile(filepath.Join(e.Dir, "bin", "hub.prev"))
-		if err != nil {
-			t.Fatalf("no previous binary: %v", err)
-		}
-		for i := 1; i <= 3; i++ {
-			os.WriteFile(p.Bin(), prev, 0o755)
-			r.restart()
-			t.Logf("the old binary put back by hand (%d): version %v; %v", i, p.Status()["version"], lastLine(p.Tail(200), "msg=upgrade result="))
-			end := time.Now().Add(time.Minute)
-			for p.Running() && time.Now().Before(end) {
-				time.Sleep(500 * time.Millisecond)
-			}
-			if p.Running() {
-				break
-			}
-			t.Logf("the hub took the release that cannot start again")
-		}
-	} else {
-		r.restart()
+		t.Fatalf("I6: a release that cannot start leaves the hub down: %d starts in 2 minutes, none answered", starts)
+	}
+	if v := p.Status()["version"]; v != "0.2.0" {
+		t.Fatalf("the hub answers on %v, want 0.2.0", v)
+	}
+	if p.Grep("upgrade result=failed from=0.2.0 to=0.3.5") == 0 {
+		t.Errorf("the rollback from 0.3.5 is not reported:\n%s", p.Tail(20))
+	}
+	r.restart()
+	rolled = time.Now()
+	r.cycles(4)
+	if n := len(ch.fetched(rolled, "v0.3.5/")); n > 0 {
+		t.Errorf("I7: the release that cannot start is fetched again (%d requests)", n)
 	}
 	r.finish(5 * time.Minute)
 

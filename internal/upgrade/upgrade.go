@@ -84,6 +84,7 @@ type Marker struct {
 	PrevStore  string `json:"prevStore"`
 	StartedAt  string `json:"startedAt"`
 	Reason     string `json:"reason,omitempty"`
+	Starts     int    `json:"starts,omitempty"` // starts of To before it reached serving (CountStart)
 }
 
 // Result is what the heartbeat reports as lastUpgrade.
@@ -512,7 +513,7 @@ func (u *Upgrader) AfterBoot(ctx context.Context, selfStatusURL string) {
 	case "rolledback":
 		os.Remove(path)
 		u.H.Store.SetMeta("upgrade_skip", mk.To)
-		u.record(Result{Result: "failed", From: mk.From, To: mk.To, Reason: "health check failed, rolled back: " + mk.Reason})
+		u.record(Result{Result: "failed", From: mk.From, To: mk.To, Reason: "rolled back: " + mk.Reason})
 		return
 	case "swapped":
 		if mk.To != u.H.Version {
@@ -540,6 +541,8 @@ func (u *Upgrader) AfterBoot(ctx context.Context, selfStatusURL string) {
 		// Started locked (the key was not handed over): the migrated data has not been
 		// opened yet. Check it at the first unlock, and keep the old store till then.
 		slog.Warn("upgraded hub started locked; the upgrade is checked at the first staff login", "to", mk.To)
+		mk.Starts = 0 // it started: restarts while locked say nothing against it (CountStart)
+		writeMarker(path, mk)
 		u.H.AfterUnlock(func() error {
 			if _, err := os.Stat(path); err == nil {
 				go u.confirm(ctx, selfStatusURL, path, mk)
@@ -572,7 +575,7 @@ func (u *Upgrader) confirm(ctx context.Context, selfStatusURL, path string, mk M
 		return
 	}
 	slog.Error("upgrade health check failed, rolling back", "reason", reason)
-	mk.State, mk.Reason = "rolledback", reason
+	mk.State, mk.Reason = "rolledback", "health check failed: "+reason
 	if err := writeMarker(path, mk); err != nil {
 		slog.Error("rollback: marker not written; staying on this version", "err", err)
 		return
@@ -671,6 +674,36 @@ func Recover(dataDir, storePath, version string) error {
 		return errors.New("upgrade: the old binary is back; exiting so that it is started")
 	}
 	return nil
+}
+
+// maxStarts is how many times a swapped-in release may start without reaching its
+// health check (or, locked, serving) before it is rolled back.
+const maxStarts = 3
+
+// CountStart runs first thing at each start, before anything that may fail. A release
+// an upgrade swapped in that exits before its health check (a panic, a store or port it
+// cannot open) is started again and again by the service manager, and the health check
+// that would roll it back never runs (adversarial G2). Each such start is counted in the
+// marker; once maxStarts are spent, the upgrade is marked rolled back and Recover puts
+// the old store and binary back. The error then asks the caller to exit, so that the
+// service manager starts the old release, which reports the failure and skips the
+// version (AfterBoot).
+func CountStart(dataDir, storePath, version string) error {
+	path := filepath.Join(dataDir, "upgrade.json")
+	b, err := os.ReadFile(path)
+	var mk Marker
+	if err != nil || json.Unmarshal(b, &mk) != nil || mk.State != "swapped" || mk.To != version {
+		return nil
+	}
+	mk.Starts++
+	if mk.Starts > maxStarts {
+		mk.State, mk.Reason = "rolledback", fmt.Sprintf("%s did not start (%d tries)", mk.To, maxStarts)
+		slog.Error("upgrade: this release does not start, rolling back", "to", mk.To, "from", mk.From)
+	}
+	if err := writeMarker(path, mk); err != nil {
+		return nil // nothing is counted on a disk that takes no writes; keep starting
+	}
+	return Recover(dataDir, storePath, version)
 }
 
 // swapStore moves live to saveAs and incoming to live, the key file and then its data
