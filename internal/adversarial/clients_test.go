@@ -209,21 +209,20 @@ func TestI8cMalformedPayloads(t *testing.T) {
 	}
 }
 
-// I8c, large payloads within the 64 MB limit: one of 60 MB (300 000 events of a
-// program central does not have), one over the limit, and six of 60 MB at once, online
-// and offline. Must hold as TestI8cMalformedPayloads, with the hub's memory bounded:
-// it runs on a Pi 4 with 1 GB.
+// I8c, large payloads: one of 60 MB (300 000 events of a program central does not
+// have) and one of 70 MB, and six at once of 60 MB and of 3 MB, online and offline.
+// Must hold as TestI8cMalformedPayloads, with the hub's memory bounded: it runs on a
+// Pi 4 with 1 GB. Found 29 October: within the 64 MB limit, one of 60 MB took the hub
+// from 174 to 605 MB, six at once to 5.7 GB. Fixed: /api/tracker takes at most 4 MB
+// (core.MaxTrackerBody).
 func TestI8cLargePayloads(t *testing.T) {
-	finding(t, "I8c: a tracker payload of 60 MB (within the 64 MB limit) takes the hub's memory up by about 430 MB, "+
-		"six at once to 5.7 GB; the hub decodes it whole and builds a report for every object, and online also holds "+
-		"central's report whole (docs: run alone; it needs that much memory)")
 	r := netStart(t)
 	nurse := r.e.Android(tk.RoleNurse)
 	web := r.e.Web(tk.RoleNurse)
 	web.Login()
 	cases := []payloadCase{
 		{"60 MB of events of an unknown program", "POST", tk.SyncImport, "application/json", func() []byte { return bigEvents(60, r.badEvent()) }},
-		{"70 MB (over the limit)", "POST", tk.SyncImport, "application/json", func() []byte { return bigEvents(70, r.badEvent()) }},
+		{"70 MB", "POST", tk.SyncImport, "application/json", func() []byte { return bigEvents(70, r.badEvent()) }},
 	}
 	read := func() int { st, _, _ := web.DoHeader("GET", "/api/me?fields=id"); return st }
 	problems, accepted := r.sendCases(cases, nurse.User, read)
@@ -232,27 +231,29 @@ func TestI8cLargePayloads(t *testing.T) {
 		if down {
 			r.p.WaitFor("offline", time.Minute, tk.Offline)
 		}
-		var wg sync.WaitGroup
-		var mu sync.Mutex
-		var statuses []int
-		body := bigEvents(60, r.badEvent())
-		rss := r.p.RSSMB()
-		start := time.Now()
-		for range 6 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				st, _, _, _, _ := r.sendRaw(nurse.User, "POST", tk.SyncImport, "application/json", body)
-				mu.Lock()
-				statuses = append(statuses, st)
-				mu.Unlock()
-			}()
-		}
-		wg.Wait()
-		t.Logf("offline=%v six 60 MB payloads at once: %v in %s; RSS %.0f → %.0f MB, peak %.0f MB", down, statuses,
-			time.Since(start).Round(time.Millisecond), rss, r.p.RSSMB(), r.p.PeakRSSMB())
-		if !r.p.Running() {
-			t.Fatal("the hub process died on six large payloads at once")
+		for _, mb := range []int{60, 3} {
+			var wg sync.WaitGroup
+			var mu sync.Mutex
+			var statuses []int
+			body := bigEvents(mb, r.badEvent())
+			rss := r.p.RSSMB()
+			start := time.Now()
+			for range 6 {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					st, _, _, _, _ := r.sendRaw(nurse.User, "POST", tk.SyncImport, "application/json", body)
+					mu.Lock()
+					statuses = append(statuses, st)
+					mu.Unlock()
+				}()
+			}
+			wg.Wait()
+			t.Logf("offline=%v six %d MB payloads at once: %v in %s; RSS %.0f → %.0f MB, peak %.0f MB", down, mb, statuses,
+				time.Since(start).Round(time.Millisecond), rss, r.p.RSSMB(), r.p.PeakRSSMB())
+			if !r.p.Running() {
+				t.Fatal("the hub process died on six large payloads at once")
+			}
 		}
 	}
 	r.e.Net.SetDown(false)

@@ -79,7 +79,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.H.WebError(w, 401, "Unauthorized", "")
 		return
 	}
-	body, err := core.ReadBody(r, core.MaxBody)
+	body, err := core.ReadBody(r, core.MaxTrackerBody)
 	if err != nil {
 		a.H.WebError(w, http.StatusRequestEntityTooLarge, "request body too large or unreadable", "")
 		return

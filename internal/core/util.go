@@ -34,9 +34,17 @@ func ReadBody(r *http.Request, limit int64) ([]byte, error) {
 	return b, err
 }
 
-// MaxBody is the largest request body the hub buffers (tracker imports, proxied
-// requests). Everything is held in RAM on a small device.
+// MaxBody is the largest request body the hub buffers (proxied requests, aggregate
+// data; tracker imports take MaxTrackerBody). Everything is held in RAM on a small device.
 const MaxBody = 64 << 20
+
+// MaxTrackerBody is the body limit for /api/tracker. An import costs 7 to 15 times its
+// size in memory while it is decoded and answered (adversarial I8c: 60 MB took a hub
+// from 174 to 605 MB). Android posts all it holds in one request, so the limit is far
+// above what a tablet sends: a person with an enrollment and three events is about
+// 7 kB as central serves them, so 4 MB holds some 500 people. Six at once still fit a
+// 1 GB Pi.
+const MaxTrackerBody = 4 << 20
 
 // MaxAnonymousBody is the body limit for a request without a login: one is a login
 // or the start of one, a few hundred bytes. Anyone on the facility network can send
