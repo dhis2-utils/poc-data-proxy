@@ -236,13 +236,19 @@ func TestD7CaptivePortal(t *testing.T) {
 	r.e.Net.SetDown(false)
 	r.p.WaitFor("online", 2*time.Minute, tk.Online)
 	t.Logf("the cell after the portal: central %q by %q; the hub offline %q", cv, by, hv)
-	for _, s := range aggSaves {
-		if s.status/100 == 2 && cv != s.value {
-			finding(t, "D7: an aggregate value sent while the hub still thought it was online got the portal's page "+
-				"passed back as success; central never got it, and the hub does not send it")
-			t.Errorf("I1: the aggregate value %s was answered %d %q (%s) and is not on central (central has %q)",
-				s.value, s.status, s.mode, s.body, cv)
+	// Found 29 October: the portal's page was passed back as success, and the value
+	// never sent. Fixed: an /api/ answer that cannot be central's counts as central
+	// unreachable (proxy.notCentral), so the hub takes the value itself. Each value
+	// goes into the same cell, so central holds the last one confirmed.
+	var last *aggSave
+	for i := range aggSaves {
+		if aggSaves[i].status/100 == 2 {
+			last = &aggSaves[i]
 		}
+	}
+	if last != nil && cv != last.value {
+		t.Errorf("I1: the aggregate value %s was answered %d %q (%s) and is not on central (central has %q)",
+			last.value, last.status, last.mode, last.body, cv)
 	}
 }
 
@@ -389,19 +395,21 @@ func TestD7PortalAnswersKept(t *testing.T) {
 			cv, _, _ := s.CentralDataValue(ag.DataSet, pe, ag.Integer, ag.COC, ag.DefaultAOC)
 			t.Logf("portal %q: the value %s answered %d; offline the hub's form shows %q; central has %q; pending on the hub %d",
 				kind, v, vst, hv, cv, s.App.Hub.Store.CountOutbox("pending"))
-			if vst/100 == 2 && cv != v && hv == v {
-				problems = append(problems, fmt.Sprintf("portal %q: the value %s answered %d is shown offline as saved; central does not have it, and it is not queued", kind, v, vst))
-			}
 		}
 		s.Online()
+		if ag := s.M.Aggregate; ag != nil {
+			s.Sync()
+			cv, _, _ := s.CentralDataValue(ag.DataSet, time.Now().UTC().Format("200601"), ag.Integer, ag.COC, ag.DefaultAOC)
+			if vst/100 == 2 && cv != v {
+				problems = append(problems, fmt.Sprintf("portal %q: the value %s answered %d is not on central after the next sync (central has %q)", kind, v, vst, cv))
+			}
+		}
 		nurse.Do("GET", read, nil) // central's answer again, for the next round
 	}
-	if len(problems) > 0 {
-		finding(t, "D7: before its second failed ping, the hub keeps a captive portal's answers as central's: "+
-			"cached reads are replaced by the portal's page and served offline, and an aggregate value the portal "+
-			"swallowed is shown offline as saved and never sent")
-		for _, p := range problems {
-			t.Error(p)
-		}
+	// Found 29 October: before its second failed ping the hub kept the portal's answers
+	// as central's. Fixed: an /api/ answer that cannot be central's (HTML for JSON, a
+	// redirect to another host) counts as central unreachable (proxy.notCentral).
+	for _, p := range problems {
+		t.Error(p)
 	}
 }

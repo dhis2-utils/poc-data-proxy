@@ -7,9 +7,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path"
 	"regexp"
 	"strconv"
@@ -80,12 +82,53 @@ func (p *Proxy) Forward(ctx context.Context, r *http.Request, body []byte, a cen
 		p.H.Central.Failed(ctx, err)
 		return nil, central.ErrNetwork
 	}
+	if why := notCentral(r, hdr, resp, p.H.Central.BaseURLs()); why != "" {
+		err := fmt.Errorf("%w: %s %s answered by something other than central (%s)", central.ErrNetwork, r.Method, r.URL.Path, why)
+		p.H.Central.Monitor.ReportFailure(err)
+		return nil, err
+	}
 	h := resp.Header.Clone()
 	for _, k := range droppedResponseHeaders {
 		h.Del(k)
 	}
 	return &Result{Status: resp.StatusCode, Header: h, Body: b}, nil
 }
+
+// notCentral says why an answer to an /api/ request cannot be central's, or "": a
+// captive portal or a hotel login in front of the internet answers every request,
+// before the hub's next ping notices (adversarial D7). Kept narrow, as central also
+// serves files and pages under /api/: an HTML page where the client asked for JSON
+// (the hub asks for JSON when the client names nothing), outside the apps' files; or
+// a redirect to a host that is not central's.
+func notCentral(r *http.Request, hdr http.Header, resp *http.Response, bases []string) string {
+	if !strings.HasPrefix(r.URL.Path, "/api/") {
+		return ""
+	}
+	if loc := resp.Header.Get("Location"); resp.StatusCode/100 == 3 && loc != "" {
+		u, err := url.Parse(loc)
+		if err != nil || u.Host == "" {
+			return ""
+		}
+		for _, b := range bases {
+			if bu, err := url.Parse(b); err == nil && strings.EqualFold(bu.Host, u.Host) {
+				return ""
+			}
+		}
+		return "a redirect to " + u.Host
+	}
+	accept := hdr.Get("Accept")
+	if accept == "" {
+		accept = "application/json" // what central.Do sends
+	}
+	if resp.StatusCode/100 == 2 && strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html") &&
+		strings.Contains(accept, "json") && !strings.Contains(accept, "html") && !strings.Contains(accept, "*/*") &&
+		!appsRe.MatchString(r.URL.Path) {
+		return "an HTML page for " + accept
+	}
+	return ""
+}
+
+var appsRe = regexp.MustCompile(`^/api/([0-9]{2}/)?apps/`)
 
 // Localize points central's absolute URLs in a response at the hub, for the host the
 // client used. Forward does not do this, so the cache holds central's own form: a

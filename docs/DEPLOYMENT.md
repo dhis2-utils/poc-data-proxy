@@ -287,7 +287,7 @@ The hub supports the first kind only. Generic support for the others is an endle
 | Hub → NTP | UDP 123 to the country's or a public NTP pool | Correct time |
 | Clients → hub | HTTPS (443 or 8443) on the LAN | Capture apps |
 
-All connections to central are outgoing. Nothing on the internet needs to reach the hub, so it works behind NAT and carrier-grade NAT on 4G.
+All connections to central are outgoing. Nothing on the internet needs to reach the hub, so it works behind NAT and carrier-grade NAT on 4G. A captive portal or hotel login in front of the internet is taken for central unreachable: the ping must answer "pong", and an `/api/` answer that is an HTML page where JSON was asked for, or a redirect to another host, takes the hub offline at once. Staff keep working offline until someone logs the uplink in.
 
 ### Reaching the hub securely (decided 2026-10-19)
 
