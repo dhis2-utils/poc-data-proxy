@@ -756,10 +756,11 @@ func TestL3ForgedRegistryStatus(t *testing.T) {
 }
 
 // L3 (registry, revoked): as above with status "revoked", the Facility Hub app's mark
-// for a hub whose tokens a manager revoked. A hub that reads it deletes its own and its
-// users' tokens on central and stops syncing until it is reset. With a save waiting
-// offline: what happens to it, and does putting the entry back recover the hub? A new
-// nurse is used, so only a test user's tokens are deleted.
+// for a hub whose tokens a manager revoked. A hub that read it deleted its own and its
+// users' tokens on central and stopped syncing until it was reset, with a save waiting
+// offline (FINDINGS.md). It now takes "revoked" as real only once central refuses its
+// own token: the forged entry is ignored and the save is pushed. A new nurse is used,
+// so only a test user's tokens could be deleted.
 func TestL3ForgedRegistryRevoked(t *testing.T) {
 	s := begin(t)
 	if !s.Live() {
@@ -809,8 +810,7 @@ func TestL3ForgedRegistryRevoked(t *testing.T) {
 	s.t.Logf("entry restored: hub revoked %v; the nurse's request %d; queued %d; registration on central %v",
 		h.Revoked(), st, h.Store.CountOutbox(store.OutboxPending), s.CentralObject("trackedEntities", pr.TE) != nil)
 
-	if h.Revoked() || !recovered {
-		finding(t, "L3: an ordinary central user can mark the hub 'revoked' in its unprotected registry entry: the hub deletes its tokens, stops syncing, and stays so until a reset, with offline saves waiting")
+	if h.Revoked() || !recovered || !onCentral {
 		t.Errorf("L3: a forged 'revoked' by an ordinary user disabled the hub (revoked %v after the entry was restored; %d save(s) waiting, on central %v)", h.Revoked(), pending, onCentral)
 	}
 }

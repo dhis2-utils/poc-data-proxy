@@ -281,7 +281,7 @@ func (h *Hub) CreatePAT(ctx context.Context, with central.Auth, exp time.Time) (
 		var reg struct {
 			Status string `json:"status"`
 		}
-		if h.Central.JSON(ctx, "GET", RegistryPath(h.HubID()), nil, with, &reg) == nil && reg.Status == "revoked" {
+		if h.Central.JSON(ctx, "GET", RegistryPath(h.HubID()), nil, with, &reg) == nil && reg.Status == "revoked" && h.revokedForReal(ctx) {
 			h.SetRevoked()
 			h.DropTokens(ctx)
 		}
@@ -404,6 +404,18 @@ func (h *Hub) refreshFacilityPath(ctx context.Context) error {
 	}
 	slog.Info("the facility's path changed on central", "was", h.Runtime().FacilityPath, "now", ou.Path)
 	return h.UpdateRuntime(func(rt *Runtime) { rt.FacilityPath = ou.Path })
+}
+
+// revokedForReal tells a real revocation from a forged one, once the registry entry
+// says "revoked": any user can write the entry until its namespace is protected, but
+// only a real revocation deletes the hub's token, so central refuses it (L3).
+func (h *Hub) revokedForReal(ctx context.Context) bool {
+	err := h.Central.JSON(ctx, "GET", "/api/me?fields=id", nil, h.HubAuth(), nil)
+	if central.Status(err) == http.StatusUnauthorized {
+		return true
+	}
+	slog.Warn("the registry marks this hub's tokens as revoked, but central still takes its token: ignored (protect facility-hub-registry, docs/DEPLOYMENT.md)", "err", err)
+	return false
 }
 
 // AddUserPrograms merges the programs one user can see into the catalog (at login,

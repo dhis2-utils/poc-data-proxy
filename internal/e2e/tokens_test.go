@@ -79,7 +79,8 @@ func TestTokensSharedWithManagersAndListed(t *testing.T) {
 }
 
 // A hub whose tokens were revoked in the Facility Hub app deletes what it still holds,
-// stops serving offline data, and makes no new tokens.
+// stops serving offline data, and makes no new tokens. Here the app deleted the hub's
+// own token but not nurse_a's; the hub finds out at the next login.
 func TestRevokedHubDropsItsTokens(t *testing.T) {
 	e := newEnv(t)
 	e.setup()
@@ -89,10 +90,14 @@ func TestRevokedHubDropsItsTokens(t *testing.T) {
 	u, _ := e.app.Hub.Store.UserByName("nurse_a")
 	userKey, _ := e.app.Hub.Store.PAT(u)
 	hubKey := e.app.Hub.Runtime().HubToken
+	if st := deleteTokenAs(e, "hub_admin", e.app.Hub.Runtime().HubTokenUID); st != 200 {
+		t.Fatalf("deleting the hub's token: %d", st)
+	}
 	reg := registryEntry(e)
 	reg["status"], reg["revokedBy"], reg["revokedAt"] = "revoked", "hub_admin", time.Now().UTC().Format(time.RFC3339)
 	setRegistry(e, reg)
-	e.sync()
+	e.app.Worker.Cycle(context.Background()) // its token is gone: it learns nothing here
+	e.web("nurse_b").do("POST", "/api/auth/login", map[string]string{"username": "nurse_b", "password": fc.Password})
 	if !e.app.Hub.Revoked() {
 		t.Fatal("the hub did not take up its revocation")
 	}
@@ -112,6 +117,39 @@ func TestRevokedHubDropsItsTokens(t *testing.T) {
 	e.web("nurse_b").do("POST", "/api/auth/login", map[string]string{"username": "nurse_b", "password": fc.Password})
 	if u, _ := e.app.Hub.Store.UserByName("nurse_b"); u != nil && u.HasPAT {
 		t.Fatal("a revoked hub made a token")
+	}
+}
+
+// "revoked" in the registry entry, which any user can write until the namespace is
+// protected, while central still takes the hub's token, is forged: the hub carries on,
+// keeps its tokens and pushes what it holds (L3). A real revocation deletes the tokens.
+func TestForgedRevokedIgnored(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	nurse := e.web("nurse_a")
+	nurse.login()
+	e.sync()
+	u, _ := e.app.Hub.Store.UserByName("nurse_a")
+	userKey, _ := e.app.Hub.Store.PAT(u)
+	e.offline()
+	nurse.json("POST", postSync, newPatient("ForTe000001", "ForEn000001", "Forged", "NAT-7272", nil), 200)
+	e.online()
+	reg := registryEntry(e)
+	reg["status"] = "revoked"
+	setRegistry(e, reg)
+	e.sync()
+	e.web("nurse_b").login() // a new token: the registry is read again, with nurse_b's password
+	if e.app.Hub.Revoked() {
+		t.Fatal("a forged 'revoked' disabled the hub while central takes its token")
+	}
+	if !e.central.TokenValid(userKey) || !e.central.TokenValid(e.app.Hub.Runtime().HubToken) {
+		t.Fatal("a forged 'revoked' made the hub delete its tokens")
+	}
+	if e.central.Object("ForTe000001") == nil {
+		t.Fatal("the offline registration did not reach central")
+	}
+	if u, _ := e.app.Hub.Store.UserByName("nurse_b"); u == nil || !u.HasPAT {
+		t.Fatal("no token for nurse_b after a forged 'revoked'")
 	}
 }
 

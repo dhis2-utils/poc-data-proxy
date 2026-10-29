@@ -230,8 +230,7 @@ func (w *Worker) cycle(ctx context.Context) error {
 }
 
 // checkRegistry reads this hub's registry entry and records whether another hub
-// replaced it (FINDINGS item 16, REVIEW-2 F9), or the Facility Hub app revoked its
-// tokens.
+// replaced it (FINDINGS item 16, REVIEW-2 F9). A "revoked" read here is forged.
 func (w *Worker) checkRegistry(ctx context.Context) {
 	h := w.H
 	var reg struct {
@@ -241,8 +240,9 @@ func (w *Worker) checkRegistry(ctx context.Context) {
 		return // unknown: keep the last answer
 	}
 	if reg.Status == "revoked" {
-		slog.Warn("registry marks this hub's tokens as revoked: dropping them; no longer serving patient data offline")
-		h.SetRevoked()
+		// Read with the hub's token: central still takes it, so the entry is forged
+		// (core.revokedForReal). A real revocation is found at the next token made.
+		slog.Warn("the registry marks this hub's tokens as revoked, but central still takes its token: ignored (protect facility-hub-registry, docs/DEPLOYMENT.md)")
 		return
 	}
 	retired := reg.Status == "retired"
