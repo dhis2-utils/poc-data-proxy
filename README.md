@@ -136,7 +136,7 @@ The hub has no facility-specific configuration. It reads one small image-default
    - web: the normal login page at the hub's address;
    - Android: enter the hub's address as the server URL.
 
-   Offline login only works after that.
+   Offline login only works after that. Each staff member then opens Capture and the Data Entry app once online; at each online login the hub also loads, for that person, the screens others at the facility opened online (docs/DEPLOYMENT.md, section 3).
 4. **Daily use.** Clients use the hub's address. While central is reachable, everything passes through to central with the user's own PAT. When it is not, the hub serves cached GETs and handles `/api/tracker/*` and generated values itself.
 
 Hub endpoints:
