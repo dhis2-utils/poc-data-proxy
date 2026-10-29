@@ -305,6 +305,19 @@ func TestAggregateOfflineRefusals(t *testing.T) {
 	}
 }
 
+// G7: a hub replaced by another for its facility takes no aggregate values offline,
+// as it takes no tracker saves; refused with 409, never 503 (the app would queue it).
+func TestAggregateRetiredHubRefuses(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	pe := aggPeriod(e, ag)
+	e.App.Hub.Store.SetMeta(core.MetaRetired, "1")
+	e.Offline()
+	if st, b := nurse.PostDataValue("/api/"+e.App.Hub.APIMinor()+"/dataValues", cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "5")); st != 409 ||
+		!strings.Contains(string(b), "replaced") {
+		t.Fatalf("a value offline on a replaced hub: %d %s", st, b)
+	}
+}
+
 // Review focus 3: an attribute option combination the user may not use is neither
 // served nor written.
 func TestAggregateAttributeAccess(t *testing.T) {

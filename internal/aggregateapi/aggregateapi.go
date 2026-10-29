@@ -80,6 +80,10 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	core.MarkOffline(w)
+	if a.H.Retired() {
+		a.H.WebError(w, http.StatusConflict, "needs connection: this hub was replaced by another hub for the facility; use the new hub", "")
+		return
+	}
 	acc := a.H.AggAccess(sess.UserID)
 	if sess.UserID == 0 || acc == nil || !a.H.Access(sess.UserID).InFacility(a.H.FacilityPath()) {
 		a.H.WebError(w, http.StatusConflict, "needs connection: this user has no aggregate data at this hub", "")

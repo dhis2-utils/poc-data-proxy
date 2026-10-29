@@ -799,8 +799,7 @@ func TestG7RetiredHubAggregate(t *testing.T) {
 	tst, tb := nurse.Do("POST", tk.SyncImport, pr.Payload)
 	ast, ab := s.aggValue(web, s.M.Aggregate.Number, month(0), "5")
 	t.Logf("the replaced hub offline: a registration %d %.150s; an aggregate value %d %s", tst, tb, ast, ab)
-	if ast/100 == 2 {
-		finding(t, "G7: a replaced hub keeps taking aggregate values offline")
+	if ast/100 == 2 { // fixed 29 October: refused as tracker saves are
 		t.Errorf("the replaced hub takes an aggregate value offline (%d), while it refuses tracker saves (%d)", ast, tst)
 	}
 	s.Online()
