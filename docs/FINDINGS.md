@@ -540,7 +540,7 @@ What it means for the hub (decided 2026-10-27: accepted, documented):
 
 Checked on 29 October on DHIS2 2.43.2 (the eRegisters instance), with a hub in front: `TestFileValues`, `TestFileSizes`, `TestCaptureWebFiles` and `TestFileUploadOffline` in `internal/live/files_test.go` (`HUB_FILES=1`; they add an IMAGE and a FILE_RESOURCE data element to the primary program's first stage and an IMAGE attribute to the program, and take them out at the end). Central's side was also read in its code (2.41.10.1, 2.42.7.1, 2.43.2.1), the Android side in the SDK (`develop`, 14 October), Capture web's in capture-app (`master`).
 
-**Recommended (for decision): a limitation, documented.** Images and files need a connection to be added and to be viewed. The hub keeps no files, and it gets no mechanism for them until a programme it serves needs one (AGENTS.md).
+**Decided 2026-10-29: a limitation, documented.** Images and files need a connection to be added and to be viewed. The hub keeps no files, and it gets no mechanism for them until a programme it serves needs one (AGENTS.md).
 
 **How central does it:**
 
@@ -597,7 +597,7 @@ Checked on 29 October on DHIS2 2.43.2 (the eRegisters instance), with a hub in f
 
 **Options considered:**
 
-1. **A limitation, documented** (recommended). No hub code.
+1. **A limitation, documented** (chosen 2026-10-29, without the optional change). No hub code.
    - The hub's answers are already clear: 503 "needs connection" for uploads and file reads. Capture web does not queue the upload. Android retries the record at the next sync without blocking the rest.
    - What staff must know: an image or file added offline in Capture web is not saved, and the toast says only "Async field update failed". In the Android app it waits on the tablet until the hub is online.
    - Small optional change, about an hour: pass file reads (`GET /api/tracker/…/file|image`) to central while online with the outbox waiting. They would then work as soon as the uplink is back, as other online reads do.
