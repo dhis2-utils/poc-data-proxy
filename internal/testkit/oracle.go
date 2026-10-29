@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -251,6 +253,15 @@ func Judge(truth *Truth, q Query, user string, cStatus int, cBody []byte, hStatu
 			missing = append(missing, uid)
 		}
 	}
+	if field, value, ok := pageBoundary(q, cBody); ok {
+		// A full page of an ordered list ends inside a group of objects with the same
+		// order value, and central breaks such ties by creation time, the hub by UID: the
+		// two pages may hold different members of the group. Only those are excused;
+		// whether the hub shows the user any of them is judged by the unpaged lists.
+		tie := func(it map[string]any) bool { return fmt.Sprint(it[field]) == value }
+		leaks = slices.DeleteFunc(leaks, func(uid string) bool { return tie(hItems[uid]) })
+		missing = slices.DeleteFunc(missing, func(uid string) bool { return tie(cItems[uid]) })
+	}
 	sort.Strings(leaks)
 	sort.Strings(missing)
 	sort.Strings(differs)
@@ -269,6 +280,38 @@ func Judge(truth *Truth, q Query, user string, cStatus int, cBody []byte, hStatu
 		o.Detail = strings.TrimSpace(o.Detail + fmt.Sprintf("\nhub also has %d object(s) the facility does not own: %v", len(extra), extra))
 	}
 	return o
+}
+
+// pageBoundary gives, for a paged list with an order whose page from central is full,
+// the order field and its value on the last object of central's page.
+func pageBoundary(q Query, cBody []byte) (field, value string, ok bool) {
+	u, err := url.Parse(q.Path)
+	if q.Single || err != nil {
+		return "", "", false
+	}
+	v := u.Query()
+	field, _, _ = strings.Cut(strings.Split(v.Get("order"), ",")[0], ":")
+	size, err := strconv.Atoi(v.Get("pageSize"))
+	if field == "" || err != nil || v.Get("paging") == "false" {
+		return "", "", false
+	}
+	var res map[string]json.RawMessage
+	if json.Unmarshal(cBody, &res) != nil {
+		return "", "", false
+	}
+	raw := res[q.Kind]
+	if raw == nil {
+		raw = res["instances"]
+	}
+	var list []map[string]any
+	if json.Unmarshal(raw, &list) != nil || len(list) == 0 || len(list) < size {
+		return "", "", false
+	}
+	last, ok := list[len(list)-1][field]
+	if !ok {
+		return "", "", false
+	}
+	return field, fmt.Sprint(last), true
 }
 
 // narrow drops from a tracked entity the enrollments of programs the facility does not
