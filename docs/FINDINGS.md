@@ -673,7 +673,7 @@ Found on 2026-10-27 by the adversarial scenarios (`internal/adversarial`), run a
 
 **Open, from wave 3** (28–29 October):
 
-- **Cached metadata replayed offline after central changed it** (A15). To measure first: whether Capture web and Android reload metadata offline at all, as a scenario with the real apps; fix only if a client is shown a stale form.
+- ~~**Cached metadata replayed offline after central changed it** (A15)~~ **measured 2026-10-30, no fix needed**: with the real apps (Capture web in Chromium, Capture 3.5.0 on a tablet over adb) against a hub whose uplink was cut after central renamed the program, neither app reloads metadata offline — Android made **0** metadata requests on its offline sync and showed its local copy; Capture web on reload made only `GET /api/me` (answered from the hub's per-user cache) and rendered the working list and a registration form from the browser's own cache. No client was shown a form staler than what it had cached online (`TestA15MetadataReloadOffline`).
 
 Also seen: the oracle's first page of an event program's list breaks ties in a different order from central (the hub by UID, central by creation time) when many events share a date.
 
