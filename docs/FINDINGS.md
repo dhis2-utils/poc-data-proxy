@@ -668,7 +668,7 @@ Found on 2026-10-27 by the adversarial scenarios (`internal/adversarial`), run a
 
 - ~~**Reserved values with `ORG_UNIT_CODE`**~~ decided 2026-10-30 as a limitation (T1), recorded under "Accepted" above: the pool is made with the chosen org unit's code; set the hub up on the facility itself.
 - **No generated values on a user's first login offline**: a user's programs join the hub's catalog at their login, but the pool fills only at the next cycle; if the uplink drops before then, generated attributes are refused (503).
-- **A misleading message on a first login offline** (T3): a user the hub has not served through the Android app online sees "The URL provided is not a DHIS2 server." (the cached `/api/system/info` is per user). Proposed: fix later — check whether anything in it really differs per user, and if not serve the hub's copy to anyone.
+- **A misleading message on a first login offline** (T3): a user the hub has not served through the Android app online sees "The URL provided is not a DHIS2 server." (the cached `/api/system/info` is per user). Decided 2026-10-30: leave it, fix later. The check is done: `/api/system/info` on 2.42 has only server-wide fields plus per-request `userAgent`/`serverDate` — nothing differs per user (checked on a live 2.42.7.1 and in `testdata/2.42/system_info.json`) — so when we do fix it, the hub can serve its own cached copy to any user offline, like it already does for `loginConfig` and `locales`, and Android then shows its usual login failure.
 
 
 **Open, from wave 3** (28–29 October):
