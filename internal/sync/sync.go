@@ -300,7 +300,13 @@ const metaRegistryTokens = "registry_tokens" // the token IDs last listed in the
 // reserve between 1 and 1000 values"): a bigger pool fills over several cycles.
 const maxReservePerRequest = 1000
 
-// RefillPool tops up the reserved value pool for every generated attribute.
+// poolLowWatermark is the fraction of a pool's target below which it is refilled:
+// above it, no request goes to central, so a nearly full pool does not cost a small
+// top-up every cycle (T2/T4, decided 2026-10-30).
+const poolLowWatermark = 4
+
+// RefillPool tops up the reserved value pool for every generated attribute, from the
+// low watermark to the target (the app's per-attribute setting, else the default).
 func (w *Worker) RefillPool(ctx context.Context) error {
 	h := w.H
 	rt := h.Runtime()
@@ -308,11 +314,11 @@ func (w *Worker) RefillPool(ctx context.Context) error {
 	var errs []error
 	for _, a := range h.Catalog().GeneratedAttributes() {
 		have := h.Store.CountReservedValues(a.ID, now)
-		need := h.PoolTarget() - have // a week of registrations at the facility's rate, at least reserved_pool_size (T2/T4)
-		if need <= 0 {
+		target := h.PoolTarget(a.ID)
+		if have >= target/poolLowWatermark {
 			continue
 		}
-		need = min(need, maxReservePerRequest)
+		need := min(target-have, maxReservePerRequest)
 		code := ""
 		if strings.Contains(a.Pattern, "ORG_UNIT_CODE") {
 			code = rt.FacilityCode

@@ -38,7 +38,7 @@ type Config struct {
 	PingTimeout      time.Duration
 	PATExpiryDays    int
 	TLS              bool // self-signed TLS (spec 12); false for local development
-	ReservedPoolSize int  // target number of reserved values per generated attribute
+	ReservedPoolSize int  // default target number of reserved values per generated attribute; facility-hub-config/reserved overrides it per attribute (T2/T4)
 	FullPullInterval time.Duration
 	// OwnershipCheckInterval: how often the hub checks that the facility still owns the
 	// enrollments it holds (transfers out do not show in incremental pulls).
@@ -103,7 +103,7 @@ func Default() Config {
 		HeartbeatInterval:      time.Hour,
 		TPM:                    true,
 		TLS:                    true,
-		ReservedPoolSize:       150,
+		ReservedPoolSize:       500,
 		FullPullInterval:       7 * 24 * time.Hour,
 		USBRequireMount:        true,
 		CentralMoveAfter:       time.Hour,

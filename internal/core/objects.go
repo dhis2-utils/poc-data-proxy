@@ -262,15 +262,6 @@ func (h *Hub) PersistImport(userID int64, out *tracker.ImportOutcome, params str
 	return seq, nil
 }
 
-// PoolTarget is how many reserved values each generated attribute's pool aims for:
-// about a week of the facility's registrations at its observed rate (tracked entities
-// created in the last week), and at least reserved_pool_size (T2/T4: a busy HC IV
-// registers about 560 people a day, so the default 150 does not last a day offline).
-func (h *Hub) PoolTarget() int {
-	week := h.CentralTime(time.Now().AddDate(0, 0, -7))
-	return max(h.Cfg.ReservedPoolSize, h.Store.CountCreatedSince(store.KindTrackedEntity, week))
-}
-
 // RemoveVisibilityExcept drops userID from central-origin objects of the given
 // programs ("" for objects without one) that a full pull did not list (spec 11.3). It
 // starts from the user's bitmap in memory, so only the objects it may remove are

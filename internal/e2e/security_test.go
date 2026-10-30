@@ -3,6 +3,7 @@ package e2e
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -534,35 +535,62 @@ func TestRetiredHubStopsServing(t *testing.T) {
 	a.json("GET", search, nil, 200)
 }
 
-// T2/T4: the reserved pool is sized from the facility's own rate — about a week of
-// registrations at the hub's observed rate, at least reserved_pool_size — and a
-// tablet gets up to Android's own 100 values per request when the pool allows it.
-func TestReservedPoolFromMeasuredRate(t *testing.T) {
+// T2/T4, as decided 2026-10-30: the pool size is a per-attribute setting managed in
+// the Facility Hub app (facility-hub-config/reserved), with reserved_pool_size as the
+// default when there is none; refills run from a low watermark (target/4) up to the
+// target, in requests of at most central's 1000; and a tablet gets up to Android's
+// own 100 values per request when the pool allows it.
+func TestReservedPoolSetting(t *testing.T) {
 	e := newEnv(t)
 	e.setup()
 	a := e.android("nurse_a")
 	a.json("GET", "/api/me", nil, 200)
-	// The facility's observed rate: 250 registrations today, within the last week.
-	for i := range 250 {
-		a.json("POST", postSync, newPatient(fmt.Sprintf("PoolTe%05d", i), fmt.Sprintf("PoolEn%05d", i),
-			"Pool", fmt.Sprintf("NAT-P%04d", i), nil), 200)
+	now := func() string { return e.app.Hub.CentralTime(time.Now()) }
+	reserve := func(n int) int {
+		t.Helper()
+		st, body := a.do("GET", "/api/trackedEntityAttributes/"+fc.AttrTBID+"/generateAndReserve?numberToReserve="+fmt.Sprint(n), nil)
+		var vals []any
+		json.Unmarshal(body, &vals)
+		if st != 200 {
+			t.Fatalf("reserve %d: %d %.200s", n, st, body)
+		}
+		return len(vals)
 	}
-	e.sync() // the pool refills to the measured target
-	target := e.app.Hub.PoolTarget()
-	have := e.app.Hub.Store.CountReservedValues(fc.AttrTBID, e.app.Hub.CentralTime(time.Now()))
-	t.Logf("pool target %d, reserved values held %d", target, have)
-	if target < 250 {
-		t.Fatalf("pool target %d, want at least the 250 registrations of the last week", target)
+
+	// No setting: the config default (5 in this env) is the target.
+	e.sync()
+	if have := e.app.Hub.Store.CountReservedValues(fc.AttrTBID, now()); have != e.app.Hub.Cfg.ReservedPoolSize {
+		t.Fatalf("no setting: pool %d, want the config default %d", have, e.app.Hub.Cfg.ReservedPoolSize)
 	}
-	if have < target {
-		t.Fatalf("the pool holds %d of its target %d after the sync", have, target)
+
+	// The app's setting: a default of 40 and an override of 250 for the TB identifier.
+	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{
+		"reserved": json.RawMessage(`{"default": 40, "attributes": {"` + fc.AttrTBID + `": 250}}`),
+	}
+	if err := e.app.Hub.RefreshCatalog(context.Background()); err != nil { // the cycle refreshes the catalog only at its interval
+		t.Fatal(err)
+	}
+	e.sync()
+	if have := e.app.Hub.Store.CountReservedValues(fc.AttrTBID, now()); have != 250 {
+		t.Fatalf("setting override: pool %d, want 250", have)
 	}
 	// Offline, a tablet asking for Android's 100 gets 100 while the pool allows it.
 	e.offline()
-	st, body := a.do("GET", "/api/trackedEntityAttributes/"+fc.AttrTBID+"/generateAndReserve?numberToReserve=100", nil)
-	var vals []any
-	json.Unmarshal(body, &vals)
-	if st != 200 || len(vals) != 100 {
-		t.Errorf("T4: a tablet asking for 100 values got %d (status %d): %.200s", len(vals), st, body)
+	if got := reserve(100); got != 100 {
+		t.Errorf("T4: a tablet asking for 100 values got %d", got)
+	}
+	// Above the low watermark (250/4 = 62) the next sync refills nothing: 150 >= 62.
+	e.online()
+	e.sync()
+	if have := e.app.Hub.Store.CountReservedValues(fc.AttrTBID, now()); have != 150 {
+		t.Errorf("above the low watermark: pool %d after the sync, want 150 (no refill)", have)
+	}
+	// Below it, the sync refills up to the target.
+	e.offline()
+	reserve(100) // 50 left < 62
+	e.online()
+	e.sync()
+	if have := e.app.Hub.Store.CountReservedValues(fc.AttrTBID, now()); have != 250 {
+		t.Errorf("below the low watermark: pool %d after the sync, want 250", have)
 	}
 }

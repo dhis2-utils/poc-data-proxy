@@ -483,7 +483,7 @@ func (a *API) ServeGenerated(w http.ResponseWriter, r *http.Request) {
 	// The pool is shared by the facility: one request may take at most half of the
 	// pool's target, so one device cannot leave the others without values until the
 	// next sync — and at most Android's own 100 per request (T2/T4).
-	n = max(1, min(n, 100, a.H.PoolTarget()/2))
+	n = max(1, min(n, 100, a.H.PoolTarget(attr)/2))
 	if !a.H.BeginLocalWrite() {
 		a.H.UpgradingError(w) // values handed out now would be handed out again after the swap
 		return

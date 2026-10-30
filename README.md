@@ -108,7 +108,7 @@ The hub has no facility-specific configuration. It reads one small image-default
 | `access_refresh_interval` | How often each user's access list is re-read from central, besides at login (default 1h) |
 | `pat_expiry_days` | Lifetime of the personal access tokens the hub creates |
 | `tls` | `true` (default): at first boot the hub creates a CA limited to its own names and private addresses, issues its server certificate, and keeps the CA's key (`ca.key`) to renew it; both private keys are sealed with the device key where the machine has a TPM. `false`: plain HTTP for development |
-| `reserved_pool_size` | Reserved values kept per generated attribute (default 150) |
+| `reserved_pool_size` | Default reserved values kept per generated attribute (default 500); the Facility Hub app can override it per attribute in `facility-hub-config/reserved` |
 | `usb_dir` | Where the box's USB stick is mounted (none by default; the image uses `/media/hub-usb`). Before set-up the hub writes its setup code there; after, each minute, what a restore needs: the pending saves, the key file and the hub's state (docs/RECOVERY.md, C2). Used only when it is a mount point |
 | `full_pull_interval` | How often a full, non-incremental pull runs per access group (default 168h, a week). A changed access list gives a full pull at the next sync anyway |
 | `ownership_check_interval` | How often the hub checks which of its people the facility still owns, to catch transfers out (default 1h) |

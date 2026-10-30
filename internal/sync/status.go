@@ -65,7 +65,19 @@ func Status(h *core.Hub) map[string]any {
 		"addresses": hubtls.Addresses(), "caFingerprint": hubtls.Fingerprint(h.Cfg.DataDir),
 		// How the hub has lived, a summary per day for 90 days (history.go).
 		"history": h.History(),
+		// The facility's generated attributes (id, pattern), so the Facility Hub app
+		// can set each one's reserved-value pool (facility-hub-config/reserved).
+		"generatedAttributes": generatedAttributes(h),
 	}
+}
+
+// generatedAttributes lists the catalog's generated attributes for the heartbeat.
+func generatedAttributes(h *core.Hub) []map[string]string {
+	var out []map[string]string
+	for _, a := range h.Catalog().GeneratedAttributes() {
+		out = append(out, map[string]string{"id": a.ID, "pattern": a.Pattern})
+	}
+	return out
 }
 
 // refusedCounts counts the changes central refused that are not resolved, by kind,
