@@ -7,6 +7,8 @@ import {
     retentionForm,
     retentionValue,
     tokensForm,
+    poolForm,
+    poolValue,
     tokensValue,
     wholeNumber,
 } from './settings'
@@ -112,5 +114,40 @@ describe('token lifetime', () => {
         })
         expect(tokensValue('6', null)).toBe(null)
         expect(tokensValue('366', null)).toBe(null)
+    })
+})
+
+describe('reserved-value pool', () => {
+    it('shows 500 for a missing key', () => {
+        expect(poolForm(null)).toEqual({ defaultPool: '500', attributes: [] })
+    })
+    it('round-trips a stored value, keeping fields it does not edit', () => {
+        const stored = { default: 800, attributes: { xs8A6tQJY0s: 3000 }, other: 1 }
+        expect(poolForm(stored)).toEqual({
+            defaultPool: '800',
+            attributes: [{ id: 'xs8A6tQJY0s', value: '3000' }],
+        })
+        expect(poolValue(poolForm(stored), stored)).toEqual(stored)
+    })
+    it('writes the default and per-attribute overrides; blanks are left out', () => {
+        const form = {
+            defaultPool: '500',
+            attributes: [
+                { id: 'xs8A6tQJY0s', value: '3000' },
+                { id: 'AuPLng5hLbE', value: '' },
+            ],
+        }
+        expect(poolValue(form, null)).toEqual({
+            default: 500,
+            attributes: { xs8A6tQJY0s: 3000 },
+        })
+        expect(poolValue({ ...form, defaultPool: '0' }, null)).toBe(null)
+        expect(poolValue({ ...form, defaultPool: '100001' }, null)).toBe(null)
+        expect(
+            poolValue(
+                { ...form, attributes: [{ id: 'x', value: 'many' }] },
+                null
+            )
+        ).toBe(null)
     })
 })

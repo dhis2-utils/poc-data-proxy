@@ -22,6 +22,9 @@ import {
     retentionForm,
     retentionValue,
     Row,
+    poolForm,
+    poolValue,
+    ReservedPool,
     TokenSettings,
     tokensForm,
     tokensValue,
@@ -317,6 +320,46 @@ const TokenLifetime = ({ stored }: { stored: TokenSettings | null }) => {
     )
 }
 
+const ReservedValues = ({ stored }: { stored: ReservedPool | null }) => {
+    const { save } = useAdminEntry<ReservedPool>(
+        'facility-hub-config',
+        'reserved'
+    )
+    const attributes = useNamed('trackedEntityAttributes')
+    const [form, setForm] = useState(() => poolForm(stored))
+    const value = poolValue(form, stored)
+    return (
+        <div className={styles.card}>
+            <h2 className={styles.subtitle}>{i18n.t('Reserved values')}</h2>
+            <div className={styles.muted}>
+                {i18n.t(
+                    'How many generated values (patient numbers, for example) each hub keeps in reserve for offline registration. The hub refills the pool from central when it falls below a quarter of this, in requests of at most 1000 values. Without a setting here, each hub uses its own configuration\'s default (500).'
+                )}
+            </div>
+            <NumberField
+                label={i18n.t('Values kept by default')}
+                value={form.defaultPool}
+                l={limits.pool}
+                onChange={(defaultPool) => setForm({ ...form, defaultPool })}
+            />
+            <RowsEditor
+                title={i18n.t('By generated attribute')}
+                addLabel={i18n.t('Add an attribute')}
+                options={attributes}
+                rows={form.attributes}
+                onChange={(rows) => setForm({ ...form, attributes: rows })}
+                l={limits.pool}
+                initial={form.defaultPool}
+            />
+            <SaveBar
+                valid={!!value}
+                unset={!stored}
+                save={{ ...save, mutate: () => value && save.mutate(value) }}
+            />
+        </div>
+    )
+}
+
 const Settings = () => {
     const retention = useAdminEntry<Retention>(
         'facility-hub-config',
@@ -327,14 +370,21 @@ const Settings = () => {
         'aggregate'
     )
     const tokens = useAdminEntry<TokenSettings>('facility-hub-config', 'tokens')
-    if (retention.isLoading || aggregate.isLoading || tokens.isLoading) {
+    const reserved = useAdminEntry<ReservedPool>('facility-hub-config', 'reserved')
+    if (
+        retention.isLoading ||
+        aggregate.isLoading ||
+        tokens.isLoading ||
+        reserved.isLoading
+    ) {
         return (
             <div className={styles.loading}>
                 <CircularLoader />
             </div>
         )
     }
-    const error = retention.error ?? aggregate.error ?? tokens.error
+    const error =
+        retention.error ?? aggregate.error ?? tokens.error ?? reserved.error
     if (error) {
         return (
             <NoticeBox error title={i18n.t('Could not read the settings')}>
@@ -352,6 +402,7 @@ const Settings = () => {
             <TrackerRetention stored={retention.value ?? null} />
             <AggregateRetentionCard stored={aggregate.value ?? null} />
             <TokenLifetime stored={tokens.value ?? null} />
+            <ReservedValues stored={reserved.value ?? null} />
         </>
     )
 }

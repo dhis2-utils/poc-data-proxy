@@ -19,7 +19,14 @@ export type AggregateRetention = {
 /** facility-hub-config/tokens: the lifetime of new and renewed tokens. */
 export type TokenSettings = { expiryDays?: number; [field: string]: unknown }
 
-export const defaults = { months: 0, periods: 12, expiryDays: 90 }
+/** facility-hub-config/reserved: reserved-value pool sizes (core.ReservedPool). */
+export type ReservedPool = {
+    default?: number
+    attributes?: Record<string, number>
+    [field: string]: unknown
+}
+
+export const defaults = { months: 0, periods: 12, expiryDays: 90, pool: 500 }
 
 export type Limits = { min: number; max: number }
 
@@ -27,6 +34,7 @@ export const limits = {
     months: { min: 0, max: 1200 },
     periods: { min: 1, max: 1000 },
     expiryDays: { min: 7, max: 365 },
+    pool: { min: 1, max: 100000 },
 }
 
 /** The whole number typed, or null when it is not one within the limits. */
@@ -119,4 +127,26 @@ export const tokensValue = (
 ): TokenSettings | null => {
     const expiryDays = wholeNumber(s, limits.expiryDays)
     return expiryDays === null ? null : { ...stored, expiryDays }
+}
+
+export type PoolForm = { defaultPool: string; attributes: Row[] }
+
+export const poolForm = (r?: ReservedPool | null): PoolForm => ({
+    defaultPool: String(r?.default ?? defaults.pool),
+    attributes: rowsOf(r?.attributes, (n) => n >= 1),
+})
+
+export const poolValue = (
+    f: PoolForm,
+    stored?: ReservedPool | null
+): ReservedPool | null => {
+    const def = wholeNumber(f.defaultPool, limits.pool)
+    const attributes = mapOf(
+        f.attributes.filter((r) => r.value.trim() !== ''),
+        limits.pool
+    )
+    if (def === null || !attributes) {
+        return null
+    }
+    return { ...stored, default: def, attributes }
 }
