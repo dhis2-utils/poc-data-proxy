@@ -117,6 +117,9 @@ func TestG3G4ReleasesRefused(t *testing.T) {
 		case len(got) > 1:
 			repeated = append(repeated, fmt.Sprintf("%s: %d results in 4 cycles", o.name, len(got)))
 		}
+		if o.want != "" && len(manifests) > 1 {
+			t.Errorf("G3: %s: the refused manifest was fetched %d times in 4 cycles", o.name, len(manifests))
+		}
 		if len(bins) > 1 {
 			t.Errorf("I7: %s: the binary fetched %d times", o.name, len(bins))
 		}
@@ -145,8 +148,7 @@ func TestG3G4ReleasesRefused(t *testing.T) {
 	e.Central.JSON("GET", "/api/dataStore/facility-hub-status/"+hubID, nil, &beat)
 	t.Logf("heartbeat on central: version %v, lastUpgrade %v", beat["version"], beat["lastUpgrade"])
 	if len(repeated) > 0 {
-		finding(t, "G3: a refused release is recorded again at every cycle")
-		t.Errorf("I5: refused releases recorded again at every cycle: %v", repeated)
+		t.Errorf("G3: refused releases recorded again at every cycle: %v", repeated)
 	}
 }
 

@@ -147,6 +147,20 @@ func (u *Upgrader) check(ctx context.Context) error {
 	if skip := u.H.Store.Meta("upgrade_skip"); skip == c.Version {
 		return nil // this version already failed here
 	}
+	// The release list changed: forget which manifests were refused, so a republished
+	// release is fetched again (G3).
+	var choiceKey string
+	if b, err := json.Marshal(c); err == nil {
+		sum := sha256.Sum256(b)
+		choiceKey = hex.EncodeToString(sum[:8])
+	}
+	if u.H.Store.Meta("upgrade_choice") != choiceKey {
+		u.H.Store.SetMeta("upgrade_choice", choiceKey)
+		u.H.Store.SetMeta("upgrade_refused", "")
+	}
+	if u.H.Store.Meta("upgrade_refused") == c.Version {
+		return nil // this manifest was refused once; not fetched again until the list changes (G3)
+	}
 	if !InStage(*c, u.H.HubID()) {
 		slog.Info("upgrade chosen but this hub is not in the current stage", "version", c.Version)
 		return nil
@@ -156,7 +170,10 @@ func (u *Upgrader) check(ctx context.Context) error {
 		return err
 	}
 	if m.Version != c.Version {
-		u.record(Result{Result: "ignored", From: u.H.Version, To: c.Version, Reason: "the release for " + c.Version + " says it is " + m.Version})
+		if u.H.Store.Meta("upgrade_refused") != c.Version { // record it once (G3)
+			u.record(Result{Result: "ignored", From: u.H.Version, To: c.Version, Reason: "the release for " + c.Version + " says it is " + m.Version})
+			u.H.Store.SetMeta("upgrade_refused", c.Version)
+		}
 		return nil
 	}
 	plat := runtime.GOOS + "/" + runtime.GOARCH
@@ -287,11 +304,9 @@ func (u *Upgrader) fetchManifest(ctx context.Context, version string) (*Manifest
 	}
 	sig, err := u.get(ctx, "v"+version+"/release.json.sig", 1<<10)
 	if err != nil || !Verify(u.Key, raw, sig) {
-		sum := sha256.Sum256(raw)
-		id := hex.EncodeToString(sum[:8])
-		if u.H.Store.Meta("upgrade_unsigned") != id { // report each such manifest once
+		if u.H.Store.Meta("upgrade_refused") != version { // report each such manifest once, and fetch it no more (G3)
 			u.record(Result{Result: "ignored", From: u.H.Version, To: version, Reason: "the release has no valid signature"})
-			u.H.Store.SetMeta("upgrade_unsigned", id)
+			u.H.Store.SetMeta("upgrade_refused", version)
 		}
 		return nil, nil
 	}
