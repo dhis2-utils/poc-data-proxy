@@ -117,18 +117,34 @@ func updatedFloor(q url.Values) (string, *APIError) {
 // updatedAfter.
 func updatedSince(w *where, alias string, q url.Values) *APIError {
 	floor, err := updatedFloor(q)
-	if floor != "" {
+	if floor != "" && hubClockBehind(q) {
 		w.add("("+alias+".origin = 'local' OR "+alias+".updated_at >= ?)", floor)
+	} else if floor != "" {
+		w.add(alias+".updated_at >= ?", floor)
 	}
 	return err
 }
 
-// changedTEs returns the tracked entities with anything updated at or after floor, or
-// written on the hub (Android's incremental sync), from the indexes alone.
-func (ix *Index) changedTEs(floor string) map[string]bool {
+// hubClockBehind reports whether updatedAfter is more than a day ahead of the hub's
+// clock, in any time zone (up to UTC+14). The hub's clock is then behind central's (a
+// Pi without a clock battery started with no network, docs/DEPLOYMENT.md, "Clock"), its
+// write times say nothing against the watermark, and everything written on the hub
+// counts as updated (hubUpdated).
+func hubClockBehind(q url.Values) bool {
+	t, ok := parseTime(q.Get("updatedAfter"))
+	return ok && t.After(time.Now().UTC().Add(38*time.Hour))
+}
+
+// changedTEs returns the tracked entities with anything updated at or after floor
+// (Android's incremental sync), from the indexes alone. For objects written on the hub
+// the time is the hub's write time; with allHub, all of them count (hubUpdated).
+func (ix *Index) changedTEs(floor string, allHub bool) map[string]bool {
 	out := map[string]bool{}
-	rows, err := ix.store.DB().Query(`SELECT iif(kind = 'trackedEntity', uid, te_uid) FROM objects WHERE updated_at >= ?
- UNION SELECT iif(kind = 'trackedEntity', uid, te_uid) FROM objects WHERE origin = 'local'`, floor)
+	query := `SELECT iif(kind = 'trackedEntity', uid, te_uid) FROM objects WHERE updated_at >= ?`
+	if allHub {
+		query += ` UNION SELECT iif(kind = 'trackedEntity', uid, te_uid) FROM objects WHERE origin = 'local'`
+	}
+	rows, err := ix.store.DB().Query(query, floor)
 	if err != nil {
 		return out
 	}
@@ -488,7 +504,7 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *API
 		return nil, apiErr
 	}
 	if floor != "" && ix.store != nil && ix.store.Unlocked() {
-		list, _ := json.Marshal(slices.Collect(maps.Keys(ix.changedTEs(floor))))
+		list, _ := json.Marshal(slices.Collect(maps.Keys(ix.changedTEs(floor, hubClockBehind(q)))))
 		w.add(person+" IN (SELECT value FROM json_each(?))", string(list))
 	}
 	p.sel += w.sql()
@@ -598,32 +614,52 @@ func (ix *Index) simplePlan(v *Viewer, w *where, q url.Values, alias string, tfs
 	return p
 }
 
-// updatedMatch applies updatedAfter/updatedBefore. Objects written on the hub always
-// match: their timestamps come from the hub's clock, while clients compare against a
-// watermark from central's clock, and re-sending them is harmless. A tracked entity
-// counts as updated when anything under it was (central bumps it too). It reads the
-// stored update times only (central's updatedAt, kept in its column): an incremental
-// sync may check every person of a program, and decoding their records cost memory in
-// proportion (docs/PERFORMANCE.md).
+// updatedMatch applies updatedAfter/updatedBefore. A tracked entity counts as updated
+// when anything under it was (central bumps it too). It reads the stored update times
+// only (central's updatedAt, kept in its column): an incremental sync may check every
+// person of a program, and decoding their records cost memory in proportion
+// (docs/PERFORMANCE.md).
 func (ix *Index) updatedMatch(v *Viewer, o *Obj, tf timeFilter, q url.Values) (bool, *APIError) {
 	if q.Get(tf.after) == "" && q.Get(tf.before) == "" {
 		return true, nil
 	}
-	if o.Origin == store.OriginLocal {
-		return true, nil
+	floor, apiErr := updatedFloor(q)
+	if apiErr != nil {
+		return false, apiErr
 	}
-	newest := o.UpdatedAt
+	if hubClockBehind(q) {
+		floor = ""
+	}
+	newest := ""
+	if o.Origin == store.OriginLocal {
+		if hubUpdated(o.UpdatedAt, floor) {
+			return true, nil
+		}
+	} else {
+		newest = o.UpdatedAt
+	}
 	if o.Kind == store.KindTrackedEntity {
-		local, t, err := ix.newestChild(v, o.UID)
+		local, hub, t, err := ix.newestChild(v, o.UID)
 		if err != nil {
 			return false, err
 		}
-		if local {
+		if local && hubUpdated(hub, floor) {
 			return true, nil
 		}
 		newest = max(newest, t)
 	}
 	return tf.match(M{"updatedAt": newest}, q)
+}
+
+// hubUpdated reports whether an object written on the hub at t (the hub's clock) counts
+// as updated after updatedAfter: when it was written at or after floor, a day before
+// it. Clients compare against a watermark from central's clock, which the hub's may
+// differ from by some drift, so the hub errs towards re-sending, but a sync during a
+// long outage gets the last day's work, not the whole outage's (docs/PERFORMANCE.md, "A
+// week offline at HC IV size"). With no updatedAfter, or the hub's clock behind
+// (hubClockBehind), everything.
+func hubUpdated(t, floor string) bool {
+	return floor == "" || t >= floor
 }
 
 // The children newestChild reads: those written on the hub, and central's, with the
@@ -639,15 +675,15 @@ var (
 )
 
 // newestChild reports whether the user may read an enrollment or event of te written
-// on the hub, and otherwise the newest update time among those of central they may
-// read. Each child is checked with visibleWith, as when all were read. Central's are
+// on the hub, and the newest hub write time among those, and the newest update time
+// among those of central they may read. Each child is checked with visibleWith, as when all were read. Central's are
 // read newest first, with only the columns the check needs after the facility,
 // deleted and stub conditions in SQL, and reading stops at the first the user may
 // read: an incremental sync checks every changed person, and reading all their
 // children ran a small PC out of memory (docs/INCREMENTAL-SYNC-FIX.md).
-func (ix *Index) newestChild(v *Viewer, te string) (local bool, newest string, apiErr *APIError) {
+func (ix *Index) newestChild(v *Viewer, te string) (local bool, hub, newest string, apiErr *APIError) {
 	if ix.store == nil || !ix.store.Unlocked() {
-		return false, "", nil
+		return false, "", "", nil
 	}
 	bm := ix.bitmapOf(v.UserID)
 	rows, err := ix.store.QueryObjects(sqlHubChildren, te)
@@ -656,12 +692,12 @@ func (ix *Index) newestChild(v *Viewer, te string) (local bool, newest string, a
 	}
 	for _, r := range rows {
 		// Without data: optionsReadable reads the object when it needs its combination.
-		if ix.visibleWith(v, bm, ix.row(r, false)) {
-			return true, "", nil
+		if o := ix.row(r, false); (!local || o.UpdatedAt > hub) && ix.visibleWith(v, bm, o) {
+			local, hub = true, max(hub, o.UpdatedAt)
 		}
 	}
 	if v.Access == nil {
-		return false, "", nil
+		return local, hub, "", nil
 	}
 	query := sqlCentralChildrenLive
 	if v.IncludeDeleted {
@@ -679,12 +715,12 @@ func (ix *Index) newestChild(v *Viewer, te string) (local bool, newest string, a
 		return true, nil
 	})
 	if v.ctx().Err() != nil {
-		return false, "", gone
+		return false, "", "", gone
 	}
 	if err != nil {
 		slog.Warn("index query", "err", err)
 	}
-	return false, newest, nil
+	return local, hub, newest, nil
 }
 
 func matchAll(d M, q url.Values, tfs []timeFilter) (bool, *APIError) {

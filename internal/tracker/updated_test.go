@@ -7,13 +7,15 @@ import (
 	"math/rand"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/dhis2/facility-hub/internal/access"
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
 // updatedMatchAll is updatedMatch as it was before it stopped at the first child that
-// decides: every child read, the visible ones kept, the newest compared.
+// decides: every child read, the visible ones kept, the newest compared (a child
+// written on the hub by its hub write time, against the floor).
 func updatedMatchAll(ix *Index, v *Viewer, o *Obj, tf timeFilter, q url.Values) (bool, *APIError) {
 	if q.Get(tf.after) == "" && q.Get(tf.before) == "" {
 		return true, nil
@@ -31,10 +33,20 @@ func updatedMatchAll(ix *Index, v *Viewer, o *Obj, tf timeFilter, q url.Values) 
 		}
 		objs = append(objs, ix.visible(v, children)...)
 	}
+	floor, apiErr := updatedFloor(q)
+	if apiErr != nil {
+		return false, apiErr
+	}
+	if hubClockBehind(q) {
+		floor = ""
+	}
 	newest := ""
 	for _, x := range objs {
 		if x.Origin == store.OriginLocal {
-			return true, nil
+			if floor == "" || x.UpdatedAt >= floor {
+				return true, nil
+			}
+			continue
 		}
 		newest = max(newest, x.UpdatedAt)
 	}
@@ -116,6 +128,7 @@ func TestUpdatedMatchAsReadingEveryChild(t *testing.T) {
 	queries := []url.Values{
 		{"updatedAfter": {"2024-03-04"}}, {"updatedAfter": {"2024-03-10"}}, {"updatedAfter": {"2024-03-20"}},
 		{"updatedBefore": {"2024-03-06"}}, {"updatedAfter": {"2024-03-02"}, "updatedBefore": {"2024-03-10"}},
+		{"updatedAfter": {time.Now().UTC().Add(72 * time.Hour).Format("2006-01-02")}}, // the hub's clock behind
 	}
 	differ, changed := 0, 0
 	for _, scope := range []bool{true, false} {
