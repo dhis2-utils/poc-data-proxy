@@ -196,7 +196,16 @@ func (h *Hub) RefreshAccessWith(ctx context.Context, userID int64, auth central.
 // EnsurePAT creates a PAT for the user unless a valid one is stored (spec 7.1 step 2).
 // with is the credential to create it with (the user's fresh central session).
 // If central refuses, the encrypted password is stored instead (spec 7.1 fallback).
+// One user's logins run it one at a time: concurrent logins within the same second
+// would each create a token on central, and the hub keeps only the last, leaving the
+// others valid there unlisted in the registry (S1).
 func (h *Hub) EnsurePAT(ctx context.Context, u *store.User, with central.Auth, password string) error {
+	lk := h.userLock(u.Username)
+	lk.Lock()
+	defer lk.Unlock()
+	if fresh, err := h.Store.UserByID(u.ID); err == nil && fresh != nil {
+		u = fresh // another login of this user may have stored a PAT meanwhile
+	}
 	if h.Revoked() {
 		return errors.New("this hub's tokens were revoked on central; reset it before use")
 	}

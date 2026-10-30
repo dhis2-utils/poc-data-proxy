@@ -934,13 +934,14 @@ func soakRecheck(t *testing.T, dir string) {
 
 // Found in M1: when one user logs in online through several clients at once (after a
 // restart, a web app, its reader and an Android app all log in again), each login
-// runs core.EnsurePAT on the same stored user and creates a token on central. The
-// hub keeps the last; the others stay on central, unlisted in the hub's registry
-// entry (so the Facility Hub app cannot revoke them) until they expire. In the soak,
-// three logins of the nurse in the same second after a restart made two tokens.
-// Reproduced 29 Oct on synthetic 2.42, twice: 4 concurrent logins, 2 tokens each time.
+// ran core.EnsurePAT on the same stored user with no lock per user, and each created
+// a token on central. The hub kept the last; the others stayed on central, unlisted
+// in the hub's registry entry (so the Facility Hub app could not revoke them) until
+// they expired. In the soak, three logins of the nurse in the same second after a
+// restart made two tokens; reproduced 29 Oct on synthetic 2.42, twice: 4 concurrent
+// logins, 2 tokens each time. Fixed: EnsurePAT runs under a lock per user, so
+// concurrent logins of one user make one token.
 func TestM1ConcurrentLoginsMakeOneToken(t *testing.T) {
-	finding(t, "concurrent online logins of one user each create a PAT on central (core.EnsurePAT, called from auth.registerOnline, has no per-user lock)")
 	e := tk.Start(t)
 	if !e.Live() {
 		t.Skip("adversarial scenarios run against a real DHIS2 (HUB_MANIFEST)")

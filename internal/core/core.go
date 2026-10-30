@@ -121,6 +121,26 @@ type Hub struct {
 	localWrites sync.RWMutex
 	unlockMu    sync.Mutex // one Unlock at a time
 	hosts       hostCache
+	// userMu guards userLocks: one lock per user for registration work that must not
+	// run twice at once (S1: EnsurePAT from concurrent logins of one user).
+	userMu    sync.Mutex
+	userLocks map[string]*sync.Mutex
+}
+
+// userLock is the lock for one user's registration work, so that logins of one user
+// within the same second make one token on central, not one each (S1).
+func (h *Hub) userLock(username string) *sync.Mutex {
+	h.userMu.Lock()
+	defer h.userMu.Unlock()
+	if h.userLocks == nil {
+		h.userLocks = map[string]*sync.Mutex{}
+	}
+	m := h.userLocks[username]
+	if m == nil {
+		m = &sync.Mutex{}
+		h.userLocks[username] = m
+	}
+	return m
 }
 
 // BeginLocalWrite reserves the store for a write that exists only on the hub. It
