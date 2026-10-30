@@ -110,10 +110,11 @@ func passwordChanged(t *testing.T, strict bool) {
 // the next sync.
 func TestB5RoleLosesAuthority(t *testing.T) { roleLosesAuthority(t, false) }
 
-// The hub checks no tracker authority offline: after the sync it still takes the
-// reopening of a completed event, which central refuses at push. Nothing is lost.
+// The hub applies a lost tracker authority offline: after the sync it refuses the
+// reopening of a completed event (E1083) when the user's stored authorities lack
+// F_UNCOMPLETE_EVENT, as central does at push. Before, it took the reopening offline
+// and central refused it at push; nothing was lost.
 func TestB5HubRefusesAfterSync(t *testing.T) {
-	finding(t, "B5: after the sync the hub still takes offline what a lost authority forbids (reopening a completed event); central refuses it at push")
 	roleLosesAuthority(t, true)
 }
 

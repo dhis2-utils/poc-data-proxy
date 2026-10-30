@@ -471,8 +471,14 @@ func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport
 }
 
 // checkEventProgramRules applies central's program-level event rules offline: an event
-// dated in the program's expired period is refused without F_EDIT_EXPIRED (E1047, A10).
+// dated in the program's expired period is refused without F_EDIT_EXPIRED (E1047, A10),
+// and a completed event is not reopened without F_UNCOMPLETE_EVENT (E1083, B5).
 func (im *Importer) checkEventProgramRules(it *Item, old *Obj, program string, pm *access.ProgramMeta) []ErrorReport {
+	if old != nil && Str(old.Data, "status") == "COMPLETED" {
+		if st := Str(it.Data, "status"); st != "" && st != "COMPLETED" && !im.V.Access.HasAuthority("F_UNCOMPLETE_EVENT") {
+			return im.errf(it, "E1083", "Event: `%s` is completed and cannot be reopened without F_UNCOMPLETE_EVENT.", it.UID)
+		}
+	}
 	if im.V.Access.HasAuthority("F_EDIT_EXPIRED") {
 		return nil
 	}

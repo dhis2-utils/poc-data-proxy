@@ -35,6 +35,10 @@ func TestEventProgramExpiryAndReopen(t *testing.T) {
 	enr := &Obj{UID: "EnAaaaaaaa1", Kind: store.KindEnrollment, TE: "TeAaaaaaaa1", Program: prog, OwnerOrgUnit: facility,
 		Origin: store.OriginLocal, SyncState: store.SyncPending, Data: M{"enrollment": "EnAaaaaaaa1", "status": "ACTIVE"}}
 	put(enr)
+	done := &Obj{UID: "EvAaaaaaaa9", Kind: store.KindEvent, TE: "TeAaaaaaaa1", Enrollment: enr.UID, Program: prog, Stage: stage,
+		OwnerOrgUnit: facility, Origin: store.OriginLocal, SyncState: store.SyncPending,
+		Data: M{"event": "EvAaaaaaaa9", "status": "COMPLETED", "completedAt": "2026-10-01T00:00:00.000"}}
+	put(done)
 	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 	mkImporter := func(authorities ...string) *Importer {
 		acc := &access.List{Authorities: authorities,
@@ -71,9 +75,19 @@ func TestEventProgramExpiryAndReopen(t *testing.T) {
 	if len(out.Errors) != 0 || len(out.Accepted) != 1 {
 		t.Errorf("today's event: codes %v accepted %d, want taken", codes(out), len(out.Accepted))
 	}
-	// Completing an event is not refused: taken.
+	// Completing an event is not a reopening: taken.
 	out = mkImporter().Import(event("EvAaaaaaaa4", "2026-10-30", "COMPLETED"))
 	if len(out.Errors) != 0 || len(out.Accepted) != 1 {
 		t.Errorf("completing a new event: codes %v accepted %d, want taken", codes(out), len(out.Accepted))
+	}
+	// B5: reopening the completed event without F_UNCOMPLETE_EVENT: E1083.
+	out = mkImporter().Import(event(done.UID, "2026-10-30", "ACTIVE"))
+	if !slices.Contains(codes(out), "E1083") {
+		t.Errorf("reopening a completed event: codes %v, want E1083", codes(out))
+	}
+	// With F_UNCOMPLETE_EVENT: taken.
+	out = mkImporter("F_UNCOMPLETE_EVENT").Import(event(done.UID, "2026-10-30", "ACTIVE"))
+	if len(out.Errors) != 0 || len(out.Accepted) != 1 {
+		t.Errorf("F_UNCOMPLETE_EVENT reopen: codes %v accepted %d, want taken", codes(out), len(out.Accepted))
 	}
 }
