@@ -37,7 +37,8 @@
 <div class="card"><h2>Users</h2><div class="scroll"><table>
 <tr><th>Username</th><th>Last login</th><th>Access refreshed</th><th>Upstream credential</th><th>PAT expires</th><th>Facility</th><th>Needs online login</th></tr>
 {{range .Users}}<tr><td>{{.Username}}</td><td>{{short .LastLogin}}</td><td>{{short .AccessRefreshed}}</td><td>{{.Credential}}</td><td>{{short .PATExpires}}</td><td>{{if .InFacility}}yes{{else}}<b>no</b>{{end}}</td><td>{{if .NeedsLogin}}<b>yes</b>{{end}}</td></tr>{{end}}
-</table></div></div>
+</table></div>
+<p class="muted">The store stays locked until a known user logs in. If every staff password changed on central while the hub was locked, the old password still unlocks it offline; the new one does not, until someone logs in online (deployment guide, RECOVERY.md).</p></div>
 
 <div class="card"><h2>Outbox (latest 50)</h2><div class="scroll"><table>
 <tr><th>Seq</th><th>User</th><th>Created</th><th>State</th><th>Attempts</th><th>Depends on</th><th>Objects</th><th>Last error</th></tr>

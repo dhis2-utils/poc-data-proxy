@@ -661,24 +661,19 @@ Found on 2026-10-27 by the adversarial scenarios (`internal/adversarial`), run a
 **Accepted** (decided 2026-10-28):
 
 - **Central restored from a backup** (H4): what central accepted after the backup is lost from central, and the hub does not send it again. Decided 2026-10-28, not a hub bug: once central has accepted data, its backup and recovery are central's; the hub answers for what central has not seen. Saves the hub had not sent when central was restored still reach it (`TestH4CentralRestoredFromBackup`). After its next full pull the hub hides offline the people central no longer has, as for any deletion; an edit made on central and lost in the restore stays on the hub until the record changes again (RECOVERY.md, "Central restored from a backup").
+- **Generated values with `ORG_UNIT_CODE` carry the chosen org unit's code** (T1, decided 2026-10-30, a limitation by decision): the hub's reserved pool is filled with the facility's own code (`FacilityCode`), so offline it hands out values made with that code only. A hub set up on an org unit with children — set-up allows choosing any level — would hand those children the facility's code offline. Set the hub up on the facility itself, not a parent unit (DEPLOYMENT.md, section 3, step 3).
 - **A person owned elsewhere, opened offline with a protected program.** A person registered at the facility and transferred to another facility on central before the hub's first pull is held by the hub without their enrollment in that program. Opened by UID with the program, the hub answers 200 with no enrollment and no owner in it, and only the person-type attributes; central answers 404. The hub cannot tell "enrolled elsewhere" from "not enrolled", and refusing would stop staff from enrolling a known person offline. Nothing is shown that central does not give the same user without the program (checked on 2.42.7 as all 11 users the oracle flagged); a user who may not see the person at all gets "needs connection". An offline enrollment of that person is refused at push and kept. `TestTransferredBeforeSetup`; the oracle counts it as accepted, not a leak (`shownWithoutProgram`).
 
 **Open** (from the Android scenarios on a tablet, 28 October; small, not decided):
 
-- **Reserved values with `ORG_UNIT_CODE`** (from reading the code, not shown): the hub's pool of generated values ignores the pattern's org unit code, so offline it could hand out a value made with the facility's code for another org unit's. Not reproducible on the synthetic profile, where every code starts with "SYN".
+- ~~**Reserved values with `ORG_UNIT_CODE`**~~ decided 2026-10-30 as a limitation (T1), recorded under "Accepted" above: the pool is made with the chosen org unit's code; set the hub up on the facility itself.
 - **No generated values on a user's first login offline**: a user's programs join the hub's catalog at their login, but the pool fills only at the next cycle; if the uplink drops before then, generated attributes are refused (503).
-- **A misleading message on a first login offline**: a user the hub has not served through the Android app online sees "The URL provided is not a DHIS2 server." (the cached `/api/system/info` is per user).
+- **A misleading message on a first login offline** (T3): a user the hub has not served through the Android app online sees "The URL provided is not a DHIS2 server." (the cached `/api/system/info` is per user). Proposed: fix later — check whether anything in it really differs per user, and if not serve the hub's copy to anyone.
 
 
-**Open, from wave 3** (28–29 October; no hub code changed overnight; each gated with `finding(...)`, reproducible with `HUB_FINDINGS=1`; proposed fixes for decision):
+**Open, from wave 3** (28–29 October):
 
--1. **Cached metadata replayed offline after central changed it** (A15). To measure first: whether Capture reloads metadata offline.
--1. **The hub flaps while name lookup fails** (D6): the ping reuses a kept-alive connection, so it succeeds while new connections fail; 58 switches and 2 752 requests in 2 minutes. Proposed: the probe opens a new connection each time.
-0. **A queued completion skips validation** (J4): central's completion endpoint does not validate. Proposed: at push, if the data set now requires valid completion, refuse the queued completion and keep it.
-1. **A new device is not registered after a locked start** (I9c): a pass-through session made while the store was locked is cached for up to 12 hours, and that user is refused offline. Proposed: don't cache it, or register once the store is unlocked.
-2. **Forms open and close at the exact time on the hub, by the day on central** (F5). Proposed: compare data input periods at day level, as central does.
-3. **A million-digit number is confirmed offline** (I8c, minor): refused at push and kept. Proposed: match central's NUMBER limits in the offline check.
-4. **Documentation:** all staff passwords changed while the hub was locked (G11): the old password offline unlocks it; not in RECOVERY.md or on the hub page. Release key rotation (N8) is not documented.
+- **Cached metadata replayed offline after central changed it** (A15). To measure first: whether Capture web and Android reload metadata offline at all, as a scenario with the real apps; fix only if a client is shown a stale form.
 
 Also seen: the oracle's first page of an event program's list breaks ties in a different order from central (the hub by UID, central by creation time) when many events share a date.
 
@@ -690,4 +685,6 @@ Also seen: the oracle's first page of an event program's list breaks ties in a d
 
 - **A value into an approved form** (J1, 2.43.2). As the nurse, `POST /api/dataValues` answers 201 while the form is approved (`APPROVED_HERE`); reproduced with curl, without the hub. A value entered offline before the approval therefore lands in approved data when the hub pushes it, with no refusal. The Data Entry app shows the form locked, and after its next sync the hub refuses new offline values (E2017). Whether central should refuse it is to be checked with DHIS2; the hub does not check approval before pushing.
 - **An event into a deleted person's enrollment** (C2, 2.42.7). Central accepts a new event into the enrollment of a person it has deleted (soft-deleted), as superuser and as the nurse; reproduced with curl. Through the hub, such an event saved offline is confirmed and seen by nobody. The event also changes the person's `updatedAt`, and once in three runs that closed the issue of the person's refused edit at the next pull, as if someone had fixed it on central. A deletion on central after a refusal is meant to close it; this one came from the event.
+- **A million-digit number is confirmed offline, then refused at push and kept** (I8c, accepted as a limitation 2026-10-30): the hub's offline value check does not match central's NUMBER limits. Nothing is lost — the refusal is kept and reported — but the client was told the value was saved. To raise with DHIS2, next to J1 and C2.
+- **A queued completion skips validation** (J4, accepted as a limitation 2026-10-30): central's own completion endpoint does not validate, so the hub's offline one does not either; a completion queued offline for a data set that now requires valid completion is refused at push and kept. To raise with DHIS2, next to J1 and C2.
 
