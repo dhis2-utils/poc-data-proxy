@@ -132,6 +132,21 @@ func (s *Sessions) Verified(sess *Session) {
 	s.mu.Unlock()
 }
 
+// Unverify forgets when each of a user's cached Basic credentials was last accepted by
+// central, so the next Basic request is checked with central again at once (B3: a web
+// login central refused may mean the password changed). The credentials stay cached:
+// during a lockout the staff member's own device still passes from the address it was
+// verified from (L2).
+func (s *Sessions) Unverify(username string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, v := range s.basic {
+		if v.Username == username {
+			v.verified = time.Time{}
+		}
+	}
+}
+
 // DropBasic forgets a user's cached Basic credentials, so the next Basic request
 // is checked again (on logout).
 func (s *Sessions) DropBasic(username string) {

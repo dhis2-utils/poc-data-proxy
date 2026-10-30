@@ -728,8 +728,12 @@ func (c *Central) login(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&req)
 	c.mu.Lock()
 	u := c.Users[req.Username]
+	pw := Password
+	if own, ok := c.passwords[req.Username]; ok {
+		pw = own // a user created through the API has its own password
+	}
 	c.mu.Unlock()
-	if u == nil || u.Disabled || req.Password != Password {
+	if u == nil || u.Disabled || req.Password != pw {
 		webMessage(w, 401, "Bad credentials", "")
 		return
 	}

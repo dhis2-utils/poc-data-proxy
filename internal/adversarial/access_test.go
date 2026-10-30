@@ -32,13 +32,11 @@ func tryLogin(c *tk.Client) (int, string) {
 // user's queued saves.
 func TestB3PasswordChangedOnCentral(t *testing.T) { passwordChanged(t, false) }
 
-// Online, the hub keeps taking the old password from Android for up to BasicRecheck
-// (5 minutes) after the change, though central refuses it, and though a web login
-// through the hub with that password has just failed: a cached Basic credential is
-// checked again only when it is 5 minutes old (core.Sessions.Basic), and a failed web
-// login does not drop it. Requests pass through with the user's token.
+// Online, the hub must stop taking the old password from Android at once after
+// central changed it: a web login through the hub that central refuses drops the
+// user's cached Basic credential, so the device's next request is checked with
+// central (before, the cache passed for up to BasicRecheck, 5 minutes).
 func TestB3OldPasswordOnlineThroughCache(t *testing.T) {
-	finding(t, "B3: online, Android's old password is taken through the hub for up to 5 minutes after central changed it (cached Basic credential)")
 	passwordChanged(t, true)
 }
 

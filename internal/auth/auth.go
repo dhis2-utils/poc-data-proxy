@@ -109,6 +109,15 @@ func (a *Auth) loginWeb(ctx context.Context, req LoginRequest, rawBody []byte) (
 			}
 			json.Unmarshal(b, &body)
 			if resp.StatusCode != http.StatusOK || body.LoginStatus != "SUCCESS" {
+				if resp.StatusCode == http.StatusUnauthorized {
+					// Central refused the password (changed, or the account disabled):
+					// the user's cached Basic credentials are no longer fresh, so
+					// Android's next request is checked with central at once instead
+					// of passing on the cache for up to BasicRecheck (B3). They stay
+					// cached, so during a lockout the staff member's own device still
+					// passes from the address it was verified from (L2).
+					a.H.Sessions.Unverify(req.Username)
+				}
 				return nil, nil, &Failure{Status: resp.StatusCode, Raw: b}
 			}
 			cookie := centralCookie(resp)

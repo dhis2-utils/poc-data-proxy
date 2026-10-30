@@ -130,6 +130,7 @@ type client struct {
 	http  *http.Client
 	user  string
 	basic bool
+	pw    string // the user's own password, when central gave them one (default fc.Password)
 }
 
 func (e *env) web(user string) *client {
@@ -142,6 +143,13 @@ func (e *env) web(user string) *client {
 // android sends Basic auth on every request, like the Android Capture app.
 func (e *env) android(user string) *client {
 	return &client{e: e, user: user, basic: true, http: &http.Client{}}
+}
+
+// androidPw is an Android client of a user with its own password on central.
+func (e *env) androidPw(user, pw string) *client {
+	c := e.android(user)
+	c.pw = pw
+	return c
 }
 
 func (c *client) do(method, path string, body any) (int, []byte) {
@@ -163,7 +171,11 @@ func (c *client) doHost(host, method, path string, body any) (int, []byte) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.basic {
-		req.SetBasicAuth(c.user, fc.Password)
+		pw := c.pw
+		if pw == "" {
+			pw = fc.Password
+		}
+		req.SetBasicAuth(c.user, pw)
 		req.Header.Set("User-Agent", "okhttp/4.12.0")
 	}
 	resp, err := c.http.Do(req)
