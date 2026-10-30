@@ -28,12 +28,10 @@ type plan struct {
 	sel   string // SELECT … FROM … WHERE …, without ORDER BY
 	args  []any
 	order string // ORDER BY …, when the requested order is pushed down to SQL
-	// key: the creation date and identifier columns order sorts by; keyDesc when the
-	// date is descending (the identifier always ascends); keyRow: which row of a pair
-	// carries them. A page reads on from a row's key (pagePositions).
-	key     [2]string
-	keyDesc bool
-	keyRow  int
+	// keys: the columns order sorts by, each with its direction; keyRow: which row of
+	// a pair carries them. A page reads on from a row's key (pagePositions).
+	keys   []keyCol
+	keyRow int
 	pairs   bool // rows are a tracked entity and one of its enrollments in the program
 	// needData: keep or sort read the objects' slim data, so each row is decoded.
 	needData bool
@@ -41,6 +39,12 @@ type plan struct {
 	// finish runs on everything kept, when the order is not pushed down: it sorts, and
 	// may filter further.
 	finish func([]*Obj) ([]*Obj, *APIError)
+}
+
+// keyCol is one column of a plan's sort key and whether it descends.
+type keyCol struct {
+	col  string
+	desc bool
 }
 
 // where collects a plan's conditions.
@@ -252,25 +256,49 @@ func (ix *Index) run(v *Viewer, p *plan, want int) ([]*Obj, bool, string, *APIEr
 	return out, false, last, nil
 }
 
-// after is p reading on after the row last (pagePositions): rows whose creation key
-// comes after last's in p's order. ok is false when last is not in the store.
+// after is p reading on after the row last (pagePositions): rows whose sort key comes
+// after last's in p's order. ok is false when last is not in the store.
 func (ix *Index) after(p *plan, last string) (*plan, bool) {
 	col := func(c string) string { return c[strings.IndexByte(c, '.')+1:] }
-	var created, uid string
-	if ix.store.DB().QueryRow(`SELECT `+col(p.key[0])+`, `+col(p.key[1])+` FROM objects WHERE uid = ?`, last).
-		Scan(&created, &uid) != nil {
+	cols := make([]string, len(p.keys))
+	for i, k := range p.keys {
+		cols[i] = col(k.col)
+	}
+	ptrs := make([]any, len(cols))
+	strs := make([]string, len(cols))
+	for i := range cols {
+		ptrs[i] = &strs[i]
+	}
+	if ix.store.DB().QueryRow(`SELECT `+strings.Join(cols, ", ")+` FROM objects WHERE uid = ?`, last).Scan(ptrs...) != nil {
 		return nil, false
 	}
-	// A range on the date keeps the index's order; the rows on the same date up to
-	// last's identifier are left out by the second condition.
-	cmp := ">="
-	if p.keyDesc {
-		cmp = "<="
-	}
 	q := *p
-	q.sel = p.sel + " AND " + p.key[0] + " " + cmp + " ? AND NOT (" + p.key[0] + " = ? AND " + p.key[1] + " <= ?)"
-	q.args = append(slices.Clone(p.args), created, created, uid)
+	cond, args := afterConds(p, strs)
+	q.sel = p.sel + " AND " + cond
+	q.args = append(slices.Clone(p.args), args...)
 	return &q, true
+}
+
+// afterConds is the range condition for the rows whose sort key comes after last's
+// (vals) in p's order: k0 past last's, or k0 equal and k1 past last's, …
+func afterConds(p *plan, vals []string) (string, []any) {
+	var conds []string
+	var args []any
+	for i, k := range p.keys {
+		cmp := ">"
+		if k.desc {
+			cmp = "<"
+		}
+		terms := make([]string, 0, i+1)
+		for j := 0; j < i; j++ {
+			terms = append(terms, p.keys[j].col+" = ?")
+			args = append(args, vals[j])
+		}
+		terms = append(terms, k.col+" "+cmp+" ?")
+		args = append(args, vals[i])
+		conds = append(conds, "("+strings.Join(terms, " AND ")+")")
+	}
+	return "(" + strings.Join(conds, " OR ") + ")", args
 }
 
 // slimCol matches the slim column in store.ObjectCols.
@@ -380,7 +408,7 @@ func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *A
 		key := fmt.Sprintf("%d|%s|%s", v.UserID, collection, withoutPage(q))
 		last, ok := ix.pages.get(key, pg)
 		var on *plan
-		if early && ok && p.key[0] != "" {
+		if early && ok && len(p.keys) > 0 {
 			on, ok = ix.after(p, last)
 		}
 		if early && ok && on != nil {
@@ -398,7 +426,7 @@ func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *A
 			if objs, more, last, err = ix.run(v, p, want); err != nil {
 				return nil, err
 			}
-			if early && last != "" && p.key[0] != "" {
+			if early && last != "" && len(p.keys) > 0 {
 				ix.pages.set(key, pg, last)
 			}
 		}
@@ -516,13 +544,12 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *API
 			dir = " DESC"
 		}
 		if program != "" {
-			p.order = "e.te_created" + dir + ", e.te_uid"
-			p.key, p.keyRow = [2]string{"e.te_created", "e.te_uid"}, 1
+			p.order = "e.te_created" + dir + ", e.te_uid DESC"
+			p.keys, p.keyRow = []keyCol{{"e.te_created", desc}, {"e.te_uid", true}}, 1
 		} else {
-			p.order = "t.created_at" + dir + ", t.uid"
-			p.key = [2]string{"t.created_at", "t.uid"}
+			p.order = "t.created_at" + dir + ", t.uid DESC"
+			p.keys = []keyCol{{"t.created_at", desc}, {"t.uid", true}}
 		}
-		p.keyDesc = desc
 	}
 	timed := func(tf timeFilter) bool { return q.Get(tf.after) != "" || q.Get(tf.before) != "" }
 	p.needData = timed(enrolled) || !byCreated
@@ -591,8 +618,15 @@ func (ix *Index) simplePlan(v *Viewer, w *where, q url.Values, alias string, tfs
 		if desc {
 			p.order += " DESC"
 		}
-		p.order += ", " + alias + ".uid"
-		p.key, p.keyDesc = [2]string{alias + "." + col, alias + ".uid"}, desc
+		if col == "created_at" {
+			p.order += ", " + alias + ".uid DESC"
+			p.keys = []keyCol{{alias + "." + col, desc}, {alias + ".uid", true}}
+		} else {
+			// Events by event date: central breaks ties on the date by creation time,
+			// newest first, then by UID (observed on 2.42), both descending.
+			p.order += ", " + alias + ".created_at DESC, " + alias + ".uid DESC"
+			p.keys = []keyCol{{alias + "." + col, desc}, {alias + ".created_at", true}, {alias + ".uid", true}}
+		}
 	}
 	p.needData = p.order == ""
 	for _, tf := range tfs {

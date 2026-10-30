@@ -124,8 +124,10 @@ func TestFirstPageReadsOnWithoutGaps(t *testing.T) {
 	for _, o := range got {
 		uids = append(uids, o.UID)
 	}
-	if fmt.Sprint(uids) != "[TeAaaaaa003 TeAaaaaa004]" || !more {
-		t.Fatalf("page 1 = %v (more %v), want [TeAaaaaa003 TeAaaaaa004] and more", uids, more)
+	// Three people a day share the created date, so the tie is the UID, descending as
+	// central orders it: day 2's people come 006, 005, 004.
+	if fmt.Sprint(uids) != "[TeAaaaaa003 TeAaaaaa006]" || !more {
+		t.Fatalf("page 1 = %v (more %v), want [TeAaaaaa003 TeAaaaaa006] and more", uids, more)
 	}
 }
 

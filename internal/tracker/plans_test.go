@@ -80,16 +80,17 @@ func TestQueryPlansUseIndexes(t *testing.T) {
 			sql += " ORDER BY " + p.order
 		}
 		base := explain(name, sql, p.args...)
-		if p.key[0] != "" && !strings.Contains(base, "TEMP B-TREE FOR ORDER BY") {
+		if len(p.keys) > 0 && !strings.Contains(base, "TEMP B-TREE FOR ORDER BY") {
 			// Reading on after a page (pagePositions) must keep the index's order when
 			// the first page does: sorting what is left would cost the whole rest of
 			// the program per page.
-			cmp := ">="
-			if p.keyDesc {
-				cmp = "<="
+			vals := make([]string, len(p.keys))
+			for i := range vals {
+				vals[i] = "d"
 			}
-			on := p.sel + " AND " + p.key[0] + " " + cmp + " ? AND NOT (" + p.key[0] + " = ? AND " + p.key[1] + " <= ?) ORDER BY " + p.order
-			if got := explain(name+", read on", on, append(slices.Clone(p.args), "d", "d", "u")...); strings.Contains(got, "TEMP B-TREE FOR ORDER BY") {
+			cond, condArgs := afterConds(p, vals)
+			on := p.sel + " AND " + cond + " ORDER BY " + p.order
+			if got := explain(name+", read on", on, append(slices.Clone(p.args), condArgs...)...); strings.Contains(got, "TEMP B-TREE FOR ORDER BY") {
 				t.Errorf("%s, read on: sorts instead of reading the index in order: %s", name, got)
 			}
 		}
@@ -114,7 +115,7 @@ func TestQueryPlansUseIndexes(t *testing.T) {
 	for _, c := range []struct {
 		name  string
 		order string
-	}{{"ev program, Android's paging", ""}, {"ev program, working list", "occurredAt:desc"}} {
+	}{{"ev program, Android's paging", ""}, {"ev program, working list", "occurredAt:desc"}, {"ev program, oldest first", "occurredAt:asc"}, {"ev program, by creation", "createdAt:desc"}} {
 		q := url.Values{"program": {"PrAaaaaaaa1"}, "orgUnit": {ou}}
 		if c.order != "" {
 			q.Set("order", c.order)

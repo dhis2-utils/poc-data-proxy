@@ -274,7 +274,12 @@ func sortObjs(objs []*Obj, order string, attrKey func(*Obj, string) string) {
 	if len(keys) == 0 {
 		keys = []key{{"createdAt", false}}
 	}
-	keys = append(keys, key{"uid", false}) // stable tie-breaker
+	if keys[0].field == "occurredAt" {
+		// Events sharing an event date order by creation time, newest first, as
+		// central does (observed on 2.42).
+		keys = append(keys, key{"createdAt", true})
+	}
+	keys = append(keys, key{"uid", true}) // stable tie-breaker, descending as central's
 	// Each object's sort values once, not on every comparison (map lookups in the
 	// comparator were a seventh of a search's cost; docs/PERFORMANCE.md).
 	type row struct {
