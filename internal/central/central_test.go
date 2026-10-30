@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -70,5 +71,31 @@ func TestLocal(t *testing.T) {
 	}
 	if got := NewClient("https://x.org/dhis", nil).BaseURLs(); len(got) != 2 || got[0] != "https://x.org/dhis" || got[1] != "http://x.org/dhis" {
 		t.Errorf("BaseURLs = %v", got)
+	}
+}
+
+// D6: every probe opens a new connection instead of reusing a kept-alive one, so a
+// probe cannot succeed on a stale connection while new connections fail (DNS down,
+// a firewall refusing them): the hub then flapped online and offline every probe.
+func TestProbeOpensANewConnectionEachTime(t *testing.T) {
+	var mu sync.Mutex
+	conns := map[string]bool{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		conns[r.RemoteAddr] = true
+		mu.Unlock()
+		w.Write([]byte("pong"))
+	}))
+	defer srv.Close()
+	m := NewMonitor(time.Second, time.Second)
+	for range 3 {
+		if !m.Probe(context.Background(), srv.URL) {
+			t.Fatal("probe failed")
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(conns) != 3 {
+		t.Errorf("3 probes used %d connections; want one per probe (no keep-alive)", len(conns))
 	}
 }

@@ -140,10 +140,7 @@ func TestD6DNSFails(t *testing.T) {
 	stop()
 	r.finish(5 * time.Minute)
 	if len(flapped) > 0 {
-		finding(t, "D6: with DNS failing, the hub flaps online and offline every second or two: its ping reuses a "+
-			"kept-alive connection and succeeds, any request that needs a new connection fails the lookup and reports "+
-			"central unreachable; each switch online starts a sync")
-		t.Errorf("I7: not treated as offline: %v", flapped)
+		t.Errorf("D6: with DNS failing, the hub flapped online and offline: %v", flapped)
 	}
 }
 

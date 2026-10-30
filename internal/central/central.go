@@ -383,8 +383,24 @@ func (m *Monitor) ForcedOffline() bool {
 
 // Probe pings central once and updates the state: offline after 2 failures,
 // online after 1 success.
-// probeClient does not follow redirects: a captive portal redirects to itself.
-var probeClient = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+// probeClient does not follow redirects: a captive portal redirects to itself. It also
+// opens a new connection for every probe (no keep-alives): a kept-alive connection
+// would answer while new ones fail — DNS down, or a firewall refusing new connections
+// — and the hub would flap online and offline every probe (D6, seen on a Pi 5 on 30
+// October when Firewalla blocked its internet). The cost is one TLS handshake per
+// probe, at ping_interval: 15 s by default, so 4 probes a minute while online.
+var probeClient = &http.Client{
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	Transport:     probeTransport(),
+}
+
+// probeTransport is the default transport without keep-alives: every request opens a
+// new connection.
+func probeTransport() *http.Transport {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DisableKeepAlives = true
+	return tr
+}
 
 // isCentral tells central's answer to an anonymous ping from a captive portal or a
 // proxy error page (REVIEW-2 F9): "pong", 401, or a redirect to central's own login
