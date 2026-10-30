@@ -143,8 +143,10 @@ func TestF5InputPeriodPassesWhileOffline(t *testing.T) {
 	vPe, byPe := a.onCentral(a.pe, de)
 	vOld, byOld := a.onCentral(a.old, de)
 	t.Logf("on central: %s=%q by %q, %s=%q by %q; refusals kept: %v", a.pe, vPe, byPe, a.old, vOld, byOld, issues)
-	if stBefore/100 == 2 && vPe != "51" && !anyContains(issues, `"value":"51"`) {
-		t.Errorf("I1: the value 51 the hub confirmed before %s closed is neither on central nor kept", a.pe)
+	// 51 may have been overwritten by 53 (confirmed later, same cell): central keeps
+	// the last confirmed value; nothing confirmed is lost.
+	if stBefore/100 == 2 && vPe != "51" && vPe != "53" && !anyContains(issues, `"value":"51"`) {
+		t.Errorf("I1: the value 51 the hub confirmed before %s closed is neither on central (%q) nor kept", a.pe, vPe)
 	}
 	if stOpened/100 == 2 && vOld != "54" && !anyContains(issues, `"value":"54"`) {
 		t.Errorf("I1: the value 54 the hub confirmed after %s opened is neither on central nor kept", a.old)

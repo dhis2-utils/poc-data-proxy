@@ -101,24 +101,29 @@ func TestG3G4ReleasesRefused(t *testing.T) {
 		r.cycles(4)
 		got := r.upgradeResults(results)
 		bins := ch.fetched(at, "/hub-")
-		manifests := ch.fetched(at, "release.json")
-		t.Logf("%s (%s): results %v; manifests fetched %d, binaries %d; version %v", o.name, o.version, got, len(manifests),
+		manifests := 0 // release.json fetches only, not release.json.sig
+		for _, f := range ch.fetched(at, "release.json") {
+			if strings.HasSuffix(f.Path, "/release.json") {
+				manifests++
+			}
+		}
+		t.Logf("%s (%s): results %v; manifests fetched %d, binaries %d; version %v", o.name, o.version, got, manifests,
 			len(bins), p.Status()["version"])
 		if v := p.Status()["version"]; v != "0.2.0" {
 			t.Fatalf("%s: the hub runs %v", o.name, v)
 		}
 		switch {
 		case o.want == "":
-			if len(got) > 0 || len(manifests) > 0 {
-				t.Errorf("%s: fetched %d manifests, recorded %v", o.name, len(manifests), got)
+			if len(got) > 0 || manifests > 0 {
+				t.Errorf("%s: fetched %d manifests, recorded %v", o.name, manifests, got)
 			}
 		case len(got) == 0 || !strings.Contains(got[0], "result=ignored") || !strings.Contains(got[0], o.want):
 			t.Errorf("%s: want one result ignored (%s), got %v", o.name, o.want, got)
 		case len(got) > 1:
 			repeated = append(repeated, fmt.Sprintf("%s: %d results in 4 cycles", o.name, len(got)))
 		}
-		if o.want != "" && len(manifests) > 1 {
-			t.Errorf("G3: %s: the refused manifest was fetched %d times in 4 cycles", o.name, len(manifests))
+		if o.want != "" && manifests > 1 {
+			t.Errorf("G3: %s: the refused manifest was fetched %d times in 4 cycles", o.name, manifests)
 		}
 		if len(bins) > 1 {
 			t.Errorf("I7: %s: the binary fetched %d times", o.name, len(bins))

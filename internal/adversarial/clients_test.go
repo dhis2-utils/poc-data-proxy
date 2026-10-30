@@ -451,6 +451,8 @@ func (d *device) firstDownload(r *netRun, errs map[int]int) (pages, people, even
 // works offline (as it would had its first request come a moment later).
 func TestI9cNewDeviceWhileStoreLocked(t *testing.T) {
 	s := begin(t)
+	nurse := s.Web(tk.RoleNurse)
+	nurse.Login() // a known user: their login after the restart unlocks the store
 	var fresh string
 	for _, m := range s.M.Matrix {
 		if m.Dims["capture"] == "facility" {
@@ -467,7 +469,7 @@ func TestI9cNewDeviceWhileStoreLocked(t *testing.T) {
 	dev := s.AndroidUser(fresh)
 	st, _ := dev.Do("GET", "/api/me?fields=id", nil)
 	t.Logf("%s's device, the store locked: /api/me %d", fresh, st)
-	nurse := s.Web(tk.RoleNurse)
+	nurse = s.Web(tk.RoleNurse)
 	nurse.Login()
 	for range 3 {
 		st, _ = dev.Do("GET", "/api/me?fields=id", nil)
