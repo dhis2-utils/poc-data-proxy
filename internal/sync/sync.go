@@ -296,6 +296,10 @@ const metaRegistryTokens = "registry_tokens" // the token IDs last listed in the
 
 // --- reserved values (spec 10.3) -----------------------------------------------------
 
+// maxReservePerRequest is central's cap on one generateAndReserve call ("You can only
+// reserve between 1 and 1000 values"): a bigger pool fills over several cycles.
+const maxReservePerRequest = 1000
+
 // RefillPool tops up the reserved value pool for every generated attribute.
 func (w *Worker) RefillPool(ctx context.Context) error {
 	h := w.H
@@ -308,6 +312,7 @@ func (w *Worker) RefillPool(ctx context.Context) error {
 		if need <= 0 {
 			continue
 		}
+		need = min(need, maxReservePerRequest)
 		code := ""
 		if strings.Contains(a.Pattern, "ORG_UNIT_CODE") {
 			code = rt.FacilityCode
