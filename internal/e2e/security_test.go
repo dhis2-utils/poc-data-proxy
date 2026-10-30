@@ -4,6 +4,7 @@ package e2e
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -531,4 +532,37 @@ func TestRetiredHubStopsServing(t *testing.T) {
 	setStatus("active")
 	e.offline()
 	a.json("GET", search, nil, 200)
+}
+
+// T2/T4: the reserved pool is sized from the facility's own rate — about a week of
+// registrations at the hub's observed rate, at least reserved_pool_size — and a
+// tablet gets up to Android's own 100 values per request when the pool allows it.
+func TestReservedPoolFromMeasuredRate(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.android("nurse_a")
+	a.json("GET", "/api/me", nil, 200)
+	// The facility's observed rate: 250 registrations today, within the last week.
+	for i := range 250 {
+		a.json("POST", postSync, newPatient(fmt.Sprintf("PoolTe%05d", i), fmt.Sprintf("PoolEn%05d", i),
+			"Pool", fmt.Sprintf("NAT-P%04d", i), nil), 200)
+	}
+	e.sync() // the pool refills to the measured target
+	target := e.app.Hub.PoolTarget()
+	have := e.app.Hub.Store.CountReservedValues(fc.AttrTBID, e.app.Hub.CentralTime(time.Now()))
+	t.Logf("pool target %d, reserved values held %d", target, have)
+	if target < 250 {
+		t.Fatalf("pool target %d, want at least the 250 registrations of the last week", target)
+	}
+	if have < target {
+		t.Fatalf("the pool holds %d of its target %d after the sync", have, target)
+	}
+	// Offline, a tablet asking for Android's 100 gets 100 while the pool allows it.
+	e.offline()
+	st, body := a.do("GET", "/api/trackedEntityAttributes/"+fc.AttrTBID+"/generateAndReserve?numberToReserve=100", nil)
+	var vals []any
+	json.Unmarshal(body, &vals)
+	if st != 200 || len(vals) != 100 {
+		t.Errorf("T4: a tablet asking for 100 values got %d (status %d): %.200s", len(vals), st, body)
+	}
 }

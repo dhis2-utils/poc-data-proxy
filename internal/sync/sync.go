@@ -304,7 +304,7 @@ func (w *Worker) RefillPool(ctx context.Context) error {
 	var errs []error
 	for _, a := range h.Catalog().GeneratedAttributes() {
 		have := h.Store.CountReservedValues(a.ID, now)
-		need := h.Cfg.ReservedPoolSize - have
+		need := h.PoolTarget() - have // a week of registrations at the facility's rate, at least reserved_pool_size (T2/T4)
 		if need <= 0 {
 			continue
 		}

@@ -354,3 +354,11 @@ func (s *Store) CountReservedValues(attr, now string) int {
 	s.DB().QueryRow(`SELECT count(*) FROM reserved_values WHERE attribute=? AND (expires_at='' OR expires_at>=?)`, attr, now).Scan(&n)
 	return n
 }
+
+// CountCreatedSince counts the objects of one kind created at or after since (in
+// central's time format): the facility's observed registration rate.
+func (s *Store) CountCreatedSince(kind, since string) int {
+	var n int
+	s.DB().QueryRow(`SELECT count(*) FROM objects WHERE kind=? AND created_at>=?`, kind, since).Scan(&n)
+	return n
+}
