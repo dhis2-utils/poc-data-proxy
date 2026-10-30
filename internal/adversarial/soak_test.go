@@ -990,7 +990,7 @@ func TestM1ConcurrentLoginsMakeOneToken(t *testing.T) {
 // Seen in M1: each full pull "removed visibility" of a few objects (2–7) for a user
 // while staff kept saving. A save made online while a full pull lists its program is
 // marked visible to its author, but is not in the listing taken before it; the full
-// pull then removes what it did not list (sync.pullGroup, RemoveVisibilityExcept).
+// pull then removed what it did not list (sync.pullGroup, RemoveVisibilityExcept).
 // Like every set-up here, it registers a hub for the facility, which retires any
 // other hub of the facility on that central: not while a soak runs there.
 // Checks, offline, that the author still sees each person they registered online
@@ -998,10 +998,12 @@ func TestM1ConcurrentLoginsMakeOneToken(t *testing.T) {
 //
 // Reproduced 29 Oct on synthetic 2.42: 6 of 107 people were hidden from her (503
 // offline) after the full pull, all visible again after the next pull; in the field
-// that is up to a sync interval (15 minutes) after each weekly full pull. With nothing
-// saved during the full pull (TestM1FullPullKeepsSavedVisible) none was hidden.
+// that was up to a sync interval (15 minutes) after each weekly full pull. With
+// nothing saved during the full pull (TestM1FullPullKeepsSavedVisible) none was
+// hidden. Fixed: RemoveVisibilityExcept compares with the listing's start time and
+// keeps what the hub wrote or passed on to central after it (the hub also stamps
+// online writes it records with its own time, until the next pull gives central's).
 func TestM1SaveDuringFullPullStaysVisible(t *testing.T) {
-	finding(t, "a person registered online while a full pull lists the program is hidden from its author offline until the next pull (sync.pullGroup's RemoveVisibilityExcept removes what the listing, taken before the save, did not include)")
 	r := netPrepare(t)
 	e := r.e
 	e.Setup()

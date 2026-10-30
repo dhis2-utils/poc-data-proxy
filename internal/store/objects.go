@@ -381,16 +381,22 @@ func sqlObjectStates(marks string) string {
  FROM objects o INDEXED BY objects_state WHERE o.uid IN (` + marks + `)`
 }
 
-// SlotOrigins returns the origin and program of the objects in these slots, by slot.
-func (s *Store) SlotOrigins(slots []int64) (map[int64][2]string, error) {
-	out := make(map[int64][2]string, len(slots))
+// SlotOrigin is an object's origin, program and update time, read by slot.
+type SlotOrigin struct {
+	Origin, Program, UpdatedAt string
+}
+
+// SlotOrigins returns the origin, program and update time of the objects in these
+// slots, by slot.
+func (s *Store) SlotOrigins(slots []int64) (map[int64]SlotOrigin, error) {
+	out := make(map[int64]SlotOrigin, len(slots))
 	err := inBatches(slots, func(args []any, marks string) error {
-		rows, err := s.query(`SELECT slot, origin, program FROM objects WHERE slot IN (`+marks+`)`, args...)
+		rows, err := s.query(`SELECT slot, origin, program, updated_at FROM objects WHERE slot IN (`+marks+`)`, args...)
 		return scanRows(rows, err, func(r *sql.Rows) error {
 			var slot int64
-			var origin, program string
-			err := r.Scan(&slot, &origin, &program)
-			out[slot] = [2]string{origin, program}
+			var so SlotOrigin
+			err := r.Scan(&slot, &so.Origin, &so.Program, &so.UpdatedAt)
+			out[slot] = so
 			return err
 		})
 	})

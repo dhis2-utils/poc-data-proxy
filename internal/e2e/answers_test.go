@@ -138,8 +138,8 @@ func seenOf(t *testing.T, h *core.Hub, userID int64) map[string]int {
 		switch {
 		case tes[s]:
 			n[""]++
-		case v[1] != "":
-			n[v[1]]++
+		case v.Program != "":
+			n[v.Program]++
 		}
 	}
 	return n

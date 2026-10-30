@@ -123,6 +123,13 @@ func (w *Worker) pullGroup(ctx context.Context, g []*puller, readers map[string]
 			programs = append(programs, "tet:"+tet)
 		}
 	}
+	// The listing's start, in central's time: a full pull keeps visible what the hub
+	// wrote or passed on to central after this moment, even though the listing (taken
+	// from here) did not include it (S2).
+	fullSince := ""
+	if full {
+		fullSince = h.CentralNow().Format(tracker.DHIS2Layout)
+	}
 	shared := map[uint32]bool{} // slots listed for the group
 	var settled []string        // programs whose visibility this pull may decide, for all
 	own := map[int64]map[uint32]bool{}
@@ -196,7 +203,7 @@ func (w *Worker) pullGroup(ctx context.Context, g []*puller, readers map[string]
 				seen = maps.Clone(shared)
 				maps.Copy(seen, own[m.u.ID])
 			}
-			if n := h.RemoveVisibilityExcept(m.u.ID, decided, seen); n > 0 {
+			if n := h.RemoveVisibilityExcept(m.u.ID, decided, seen, fullSince); n > 0 {
 				slog.Info("full pull removed visibility", "user", m.u.Username, "objects", n)
 			}
 		}
