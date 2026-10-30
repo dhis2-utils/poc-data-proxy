@@ -269,9 +269,17 @@ func reset(h *core.Hub, w *hubsync.Worker, by string, discard bool) error {
 		return fmt.Errorf("%d changes central refused would be lost (central has them only with their values masked); type RESET AND DISCARD to reset anyway", n)
 	}
 	if rt := h.Runtime(); rt != nil {
-		reg := map[string]any{"hubId": h.HubID(), "facility": rt.Facility, "status": "retired", "retiredAt": store.Now(),
-			"retiredBy": "reset", "retiredByUser": by}
-		if err := h.Central.JSON(ctx, "PUT", core.RegistryPath(h.HubID()), reg, h.HubAuth(), nil); err != nil {
+		// Edit the entry, not replace it: the fields the Facility Hub app shows (its
+		// tokens, for "Revoke all tokens") stay (G6, N23).
+		if err := h.EditRegistry(ctx, h.HubAuth(), func(reg map[string]any) bool {
+			reg["hubId"] = h.HubID()
+			reg["facility"] = rt.Facility
+			reg["status"] = "retired"
+			reg["retiredAt"] = store.Now()
+			reg["retiredBy"] = "reset"
+			reg["retiredByUser"] = by
+			return true
+		}); err != nil {
 			slog.Warn("reset: registry update", "err", err)
 		}
 		if rt.HubTokenUID != "" {

@@ -348,7 +348,9 @@ func approveAccount(t *testing.T, s *scene) tk.User {
 // central) and a save not yet pushed, on a real central. Must hold, as designed
 // (TestResetKeepsRefusedChanges): the outbox is pushed before the reset; a plain reset
 // is refused while it would lose the refused change, with the reason; RESET AND
-// DISCARD resets, and the registry records who retired the hub.
+// DISCARD resets, and the registry records who retired the hub. N23: the reset edits
+// the registry entry (EditRegistry) instead of replacing it, so the fields the
+// Facility Hub app shows, its tokens among them, survive.
 func TestG6ResetWithRefusedChanges(t *testing.T) {
 	s := begin(t)
 	if !s.Live() {
@@ -420,8 +422,7 @@ func TestG6ResetWithRefusedChanges(t *testing.T) {
 	slices.Sort(dropped)
 	t.Logf("registry fields before the reset: %d; dropped by it: %v", len(entry), dropped)
 	if len(dropped) > 0 {
-		finding(t, "N23: a reset rewrites the hub's registry entry without the fields the Facility Hub app shows")
-		t.Errorf("the reset dropped registry fields the app reads: %v", dropped)
+		t.Errorf("G6/N23: the reset dropped registry fields the app reads: %v", dropped)
 	}
 }
 

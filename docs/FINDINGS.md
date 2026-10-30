@@ -651,6 +651,7 @@ Found on 2026-10-27 by the adversarial scenarios (`internal/adversarial`), run a
 25. **Program expiry was not read** (A10, 28 October): expired events were taken offline and refused at push with E1047. The catalog now holds each program's `expiryPeriodType`, `expiryDays` and `completeEventsExpiryDays`, and the offline import refuses an event dated in an expired period with E1047, letting users with `F_EDIT_EXPIRED` through (`TestA10HubLockFollowsProgramExpiry`, `TestEventProgramExpiryAndReopen`).
 26. **A lost authority was not applied offline** (B5, 28 October): reopening a completed event was taken offline and refused at push. The offline import now refuses it with E1083 when the user's stored authorities lack `F_UNCOMPLETE_EVENT`, in the same check as A10's expiry (`TestB5HubRefusesAfterSync`, `TestEventProgramExpiryAndReopen`).
 27. **Android's old password worked online through the hub for up to 5 minutes after central changed it** (B3, 28 October): a cached Basic credential is re-checked with central only every 5 minutes (`BasicRecheck`), and a failed web login did not touch it. When central refuses a user's web login (401), the hub now unverifies that user's cached Basic credentials, so the device's next request is checked with central at once; they stay cached, so during a lockout the staff member's own device still passes from its address (L2) (`TestB3OldPasswordOnlineThroughCache`, `TestB3OldPasswordDroppedWhenCentralRefusesWebLogin`).
+28. **A reset rewrote the hub's registry entry without the fields the Facility Hub app shows** (G6, N23, 28 October), `tokens` among them. The reset now edits the entry (`EditRegistry`) instead of replacing it, so those fields stay (`TestG6ResetWithRefusedChanges`, `TestResetKeepsRegistryFields`).
 
 **Accepted** (decided 2026-10-28):
 
@@ -666,15 +667,14 @@ Found on 2026-10-27 by the adversarial scenarios (`internal/adversarial`), run a
 
 **Open, from wave 3** (28–29 October; no hub code changed overnight; each gated with `finding(...)`, reproducible with `HUB_FINDINGS=1`; proposed fixes for decision):
 
-1. **A reset rewrites the registry entry without fields the app shows** (G6, N23), `tokens` among them. Proposed: edit the entry (`EditRegistry`) instead of replacing it.
-2. **A mislabelled release manifest is recorded every cycle; refused manifests fetched every cycle** (G3, minor). Proposed: remember it once, as for unsigned manifests.
-3. **Cached metadata replayed offline after central changed it** (A15). To measure first: whether Capture reloads metadata offline.
-4. **The hub flaps while name lookup fails** (D6): the ping reuses a kept-alive connection, so it succeeds while new connections fail; 58 switches and 2 752 requests in 2 minutes. Proposed: the probe opens a new connection each time.
-5. **A queued completion skips validation** (J4): central's completion endpoint does not validate. Proposed: at push, if the data set now requires valid completion, refuse the queued completion and keep it.
-6. **A new device is not registered after a locked start** (I9c): a pass-through session made while the store was locked is cached for up to 12 hours, and that user is refused offline. Proposed: don't cache it, or register once the store is unlocked.
-7. **Forms open and close at the exact time on the hub, by the day on central** (F5). Proposed: compare data input periods at day level, as central does.
-8. **A million-digit number is confirmed offline** (I8c, minor): refused at push and kept. Proposed: match central's NUMBER limits in the offline check.
-9. **Documentation:** all staff passwords changed while the hub was locked (G11): the old password offline unlocks it; not in RECOVERY.md or on the hub page. Release key rotation (N8) is not documented.
+1. **A mislabelled release manifest is recorded every cycle; refused manifests fetched every cycle** (G3, minor). Proposed: remember it once, as for unsigned manifests.
+2. **Cached metadata replayed offline after central changed it** (A15). To measure first: whether Capture reloads metadata offline.
+3. **The hub flaps while name lookup fails** (D6): the ping reuses a kept-alive connection, so it succeeds while new connections fail; 58 switches and 2 752 requests in 2 minutes. Proposed: the probe opens a new connection each time.
+4. **A queued completion skips validation** (J4): central's completion endpoint does not validate. Proposed: at push, if the data set now requires valid completion, refuse the queued completion and keep it.
+5. **A new device is not registered after a locked start** (I9c): a pass-through session made while the store was locked is cached for up to 12 hours, and that user is refused offline. Proposed: don't cache it, or register once the store is unlocked.
+6. **Forms open and close at the exact time on the hub, by the day on central** (F5). Proposed: compare data input periods at day level, as central does.
+7. **A million-digit number is confirmed offline** (I8c, minor): refused at push and kept. Proposed: match central's NUMBER limits in the offline check.
+8. **Documentation:** all staff passwords changed while the hub was locked (G11): the old password offline unlocks it; not in RECOVERY.md or on the hub page. Release key rotation (N8) is not documented.
 
 Also seen: the oracle's first page of an event program's list breaks ties in a different order from central (the hub by UID, central by creation time) when many events share a date.
 
