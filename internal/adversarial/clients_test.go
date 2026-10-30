@@ -479,9 +479,6 @@ func TestI9cNewDeviceWhileStoreLocked(t *testing.T) {
 	st, b := dev.Do("GET", "/api/me?fields=id", nil)
 	t.Logf("offline: the device's /api/me %d %.150s", st, b)
 	if st != 200 {
-		finding(t, "I9c: a device whose first request reaches the hub while its store is locked keeps a pass-through "+
-			"session: the hub does not register the user when the store is unlocked, and offline refuses the device "+
-			"until that session ends (up to 12 hours of use)")
-		t.Errorf("offline the hub refuses a user it served online after the store was unlocked: %d", st)
+		t.Errorf("I9c: offline the hub refuses a user it served online after the store was unlocked: %d", st)
 	}
 }

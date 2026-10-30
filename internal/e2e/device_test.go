@@ -110,3 +110,43 @@ func TestSlotsBoundAtNextLogin(t *testing.T) {
 		t.Fatal("the slot was not bound at the next login")
 	}
 }
+
+// I9c: after a restart the store is locked until a known user logs in. A new device's
+// first request then gets a pass-through session; that session must not be cached, so
+// once the store is unlocked the hub registers the user at the device's next request
+// and the device works offline.
+func TestI9cNewDeviceWhileStoreLocked(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	nurse := e.web("nurse_a")
+	nurse.login()
+	e.sync()
+	// nurse_b has never logged in: the hub does not know them yet.
+	if u, _ := e.app.Hub.Store.UserByName("nurse_b"); u != nil {
+		t.Fatal("nurse_b already registered")
+	}
+	e.stop()
+	e.start() // locked until a known user logs in
+	dev := e.android("nurse_b")
+	if st, b := dev.do("GET", "/api/me?fields=id", nil); st != 200 {
+		t.Fatalf("the device's first request while the store is locked: %d %s", st, b)
+	}
+	if u, _ := e.app.Hub.Store.UserByName("nurse_b"); u != nil {
+		t.Fatal("the hub registered a new user while the store was locked")
+	}
+	nurse2 := e.web("nurse_a")
+	nurse2.login() // unlocks the store
+	for range 3 {
+		if st, b := dev.do("GET", "/api/me?fields=id", nil); st != 200 {
+			t.Fatalf("the device after the unlock: %d %s", st, b)
+		}
+	}
+	if u, _ := e.app.Hub.Store.UserByName("nurse_b"); u == nil {
+		t.Fatal("I9c: the hub did not register the user once the store was unlocked")
+	}
+	e.sync()
+	e.offline()
+	if st, b := dev.do("GET", "/api/me?fields=id", nil); st != 200 {
+		t.Errorf("I9c: offline, the device whose first request came while the store was locked: %d %.200s", st, b)
+	}
+}

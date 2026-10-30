@@ -182,7 +182,12 @@ func (a *Auth) loginBasic(ctx context.Context, src, username, password string) (
 				return cached, nil
 			}
 			sess := a.registerOnline(ctx, username, password, auth)
-			a.H.Sessions.SetBasic(username, password, src, sess)
+			if sess.UserID != 0 || a.H.Unlocked() {
+				// A pass-through session made while the store is locked is not cached:
+				// the device would keep it for up to 12 hours, and the user would never
+				// be registered once the store unlocks (I9c).
+				a.H.Sessions.SetBasic(username, password, src, sess)
+			}
 			return sess, nil
 		}
 		if !central.IsNetwork(err) {
