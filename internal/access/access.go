@@ -69,6 +69,11 @@ func (l *List) GroupKey() string {
 	return string(b)
 }
 
+// HasAuthority reports whether the user's stored authorities include a (or ALL).
+func (l *List) HasAuthority(a string) bool {
+	return l != nil && (slices.Contains(l.Authorities, a) || slices.Contains(l.Authorities, "ALL"))
+}
+
 // MayReadOptions reports whether the user may read data under every option.
 func (l *List) MayReadOptions(opts []string) bool {
 	for _, o := range opts {
@@ -186,6 +191,14 @@ type ProgramMeta struct {
 	EnrollmentCategoryCombo string `json:"enrollmentCategoryCombo,omitempty"`
 	// OnlyEnrollOnce: one enrollment ever per tracked entity (central's E1016).
 	OnlyEnrollOnce bool `json:"onlyEnrollOnce,omitempty"`
+	// Expiry: events dated in a period that ended more than ExpiryDays ago are
+	// refused (E1047), counting periods of ExpiryPeriodType from the event date; a
+	// completed event instead expires CompleteEventsExpiryDays after its completion,
+	// when set. Catalogs from before these fields have none, so the hub then leaves
+	// the check to central on push.
+	ExpiryPeriodType         string `json:"expiryPeriodType,omitempty"`
+	ExpiryDays               int    `json:"expiryDays,omitempty"`
+	CompleteEventsExpiryDays int    `json:"completeEventsExpiryDays,omitempty"`
 }
 
 // Catalog is the facility's program set plus tracked entity type attributes.

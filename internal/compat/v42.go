@@ -304,10 +304,11 @@ func (v42) JobNotifications(jobID, status string, s tracker.Stats, at string) an
 			status, s.Created, s.Updated, s.Deleted, s.Ignored)}}
 }
 
-// ProgramFields: categoryCombo decides whether events carry an attribute option combo.
+// ProgramFields: categoryCombo decides whether events carry an attribute option combo;
+// the expiry fields decide when events are too old to save (E1047).
 func (v42) ProgramFields(af string) string {
 	return "id,name,onlyEnrollOnce,trackedEntityType[id,trackedEntityTypeAttributes[" + af + "]],programStages[id,sortOrder,repeatable]," +
-		"categoryCombo[id,isDefault],programTrackedEntityAttributes[" + af + "]"
+		"categoryCombo[id,isDefault],programTrackedEntityAttributes[" + af + "],expiryPeriodType,expiryDays,completeEventsExpiryDays"
 }
 
 // TransferOrgUnit: 2.42 names the new owner with ou=.

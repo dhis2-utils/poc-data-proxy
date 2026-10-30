@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/access"
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
@@ -426,6 +427,9 @@ func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport
 	if errs := im.checkAOC(it, Str(it.Data, "attributeOptionCombo"), pm.CategoryCombo); errs != nil {
 		return nil, false, errs
 	}
+	if errs := im.checkEventProgramRules(it, old, program, pm); errs != nil {
+		return nil, false, errs
+	}
 	if pm.Event {
 		return im.eventProgramEvent(it, old, program, stage)
 	}
@@ -464,6 +468,30 @@ func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport
 		o.Data["status"] = "ACTIVE"
 	}
 	return o, old == nil, nil
+}
+
+// checkEventProgramRules applies central's program-level event rules offline: an event
+// dated in the program's expired period is refused without F_EDIT_EXPIRED (E1047, A10).
+func (im *Importer) checkEventProgramRules(it *Item, old *Obj, program string, pm *access.ProgramMeta) []ErrorReport {
+	if im.V.Access.HasAuthority("F_EDIT_EXPIRED") {
+		return nil
+	}
+	occurred := Str(it.Data, "occurredAt")
+	if occurred == "" && old != nil {
+		occurred = Str(old.Data, "occurredAt")
+	}
+	status := Str(it.Data, "status")
+	if status == "" && old != nil {
+		status = Str(old.Data, "status")
+	}
+	completedAt := Str(it.Data, "completedAt")
+	if completedAt == "" && status == "COMPLETED" && old != nil {
+		completedAt = Str(old.Data, "completedAt")
+	}
+	if eventExpired(pm, occurred, completedAt, im.Now) {
+		return im.errf(it, "E1047", "Event: `%s` date `%s` is not in the expiry period of program `%s`.", it.UID, occurred, program)
+	}
+	return nil
 }
 
 // checkAOC applies central's rule for a non-default attribute option combination

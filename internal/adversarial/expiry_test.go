@@ -205,12 +205,12 @@ func TestA10ExpiryPassesOffline(t *testing.T) {
 	}
 }
 
-// The hub reads no expiry of tracker and event programs: after the sync it still takes
-// an event dated in an expired period offline, and central refuses it at push (E1047),
-// where the aggregate lock refuses at once (E2017). Nothing is lost: the refusal is
-// kept; staff learn of it late.
+// The hub reads the program's expiry fields into its catalog: after the sync it
+// refuses an event dated in an expired period offline (E1047), as central does at
+// push, unless the user may edit expired data (F_EDIT_EXPIRED). Before, it took such
+// events offline and central refused them at push, kept as refused; nothing was lost,
+// but staff learned of it late.
 func TestA10HubLockFollowsProgramExpiry(t *testing.T) {
-	finding(t, "A10: after the sync the hub still takes an event in an expired period offline (central: E1047 at push); it reads no program expiry days")
 	s := begin(t)
 	p := s.eventProgram()
 	de := s.numberElement(p)

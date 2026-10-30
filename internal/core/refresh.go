@@ -500,6 +500,9 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 				IsDefault *bool  `json:"isDefault"`
 			} `json:"enrollmentCategoryCombo"` // 2.43
 			ProgramTrackedEntityAttributes []attr `json:"programTrackedEntityAttributes"`
+			ExpiryPeriodType               string `json:"expiryPeriodType"`
+			ExpiryDays                     int    `json:"expiryDays"`
+			CompleteEventsExpiryDays       int    `json:"completeEventsExpiryDays"`
 		} `json:"programs"`
 	}
 	af := "trackedEntityAttribute[id,generated,unique,pattern]"
@@ -532,7 +535,8 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 		pm := &access.ProgramMeta{ID: p.ID, Name: p.Name, TET: p.TrackedEntityType.ID, Attributes: conv(p.ProgramTrackedEntityAttributes),
 			OnlyEnrollOnce:           p.OnlyEnrollOnce,
 			AttributeCombo:           p.CategoryCombo.IsDefault != nil && !*p.CategoryCombo.IsDefault,
-			EnrollmentAttributeCombo: p.EnrollmentCategoryCombo.IsDefault != nil && !*p.EnrollmentCategoryCombo.IsDefault}
+			EnrollmentAttributeCombo: p.EnrollmentCategoryCombo.IsDefault != nil && !*p.EnrollmentCategoryCombo.IsDefault,
+			ExpiryPeriodType:         p.ExpiryPeriodType, ExpiryDays: p.ExpiryDays, CompleteEventsExpiryDays: p.CompleteEventsExpiryDays}
 		if pm.AttributeCombo {
 			pm.CategoryCombo = p.CategoryCombo.ID
 		}
@@ -560,16 +564,21 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 			ProgramStages []struct {
 				ID string `json:"id"`
 			} `json:"programStages"`
+			ExpiryPeriodType         string `json:"expiryPeriodType"`
+			ExpiryDays               int    `json:"expiryDays"`
+			CompleteEventsExpiryDays int    `json:"completeEventsExpiryDays"`
 		} `json:"programs"`
 	}
 	if err := h.Central.JSON(ctx, "GET", central.Q("/api/programs", "filter", "programType:eq:WITHOUT_REGISTRATION",
-		"filter", "organisationUnits.id:eq:"+facility, "fields", "id,name,categoryCombo[id,isDefault],programStages[id]",
+		"filter", "organisationUnits.id:eq:"+facility,
+		"fields", "id,name,categoryCombo[id,isDefault],programStages[id],expiryPeriodType,expiryDays,completeEventsExpiryDays",
 		"paging", "false"), nil, auth, &evResp); err != nil {
 		return nil, err
 	}
 	for _, p := range evResp.Programs {
 		pm := &access.ProgramMeta{ID: p.ID, Name: p.Name, Event: true, Attributes: []access.AttrMeta{},
-			AttributeCombo: p.CategoryCombo.IsDefault != nil && !*p.CategoryCombo.IsDefault}
+			AttributeCombo:           p.CategoryCombo.IsDefault != nil && !*p.CategoryCombo.IsDefault,
+			ExpiryPeriodType:         p.ExpiryPeriodType, ExpiryDays: p.ExpiryDays, CompleteEventsExpiryDays: p.CompleteEventsExpiryDays}
 		if pm.AttributeCombo {
 			pm.CategoryCombo = p.CategoryCombo.ID
 		}
