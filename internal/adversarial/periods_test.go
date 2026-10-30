@@ -96,8 +96,10 @@ func (a *aggScene) try(c *tk.Client, ds, pe, de, coc, v string) (int, string) {
 // opens, two and a half minutes after the hub last synced. Before and after that
 // moment the hub's offline answer for each form is compared with central's own (as
 // the nurse, at the same moment), and the nurse enters a value in each. Must hold:
-// forms lock and open as central would; a value entered while the form was open is
-// pushed or refused as central decides on push, and kept if refused.
+// forms lock and open as central would — central judges data input periods by the
+// day (it takes values all of the closing day, and from the start of the opening
+// day), so the hub compares at day level too; a value entered while the form was
+// open is pushed or refused as central decides on push, and kept if refused.
 func TestF5InputPeriodPassesWhileOffline(t *testing.T) {
 	a := beginAggregate(t)
 	ds, de := a.ag.DataSet, a.ag.Number
@@ -119,16 +121,20 @@ func TestF5InputPeriodPassesWhileOffline(t *testing.T) {
 	var mismatches []string
 	mismatches = append(mismatches, a.sameLock(nurse, "before", ds, a.pe, a.old)...)
 	stBefore, _ := a.try(nurse, ds, a.pe, de, a.ag.COC, "51")
-	if st, _ := a.try(nurse, ds, a.old, de, a.ag.COC, "52"); st/100 == 2 {
-		mismatches = append(mismatches, "before: the hub took a value for "+a.old+", not yet open")
+	stOld, _ := a.try(nurse, ds, a.old, de, a.ag.COC, "52")
+	if takes, answer := a.centralTakes(nurse, ds, a.old); (stOld/100 == 2) != takes {
+		mismatches = append(mismatches, fmt.Sprintf("before: the hub's answer for %s was %d, central takes a value there: %v (%s)",
+			a.old, stOld, takes, answer))
 	}
 	time.Sleep(time.Until(moment.Add(10 * time.Second)))
 	mismatches = append(mismatches, a.sameLock(nurse, "after", ds, a.pe, a.old)...)
 	if l, st, shows := a.hubLock(nurse, ds, a.pe, de, "51"); st == 200 {
 		t.Logf("after: the closed form %s through the hub: %s, shows the value entered before it closed: %v", a.pe, l, shows)
 	}
-	if st, _ := a.try(nurse, ds, a.pe, de, a.ag.COC, "53"); st/100 == 2 {
-		mismatches = append(mismatches, "after: the hub took a value for "+a.pe+", closed")
+	stPe, _ := a.try(nurse, ds, a.pe, de, a.ag.COC, "53")
+	if takes, answer := a.centralTakes(nurse, ds, a.pe); (stPe/100 == 2) != takes {
+		mismatches = append(mismatches, fmt.Sprintf("after: the hub's answer for %s was %d, central takes a value there: %v (%s)",
+			a.pe, stPe, takes, answer))
 	}
 	stOpened, _ := a.try(nurse, ds, a.old, de, a.ag.COC, "54")
 
@@ -144,10 +150,7 @@ func TestF5InputPeriodPassesWhileOffline(t *testing.T) {
 		t.Errorf("I1: the value 54 the hub confirmed after %s opened is neither on central nor kept", a.old)
 	}
 	if len(mismatches) > 0 {
-		finding(t, "F5: the hub opens and closes a form at its data input period's exact time; central (2.42.7) by the day "+
-			"(it takes values all of the closing day, and from the start of the opening day): on those days the hub refuses "+
-			"offline what central takes")
-		t.Errorf("forms lock and open unlike central: %v", mismatches)
+		t.Errorf("F5: forms lock and open unlike central (which judges by the day): %v", mismatches)
 	}
 }
 

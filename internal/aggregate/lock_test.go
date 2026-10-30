@@ -77,6 +77,21 @@ func TestLockStatus(t *testing.T) {
 		LockStatus(ds, sep, time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC), false, "") != Locked {
 		t.Error("data input period")
 	}
+	// F5: central judges input periods by the day: values are taken all of the closing
+	// day and from the start of the opening day, whatever the moment.
+	for _, c := range []struct {
+		now  time.Time
+		want bool
+	}{
+		{time.Date(2026, 9, 30, 23, 59, 0, 0, time.UTC), false}, // the day before it opens
+		{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), true},     // the opening day, from its start
+		{time.Date(2026, 10, 5, 23, 59, 59, 0, time.UTC), true},  // the closing day, all of it
+		{time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC), false},    // the day after it closes
+	} {
+		if got := InputOpen(ds, sep, c.now); got != c.want {
+			t.Errorf("InputOpen at %v: %v, want %v", c.now, got, c.want)
+		}
+	}
 	aug, _ := Current("Monthly", time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))
 	if InputOpen(ds, aug, before) {
 		t.Error("a period without a data input period is closed when the data set has any")
