@@ -54,8 +54,9 @@ func TestEventListTieOrderMatchesCentral(t *testing.T) {
 	}
 
 	// Within the shared event date, central lists the newest created first, whatever
-	// the date's direction.
-	for _, order := range []string{"occurredAt:desc", "occurredAt:asc"} {
+	// the date's direction — and the same for the scheduled date (central breaks ties
+	// on any order column by creation time, measured on 2.42).
+	for _, order := range []string{"occurredAt:desc", "occurredAt:asc", "scheduledAt:desc", "scheduledAt:asc"} {
 		if got := list(order, 1, 50); !slices.Equal(got, reversed) {
 			t.Errorf("order=%q: %v, want the newest created first %v", order, got, reversed)
 		}

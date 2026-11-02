@@ -274,9 +274,11 @@ func sortObjs(objs []*Obj, order string, attrKey func(*Obj, string) string) {
 	if len(keys) == 0 {
 		keys = []key{{"createdAt", false}}
 	}
-	if keys[0].field == "occurredAt" {
-		// Events sharing an event date order by creation time, newest first, as
-		// central does (observed on 2.42).
+	if keys[0].field != "createdAt" {
+		// Central breaks ties on any order column by creation time, newest first,
+		// whatever the column's direction (measured on 2.42: order=<column>:<dir>
+		// returns the same sequence as order=<column>:<dir>,createdAt:desc, for
+		// occurredAt, scheduledAt and attributes alike).
 		keys = append(keys, key{"createdAt", true})
 	}
 	keys = append(keys, key{"uid", true}) // stable tie-breaker, descending as central's
