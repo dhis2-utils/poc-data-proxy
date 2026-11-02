@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
@@ -39,6 +40,18 @@ func TestOracle(t *testing.T) {
 	for _, u := range users {
 		u.c.Do("GET", "/api/me?fields=id", nil) // online login: registers facility staff
 	}
+	var writer *tk.Client
+	if u, ok := m.User(tk.RoleNurse); ok {
+		for _, x := range users {
+			if x.name == u.Username {
+				writer = x.c
+			}
+		}
+	}
+	if writer == nil && len(users) > 0 {
+		writer = users[0].c
+	}
+	seedOrderTies(t, e, m, writer)
 	e.Sync()
 
 	var programs, tets []string
@@ -131,6 +144,45 @@ func TestOracle(t *testing.T) {
 	}
 }
 
+// seedOrderTies writes the ties the oracle's sequence comparison judges: five events of
+// each event program sharing a scheduledAt, and four persons of the primary program
+// sharing the search attribute's value, each in its own request a second apart so
+// central's created times differ and the tie is broken by creation time, not UID. One
+// client writes them all, before the sync that pulls them into the hub.
+func seedOrderTies(t *testing.T, e *tk.Env, m *tk.Manifest, writer *tk.Client) {
+	t.Helper()
+	if writer == nil {
+		return
+	}
+	today := time.Now().UTC().Format("2006-01-02")
+	write := func(payload map[string]any) {
+		t.Helper()
+		if st, b := writer.Do("POST", tk.SyncImport, payload); st != 200 {
+			t.Fatalf("seeding a tie: %d %.300s", st, b)
+		}
+		time.Sleep(time.Second) // created a second apart, so creation time breaks the tie
+	}
+	for _, p := range m.EventPrograms {
+		if len(p.AOCs) > 0 {
+			continue // its events need a category option the writer may not have access to
+		}
+		for i := 0; i < 5; i++ {
+			_, payload := m.NewEvent(p, p.Stages[0], "")
+			ev := payload["events"].([]any)[0].(map[string]any)
+			delete(ev, "enrollment") // an event program's events have none
+			ev["scheduledAt"] = today
+			write(payload)
+		}
+	}
+	if p := m.Primary(); p.SearchAttr != "" {
+		for i := 0; i < 4; i++ {
+			pr := m.NewPerson(p, "TieName")
+			writer.Complete(p, pr)
+			write(pr.Payload)
+		}
+	}
+}
+
 // shownWithoutProgram accepts one leak by design (decided 2026-10-28): a person opened
 // with a program central does not show them in for this user (owned elsewhere), whom
 // the hub answers with no enrollment or owner in that program and only attributes
@@ -204,6 +256,30 @@ func knownGap(o tk.Outcome, q tk.Query, dims map[string]string, m *tk.Manifest) 
 	case o.Verdict == tk.Differs && q.Single && q.Kind == "events" && strings.HasPrefix(m.DHIS2Version, "2.42") &&
 		onlyMoreDataValues(o.Detail):
 		return "2.42's single-event endpoint leaves out data values its event lists show the same user (Laos); the hub answers as the lists"
+	case o.Verdict == tk.Differs && strings.Contains(o.Detail, "order differs") && orderField(q) == searchAttr(m, q):
+		return "an order on the program's search attribute: central collates text in the database's locale (Aïcha sorts as Aicha), the hub compares bytes; ties on the same value break by creation time, newest first, as central does (measured 2026-11-02)"
+	case o.Verdict == tk.Leak && orderField(q) == "scheduledAt":
+		return "a paged list ordered by scheduledAt: events with no scheduled date sort first when descending on central, last on the hub, so the two first pages hold different events"
+	}
+	return ""
+}
+
+// orderField is the first field of the request's order parameter ("" when none).
+func orderField(q tk.Query) string {
+	u, err := url.Parse(q.Path)
+	if err != nil {
+		return ""
+	}
+	f, _, _ := strings.Cut(strings.Split(u.Query().Get("order"), ",")[0], ":")
+	return f
+}
+
+// searchAttr is the search attribute of the query's program, if it has one.
+func searchAttr(m *tk.Manifest, q tk.Query) string {
+	for _, p := range m.Programs {
+		if p.ID == q.Program {
+			return p.SearchAttr
+		}
 	}
 	return ""
 }

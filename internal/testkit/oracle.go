@@ -115,6 +115,16 @@ func Queries(m *Manifest, p Program, sample map[string]string) []Query {
 	add("trackedEntities", url.Values{"orgUnits": {m.Facility.ID}, "fields": {te}})
 	add("trackedEntities", url.Values{"orgUnitMode": {"ACCESSIBLE"}, "fields": {te}})
 	add("trackedEntities", url.Values{"orgUnitMode": {"CAPTURE"}, "fields": {te}})
+	if p.SearchAttr != "" {
+		// Ordered by the search attribute: persons sharing a first name tie on it, so
+		// the UID sequences expose a different tie order.
+		for _, ord := range []string{p.SearchAttr + ":asc", p.SearchAttr + ":desc"} {
+			add("trackedEntities", url.Values{"orgUnits": {m.Facility.ID}, "fields": {te}, "order": {ord}})
+		}
+	}
+	for _, ord := range []string{"createdAt:asc", "createdAt:desc"} {
+		add("trackedEntities", url.Values{"orgUnits": {m.Facility.ID}, "fields": {te}, "order": {ord}})
+	}
 	if v := sample["search"]; v != "" {
 		add("trackedEntities", url.Values{"orgUnitMode": {"ACCESSIBLE"}, "fields": {te},
 			"filter": {p.SearchAttr + ":like:" + strings.ToLower(v[:min(3, len(v))])}})
@@ -165,6 +175,13 @@ func EventQueries(m *Manifest, p Program, sampleEvent string) []Query {
 	v.Set("page", "1")
 	v.Set("pageSize", "20")
 	add(v)
+	for _, ord := range []string{"scheduledAt:asc", "scheduledAt:desc", "createdAt:asc"} {
+		v = base()
+		v.Set("order", ord)
+		v.Set("page", "1")
+		v.Set("pageSize", "20")
+		add(v)
+	}
 	for _, st := range p.Stages {
 		v = base()
 		v.Set("programStage", st)
@@ -276,10 +293,79 @@ func Judge(truth *Truth, q Query, user string, cStatus int, cBody []byte, hStatu
 	default:
 		o.Verdict = Match
 	}
+	if o.Verdict == Match {
+		// Membership says nothing about order: when the request carries an order
+		// parameter, the two item lists' UID sequences must match too (the full list
+		// when unpaged, the page when paged). This is what catches a different tie
+		// order, which the pageBoundary excuse above deliberately ignores.
+		if detail, ok := orderMismatch(q, cBody, hBody, expected); ok {
+			o.Verdict = Differs
+			o.Detail = detail
+		}
+	}
 	if len(extra) > 0 {
 		o.Detail = strings.TrimSpace(o.Detail + fmt.Sprintf("\nhub also has %d object(s) the facility does not own: %v", len(extra), extra))
 	}
 	return o
+}
+
+// orderMismatch compares the UID sequences of central's and the hub's item lists when
+// the request carries an order parameter, and returns the detail of a mismatch with the
+// first ~10 UIDs of each side. Central's sequence is narrowed to the objects the
+// facility owns, as the membership verdict is.
+func orderMismatch(q Query, cBody, hBody []byte, expected map[string]map[string]any) (string, bool) {
+	u, err := url.Parse(q.Path)
+	if q.Single || err != nil || u.Query().Get("order") == "" {
+		return "", false
+	}
+	cSeq, err1 := uidSeq(q, cBody)
+	hSeq, err2 := uidSeq(q, hBody)
+	if err1 != nil || err2 != nil {
+		return "", false
+	}
+	want := make([]string, 0, len(cSeq))
+	for _, uid := range cSeq {
+		if expected[uid] != nil {
+			want = append(want, uid)
+		}
+	}
+	if slices.Equal(want, hSeq) {
+		return "", false
+	}
+	return fmt.Sprintf("order differs: hub %v, central %v",
+		hSeq[:min(10, len(hSeq))], want[:min(10, len(want))]), true
+}
+
+// uidSeq decodes a list answer's UIDs in the order the server returned them.
+func uidSeq(q Query, body []byte) ([]string, error) {
+	key := map[string]string{"trackedEntities": "trackedEntity", "enrollments": "enrollment", "events": "event"}[q.Kind]
+	if q.Single {
+		var o map[string]any
+		if err := json.Unmarshal(body, &o); err != nil {
+			return nil, err
+		}
+		if uid, _ := o[key].(string); uid != "" {
+			return []string{uid}, nil
+		}
+		return nil, nil
+	}
+	var res map[string]any
+	if err := json.Unmarshal(body, &res); err != nil {
+		return nil, err
+	}
+	list, _ := res[q.Kind].([]any)
+	if list == nil {
+		list, _ = res["instances"].([]any)
+	}
+	var out []string
+	for _, x := range list {
+		if o, ok := x.(map[string]any); ok {
+			if uid, _ := o[key].(string); uid != "" {
+				out = append(out, uid)
+			}
+		}
+	}
+	return out, nil
 }
 
 // pageBoundary gives, for a paged list with an order whose page from central is full,

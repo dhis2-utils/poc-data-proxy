@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 )
 
 // A page of an ordered event list whose boundary falls inside a group of events on the
-// same day: central and the hub may page different members of the group, and only those.
+// same day: membership alone excuses the different members of the group, but the UID
+// sequences must still match — a different tie order is a DIFFERS.
 func TestJudgePagedTies(t *testing.T) {
 	q := Query{Kind: "events", Program: "P", Path: "/api/tracker/events?order=occurredAt%3Adesc&orgUnit=F&page=1&pageSize=4&program=P"}
 	ev := func(uid, day string) map[string]any {
@@ -24,9 +26,17 @@ func TestJudgePagedTies(t *testing.T) {
 	}
 	central := page(ev("A", "20"), ev("B", "19"), ev("C", "18"), ev("D", "18"))
 
-	o := Judge(truth, q, "u", 200, central, 200, page(ev("A", "20"), ev("B", "19"), ev("C", "18"), ev("E", "18")))
+	// The same page: a match.
+	o := Judge(truth, q, "u", 200, central, 200, page(ev("A", "20"), ev("B", "19"), ev("C", "18"), ev("D", "18")))
 	if o.Verdict != Match {
-		t.Errorf("tie group paged differently: %s %v, want MATCH", o.Verdict, o.Objects)
+		t.Errorf("the same page: %s %v %s, want MATCH", o.Verdict, o.Objects, o.Detail)
+	}
+	// A tie group paged differently: the membership excuse applies, but the sequences
+	// differ, so the verdict is DIFFERS with the first UIDs of each side.
+	o = Judge(truth, q, "u", 200, central, 200, page(ev("A", "20"), ev("B", "19"), ev("C", "18"), ev("E", "18")))
+	if o.Verdict != Differs || !strings.Contains(o.Detail, "order differs") ||
+		!strings.Contains(o.Detail, "[A B C E]") || !strings.Contains(o.Detail, "[A B C D]") {
+		t.Errorf("tie group paged differently: %s %q, want DIFFERS with the order detail", o.Verdict, o.Detail)
 	}
 	// An event outside the tie group that central does not page: a leak, though it
 	// pushes a tied event off the hub's page.
