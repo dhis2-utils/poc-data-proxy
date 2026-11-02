@@ -150,4 +150,17 @@ describe('reserved-value pool', () => {
             )
         ).toBe(null)
     })
+    it("round-trips a stored 0 per attribute: that attribute's pool is off", () => {
+        const stored = { default: 500, attributes: { xs8A6tQJY0s: 0 } }
+        const form = poolForm(stored)
+        expect(form.attributes).toEqual([{ id: 'xs8A6tQJY0s', value: '0' }])
+        expect(poolValue(form, stored)).toEqual(stored)
+    })
+    it('keeps -1 invalid per attribute, and the default field rejects 0', () => {
+        const form = { defaultPool: '500', attributes: [] }
+        expect(
+            poolValue({ ...form, attributes: [{ id: 'x', value: '-1' }] }, null)
+        ).toBe(null)
+        expect(poolValue({ ...form, defaultPool: '0' }, null)).toBe(null)
+    })
 })

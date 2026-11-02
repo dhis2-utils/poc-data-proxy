@@ -19,10 +19,13 @@ func (h *Hub) ReservedPool() ReservedPool {
 
 // PoolTarget is how many reserved values attr's pool aims for: the app's per-attribute
 // setting, else its default, else reserved_pool_size (T2/T4, decided 2026-10-30: a
-// per-attribute setting in the Facility Hub app, default 500).
+// per-attribute setting in the Facility Hub app, default 500). An explicit per-attribute
+// 0 or less is returned as is — it turns the attribute's offline pool off — while the
+// default keeps its > 0 check: with omitempty an explicit 0 and an absent default are
+// indistinguishable, and the app's default field never writes one.
 func (h *Hub) PoolTarget(attr string) int {
 	r := h.ReservedPool()
-	if n := r.Attributes[attr]; n > 0 {
+	if n, ok := r.Attributes[attr]; ok {
 		return n
 	}
 	if r.Default > 0 {

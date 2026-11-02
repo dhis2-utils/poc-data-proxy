@@ -35,6 +35,7 @@ export const limits = {
     periods: { min: 1, max: 1000 },
     expiryDays: { min: 7, max: 365 },
     pool: { min: 1, max: 100000 },
+    poolRow: { min: 0, max: 100000 }, // 0 turns an attribute's offline pool off
 }
 
 /** The whole number typed, or null when it is not one within the limits. */
@@ -133,7 +134,8 @@ export type PoolForm = { defaultPool: string; attributes: Row[] }
 
 export const poolForm = (r?: ReservedPool | null): PoolForm => ({
     defaultPool: String(r?.default ?? defaults.pool),
-    attributes: rowsOf(r?.attributes, (n) => n >= 1),
+    // n >= 0, so a stored 0 round-trips as '0' (the attribute's pool is off).
+    attributes: rowsOf(r?.attributes),
 })
 
 export const poolValue = (
@@ -143,7 +145,7 @@ export const poolValue = (
     const def = wholeNumber(f.defaultPool, limits.pool)
     const attributes = mapOf(
         f.attributes.filter((r) => r.value.trim() !== ''),
-        limits.pool
+        limits.poolRow
     )
     if (def === null || !attributes) {
         return null

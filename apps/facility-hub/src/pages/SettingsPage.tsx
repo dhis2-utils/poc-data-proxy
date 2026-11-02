@@ -333,7 +333,7 @@ const ReservedValues = ({ stored }: { stored: ReservedPool | null }) => {
             <h2 className={styles.subtitle}>{i18n.t('Reserved values')}</h2>
             <div className={styles.muted}>
                 {i18n.t(
-                    'How many generated values (patient numbers, for example) each hub keeps in reserve for offline registration. The hub refills the pool from central when it falls below a quarter of this, in requests of at most 1000 values. Without a setting here, each hub uses its own configuration\'s default (500).'
+                    'How many generated values (patient numbers, for example) each hub keeps in reserve for offline registration. The hub refills the pool from central when it falls below a quarter of this, in requests of at most 1000 values. Without a setting here, each hub uses its own configuration\'s default (500). Set an attribute\'s pool to 0 to turn its offline pool off.'
                 )}
             </div>
             <NumberField
@@ -348,7 +348,7 @@ const ReservedValues = ({ stored }: { stored: ReservedPool | null }) => {
                 options={attributes}
                 rows={form.attributes}
                 onChange={(rows) => setForm({ ...form, attributes: rows })}
-                l={limits.pool}
+                l={limits.poolRow}
                 initial={form.defaultPool}
             />
             <SaveBar

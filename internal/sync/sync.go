@@ -302,7 +302,9 @@ const maxReservePerRequest = 1000
 
 // poolLowWatermark is the fraction of a pool's target below which it is refilled:
 // above it, no request goes to central, so a nearly full pool does not cost a small
-// top-up every cycle (T2/T4, decided 2026-10-30).
+// top-up every cycle (T2/T4, decided 2026-10-30). The comparison multiplies instead
+// of dividing (`have*poolLowWatermark >= target`): integer division once truncated
+// the watermark of a target below 4 to 0, so a pool of 1–3 never refilled, even empty.
 const poolLowWatermark = 4
 
 // RefillPool tops up the reserved value pool for every generated attribute, from the
@@ -315,7 +317,7 @@ func (w *Worker) RefillPool(ctx context.Context) error {
 	for _, a := range h.Catalog().GeneratedAttributes() {
 		have := h.Store.CountReservedValues(a.ID, now)
 		target := h.PoolTarget(a.ID)
-		if have >= target/poolLowWatermark {
+		if have*poolLowWatermark >= target {
 			continue
 		}
 		need := min(target-have, maxReservePerRequest)

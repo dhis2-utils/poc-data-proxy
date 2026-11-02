@@ -474,6 +474,13 @@ func (a *API) ServeGenerated(w http.ResponseWriter, r *http.Request) {
 		a.H.WebError(w, http.StatusForbidden, "attribute "+attr+" is not a generated attribute this user can read", "")
 		return
 	}
+	// A target of 0 or less turns the attribute's offline pool off: answer
+	// needs-connection, so leftovers of a pool disabled later are not handed out
+	// either (without this branch the cap below drained them one per request).
+	if target := a.H.PoolTarget(attr); target <= 0 {
+		a.H.NeedsConnection(w, "generated values for attribute "+attr+" are not reserved for offline use")
+		return
+	}
 	n := 1
 	if op != "generate" {
 		if s := r.URL.Query().Get("numberToReserve"); s != "" {

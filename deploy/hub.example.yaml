@@ -13,7 +13,7 @@ pat_expiry_days: 90
 # Optional (defaults shown)
 # tls: true                 # the hub's own certificate authority, made at first boot (docs/DEPLOYMENT.md)
 # ping_timeout: 5s
-# reserved_pool_size: 500   # default reserved values kept per generated attribute; the Facility Hub app overrides per attribute (facility-hub-config/reserved)
+# reserved_pool_size: 500   # default reserved values kept per generated attribute; the Facility Hub app overrides per attribute (facility-hub-config/reserved, where 0 turns an attribute's offline pool off); a pool refills below a quarter of its target
 # full_pull_interval: 168h  # full (non-incremental) pull per user at most this often
 # ownership_check_interval: 1h  # check that the facility still owns what the hub holds (transfers out)
 # access_refresh_interval: 1h   # re-read users' access and the program catalog (logins refresh at once)

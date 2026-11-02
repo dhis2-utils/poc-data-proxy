@@ -593,4 +593,59 @@ func TestReservedPoolSetting(t *testing.T) {
 	if have := e.app.Hub.Store.CountReservedValues(fc.AttrTBID, now()); have != 250 {
 		t.Errorf("below the low watermark: pool %d after the sync, want 250", have)
 	}
+
+	// A target below the watermark's divisor is exact: 3 refills even at empty
+	// (the division once truncated 3/4 to 0, so a target of 1–3 never refilled).
+	e.offline()
+	reserve(100) // 150 left
+	reserve(100) // 50 left
+	reserve(100) // empty
+	e.online()
+	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{
+		"reserved": json.RawMessage(`{"default": 40, "attributes": {"` + fc.AttrTBID + `": 3}}`),
+	}
+	if err := e.app.Hub.RefreshCatalog(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	e.sync()
+	if have := e.app.Hub.Store.CountReservedValues(fc.AttrTBID, now()); have != 3 {
+		t.Fatalf("target 3: pool %d after the sync, want 3", have)
+	}
+	// Offline, a target of 3 caps a request at 3/2 = 1 value: the pool drains one
+	// per request and refills again at empty.
+	e.offline()
+	for i := 0; i < 3; i++ {
+		if got := reserve(1); got != 1 {
+			t.Errorf("target 3: a request for 1 value got %d", got)
+		}
+	}
+	if have := e.app.Hub.Store.CountReservedValues(fc.AttrTBID, now()); have != 0 {
+		t.Fatalf("target 3: pool %d after three requests, want 0", have)
+	}
+	e.online()
+	e.sync()
+	if have := e.app.Hub.Store.CountReservedValues(fc.AttrTBID, now()); have != 3 {
+		t.Errorf("target 3: pool %d after refilling at empty, want 3", have)
+	}
+
+	// An explicit 0 turns the attribute's pool off: no refill while online, and
+	// offline requests get needs-connection even when leftovers sit in the pool.
+	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{
+		"reserved": json.RawMessage(`{"default": 40, "attributes": {"` + fc.AttrTBID + `": 0}}`),
+	}
+	if err := e.app.Hub.RefreshCatalog(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	e.sync()
+	if have := e.app.Hub.Store.CountReservedValues(fc.AttrTBID, now()); have != 3 {
+		t.Errorf("target 0: pool %d after the sync, want the 3 leftovers untouched", have)
+	}
+	e.offline()
+	st, body := a.do("GET", "/api/trackedEntityAttributes/"+fc.AttrTBID+"/generateAndReserve?numberToReserve=5", nil)
+	if st != 503 {
+		t.Errorf("target 0: generateAndReserve offline: %d %.200s, want 503 needs-connection", st, body)
+	}
+	if have := e.app.Hub.Store.CountReservedValues(fc.AttrTBID, now()); have != 3 {
+		t.Errorf("target 0: pool %d after the refused request, want the 3 leftovers", have)
+	}
 }
