@@ -145,25 +145,42 @@ type dhis struct {
 	http           *http.Client
 }
 
-// get returns the object, or nil if central does not have it.
+// get returns the object, or nil if central does not have it. A 5xx is tried again
+// a few times: one "Could not commit JPA transaction" from the demo central ended a
+// check of three days' saves (2 November); the same read answered 200 at once after.
 func (d *dhis) get(path string) (map[string]any, error) {
+	var err error
+	for i, wait := range []time.Duration{0, 2 * time.Second, 10 * time.Second, 30 * time.Second} {
+		time.Sleep(wait)
+		var o map[string]any
+		var retry bool
+		if o, retry, err = d.getOnce(path); !retry {
+			return o, err
+		}
+		if i < 3 {
+			log.Printf("%v; trying again", err)
+		}
+	}
+	return nil, err
+}
+
+func (d *dhis) getOnce(path string) (o map[string]any, retry bool, err error) {
 	req, _ := http.NewRequest("GET", d.base+path, nil)
 	req.SetBasicAuth(d.user, d.pw)
 	req.Header.Set("Accept", "application/json")
 	resp, err := d.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	switch {
 	case resp.StatusCode == 404:
-		return nil, nil
+		return nil, false, nil
 	case resp.StatusCode != 200:
-		return nil, fmt.Errorf("GET %s: %d %.300s", path, resp.StatusCode, b)
+		return nil, resp.StatusCode >= 500, fmt.Errorf("GET %s: %d %.300s", path, resp.StatusCode, b)
 	}
-	var o map[string]any
-	return o, json.Unmarshal(b, &o)
+	return o, false, json.Unmarshal(b, &o)
 }
 
 // check reads every record of the ledger from central: each confirmed one is there
