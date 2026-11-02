@@ -208,7 +208,7 @@ Question (2026-10-28): how fast does the hub push a backlog to a real DHIS2 over
 
 ## Ten hours in the sandbox (2026-10-29)
 
-Question: does a hub stay flat over hours of work with outages and power cuts, and does every confirmed save reach central? This is the sandbox part of M1 (docs/ADVERSARIAL-TESTING.md). The 72 hours on the Pi 5 are still to come.
+Question: does a hub stay flat over hours of work with outages and power cuts, and does every confirmed save reach central? This is the sandbox part of M1 (docs/ADVERSARIAL-TESTING.md). The 72 hours on the Pi 5 follow in the next section.
 
 `internal/adversarial.TestM1Soak` (`HUB_SOAK=10h`), from 21:41 on 28 October. It ran a hub of this tree as its own process against `agent-adv-network-42` (DHIS2 2.42.7, synthetic profile, a fresh instance). Three clients saved through it: the nurse and the restricted user in Capture web, and the nurse on Android. Each saved every 5–15 s, about 0.30 saves a second, two in three a registration (person, enrollment, event) and one in three an update of an event. That is about 4 times a busy HC IV's rate (3 000 saves over a 12-hour day, "Sizing"). A reader asked every 3 s for a working list or a person the nurse had saved, about half the HC IV's average read rate. The hub's housekeeping ran at shortened intervals: sync every 5 minutes, access refresh and ownership check every 15, a full pull every 2 hours, sessions at most 3 hours, `reconnect_delay` 1 minute, and retention of 12 months for every program. The token lifetime on central was switched between 7 and 365 days at 1 h 30, 4 h, 6 h 30 and 9 h, so the hub had to renew its token each time.
 
@@ -239,6 +239,27 @@ Faults: the uplink was cut at 1 h 01 for 14 minutes, at 2 h 51 for 21, at 4 h 57
 - **A person saved during a full pull is hidden from its author offline until the next pull.** Each full pull "removed visibility" of objects for each user: 6 at the 2 h restart, then 11, 16 and 17. A save passed on to central while a full pull lists the program is marked visible to its author. It is missing from the listing, which was taken before the save. `RemoveVisibilityExcept` (`sync.pullGroup`) then removes it. `TestM1SaveDuringFullPullStaysVisible`: 6 of 107 people registered during a full pull were 503 offline afterwards, and all were visible after the next pull. With nothing saved during the full pull (`TestM1FullPullKeepsSavedVisible`, the soak's three writers, online and offline) none was hidden. In the field this lasts up to a sync interval after each weekly full pull. Not explained: the last full pull, after the writers had stopped, removed 51 objects (14, 12 and 25 for the three users).
 
 Raw data: `testresults/soak/20261028-2141-Zqadvjz6vfl/` (git-ignored): samples, ledger, reads, events, the hub's log and the summary. `HUB_SOAK_CHECK=<folder>` checks a ledger against central again.
+
+## 72 hours on the Pi 5 (2026-10-30 to 11-02)
+
+Question: does a hub on real hardware stay flat for three days of work, with an outage and a power cut a day, and does every confirmed save reach a real central? This is the hardware part of M1 (docs/ADVERSARIAL-TESTING.md).
+
+**Set-up.** `rpi5` (Pi 5, 4 GB, SATA SSD over USB) with image `0.1.5-local.e3e956e` (main with the W1 fix), set up as Ngelehun CHC on the demo central (2.43.2). `cmd/hubdrive` on a server on the same LAN saved as 3 staff × Capture web and Android, one save per client every 40 s: about 13 000 saves a day, 4 times a busy HC IV. Outages were Firewalla blocking the Pi's internet (new connections refused). A soak-only sampler, added to the image for this run, recorded the hub once a minute. Housekeeping ran at its normal intervals.
+
+| | Day 1 (from 10:41) | Day 2 | Day 3 | Day 4 (to 07:05) |
+|---|---|---|---|---|
+| Hub memory (RSS), median; largest | 79 MB; 364 MB | 80; 218 MB | 84; 226 MB | 83; 150 MB |
+| Hub CPU, mean share of one core | 0.5 % | 0.4 % | 0.5 % | 0.4 % |
+| Data folder at the end of the day | 111 MB | 198 MB | 285 MB | 307 MB |
+| Hottest | 50 °C | 52 °C | 50 °C | 50 °C |
+
+Never throttled. The data folder grew by the data, about 87 MB a day. The disk took 18 GB of writes in 69 hours, **6.2 GB a day** at 4 times an HC IV's day.
+
+**Outages and power cuts.** 4 outages (3, 30, 60 and 29 minutes) and 5 power cuts, each pulled for about a minute. After each cut the hub answered locked after 50 s, or 2 min 10 s once, and the driver's logins unlocked it 20–28 s later. At 3 of the 4 outages the hub went back online briefly before staying offline (2 s, 1 min and 12 s), as in D6, fixed since (FINDINGS.md, "Found by adversarial testing" 30; this image predates the fix). After each outage the backlog reached central within the reconnect wait (up to 5 minutes, `ReconnectDelay`) plus a minute: 139 objects pending at 10:56 on day 1, none at 10:57.
+
+**Every save on central.** 36 757 saves in the ledger, 35 801 confirmed. `hubdrive check` read 29 769 records on central: none lost, partial, duplicated or wrong, and nothing left pending or refused on the hub. Of the 956 saves not confirmed, 398 were refused by central between midnight and 1 a.m. on the driver's clock: the driver dates registrations by its own clock (UTC+1), and central (UTC) refused the next day's dates as in the future (E1020), with the registrations' events after them (E5000). This comes from the driver, not the hub: clients and central in one time zone date alike. The rest were 401s and dropped connections while the hub was down or locked. A first check stopped on one 500 from central ("Could not commit JPA transaction"), which the same read answered 200 right after; `hubdrive check` now tries a 5xx again.
+
+Raw data: `windows/out/soak/` (git-ignored): the driver's log and ledger, the check, `soak-samples.csv` and `hub-diag.txt`.
 
 ## A week offline at HC IV size (2026-10-29)
 
@@ -450,3 +471,4 @@ Each page read and sorted the program's events; `objects_events` (creation order
 - **2026-10-28, push over a slow uplink.** One request per save, one at a time: 7 entries a second over a 4G-like link (100 ms), 2.8 over a poor one (300 ms), 37 unlimited; latency, not bandwidth, sets the rate (section "Push over a slow uplink"). With saves at 2 a second the hub keeps up over 4G but runs sync cycles back to back and never passes saves through again; a change is proposed there. The backlog that grew in the hardware session fits the 5-minute `reconnect_delay`.
 - **2026-10-29, ten hours in the sandbox.** M1's sandbox part (section "Ten hours in the sandbox"): 10 211 confirmed saves through five outages and three kills, none lost or duplicated on central; memory, open files and the outbox flat, the data folder growing with the data only. Found: concurrent logins of one user leave extra tokens on central, and a person saved during a full pull is hidden from its author offline until the next pull.
 - **2026-10-29, a week offline at HC IV size.** 21 000 saves offline at 300 000 people: memory 150–210 MB, answers flat; drained in 43 minutes over 4G and 49 s unlimited; every save on central, and on a real DHIS2 21 020 saves in a 12.5-minute cycle (section "A week offline at HC IV size"). Found: Android incremental syncs re-downloaded every person written during the outage (fixed 30 October).
+- **2026-10-30 to 11-02, 72 hours on the Pi 5.** 36 757 saves at 4 times an HC IV's rate, 4 outages and 5 power cuts: memory median 80 MB, the data folder 87 MB a day, 6.2 GB written a day; every confirmed save on central (section "72 hours on the Pi 5").
