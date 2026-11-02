@@ -7,6 +7,9 @@ listen: ":443"                           # https://dhis2.local
 http_listen: ":80"                       # http://dhis2.local: the start page and the hub's certificate
 data_dir: /var/lib/hub
 sync_interval: 15m
+# ping_interval: how often the hub probes central while offline; while online it probes
+# every four times that (60s at 15s), since only a successful probe costs central a
+# TLS handshake
 ping_interval: 15s
 pat_expiry_days: 90
 

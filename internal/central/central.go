@@ -388,7 +388,8 @@ func (m *Monitor) ForcedOffline() bool {
 // would answer while new ones fail — DNS down, or a firewall refusing new connections
 // — and the hub would flap online and offline every probe (D6, seen on a Pi 5 on 30
 // October when Firewalla blocked its internet). The cost is one TLS handshake per
-// probe, at ping_interval: 15 s by default, so 4 probes a minute while online.
+// probe: every ping_interval (15 s by default) while offline, every four times that
+// (60 s) while online (B1, decided 2026-11-02).
 var probeClient = &http.Client{
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	Transport:     probeTransport(),
@@ -497,10 +498,17 @@ func (m *Monitor) MovedTo() string {
 	return m.movedTo
 }
 
-// Run probes every Interval until ctx ends.
+// probeOnlineEvery backs the probe cadence off while online (B1, decided 2026-11-02).
+// The load on central comes from successful probes only — a failing probe never
+// completes a TLS handshake — so the offline cadence stays Interval and only the
+// online one is longer: one TLS handshake a minute at the default 15 s ping_interval
+// instead of four.
+const probeOnlineEvery = 4
+
+// Run probes central until ctx ends, each after nextDelay().
 func (m *Monitor) Run(ctx context.Context, baseURL func() string) {
 	m.Probe(ctx, baseURL())
-	t := time.NewTicker(m.Interval)
+	t := time.NewTimer(m.nextDelay())
 	defer t.Stop()
 	for {
 		select {
@@ -508,6 +516,19 @@ func (m *Monitor) Run(ctx context.Context, baseURL func() string) {
 			return
 		case <-t.C:
 			m.Probe(ctx, baseURL())
+			t.Reset(m.nextDelay())
 		}
 	}
+}
+
+// nextDelay is the wait after a probe: Interval * probeOnlineEvery while online, else
+// Interval. A forced-offline hub (the admin switch) still probes at Interval: cheap,
+// and recovery detection stays quick.
+func (m *Monitor) nextDelay() time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.online && (m.forced == nil || *m.forced) {
+		return m.Interval * probeOnlineEvery
+	}
+	return m.Interval
 }

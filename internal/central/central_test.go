@@ -77,6 +77,53 @@ func TestLocal(t *testing.T) {
 // D6: every probe opens a new connection instead of reusing a kept-alive one, so a
 // probe cannot succeed on a stale connection while new connections fail (DNS down,
 // a firewall refusing them): the hub then flapped online and offline every probe.
+// B1, decided 2026-11-02: the probe cadence follows the state — ping_interval while
+// offline, four times that while online. No sleeps: Probe is driven by hand.
+func TestProbeCadenceFollowsTheState(t *testing.T) {
+	var mu sync.Mutex
+	down := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if down {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.Write([]byte("pong"))
+	}))
+	defer srv.Close()
+	m := NewMonitor(2*time.Second, time.Second)
+	if !m.Probe(context.Background(), srv.URL) {
+		t.Fatal("probe failed while up")
+	}
+	if d := m.nextDelay(); d != 2*time.Second*probeOnlineEvery {
+		t.Errorf("after a success: nextDelay %s, want 8s", d)
+	}
+	mu.Lock()
+	down = true
+	mu.Unlock()
+	m.Probe(context.Background(), srv.URL) // failure 1: still online
+	if d := m.nextDelay(); d != 2*time.Second*probeOnlineEvery {
+		t.Errorf("after one failure (still online): nextDelay %s, want 8s", d)
+	}
+	m.Probe(context.Background(), srv.URL) // failure 2: flips offline
+	if m.Online() {
+		t.Fatal("still online after two failures")
+	}
+	if d := m.nextDelay(); d != 2*time.Second {
+		t.Errorf("after the two failures that flip offline: nextDelay %s, want the interval 2s", d)
+	}
+	mu.Lock()
+	down = false
+	mu.Unlock()
+	if !m.Probe(context.Background(), srv.URL) {
+		t.Fatal("probe failed while up")
+	}
+	if d := m.nextDelay(); d != 2*time.Second*probeOnlineEvery {
+		t.Errorf("after a success again: nextDelay %s, want 8s", d)
+	}
+}
+
 func TestProbeOpensANewConnectionEachTime(t *testing.T) {
 	var mu sync.Mutex
 	conns := map[string]bool{}
