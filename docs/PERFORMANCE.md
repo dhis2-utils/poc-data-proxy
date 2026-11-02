@@ -261,6 +261,8 @@ Never throttled. The data folder grew by the data, about 87 MB a day. The disk t
 
 Raw data: `windows/out/soak/` (git-ignored): the driver's log and ledger, the check, `soak-samples.csv` and `hub-diag.txt`.
 
+**The Pi 4's card in the same days (run A, not completed).** The same image in load-test mode on `rpi4` (1 GB, microSD), a fake central at 60 k people and `hubload -paced -duration 3h` from the Mac: one busy HC IV day spread over 3 hours, offline. The first pull took 18 min 48 s and wrote **6.3 GB** to the card. The paced load then wrote 133 MB in 42 minutes (about 190 MB an hour) until the Pi restarted on its own, 46 minutes in, at 48 °C and not throttled. After the restart, load-test mode started a fresh hub, and the rest of the run got 401 and 429 answers, so its latencies and its bytes per day do not count. The cause of the restart is not known. The hub's memory was not sampled (the sampler read `hub.service`, which load-test mode does not use), and the system log from before the restart was lost. Bytes written per day on a card are still to measure: rerun with the sampler fixed.
+
 ## A week offline at HC IV size (2026-10-29)
 
 Question: a large facility works a whole week offline, then the link returns. Does the hub stay responsive while the backlog grows, how long does the backlog take to reach central, and does every save get there?
