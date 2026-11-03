@@ -248,21 +248,23 @@ func shownWithoutProgram(direct *tk.Central, o tk.Outcome, q tk.Query, hubBody [
 // createdTies accepts a list ordered by createdAt whose order differs from central's
 // only among records created in the same millisecond: central breaks those ties in the
 // order's direction, the hub by UID descending (seen on 2.43, where the seed import
-// creates several people in one millisecond; decided 2026-11-03 to accept, as such
-// ties come from imports). Both lists must hold the same records, each sorted by the
-// creation times central gives them.
+// creates several people and events in one millisecond; decided 2026-11-03 to
+// accept, as such ties come from imports).
 func createdTies(direct *tk.Central, o tk.Outcome, q tk.Query, centralBody, hubBody []byte) string {
-	if o.Verdict != tk.Differs || !strings.Contains(o.Detail, "order differs") || orderField(q) != "createdAt" || q.Kind != "trackedEntities" {
+	if o.Verdict != tk.Differs || !strings.Contains(o.Detail, "order differs") || orderField(q) != "createdAt" ||
+		(q.Kind != "trackedEntities" && q.Kind != "events") {
 		return ""
 	}
-	ids := func(b []byte) []string {
-		var l struct {
-			TrackedEntities []struct{ TrackedEntity, CreatedAt string }
-		}
+	type row struct{ TrackedEntity, Event, CreatedAt string }
+	rows := func(b []byte) []row {
+		var l struct{ TrackedEntities, Events []row }
 		json.Unmarshal(b, &l)
+		return append(l.TrackedEntities, l.Events...)
+	}
+	ids := func(b []byte) []string {
 		var out []string
-		for _, t := range l.TrackedEntities {
-			out = append(out, t.TrackedEntity)
+		for _, r := range rows(b) {
+			out = append(out, r.TrackedEntity+r.Event)
 		}
 		return out
 	}
@@ -270,38 +272,42 @@ func createdTies(direct *tk.Central, o tk.Outcome, q tk.Query, centralBody, hubB
 	if len(hub) == 0 || len(hub) != len(central) {
 		return ""
 	}
+	// Every record's creation time, from the whole list: a first page of the hub's
+	// may hold records central puts on its second.
 	u, err := url.Parse(q.Path)
 	if err != nil {
 		return ""
 	}
 	v := u.Query()
-	v.Set("fields", "trackedEntity,createdAt")
+	v.Set("fields", "trackedEntity,event,createdAt")
+	v.Set("paging", "false")
+	v.Del("page")
+	v.Del("pageSize")
 	u.RawQuery = v.Encode()
 	st, b, err := direct.Do("GET", u.String(), nil)
 	if err != nil || st != 200 {
 		return ""
 	}
-	var l struct {
-		TrackedEntities []struct{ TrackedEntity, CreatedAt string }
-	}
-	if json.Unmarshal(b, &l) != nil {
-		return ""
-	}
 	created := map[string]string{}
-	for _, t := range l.TrackedEntities {
-		created[t.TrackedEntity] = t.CreatedAt
+	for _, r := range rows(b) {
+		created[r.TrackedEntity+r.Event] = r.CreatedAt
 	}
 	desc := strings.HasSuffix(strings.Split(v.Get("order"), ",")[0], ":desc")
-	sortedByCreated := func(l []string) bool {
-		for i := 1; i < len(l); i++ {
-			a, b := created[l[i-1]], created[l[i]]
-			if a == "" || b == "" || (!desc && a > b) || (desc && a < b) {
-				return false
+	times := func(l []string) []string {
+		var out []string
+		for i, id := range l {
+			t := created[id]
+			if t == "" || (i > 0 && ((!desc && out[i-1] > t) || (desc && out[i-1] < t))) {
+				return nil
 			}
+			out = append(out, t)
 		}
-		return true
+		return out
 	}
-	if !sortedByCreated(hub) || !sortedByCreated(central) {
+	// Both sorted by creation time, with the same times in the same places: they
+	// differ only in the order of records created in the same millisecond.
+	ht, ct := times(hub), times(central)
+	if ht == nil || !slices.Equal(ht, ct) {
 		return ""
 	}
 	return "a list ordered by createdAt with records created in the same millisecond: central breaks the ties in the order's direction, the hub by UID descending (2.43's seed import; decided 2026-11-03)"
@@ -326,6 +332,8 @@ func knownGap(o tk.Outcome, q tk.Query, dims map[string]string, m *tk.Manifest) 
 		return "2.42's single-event endpoint leaves out data values its event lists show the same user (Laos); the hub answers as the lists"
 	case o.Verdict == tk.Differs && strings.Contains(o.Detail, "order differs") && orderField(q) == searchAttr(m, q):
 		return "an order on the program's search attribute: central collates text in the database's locale (Aïcha sorts as Aicha), the hub compares bytes; ties on the same value break by creation time, newest first, as central does (measured 2026-11-02)"
+	case o.Verdict == tk.Lenient && orderField(q) == "scheduledAt" && strings.Contains(o.Detail, "Cannot order by 'scheduledDate'"):
+		return "an event program's events ordered by scheduledAt: 2.43 refuses the order (400), the hub answers it as 2.42 does (seen 2026-11-03)"
 	case o.Verdict == tk.Leak && orderField(q) == "scheduledAt":
 		return "a paged list ordered by scheduledAt: events with no scheduled date sort first when descending on central, last on the hub, so the two first pages hold different events"
 	}
