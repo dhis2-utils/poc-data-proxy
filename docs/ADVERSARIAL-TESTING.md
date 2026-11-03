@@ -349,7 +349,7 @@ Each scenario's result is recorded here: pass, fail with the finding, or decided
 | Physical 2: power | done | 28 Oct 2026 | As session 1, the Pi's power cord pulled 6 times (and two short drops): back locked after 23–42 s, unlocked by the staff logins; 919 saves confirmed; on central 752 records, none lost, partial, duplicated or wrong; saves cut mid-request were resent with the same IDs and none duplicated. Found on the way: logging out online could take the hub offline for seconds (fixed, FINDINGS.md 11); the USB stick now has one file for people (`hub.txt`) |
 | Physical 3: clock and storage | not started | | |
 | Physical 4: real devices | not started | | |
-| Physical 5: soak | not started | | |
+| Physical 5: soak | done | 30 Oct–2 Nov 2026 | 72 h on the Pi 5 against the demo central, 4 outages (Firewalla) and 5 power cuts: every confirmed save on central (M1 below; PERFORMANCE.md, "72 hours on the Pi 5") |
 
 | Scenario | Result | Date | Finding or note |
 |---|---|---|---|

@@ -682,6 +682,10 @@ Also seen, fixed 2026-10-30 (item 34 above): the oracle's first page of an event
 
 - Not explained: the soak's last full pull, with no saves running, also removed 51 objects for its three users.
 
+**Open** (from the Pi 5 soak, M1, 2 November; follow-up decided 2026-11-03):
+
+- **Central in another time zone than its facilities refuses today's dates near midnight.** In the soak 398 registrations were refused between midnight and 1 a.m. on the driver's clock (UTC+1) by the demo central (UTC): "Enrollment date … cannot be a future date" (E1020), and their events with them (E5000). Servers are often hosted in another time zone than the facilities, and not always configured for theirs, so real clients will meet this too, online and through the hub. To find out: what the hub does offline with such a date (confirm and have it refused at push, or refuse it itself), whether it judges "future" by central's zone (`MetaServerTimeZone`) or its own, and what Capture web and Android show. A sandbox scenario with the fake central's zone offset (`fakecentral`, `ClockSkew` and its zone) and a client in another zone; then decide.
+
 **DHIS2's side, to explore before the hub changes** (decided 2026-10-28):
 
 - **A value into an approved form** (J1, 2.43.2). As the nurse, `POST /api/dataValues` answers 201 while the form is approved (`APPROVED_HERE`); reproduced with curl, without the hub. A value entered offline before the approval therefore lands in approved data when the hub pushes it, with no refusal. The Data Entry app shows the form locked, and after its next sync the hub refuses new offline values (E2017). Whether central should refuse it is to be checked with DHIS2; the hub does not check approval before pushing.
