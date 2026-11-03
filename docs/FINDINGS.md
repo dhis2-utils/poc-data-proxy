@@ -691,7 +691,7 @@ Also seen, fixed 2026-10-30 (item 34 above): the oracle's first page of an event
 
 **Open** (from the soak in the sandbox, M1, 29 October, 2.42.7; docs/PERFORMANCE.md, "Ten hours in the sandbox"):
 
-- Not explained: the soak's last full pull, with no saves running, also removed 51 objects for its three users.
+- ~~Not explained: the soak's last full pull, with no saves running, also removed 51 objects for its three users.~~ **Explained 2026-11-03: saves were running.** The soak's 10 hours were timed on the monotonic clock, and the sandbox's VM was suspended for 19 min 51 s during the outage at 06:48 (a gap in the hub's log; the last sample says 10.0 h at 08:01:35, 10 h 20 min after the first). So the writers stopped at 08:01:33 wall time, not 07:41, and the last full pull (07:57–08:00) ran with them saving: 56 saves in it. That is S2 ("Found by adversarial testing" 24), fixed on 29 October, which the soak's tree did not have. Reproduced on the tree before the fix (`5ed88e4^`) with the soak's three writers saving through a full pull (`TestM1FullPullDuringSavesRemovesOnlyWhatCentralHides`): it removed 12, 28 and 22 objects for the admin, the nurse and the restricted user, as the soak's 14, 12 and 25; on this tree, 0 with 102 saves during the full pull; with nothing saved during it (`TestM1FullPullRemovesOnlyWhatCentralHides`), 0 on both trees. Nothing left to fix.
 
 **Open** (from the Pi 5 soak, M1, 2 November; follow-up decided 2026-11-03):
 

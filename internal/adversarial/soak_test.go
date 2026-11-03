@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/store"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
 
@@ -1111,5 +1112,162 @@ func TestM1FullPullKeepsSavedVisible(t *testing.T) {
 	t.Logf("%d registrations, none during the full pull; hidden offline from their author after it: %d %v", len(saved), len(hidden), hidden)
 	if len(hidden) > 0 {
 		t.Errorf("a full pull with no concurrent saves hid %d of %d registrations from their author", len(hidden), len(saved))
+	}
+}
+
+// The open soak item (FINDINGS.md, "Open", M1): the soak's last full pull "removed
+// visibility" of 51 objects for its three users, though its writers were thought to
+// have stopped. A probe: the soak's work in miniature (the three writers online,
+// offline, online again, with updates), two syncs, then a full pull with nothing
+// saved during it. Every object a full pull takes from a user is logged with what the
+// hub holds of it and whether central still shows it to that user, so a removal
+// central asked for can be told from a fault.
+func TestM1FullPullRemovesOnlyWhatCentralHides(t *testing.T) {
+	fullPullProbe(t, false)
+}
+
+// The same with the writers saving through the full pull (the uplink slowed so it
+// lasts), as they were during the soak's last one: 56 saves in its 3½ minutes.
+func TestM1FullPullDuringSavesRemovesOnlyWhatCentralHides(t *testing.T) {
+	fullPullProbe(t, true)
+}
+
+func fullPullProbe(t *testing.T, saving bool) {
+	r := netPrepare(t)
+	e := r.e
+	e.Setup()
+	for _, role := range []string{tk.RoleNurse, tk.RoleRestricted} {
+		e.Web(role).Login()
+	}
+	e.Sync()
+	ws := r.writers()
+	work := func(n int) {
+		for range n {
+			for _, w := range ws {
+				w.once()
+			}
+		}
+	}
+	work(20)
+	e.Offline()
+	work(20)
+	e.Online()
+	work(10)
+	e.Sync()
+	e.Sync()
+	h := e.App.Hub
+	users, err := h.Store.Users()
+	if err != nil {
+		t.Fatal(err)
+	}
+	type obj struct{ uid, kind, program, origin, updated string }
+	objects := func() map[uint32]obj {
+		rows, err := h.Store.DB().Query(`SELECT slot, uid, kind, program, origin, updated_at FROM objects`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		out := map[uint32]obj{}
+		for rows.Next() {
+			var s int64
+			var o obj
+			rows.Scan(&s, &o.uid, &o.kind, &o.program, &o.origin, &o.updated)
+			out[uint32(s)] = o
+		}
+		return out
+	}
+	before := map[int64]map[uint32]bool{}
+	for _, u := range users {
+		before[u.ID] = map[uint32]bool{}
+		for _, s := range h.Index.VisibleSlots(u.ID) {
+			before[u.ID][s] = true
+		}
+	}
+	saves := len(r.ledger.all())
+	h.Cfg.FullPullInterval = time.Nanosecond
+	if saving {
+		e.Net.SetDelay(150 * time.Millisecond)
+		done := make(chan error, 1)
+		go func() { done <- e.App.Worker.Cycle(t.Context()) }()
+		for running := true; running; {
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatalf("full pull: %v", err)
+				}
+				running = false
+			default:
+				work(1)
+				time.Sleep(300 * time.Millisecond)
+			}
+		}
+		e.Net.SetDelay(0)
+	} else {
+		e.Sync()
+	}
+	h.Cfg.FullPullInterval = 7 * 24 * time.Hour
+	during := len(r.ledger.all()) - saves
+	objs := objects()
+	kinds := map[string]string{store.KindTrackedEntity: "trackedEntities", store.KindEnrollment: "enrollments", store.KindEvent: "events", store.KindRelationship: "relationships"}
+	total, faults := 0, 0
+	for _, u := range users {
+		now := map[uint32]bool{}
+		for _, s := range h.Index.VisibleSlots(u.ID) {
+			now[s] = true
+		}
+		var gone []string
+		for s := range before[u.ID] {
+			if now[s] {
+				continue
+			}
+			o := objs[s]
+			st := 0
+			if k := kinds[o.kind]; k != "" {
+				path := "/api/tracker/" + k + "/" + o.uid + "?fields=updatedAt"
+				if k == "trackedEntities" && o.program != "" {
+					path += "&program=" + o.program
+				}
+				st, _, _ = e.Central.As(u.Username, e.M.Password).Do("GET", path, nil)
+			}
+			if st == 200 {
+				faults++
+			}
+			gone = append(gone, fmt.Sprintf("%s %s program=%q origin=%s updated=%s (central to %s: %d)", o.kind, o.uid, o.program, o.origin, o.updated, u.Username, st))
+		}
+		total += len(gone)
+		slices.Sort(gone)
+		t.Logf("%s: %d visible before the full pull, %d after; removed %d: %v", u.Username, len(before[u.ID]), len(now), len(gone), gone)
+	}
+	// Objects saved during the full pull were not visible before it: whether a user
+	// lost one shows only against central. Each person of the run and its event, per
+	// user: held as central's, not visible to the user, and central shows it them.
+	var lost []string
+	for _, u := range users {
+		cen := e.Central.As(u.Username, e.M.Password)
+		for _, sv := range r.ledger.all() {
+			if !sv.Confirmed || sv.Update {
+				continue
+			}
+			for _, x := range [][2]string{{"trackedEntities", sv.TE}, {"events", sv.Event}} {
+				o := h.Index.Get(x[1])
+				if o == nil || o.Origin != store.OriginCentral || h.Index.VisibleTo(o, u.ID) {
+					continue
+				}
+				path := "/api/tracker/" + x[0] + "/" + x[1] + "?fields=updatedAt"
+				if x[0] == "trackedEntities" {
+					path += "&program=" + r.prog.ID
+				}
+				if st, _, _ := cen.Do("GET", path, nil); st == 200 {
+					lost = append(lost, fmt.Sprintf("%s %s saved by %s at %s (online=%v), hidden from %s", x[0], x[1], sv.User,
+						sv.At.Format("15:04:05.000"), sv.Online, u.Username))
+				}
+			}
+		}
+	}
+	faults += len(lost)
+	t.Logf("the run's people and events central shows a user but the hub does not: %d %v", len(lost), first(lost))
+	t.Logf("%s; %d saves during the full pull; it removed %d objects from users, %d of them still shown by central", r.ledger.summary(), during, total, faults)
+	if faults > 0 {
+		t.Errorf("a full pull (%d saves during it) took %d objects from users that central still shows them", during, faults)
 	}
 }
