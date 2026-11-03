@@ -1,5 +1,6 @@
 import i18n from '@dhis2/d2-i18n'
 import {
+    Checkbox,
     CircularLoader,
     DataTable,
     DataTableBody,
@@ -46,12 +47,34 @@ const retiredText = (h: HubRow) =>
 const hubVersion = (h: HubRow) =>
     h.heartbeat?.version ?? h.registry.hubVersion ?? ''
 
+const hubId = (h: HubRow) => h.registry.hubId ?? h.id
+
+// Whether the list shows the hub ID column: this browser's choice, off by default.
+const showIdKey = 'facility-hub.hubs.showHubId'
+
+const readShowId = () => {
+    try {
+        return window.localStorage.getItem(showIdKey) === '1'
+    } catch {
+        return false
+    }
+}
+
+const writeShowId = (show: boolean) => {
+    try {
+        window.localStorage.setItem(showIdKey, show ? '1' : '0')
+    } catch {
+        // Storage blocked: the choice lasts until the page reloads.
+    }
+}
+
 export const HubsPage = () => {
     const { hubs, isLoading, error } = useHubs()
     const { canManage } = useCanManage()
     const [search, setSearch] = useState('')
     const [flaggedOnly, setFlaggedOnly] = useState(false)
     const [version, setVersion] = useState('')
+    const [showId, setShowId] = useState(readShowId)
     const navigate = useNavigate()
 
     const rows = useMemo(
@@ -130,6 +153,14 @@ export const HubsPage = () => {
                     checked={flaggedOnly}
                     onChange={({ checked }) => setFlaggedOnly(checked)}
                 />
+                <Checkbox
+                    label={i18n.t('Show hub ID')}
+                    checked={showId}
+                    onChange={({ checked }) => {
+                        setShowId(checked)
+                        writeShowId(checked)
+                    }}
+                />
             </div>
             {rows.length === 0 ? (
                 <NoticeBox title={i18n.t('No hubs')}>
@@ -146,6 +177,11 @@ export const HubsPage = () => {
                             <DataTableColumnHeader>
                                 {i18n.t('Facility')}
                             </DataTableColumnHeader>
+                            {showId && (
+                                <DataTableColumnHeader>
+                                    {i18n.t('Hub ID')}
+                                </DataTableColumnHeader>
+                            )}
                             <DataTableColumnHeader>
                                 {i18n.t('Last heartbeat')}
                             </DataTableColumnHeader>
@@ -192,6 +228,11 @@ export const HubsPage = () => {
                                             : ''}
                                     </div>
                                 </DataTableCell>
+                                {showId && (
+                                    <DataTableCell className={styles.mono}>
+                                        {hubId(h)}
+                                    </DataTableCell>
+                                )}
                                 <DataTableCell>
                                     {h.heartbeat ? ago(h.heartbeat.time) : '—'}
                                 </DataTableCell>

@@ -594,11 +594,17 @@ msgstr "Any version"
 msgid "Flagged only"
 msgstr "Flagged only"
 
+msgid "Show hub ID"
+msgstr "Show hub ID"
+
 msgid "No hub matches."
 msgstr "No hub matches."
 
 msgid "No hub has been set up in your org units yet."
 msgstr "No hub has been set up in your org units yet."
+
+msgid "Hub ID"
+msgstr "Hub ID"
 
 msgid "Pending"
 msgstr "Pending"
