@@ -111,6 +111,10 @@ func TestOracle(t *testing.T) {
 				known[why]++
 				continue
 			}
+			if why := createdTies(direct, o, q, cb, hb); why != "" {
+				known[why]++
+				continue
+			}
 			if o.Verdict == tk.Leak || o.Verdict == tk.Missing || o.Verdict == tk.Differs || o.Verdict == tk.Lenient {
 				bad = append(bad, o)
 			}
@@ -223,7 +227,9 @@ func shownWithoutProgram(direct *tk.Central, o tk.Outcome, q tk.Query, hubBody [
 	if err != nil || st != 200 {
 		return ""
 	}
-	var central struct{ Attributes []struct{ Attribute, Value string } }
+	var central struct {
+		Attributes []struct{ Attribute, Value string }
+	}
 	if json.Unmarshal(b, &central) != nil {
 		return ""
 	}
@@ -237,6 +243,68 @@ func shownWithoutProgram(direct *tk.Central, o tk.Outcome, q tk.Query, hubBody [
 		}
 	}
 	return "a person owned elsewhere opened with that program: the hub shows what central shows without the program, no enrollment (decided 2026-10-28)"
+}
+
+// createdTies accepts a list ordered by createdAt whose order differs from central's
+// only among records created in the same millisecond: central breaks those ties in the
+// order's direction, the hub by UID descending (seen on 2.43, where the seed import
+// creates several people in one millisecond; decided 2026-11-03 to accept, as such
+// ties come from imports). Both lists must hold the same records, each sorted by the
+// creation times central gives them.
+func createdTies(direct *tk.Central, o tk.Outcome, q tk.Query, centralBody, hubBody []byte) string {
+	if o.Verdict != tk.Differs || !strings.Contains(o.Detail, "order differs") || orderField(q) != "createdAt" || q.Kind != "trackedEntities" {
+		return ""
+	}
+	ids := func(b []byte) []string {
+		var l struct {
+			TrackedEntities []struct{ TrackedEntity, CreatedAt string }
+		}
+		json.Unmarshal(b, &l)
+		var out []string
+		for _, t := range l.TrackedEntities {
+			out = append(out, t.TrackedEntity)
+		}
+		return out
+	}
+	hub, central := ids(hubBody), ids(centralBody)
+	if len(hub) == 0 || len(hub) != len(central) {
+		return ""
+	}
+	u, err := url.Parse(q.Path)
+	if err != nil {
+		return ""
+	}
+	v := u.Query()
+	v.Set("fields", "trackedEntity,createdAt")
+	u.RawQuery = v.Encode()
+	st, b, err := direct.Do("GET", u.String(), nil)
+	if err != nil || st != 200 {
+		return ""
+	}
+	var l struct {
+		TrackedEntities []struct{ TrackedEntity, CreatedAt string }
+	}
+	if json.Unmarshal(b, &l) != nil {
+		return ""
+	}
+	created := map[string]string{}
+	for _, t := range l.TrackedEntities {
+		created[t.TrackedEntity] = t.CreatedAt
+	}
+	desc := strings.HasSuffix(strings.Split(v.Get("order"), ",")[0], ":desc")
+	sortedByCreated := func(l []string) bool {
+		for i := 1; i < len(l); i++ {
+			a, b := created[l[i-1]], created[l[i]]
+			if a == "" || b == "" || (!desc && a > b) || (desc && a < b) {
+				return false
+			}
+		}
+		return true
+	}
+	if !sortedByCreated(hub) || !sortedByCreated(central) {
+		return ""
+	}
+	return "a list ordered by createdAt with records created in the same millisecond: central breaks the ties in the order's direction, the hub by UID descending (2.43's seed import; decided 2026-11-03)"
 }
 
 // knownGap names a difference the hub accepts by design or has not closed yet, so
