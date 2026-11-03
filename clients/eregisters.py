@@ -8,10 +8,17 @@ Run by internal/live/eregisters_test.go, which starts the hub and passes:
 Prints one JSON object: each step's outcome, the status of every push and pull, and
 every request the hub could not answer offline. Exits non-zero only if the browser
 itself fails.
+
+SCENARIO=update (adversarial N24) runs main_update instead: the app updated on central
+(CONTROL_URL/install) while the hub is offline. It also needs ZIP_OLD and ZIP_NEW, the
+two builds, to tell which one a browser runs, and SURNAME2 for a second client.
 """
 import json
 import os
+import re
+import shutil
 import urllib.request
+import zipfile
 
 from playwright.sync_api import sync_playwright
 
@@ -78,6 +85,21 @@ class Device:
         if self.page.locator("iframe").count():
             return self.page.frame_locator("iframe").first
         return self.page
+
+    def running(self):
+        """The app's main script in the page: which build the browser runs."""
+        for f in [self.page.main_frame, *self.page.frames]:
+            if "/api/apps/eregisters/" not in f.url:
+                continue
+            try:
+                srcs = f.evaluate("Array.from(document.scripts).map(s => s.src)")
+            except Exception as e:
+                return f"error {str(e)[:80]}"
+            for src in srcs:
+                m = re.search(r"assets/(main-[^/]+\.js)", src)
+                if m:
+                    return BUILDS.get(m.group(1), m.group(1))
+        return None
 
     def shot(self, name):
         self.page.screenshot(path=os.path.join(OUT, f"{self.user}-{name}.png"), full_page=True)
@@ -156,7 +178,95 @@ class Device:
         app.get_by_role("button", name="Search", exact=True).click()
         self.page.wait_for_timeout(3000)
         self.shot("search")
-        return app.locator("tr", has_text=surname).count()
+        # 1.1.5 lists results in table rows; 1.1.9's table is built otherwise: count
+        # the cells showing the surname (the search box holds it as a value, not text).
+        return max(app.locator("tr", has_text=surname).count(), app.get_by_text(surname, exact=True).count())
+
+
+BUILDS = {}  # main script name: version (main_update)
+
+
+def builds():
+    for path in (os.environ.get("ZIP_OLD"), os.environ.get("ZIP_NEW")):
+        if not path:
+            continue
+        with zipfile.ZipFile(path) as z:
+            version = json.loads(z.read("manifest.webapp"))["version"]
+            for name in re.findall(r"assets/(main-[^\"']+\.js)", z.read("index.html").decode()):
+                BUILDS[name] = version
+
+
+def main_update():
+    """N24: two devices on the old build; the new build installed on central while the
+    hub is offline; each device works offline and online across the update."""
+    builds()
+    for user in (USER_A, USER_B):  # fresh devices: a profile left from a run before holds the new build
+        shutil.rmtree(os.path.join(OUT, "profile-" + user), ignore_errors=True)
+    surname2 = os.environ["SURNAME2"]
+    result = {"steps": {}, "tracker": [], "failed": [], "errors": [], "builds": BUILDS}
+    steps = result["steps"]
+
+    def step(name, d, fn):
+        try:
+            steps[name] = fn()
+        except Exception as e:
+            steps[name] = f"{type(e).__name__}: {str(e)[:300]}"
+            d.shot("error-" + name.replace(" ", "-"))
+        steps[name + ": build"] = d.running() if d.ctx else None
+
+    with sync_playwright() as pw:
+        a, b = Device(pw, USER_A, result), Device(pw, USER_B, result)
+        try:
+            b.open()
+            step("B online, pull", b, lambda: b.sync("Pull Data", "GET"))
+            b.close()
+            a.open()
+            step("A online, pull", a, lambda: a.sync("Pull Data", "GET"))
+            a.close()
+
+            control("offline")
+            a.phase = b.phase = "offline"
+            control("install")  # on central, which the hub cannot reach now
+            a.open()
+            step("A offline after the install, registers", a, lambda: a.register("Ama", SURNAME) or "done")
+            step("A offline, push", a, lambda: a.sync("Push Data", "POST"))
+            a.close()
+
+            control("online")
+            control("sync")  # the hub pushes A's client to central
+            a.phase = b.phase = "online-new"
+            b.open()
+            step("B online after the install, pull", b, lambda: b.sync("Pull Data", "GET"))
+            step("B online finds A's client", b, lambda: b.search(SURNAME) > 0)
+            b.close()
+
+            control("offline")
+            a.phase = b.phase = "offline-new"
+            b.open()
+            step("B offline, registers", b, lambda: b.register("Abena", surname2) or "done")
+            step("B offline, push", b, lambda: b.sync("Push Data", "POST"))
+            b.close()
+            a.open()
+            step("A offline, pull", a, lambda: a.sync("Pull Data", "GET"))
+            step("A offline finds B's client", a, lambda: a.search(surname2) > 0)
+            a.close()
+
+            control("online")
+            a.phase = b.phase = "online-end"
+            a.open()
+            step("A online at the end, pull", a, lambda: a.sync("Pull Data", "GET"))
+            step("A online finds both", a, lambda: a.search(SURNAME) > 0 and a.search(surname2) > 0)
+            a.close()
+        except Exception as e:
+            result["error"] = f"{type(e).__name__}: {str(e)[:500]}"
+            for d in (a, b):
+                if d.ctx:
+                    d.shot("error")
+        finally:
+            control("online")
+            a.close()
+            b.close()
+    print(json.dumps(result))
 
 
 def main():
@@ -194,4 +304,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main_update() if os.environ.get("SCENARIO") == "update" else main()
