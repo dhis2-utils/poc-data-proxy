@@ -263,6 +263,36 @@ Raw data: `windows/out/soak/` (git-ignored): the driver's log and ledger, the ch
 
 **The Pi 4's card in the same days (run A, not completed).** The same image in load-test mode on `rpi4` (1 GB, microSD), a fake central at 60 k people and `hubload -paced -duration 3h` from the Mac: one busy HC IV day spread over 3 hours, offline. The first pull took 18 min 48 s and wrote **6.3 GB** to the card. The paced load then wrote 133 MB in 42 minutes (about 190 MB an hour) until the Pi restarted on its own, 46 minutes in, at 48 °C and not throttled. After the restart, load-test mode started a fresh hub, and the rest of the run got 401 and 429 answers, so its latencies and its bytes per day do not count. The cause of the restart is not known. The hub's memory was not sampled (the sampler read `hub.service`, which load-test mode does not use), and the system log from before the restart was lost. Bytes written per day on a card are still to measure: rerun with the sampler fixed.
 
+## Android syncs on the Pi 4's card (2026-11-03)
+
+Question: in the 72-hour run on `rpi4` (1 GB, microSD) from 3 November 13:49, each of the 6 Android incremental syncs got 220 people and took about 58 s, six hours into the outage. All six ended in the same second. Where does the time go, and does it grow with the people a sync gets?
+
+**Reproduced in the sandbox** (4 cores, data file in the page cache). The fake central and the hub ran as processes at the run's size: 60 000 people, 100 000 enrollments, 240 000 events, 20 users. `hubload -setup -fill` filled the hub, and paced writes at the run's daily rates followed offline: 140 people and 650 events for 6 hours, 560 and 2 600 for 24 hours. A driver then made `hubload`'s Android download with a watermark 6 minutes old: 6 programs, 50 people a page, each device alone and six at once. Times are the median of three runs alone, and the range of the six at once.
+
+| Fake central | Hours of writes | People a sync gets | Before: alone | Six at once | After: alone | Six at once |
+|---|---|---|---|---|---|---|
+| As in the Pi run (`-changed 0`) | 6 | 222 | 5.4 s | 8.1–8.3 s | 0.37 s | 0.8–1.0 s |
+| As in the Pi run | 24 | 642 | 6.4 s | 10.0–12.7 s | 1.0 s | 1.9–2.0 s |
+| Central's changes over a day old (`-changed 0.0001`) | 6 | 221 | 0.12 s | 0.26–0.28 s | 0.08 s | 0.25–0.43 s |
+| Central's changes over a day old | 24 | 641 | 0.34 s | 0.79–0.86 s | 0.31 s | 0.61–0.63 s |
+
+**Where the time went: central's people in the day's margin, not the people sent.** With `-changed 0` (the default), the fake central dates every active enrollment and its person at the time it generated its data. An incremental sync takes everything updated in the day before its watermark as a candidate (`updatedFloor`), so for the first 24 hours after the fake started, about 20 000 enrollments of central's are candidates. Each failed the exact check in `updatedMatch` only after `newestChild` had read its children: two queries per person, about 3 300 per program. They come first in creation order, so page 1 of each program checked them all and took 0.9–1.1 s; pages after the first read on past them and took 60–90 ms. In the CPU profile `newestChild` took 67 % of the hub's time, most of it reading and decrypting table pages. The six syncs ran in parallel: six at once took 1.5–2 times one alone, about what 4 cores give six CPU-bound requests, which leaves little time for waits on locks or connections.
+
+**The fix.** `changedTEs` now also returns the newest update time among each person's rows, from the same covering index. It leaves out a person who has nothing written on the hub and whose newest row is older than `updatedAfter`: whatever children the user may read, `updatedMatch` cannot count them as changed. People with anything written on the hub are checked as before. `TestIncrementalSearchAsReadingEveryChild` compares every incremental search with reading every child. After the fix, page 1 takes about 70 ms, as the pages after it do. What is left is `changedTEs` reading every row past the day's margin for each page: 68 % of the CPU at 24 hours with central's people in the margin, and little once they are out of it.
+
+**Growth with the people sent.** Once central's changes are more than a day older than the watermark, as in the field after the first day of an outage, a sync costs about 0.5 ms per person here, before and after the fix: 0.12 s for 221 people, 0.34 s for 641. The count stops growing at a day's work.
+
+**On the Pi 4.** The run's 58 s against 8.1–8.3 s here for the same case makes the Pi 4 on its card about 7 times slower for this work. This is one point, on a path that reads many table pages. A path that reads fewer may scale between 5 and 10 times. From that:
+
+- Until about 13:50 on 4 November, 24 hours after the fake central started, syncs with the run's image stay near a minute, six at once. With about 650 people they would reach 70–90 s.
+- After that, central's people leave the day's margin, and syncs should drop to about 6 s, six at once, at about 650 people. The fix does not change this plateau.
+- With the fix, the first 24 hours would take about 6–14 s, six at once.
+- In the field, the margin holds what central changed in the day before the watermark. During the first day of an outage that is the facility's last day online, so the fix shortens those syncs in proportion.
+
+**The six ending together.** Each device waits 5 minutes after its sync ends before the next one. Six syncs that once overlap and end together therefore stay in step for the rest of the run. Here, six that start together end within 0.1–2.7 s of each other. What first put them in step on the Pi is not known from here.
+
+Rerun: `fakecentral -tes 60000 -enrollments 100000 -events 240000 -users 20` (add `-changed 0.0001` for central's changes over a day old); `hubload -setup -fill -users 20 -paced -reconnect=false -duration 5m -day-people 140 -day-events 650 -day-reads 2000`; then `hubload -users 6 -web 0 -android-first none -android-sync 1m -reconnect=false -duration 5m` logs each sync's people and time.
+
 ## A week offline at HC IV size (2026-10-29)
 
 Question: a large facility works a whole week offline, then the link returns. Does the hub stay responsive while the backlog grows, how long does the backlog take to reach central, and does every save get there?
@@ -474,3 +504,4 @@ Each page read and sorted the program's events; `objects_events` (creation order
 - **2026-10-29, ten hours in the sandbox.** M1's sandbox part (section "Ten hours in the sandbox"): 10 211 confirmed saves through five outages and three kills, none lost or duplicated on central; memory, open files and the outbox flat, the data folder growing with the data only. Found: concurrent logins of one user leave extra tokens on central, and a person saved during a full pull is hidden from its author offline until the next pull.
 - **2026-10-29, a week offline at HC IV size.** 21 000 saves offline at 300 000 people: memory 150–210 MB, answers flat; drained in 43 minutes over 4G and 49 s unlimited; every save on central, and on a real DHIS2 21 020 saves in a 12.5-minute cycle (section "A week offline at HC IV size"). Found: Android incremental syncs re-downloaded every person written during the outage (fixed 30 October).
 - **2026-10-30 to 11-02, 72 hours on the Pi 5.** 36 757 saves at 4 times an HC IV's rate, 4 outages and 5 power cuts: memory median 80 MB, the data folder 87 MB a day, 6.2 GB written a day; every confirmed save on central (section "72 hours on the Pi 5").
+- **2026-11-03, Android syncs on the Pi 4's card.** Incremental syncs of 220 people took 58 s on `rpi4`: the fake central's people, dated at its start, were candidates for 24 hours, and each was checked by reading its children. `changedTEs` now leaves out people with nothing written on the hub whose newest row is older than `updatedAfter`. In the sandbox at 60 k: 5.4 s → 0.37 s alone, 8.2 → 0.9 s six at once (section "Android syncs on the Pi 4's card").

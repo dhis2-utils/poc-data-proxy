@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"maps"
 	"net/url"
 	"regexp"
 	"slices"
@@ -139,27 +138,68 @@ func hubClockBehind(q url.Values) bool {
 	return ok && t.After(time.Now().UTC().Add(38*time.Hour))
 }
 
-// changedTEs returns the tracked entities with anything updated at or after floor
-// (Android's incremental sync), from the indexes alone. For objects written on the hub
-// the time is the hub's write time; with allHub, all of them count (hubUpdated).
-func (ix *Index) changedTEs(floor string, allHub bool) map[string]bool {
-	out := map[string]bool{}
-	query := `SELECT iif(kind = 'trackedEntity', uid, te_uid) FROM objects WHERE updated_at >= ?`
-	if allHub {
-		query += ` UNION SELECT iif(kind = 'trackedEntity', uid, te_uid) FROM objects WHERE origin = 'local'`
+// changedTEs returns the tracked entities that may have changed after updatedAfter
+// (Android's incremental sync), from the indexes alone: those with anything updated at
+// or after floor, for objects written on the hub by the hub's write time, and with
+// allHub everyone with anything written on the hub (hubUpdated). With exact (no
+// updatedBefore), a person with nothing written on the hub is left out when the newest
+// of all their rows is older than updatedAfter: updatedMatch could not count them,
+// whichever children the user may read. During an outage the day's floor kept central's
+// people of the last day as candidates, and checking each in updatedMatch cost two
+// queries (docs/PERFORMANCE.md, "Android syncs on the Pi 4's card").
+func (ix *Index) changedTEs(floor string, allHub bool, after time.Time, exact bool) []string {
+	newest := map[string]string{}
+	each := func(query string, arg []any, row func(uid, at string)) {
+		rows, err := ix.store.DB().Query(query, arg...)
+		if err != nil {
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var uid, at string
+			if rows.Scan(&uid, &at) == nil && uid != "" {
+				row(uid, at)
+			}
+		}
 	}
-	rows, err := ix.store.DB().Query(query, floor)
-	if err != nil {
-		return out
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var uid string
-		if rows.Scan(&uid) == nil && uid != "" {
-			out[uid] = true
+	each(`SELECT iif(kind = 'trackedEntity', uid, te_uid), updated_at FROM objects WHERE updated_at >= ?`, []any{floor},
+		func(uid, at string) {
+			if prev, ok := newest[uid]; !ok || later(at, prev) {
+				newest[uid] = at
+			}
+		})
+	var out []string
+	hub := map[string]bool{}
+	each(`SELECT iif(kind = 'trackedEntity', uid, te_uid), '' FROM objects WHERE origin = 'local'`, nil,
+		func(uid, _ string) {
+			if _, ok := newest[uid]; (ok || allHub) && !hub[uid] {
+				out = append(out, uid)
+			}
+			hub[uid] = true
+		})
+	for uid, at := range newest {
+		if hub[uid] {
+			continue
+		}
+		if t, ok := parseTime(at); !exact || ok && !t.Before(after) {
+			out = append(out, uid)
 		}
 	}
 	return out
+}
+
+// later reports whether stored time a is after b. Times of one fixed-width form without
+// a zone compare as strings; others are parsed.
+func later(a, b string) bool {
+	if len(a) == len(b) && !strings.ContainsAny(a[min(len(a), 19):]+b[min(len(b), 19):], "Z+-") {
+		return a > b
+	}
+	ta, oka := parseTime(a)
+	tb, okb := parseTime(b)
+	if oka && okb {
+		return ta.After(tb)
+	}
+	return oka || a > b
 }
 
 // run returns what the plan keeps, in order. With want > 0 and the order pushed down,
@@ -532,7 +572,8 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *API
 		return nil, apiErr
 	}
 	if floor != "" && ix.store != nil && ix.store.Unlocked() {
-		list, _ := json.Marshal(slices.Collect(maps.Keys(ix.changedTEs(floor, hubClockBehind(q)))))
+		after, _ := parseTime(q.Get(upd.after))
+		list, _ := json.Marshal(ix.changedTEs(floor, hubClockBehind(q), after, q.Get(upd.before) == ""))
 		w.add(person+" IN (SELECT value FROM json_each(?))", string(list))
 	}
 	p.sel += w.sql()
