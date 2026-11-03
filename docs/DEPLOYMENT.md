@@ -431,6 +431,12 @@ Where a programme relies on photos or documents (for example a scanned birth cer
 - Most faults are fixed by moving the disk to a new board or sending a spare (section 3). Keep a spare per district.
 - Faults in the hub software go from the national team to the supplier.
 
+### Central's time zone
+
+Set central's server time zone to the facilities' own. In a country with several zones, use the easternmost, so that central's date is never behind a facility's. Central refuses an enrollment, incident or event date "in the future" (E1020, E1021) by its own date, while staff date records by their devices'. With central in a zone to the west, every registration dated today is refused between local midnight and central's: in the Pi 5 soak, with central on UTC and the clients on UTC+1, 398 saves in one hour each night (FINDINGS.md, "Open", central's time zone). Online the staff member sees central's refusal at once. Offline, or while the hub still has a backlog to push, the hub confirms the save and central refuses it at push, and the hub keeps it as a refused change. The hub does not check these dates itself (decided 2026-11-03): the save would fail all the same, and a hub whose clock is behind would refuse good dates.
+
+Allowing future enrollment and incident dates in a program also avoids E1020, but it changes what the program allows. It is a workaround, not the fix.
+
 ### Security operations
 
 - **Protect the data store namespaces** on central (`facility-hub-*`) before the first hub goes out. By default any user can write them (FINDINGS.md): a forged registry entry can retire a hub (it then stops serving offline, though it keeps its data) or block setup of a facility.
