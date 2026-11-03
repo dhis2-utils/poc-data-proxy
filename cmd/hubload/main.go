@@ -500,8 +500,11 @@ func (u *user) android(m *metrics, stop time.Time) {
 			}
 		}
 		start := time.Now()
-		download(since)
+		n, _, _ := download(since)
 		m.add("android: incremental sync", 200, time.Since(start))
+		// What each sync got, over time: during an outage it should stay near a day's
+		// work, not grow with the outage (W1, FINDINGS.md 21).
+		log.Printf("android sync %s: %d people in %s", u.name, n, time.Since(start).Round(time.Millisecond))
 		since = start.Add(-time.Minute).UTC().Format("2006-01-02T15:04:05.000")
 	}
 }
