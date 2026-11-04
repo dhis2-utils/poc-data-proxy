@@ -1,7 +1,15 @@
 /**
  * @jest-environment node
  */
-import { canManage, flags, Heartbeat, uid, visible } from './flags'
+import {
+    canManage,
+    flags,
+    Heartbeat,
+    notOnlineSince,
+    startOfDay,
+    uid,
+    visible,
+} from './flags'
 
 const now = new Date('2026-10-18T12:00:00Z')
 const ago = (hours: number) =>
@@ -125,5 +133,40 @@ describe('canManage', () => {
             canManage({ superuser: false, groups: ['G1'] }, { managers: '' })
         ).toBe(false)
         expect(canManage({ superuser: false, groups: [] }, null)).toBe(false)
+    })
+})
+
+describe('notOnlineSince', () => {
+    const since = startOfDay('2026-11-01')
+
+    it('reads a date input as the start of that day, in local time', () => {
+        expect(since).toBe(new Date(2026, 10, 1).getTime())
+        for (const bad of ['', '2026-11', '1 Nov 2026', '2026-11-01T00:00']) {
+            expect(startOfDay(bad)).toBeNaN()
+        }
+    })
+
+    it('keeps hubs whose last report is older than the date', () => {
+        const before = new Date(since - 60e3).toISOString()
+        expect(notOnlineSince({ time: before, pendingOutbox: 12 }, since)).toBe(
+            true
+        )
+    })
+
+    it('leaves out hubs that reported on or after the date', () => {
+        expect(
+            notOnlineSince({ time: new Date(since).toISOString() }, since)
+        ).toBe(false)
+        expect(
+            notOnlineSince(
+                { time: new Date(since + 3600e3).toISOString() },
+                since
+            )
+        ).toBe(false)
+    })
+
+    it('keeps hubs that never reported, or sent no time', () => {
+        expect(notOnlineSince(undefined, since)).toBe(true)
+        expect(notOnlineSince({ pendingOutbox: 3 }, since)).toBe(true)
     })
 })

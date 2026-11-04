@@ -109,6 +109,12 @@
     min-width: 160px;
 }
 
+.since {
+    display: flex;
+    align-items: center;
+    gap: var(--spacers-dp8);
+}
+
 .picker {
     max-inline-size: 420px;
 }

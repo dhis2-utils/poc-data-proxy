@@ -611,11 +611,21 @@ msgstr "Search by facility"
 msgid "Any version"
 msgstr "Any version"
 
+msgid "Not online since"
+msgstr "Not online since"
+
 msgid "Flagged only"
 msgstr "Flagged only"
 
 msgid "Show hub ID"
 msgstr "Show hub ID"
+
+msgid ""
+"{{- n}} hubs have not reported since {{- day}}. At their last report, {{- "
+"holding}} of them had {{- held}} changes waiting for central (\"Pending\")."
+msgstr ""
+"{{- n}} hubs have not reported since {{- day}}. At their last report, {{- "
+"holding}} of them had {{- held}} changes waiting for central (\"Pending\")."
 
 msgid "No hub matches."
 msgstr "No hub matches."

@@ -128,6 +128,28 @@ export const flags = (hb: Heartbeat | undefined, now: Date): Flag[] => {
 }
 
 /**
+ * The start of a day ("2026-11-01", as a date input gives it) in the browser's time
+ * zone, in milliseconds; NaN for anything else.
+ */
+export const startOfDay = (day: string): number => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day)
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]).getTime() : NaN
+}
+
+/**
+ * Whether a hub has not reported since a time (milliseconds): such a hub has not been
+ * online since then, and may hold changes for central (its pendingOutbox at its last
+ * report). A hub that never reported counts too.
+ */
+export const notOnlineSince = (
+    hb: Heartbeat | undefined,
+    since: number
+): boolean => {
+    const t = hb?.time ? Date.parse(hb.time) : NaN
+    return Number.isNaN(t) || t < since
+}
+
+/**
  * Whether a user sees a hub: its facility (by path) is at or below one of the user's
  * org units. Superusers see every hub. This is filtering in the app, not access
  * control: the namespaces hold no patient data.

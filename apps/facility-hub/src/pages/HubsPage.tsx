@@ -19,6 +19,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import styles from './Pages.module.css'
 import { FlagTags } from '@/components/hub/FlagTags'
 import { useCanManage } from '@/hooks/useCanManage'
+import { notOnlineSince, startOfDay } from '@/hubs/flags'
 import { ago, gb } from '@/hubs/format'
 import { HubRow, useHubs, place } from '@/hubs/useHubs'
 
@@ -74,12 +75,21 @@ export const HubsPage = () => {
     const [search, setSearch] = useState('')
     const [flaggedOnly, setFlaggedOnly] = useState(false)
     const [version, setVersion] = useState('')
+    const [offlineSince, setOfflineSince] = useState('')
     const [showId, setShowId] = useState(readShowId)
     const navigate = useNavigate()
 
+    // "Not online since": before a breaking change on central, the hubs that probably
+    // hold changes for it. Retired hubs send nothing more, so they are left out.
+    const since = startOfDay(offlineSince)
     const rows = useMemo(
         () =>
             (hubs ?? [])
+                .filter(
+                    (h) =>
+                        Number.isNaN(since) ||
+                        (!h.retired && notOnlineSince(h.heartbeat, since))
+                )
                 .filter((h) => !flaggedOnly || h.flags.length > 0)
                 .filter((h) => !version || hubVersion(h) === version)
                 .filter((h) =>
@@ -93,7 +103,7 @@ export const HubsPage = () => {
                         b.flags.length - a.flags.length ||
                         facilityName(a).localeCompare(facilityName(b))
                 ),
-        [hubs, search, flaggedOnly, version]
+        [hubs, search, flaggedOnly, version, since]
     )
     const versions = useMemo(
         () =>
@@ -116,6 +126,11 @@ export const HubsPage = () => {
         )
     }
     const waiting = (hubs ?? []).filter((h) => h.waiting).length
+    const holding = rows.filter((h) => (h.heartbeat?.pendingOutbox ?? 0) > 0)
+    const held = holding.reduce(
+        (n, h) => n + (h.heartbeat?.pendingOutbox ?? 0),
+        0
+    )
 
     return (
         <div className={styles.page}>
@@ -148,6 +163,14 @@ export const HubsPage = () => {
                         <SingleSelectOption key={v} value={v} label={v} />
                     ))}
                 </SingleSelectField>
+                <div className={styles.since}>
+                    <span>{i18n.t('Not online since')}</span>
+                    <InputField
+                        type="date"
+                        value={offlineSince}
+                        onChange={({ value }) => setOfflineSince(value ?? '')}
+                    />
+                </div>
                 <Switch
                     label={i18n.t('Flagged only')}
                     checked={flaggedOnly}
@@ -162,6 +185,19 @@ export const HubsPage = () => {
                     }}
                 />
             </div>
+            {!Number.isNaN(since) && (
+                <div className={styles.muted}>
+                    {i18n.t(
+                        '{{- n}} hubs have not reported since {{- day}}. At their last report, {{- holding}} of them had {{- held}} changes waiting for central ("Pending").',
+                        {
+                            n: rows.length,
+                            day: new Date(since).toLocaleDateString(),
+                            holding: holding.length,
+                            held,
+                        }
+                    )}
+                </div>
+            )}
             {rows.length === 0 ? (
                 <NoticeBox title={i18n.t('No hubs')}>
                     {hubs?.length
