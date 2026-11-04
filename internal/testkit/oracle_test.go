@@ -62,3 +62,37 @@ func TestJudgePagedTies(t *testing.T) {
 		t.Errorf("unpaged list: %s %v, want LEAK", o.Verdict, o.Objects)
 	}
 }
+
+// An incremental query: the hub may re-send what the user sees anyway (W1), but must
+// return everything central returns, and nothing the user may not see.
+func TestJudgeSince(t *testing.T) {
+	q := Query{Kind: "events", Program: "P", Path: "/api/tracker/events?orgUnit=F&paging=false&program=P&updatedAfter=2026-11-01",
+		Unfiltered: "/api/tracker/events?orgUnit=F&paging=false&program=P"}
+	list := func(uids ...string) []byte {
+		var evs []map[string]any
+		for _, u := range uids {
+			evs = append(evs, map[string]any{"event": u})
+		}
+		b, _ := json.Marshal(map[string]any{"events": evs})
+		return b
+	}
+	truth := &Truth{Owned: map[string]map[string]bool{"P": {"A": true, "B": true, "C": true}}}
+	visible := VisibleIn(q, list("A", "B", "C"))
+	central := list("A")
+	for _, c := range []struct {
+		name, want string
+		hub        []byte
+	}{
+		{"the same", Match, list("A")},
+		{"re-sends a visible event", Match, list("A", "B")},
+		{"an event the user may not see", Leak, list("A", "Z")},
+		{"misses a changed event", Missing, list("B")},
+	} {
+		if o := JudgeSince(truth, q, "u", 200, central, 200, c.hub, visible); o.Verdict != c.want {
+			t.Errorf("%s: %s %v, want %s", c.name, o.Verdict, o.Objects, c.want)
+		}
+	}
+	if o := Judge(truth, q, "u", 200, central, 200, list("A", "B")); o.Verdict != Leak {
+		t.Errorf("Judge without the margin: %s, want LEAK", o.Verdict)
+	}
+}

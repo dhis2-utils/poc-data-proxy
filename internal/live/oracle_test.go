@@ -82,6 +82,13 @@ func TestOracle(t *testing.T) {
 		}
 		queries = append(queries, tk.EventQueries(m, p, sample)...)
 	}
+	// Android's incremental syncs, at watermarks taken from central's own update times.
+	for _, p := range m.Programs {
+		queries = append(queries, tk.SinceQueries(m, p, cuts(t, e, "trackedEntities", p.ID))...)
+	}
+	for _, p := range m.EventPrograms {
+		queries = append(queries, tk.EventSinceQueries(m, p, cuts(t, e, "events", p.ID))...)
+	}
 	e.Offline()
 
 	dims := map[string]map[string]string{}
@@ -100,7 +107,20 @@ func TestOracle(t *testing.T) {
 				t.Fatal(err)
 			}
 			hs, hb := u.c.Do("GET", q.Path, nil)
-			o := tk.Judge(truth, q, u.name, cs, cb, hs, hb)
+			var o tk.Outcome
+			if q.Unfiltered != "" {
+				vs, vb, err := direct.Do("GET", q.Unfiltered, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var visible map[string]bool
+				if vs == 200 {
+					visible = tk.VisibleIn(q, vb)
+				}
+				o = tk.JudgeSince(truth, q, u.name, cs, cb, hs, hb, visible)
+			} else {
+				o = tk.Judge(truth, q, u.name, cs, cb, hs, hb)
+			}
 			counts[o.Verdict]++
 			report = append(report, o)
 			if why := knownGap(o, q, dims[u.name], m); why != "" {
@@ -392,6 +412,39 @@ func short(s []string) []string {
 		return append(s[:5:5], fmt.Sprintf("+%d", len(s)-5))
 	}
 	return s
+}
+
+// cuts picks watermarks for the incremental queries from central's update times of a
+// program's people (kind trackedEntities) or events at the facility: one before them
+// all, the median, and the newest, so central answers all, about half, and next to
+// nothing, and the hub's answer must hold each.
+func cuts(t *testing.T, e *tk.Env, kind, program string) []string {
+	v := url.Values{"program": {program}, "paging": {"false"}}
+	if kind == "events" {
+		v.Set("orgUnit", e.M.Facility.ID)
+		v.Set("fields", "event,updatedAt")
+	} else {
+		v.Set("orgUnits", e.M.Facility.ID)
+		v.Set("fields", "trackedEntity,updatedAt")
+	}
+	var res map[string][]struct {
+		UpdatedAt string `json:"updatedAt"`
+	}
+	if err := e.Central.JSON("GET", "/api/tracker/"+kind+"?"+v.Encode(), nil, &res); err != nil {
+		t.Fatalf("cuts for %s: %v", program, err)
+	}
+	var times []string
+	for _, x := range append(res[kind], res["instances"]...) {
+		if x.UpdatedAt != "" {
+			times = append(times, x.UpdatedAt)
+		}
+	}
+	out := []string{"2000-01-01T00:00:00.000"}
+	if len(times) > 0 {
+		sort.Strings(times)
+		out = append(out, times[len(times)/2], times[len(times)-1])
+	}
+	return slices.Compact(out)
 }
 
 // samples picks values from the data for the query generator: a search attribute

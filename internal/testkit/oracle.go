@@ -31,6 +31,10 @@ type Query struct {
 	Program string
 	Path    string // path and query, without the base URL
 	Single  bool   // a single-object read
+	// Unfiltered is the same request without updatedAfter, set on an incremental
+	// query (Android's sync). The hub may answer such a query with more than central:
+	// what it wrote within a day of the watermark (W1). Judge it with JudgeSince.
+	Unfiltered string
 }
 
 // Outcome is the verdict for one user and query.
@@ -203,8 +207,74 @@ func EventQueries(m *Manifest, p Program, sampleEvent string) []Query {
 	return qs
 }
 
+// SinceQueries is what Android's incremental sync asks of a tracker program: the
+// people and the events changed after each watermark in cuts (central's own times).
+func SinceQueries(m *Manifest, p Program, cuts []string) []Query {
+	te := "trackedEntity,orgUnit,attributes[attribute,value],enrollments[enrollment,program,status,orgUnit]"
+	ev := "event,trackedEntity,enrollment,programStage,orgUnit,status,dataValues[dataElement,value]"
+	var qs []Query
+	for _, cut := range cuts {
+		for _, x := range []struct {
+			kind string
+			v    url.Values
+		}{
+			{"trackedEntities", url.Values{"orgUnits": {m.Facility.ID}, "fields": {te}}},
+			{"events", url.Values{"orgUnit": {m.Facility.ID}, "fields": {ev}}},
+		} {
+			x.v.Set("program", p.ID)
+			x.v.Set("paging", "false")
+			qs = append(qs, since(x.kind, p.ID, x.v, cut))
+		}
+	}
+	return qs
+}
+
+// EventSinceQueries is the same for an event program's events.
+func EventSinceQueries(m *Manifest, p Program, cuts []string) []Query {
+	ev := "event,programStage,orgUnit,status,occurredAt,attributeOptionCombo,dataValues[dataElement,value]"
+	var qs []Query
+	for _, cut := range cuts {
+		v := url.Values{"program": {p.ID}, "orgUnit": {m.Facility.ID}, "fields": {ev}, "paging": {"false"}}
+		qs = append(qs, since("events", p.ID, v, cut))
+	}
+	return qs
+}
+
+func since(kind, program string, v url.Values, cut string) Query {
+	base := "/api/tracker/" + kind + "?"
+	unfiltered := base + v.Encode()
+	v.Set("updatedAfter", cut)
+	return Query{Kind: kind, Program: program, Path: base + v.Encode(), Unfiltered: unfiltered}
+}
+
 // Judge compares central's and the hub's answers for one user and query.
 func Judge(truth *Truth, q Query, user string, cStatus int, cBody []byte, hStatus int, hBody []byte) Outcome {
+	return judge(truth, q, user, cStatus, cBody, hStatus, hBody, nil)
+}
+
+// JudgeSince judges an incremental query (Query.Unfiltered). visible is what central
+// shows the same user for the unfiltered request. An object the hub returns that
+// central's incremental answer leaves out is not a leak when the user sees it anyway:
+// the hub errs towards re-sending (W1). Everything central returns the hub must return
+// too, as for any list: a sync that misses a change loses it on the device.
+func JudgeSince(truth *Truth, q Query, user string, cStatus int, cBody []byte, hStatus int, hBody []byte, visible map[string]bool) Outcome {
+	return judge(truth, q, user, cStatus, cBody, hStatus, hBody, visible)
+}
+
+// VisibleIn returns the UIDs of a list answer, for JudgeSince.
+func VisibleIn(q Query, body []byte) map[string]bool {
+	its, err := items(q, body)
+	if err != nil {
+		return nil
+	}
+	out := map[string]bool{}
+	for uid := range its {
+		out[uid] = true
+	}
+	return out
+}
+
+func judge(truth *Truth, q Query, user string, cStatus int, cBody []byte, hStatus int, hBody []byte, visible map[string]bool) Outcome {
 	o := Outcome{User: user, Path: q.Path, Central: cStatus, Hub: hStatus}
 	hItems, herr := items(q, hBody)
 	cItems, cerr := items(q, cBody)
@@ -254,9 +324,11 @@ func Judge(truth *Truth, q Query, user string, cStatus int, cBody []byte, hStatu
 			expected[uid] = truth.narrow(q.Kind, uid, it)
 		}
 	}
-	var leaks, extra, missing, differs []string
+	var leaks, extra, missing, differs, margin []string
 	for uid, it := range hItems {
 		switch {
+		case cItems[uid] == nil && visible[uid]:
+			margin = append(margin, uid)
 		case cItems[uid] == nil:
 			leaks = append(leaks, uid)
 		case expected[uid] == nil:
@@ -302,6 +374,10 @@ func Judge(truth *Truth, q Query, user string, cStatus int, cBody []byte, hStatu
 			o.Verdict = Differs
 			o.Detail = detail
 		}
+	}
+	if len(margin) > 0 {
+		sort.Strings(margin)
+		o.Detail = strings.TrimSpace(o.Detail + fmt.Sprintf("\nhub also re-sends %d object(s) the user sees, unchanged since the watermark on central: %v", len(margin), margin))
 	}
 	if len(extra) > 0 {
 		o.Detail = strings.TrimSpace(o.Detail + fmt.Sprintf("\nhub also has %d object(s) the facility does not own: %v", len(extra), extra))
