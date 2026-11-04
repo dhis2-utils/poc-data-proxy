@@ -103,7 +103,9 @@ func TestK1EventProgramClosedAtFacility(t *testing.T) {
 }
 
 // K3: an event of an event program is deleted on central while it is edited offline.
-// Must hold: the edit refused and kept; the event leaves the hub's lists.
+// Must hold: the edit refused as already deleted (E1082) and closed on the hub, which
+// keeps a tombstone: the event leaves the hub's lists, and Android's download marks it
+// deleted.
 func TestK3EventDeletedWhileEditedOffline(t *testing.T) {
 	s := begin(t)
 	p := s.eventProgram()
@@ -125,23 +127,28 @@ func TestK3EventDeletedWhileEditedOffline(t *testing.T) {
 	}
 	s.CentralDelete("events", ev)
 	s.noRepeats(s.reconnect(3))
-	s.expect(map[string]string{ev: tk.RefusedKept, other: tk.OnCentral}, tk.OnCentral, tk.RefusedKept)
+	s.expect(map[string]string{ev: tk.Closed, other: tk.OnCentral}, tk.OnCentral, tk.Closed)
 	if o := s.CentralObject("events", ev); o != nil {
 		t.Errorf("I4: the event deleted on central is back: %v", o["deleted"])
 	}
 	s.shows(nurse, "events", ev)
 
-	// I8: what a client lists offline. The hub keeps the refused edit, and serves it, as
-	// for any refusal (A2): the event central deleted is listed as live offline, and in
-	// Android's download (includeDeleted) not as deleted, until the refusal is resolved.
+	// I8: what a client lists offline: not the event central deleted, and in Android's
+	// download (includeDeleted) the event as deleted.
 	s.Offline()
 	q := url.Values{"program": {p.ID}, "orgUnit": {s.M.Facility.ID}, "fields": {"event,deleted"}, "paging": {"false"}}
-	t.Logf("offline, the event central deleted is in the working list: %v", eventsIn(nurse.JSON("GET", "/api/tracker/events?"+q.Encode(), nil, 200))[ev])
+	if eventsIn(nurse.JSON("GET", "/api/tracker/events?"+q.Encode(), nil, 200))[ev] {
+		t.Errorf("offline, the event central deleted is in the working list")
+	}
 	q.Set("includeDeleted", "true")
+	deleted := false
 	for _, x := range asList(nurse.JSON("GET", "/api/tracker/events?"+q.Encode(), nil, 200)["events"]) {
 		if m, _ := x.(map[string]any); m["event"] == ev {
-			t.Logf("offline, Android's download lists it with deleted=%v", m["deleted"])
+			deleted = m["deleted"] == true
 		}
+	}
+	if !deleted {
+		t.Errorf("offline, Android's download does not list the event as deleted")
 	}
 }
 

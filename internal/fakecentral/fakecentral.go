@@ -982,6 +982,13 @@ func (c *Central) importTracker(w http.ResponseWriter, r *http.Request, u *User)
 			errs = append(errs, errReport{Message: msg, ErrorCode: code, TrackerType: tt, UID: it.UID})
 			failed[it.UID] = true
 		}
+		if old := c.objects[it.UID]; old != nil && old["deleted"] == true {
+			// Central's soft delete stands: a change of a deleted object is refused.
+			code := map[string]string{"trackedEntity": "E1114", "enrollment": "E1113", "event": "E1082", "relationship": "E4017"}[it.Kind]
+			label := map[string]string{"trackedEntity": "TrackedEntity", "enrollment": "Enrollment", "event": "Event", "relationship": "Relationship"}[it.Kind]
+			fail(code, fmt.Sprintf("%s: `%s`, is already deleted and can't be modified.", label, it.UID))
+			continue
+		}
 		switch it.Kind {
 		case "trackedEntity":
 			if !slices.Contains(u.OrgUnits, tracker.Str(it.Data, "orgUnit")) {

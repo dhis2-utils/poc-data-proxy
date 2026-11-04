@@ -62,36 +62,99 @@ func (w *Worker) discard(ctx context.Context, issues []*store.Issue) (string, er
 		if err != nil {
 			return "", err
 		}
-		discarded := map[string]bool{}
-		var items []*tracker.Item
-		now := h.CentralTime(time.Now())
+		var keep []*tracker.Obj
 		for _, o := range objs {
 			if failed[o.UID] != "" {
 				why = append(why, fmt.Sprintf("%s %s kept: %s", o.Kind, o.UID, failed[o.UID]))
 				continue
 			}
-			data := have[o.UID]
-			if data == nil {
-				data = h.Index.Full(o) // a tombstone of the hub's copy
-				data["deleted"] = true
-			}
-			data["updatedAt"] = now
-			discarded[o.UID] = true
-			items = append(items, &tracker.Item{Kind: o.Kind, UID: o.UID, Data: data})
+			keep = append(keep, o)
 			slog.Info("refused save discarded", "uid", o.UID, "kind", o.Kind, "central", have[o.UID] != nil)
 		}
-		if len(items) == 0 {
-			continue
-		}
-		if _, err := h.ReplaceDiscarded(a, flat(items), discarded); err != nil {
+		if err := w.replaceRefused(a, keep, have); err != nil {
 			return "", err
 		}
-		done = append(done, slices.Collect(maps.Keys(discarded))...)
+		for _, o := range keep {
+			done = append(done, o.UID)
+		}
 	}
 	if _, err := h.Store.DiscardOutbox(done, seqs); err != nil {
 		return "", err
 	}
 	return strings.Join(why, "; "), nil
+}
+
+// replaceRefused replaces the hub's refused copies of objs, saved by author, with
+// central's versions in have, or with a tombstone where have has none. Each gets the
+// hub's now, in central's time, as its update time, so Android's next incremental
+// download includes it.
+func (w *Worker) replaceRefused(author int64, objs []*tracker.Obj, have map[string]tracker.M) error {
+	h := w.H
+	if len(objs) == 0 {
+		return nil
+	}
+	replaced := map[string]bool{}
+	var items []*tracker.Item
+	now := h.CentralTime(time.Now())
+	for _, o := range objs {
+		data := have[o.UID]
+		if data == nil {
+			data = h.Index.Full(o) // a tombstone of the hub's copy
+			data["deleted"] = true
+		}
+		data["updatedAt"] = now
+		replaced[o.UID] = true
+		items = append(items, &tracker.Item{Kind: o.Kind, UID: o.UID, Data: data})
+	}
+	_, err := h.ReplaceDiscarded(author, flat(items), replaced)
+	return err
+}
+
+// goneCodes are central's refusals of a change to an object it has deleted: event,
+// enrollment, person and relationship "already deleted and cannot be modified".
+var goneCodes = []string{"E1082", "E1113", "E1114", "E4017"}
+
+// closeMoot closes the refusals that nobody can fix: central refused the change
+// because it has deleted the object, and a deletion cannot be undone in DHIS2
+// (checked on 2.42 and 2.43). The hub turns its copy into a tombstone, with what the
+// change blocked, as a discard does for a record central does not have: offline the
+// record leaves the lists, and Android's next download marks it deleted. The outbox
+// entries are marked discarded (kept SentOutboxKept, then pruned), and the issues
+// close, here and in facility-hub-issues.
+func (w *Worker) closeMoot(ctx context.Context) error {
+	h := w.H
+	open, err := w.openRefusals()
+	if err != nil {
+		return err
+	}
+	moot := open.with(func(is *store.Issue, g refusalGroup) bool {
+		return is.Kind != store.OutboxAggregate && slices.ContainsFunc(goneCodes, func(c string) bool { return g.codes[c] })
+	})
+	if len(moot) == 0 {
+		return nil
+	}
+	byAuthor := map[int64][]*tracker.Obj{}
+	seen := map[string]bool{}
+	for _, is := range moot { // newest first: an object goes with its newest refusal's author
+		if o := h.Index.Get(is.ObjectUID); o != nil && o.SyncState == store.SyncRejected && !seen[o.UID] {
+			seen[o.UID] = true
+			byAuthor[is.UserID] = append(byAuthor[is.UserID], o)
+		}
+	}
+	var done []string
+	for _, a := range slices.Sorted(maps.Keys(byAuthor)) {
+		if err := w.replaceRefused(a, byAuthor[a], nil); err != nil {
+			return err
+		}
+		for _, o := range byAuthor[a] {
+			done = append(done, o.UID)
+			slog.Info("refused change closed: deleted on central", "uid", o.UID, "kind", o.Kind, "user", a)
+		}
+	}
+	if _, err := h.Store.DiscardOutbox(done, nil); err != nil {
+		return err
+	}
+	return w.clearResolvedIssues(ctx)
 }
 
 // centralVersions reads central's versions of these objects by UID, as auth: each

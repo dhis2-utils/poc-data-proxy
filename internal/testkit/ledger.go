@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dhis2/facility-hub/internal/store"
+	"github.com/dhis2/facility-hub/internal/tracker"
 )
 
 // The ledger: every save the hub confirmed to a client, checked after a scenario
@@ -36,6 +37,9 @@ const (
 	Waiting          = "waiting on the hub" // not sent yet, or sent and to be sent again
 	Lost             = "missing"
 	Duplicated       = "duplicated"
+	// Closed: deleted on central, and the hub holds a tombstone with no open issue; a
+	// change central refused as "already deleted" closes so (sync.closeMoot).
+	Closed = "deleted on central, closed on the hub"
 	// SavedAgain is the detail of a save the client saved again later.
 	SavedAgain = "(saved again later)"
 )
@@ -146,7 +150,9 @@ func (l *Ledger) Check() []Line {
 			// An earlier version of an object saved again: what counts is that it is
 			// there; its values are the later save's.
 			ln.Detail = SavedAgain
-			if l.central(s) != nil {
+			if l.closed(s, obj, open) {
+				ln.Outcome = Closed
+			} else if l.central(s) != nil {
 				ln.Outcome = OnCentral
 			} else if obj != nil && obj.SyncState == store.SyncRejected && open[s.UID] != "" {
 				ln.Outcome = RefusedKept
@@ -158,6 +164,8 @@ func (l *Ledger) Check() []Line {
 		} else if obj != nil && obj.SyncState == store.SyncRejected && open[s.UID] != "" {
 			// Central may hold an earlier version: this save is the one refused.
 			ln.Outcome, ln.Detail = RefusedKept, open[s.UID]
+		} else if l.closed(s, obj, open) {
+			ln.Outcome = Closed
 		} else if o := l.central(s); o != nil {
 			ln.Outcome, ln.Detail = OnCentral, l.differs(s, o)
 			if ln.Detail != "" {
@@ -176,6 +184,16 @@ func (l *Ledger) Check() []Line {
 		out = append(out, ln)
 	}
 	return out
+}
+
+// closed reports whether the hub holds a tombstone of the save, with no open issue,
+// and central has the object deleted or not at all.
+func (l *Ledger) closed(s Save, obj *tracker.Obj, open map[string]string) bool {
+	if obj == nil || !obj.Deleted || obj.SyncState != store.SyncSynced || open[s.UID] != "" {
+		return false
+	}
+	o := l.central(s)
+	return o == nil || o["deleted"] == true
 }
 
 // central reads the saved object from central as the superuser; a tracked entity

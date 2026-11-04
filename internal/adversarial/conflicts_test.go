@@ -180,7 +180,8 @@ func must(st int, b []byte, err error) []byte {
 }
 
 // C2: a person deleted on central while edited offline. Must hold: the edits refused
-// and kept; the person disappears from the hub. Another person's event goes through.
+// as already deleted (E1114) and closed on the hub, which keeps a tombstone; the
+// person disappears from the hub. Another person's event goes through.
 func TestC2DeletedOnCentralWhileEditedOffline(t *testing.T) {
 	deletedWhileEdited(t, false)
 }
@@ -237,10 +238,10 @@ func deletedWhileEdited(t *testing.T, withEvent bool) {
 			if ln.Outcome != tk.OnCentral {
 				t.Errorf("%s %s: %s", ln.Kind, ln.UID, ln.Outcome)
 			}
-		case !ln.Online && ln.Outcome == tk.RefusedKept:
+		case !ln.Online && ln.Outcome == tk.Closed:
 		// Saved online, then deleted on central with the person: gone as central
-		// decided, or kept as refused with the person.
-		case ln.Online && (ln.Outcome == tk.Lost || ln.Outcome == tk.RefusedKept):
+		// decided, or closed with the person.
+		case ln.Online && (ln.Outcome == tk.Lost || ln.Outcome == tk.Closed):
 		default:
 			t.Errorf("%s %s (online=%v): %s %s", ln.Kind, ln.UID, ln.Online, ln.Outcome, ln.Detail)
 		}

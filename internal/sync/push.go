@@ -28,7 +28,8 @@ type pushResult struct {
 
 // Push sends pending outbox entries in seq order. It sends nothing while local writes
 // are frozen for an upgrade: what it marked as sent would be marked in a store that a
-// rollback, or the swap, throws away, and be pushed again.
+// rollback, or the swap, throws away, and be pushed again. After the entries it closes
+// the refusals of changes to what central has deleted (closeMoot).
 func (w *Worker) Push(ctx context.Context) error {
 	w.pushMu.Lock()
 	defer w.pushMu.Unlock()
@@ -68,6 +69,9 @@ func (w *Worker) Push(ctx context.Context) error {
 		if res.stop {
 			break
 		}
+	}
+	if err := w.closeMoot(ctx); err != nil {
+		return fmt.Errorf("closing refusals of what central deleted: %w", err)
 	}
 	if h.Store.CountOutbox(store.OutboxPending) == 0 || len(entries) > 0 {
 		now := store.Now()
@@ -423,6 +427,68 @@ func issueGroup(h *core.Hub, is *store.Issue) (program string, codes map[string]
 	return program, codes, blockedBy
 }
 
+// refusalGroup is what an open issue is grouped by (issueGroup).
+type refusalGroup struct {
+	program string
+	codes   map[string]bool
+}
+
+// refusals are the hub's open issues, with what each is grouped by and what each
+// blocked.
+type refusals struct {
+	issues  []*store.Issue
+	groups  map[int64]refusalGroup
+	blocked map[string][]*store.Issue // by the object that blocked them
+}
+
+func (w *Worker) openRefusals() (*refusals, error) {
+	h := w.H
+	issues, err := h.Store.UnresolvedIssues(100000)
+	if err != nil {
+		return nil, err
+	}
+	r := &refusals{issues: issues, groups: map[int64]refusalGroup{}, blocked: map[string][]*store.Issue{}}
+	for _, is := range issues {
+		program, codes, by := issueGroup(h, is)
+		if by != "" {
+			r.blocked[by] = append(r.blocked[by], is)
+		} else if o := h.Index.Get(is.ObjectUID); codes["E5000"] && o != nil {
+			// Central's "cannot be created because <parent> ... could not be created".
+			for _, p := range []string{o.TE, o.Enrollment} {
+				if p != "" && p != o.UID {
+					r.blocked[p] = append(r.blocked[p], is)
+				}
+			}
+		}
+		r.groups[is.ID] = refusalGroup{program, codes}
+	}
+	return r, nil
+}
+
+// with returns the open issues pick chooses, with what they blocked, newest first.
+func (r *refusals) with(pick func(*store.Issue, refusalGroup) bool) []*store.Issue {
+	sel := map[int64]bool{}
+	var queue []string
+	for _, is := range r.issues {
+		if pick(is, r.groups[is.ID]) {
+			sel[is.ID] = true
+			queue = append(queue, is.ObjectUID)
+		}
+	}
+	seen := map[string]bool{}
+	for ; len(queue) > 0; queue = queue[1:] {
+		if seen[queue[0]] {
+			continue
+		}
+		seen[queue[0]] = true
+		for _, is := range r.blocked[queue[0]] {
+			sel[is.ID] = true
+			queue = append(queue, is.ObjectUID)
+		}
+	}
+	return slices.DeleteFunc(slices.Clone(r.issues), func(is *store.Issue) bool { return !sel[is.ID] })
+}
+
 // retry is a resend instruction from the Facility Hub app (facility-hub-admin/retries).
 // User, if given, is the hub user to send the saves as instead of their authors.
 // Action "discard" throws the saves away instead (discard.go); "" or "resend" sends
@@ -470,55 +536,18 @@ func (w *Worker) applyRetries(ctx context.Context) error {
 		}
 	}
 	if len(todo) > 0 {
-		issues, err := h.Store.UnresolvedIssues(100000)
+		open, err := w.openRefusals()
 		if err != nil {
 			return err
 		}
-		type group struct {
-			program string
-			codes   map[string]bool
-		}
-		groups := map[int64]group{}
-		blocked := map[string][]*store.Issue{} // by the object that blocked them
-		for _, is := range issues {
-			program, codes, by := issueGroup(h, is)
-			if by != "" {
-				blocked[by] = append(blocked[by], is)
-			} else if o := h.Index.Get(is.ObjectUID); codes["E5000"] && o != nil {
-				// Central's "cannot be created because <parent> ... could not be created".
-				for _, p := range []string{o.TE, o.Enrollment} {
-					if p != "" && p != o.UID {
-						blocked[p] = append(blocked[p], is)
-					}
-				}
-			}
-			groups[is.ID] = group{program, codes}
-		}
 		// picked: the open issues an instruction names, with what they blocked.
 		picked := func(r retry) []*store.Issue {
-			sel := map[int64]bool{}
-			var queue []string
-			for _, is := range issues {
-				g := groups[is.ID]
-				if r.Issue != "" && r.Issue != fmt.Sprintf("%s-%d", h.HubID(), is.ID) ||
-					r.Issue == "" && (is.Kind != r.Kind || g.program != r.Program || !g.codes[r.Code]) {
-					continue
+			return open.with(func(is *store.Issue, g refusalGroup) bool {
+				if r.Issue != "" {
+					return r.Issue == fmt.Sprintf("%s-%d", h.HubID(), is.ID)
 				}
-				sel[is.ID] = true
-				queue = append(queue, is.ObjectUID)
-			}
-			seen := map[string]bool{}
-			for ; len(queue) > 0; queue = queue[1:] {
-				if seen[queue[0]] {
-					continue
-				}
-				seen[queue[0]] = true
-				for _, is := range blocked[queue[0]] {
-					sel[is.ID] = true
-					queue = append(queue, is.ObjectUID)
-				}
-			}
-			return slices.DeleteFunc(slices.Clone(issues), func(is *store.Issue) bool { return !sel[is.ID] })
+				return is.Kind == r.Kind && g.program == r.Program && g.codes[r.Code]
+			})
 		}
 		reassigned := false
 		for _, r := range todo {

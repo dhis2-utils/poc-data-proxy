@@ -344,8 +344,9 @@ func approveAccount(t *testing.T, s *scene) tk.User {
 	return account
 }
 
-// G6: reset a hub that holds a change central refused (an edit of a person deleted on
-// central) and a save not yet pushed, on a real central. Must hold, as designed
+// G6: reset a hub that holds a change central refused (a unique ID that central gave
+// another person meanwhile) and a save not yet pushed, on a real central. An edit of a
+// person deleted on central no longer serves: that refusal closes itself at the push. Must hold, as designed
 // (TestResetKeepsRefusedChanges): the outbox is pushed before the reset; a plain reset
 // is refused while it would lose the refused change, with the reason; RESET AND
 // DISCARD resets, and the registry records who retired the hub. N23: the reset edits
@@ -360,19 +361,19 @@ func TestG6ResetWithRefusedChanges(t *testing.T) {
 	id := h.HubID()
 	nurse := s.connect(s.M.Users[tk.RoleNurse].Username)
 	p := s.M.Primary()
+	if p.UniqueAttr == "" {
+		t.Skip("needs a program with a unique attribute")
+	}
 	a := s.register(nurse, p, "Zqreseta")
+	other := s.M.NewPerson(p, "Zqresetc")
+	nurse.Complete(p, other)
 	s.Sync()
 	s.Offline()
-	te := map[string]any{}
-	for k, v := range a.Payload["trackedEntities"].([]any)[0].(map[string]any) {
-		if k != "enrollments" {
-			te[k] = v
-		}
-	}
-	if st, b := s.save(nurse, "edit of a person about to be deleted on central", map[string]any{"trackedEntities": []any{te}}); st != 200 {
+	s.CentralImport(other.Payload) // registered on central meanwhile: the hub cannot know
+	if st, b := s.save(nurse, "a person given the unique ID central has given another",
+		personEdit(p, a, s.M.Facility.ID, map[string]string{p.UniqueAttr: other.Unique})); st != 200 {
 		t.Fatalf("offline edit: %d %s", st, b)
 	}
-	s.CentralDelete("trackedEntities", a.TE)
 	web := s.Web(tk.RoleNurse)
 	web.Login()
 	s.Online()
@@ -390,8 +391,7 @@ func TestG6ResetWithRefusedChanges(t *testing.T) {
 	b := s.offlineSave(nurse, "Zqresetb")
 	s.Online()
 	s.reconnect(1)
-	// The person's enrollment went with the person, deleted on central by the test.
-	s.expect(map[string]string{b.TE: tk.OnCentral, a.Enrollment: tk.Lost}, tk.OnCentral, tk.RefusedKept)
+	s.expect(map[string]string{b.TE: tk.OnCentral, a.TE: tk.RefusedKept}, tk.OnCentral, tk.RefusedKept)
 	t.Logf("refused: %d objects", h.Store.CountObjects("rejected"))
 	var entry map[string]any
 	s.Central.JSON("GET", "/api/dataStore/facility-hub-registry/"+id, nil, &entry)
