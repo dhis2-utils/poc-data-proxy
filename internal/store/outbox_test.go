@@ -12,7 +12,8 @@ import (
 
 // Saves central accepted leave the outbox SentOutboxKept after they were sent: the hub
 // keeps no copy of patient data past what the country chose, and the outbox does not
-// grow for ever. Refused and waiting saves stay until resolved, however old.
+// grow for ever. Refused and waiting saves stay until resolved, however old; discarded
+// ones stay as long as sent ones, from the discard.
 func TestPruneSentOutbox(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "hub.db"))
 	if err != nil {
@@ -47,6 +48,7 @@ func TestPruneSentOutbox(t *testing.T) {
 
 	oldSent, newSent, lateSent := add("EvOldSent01"), add("EvNewSent01"), add("EvLateSent1")
 	refused, partial, pending := add("EvRefused01"), add("EvPartial01"), add("EvPending01")
+	oldDiscarded, newDiscarded := add("EvOldDisc01"), add("EvNewDisc01")
 	for _, seq := range []int64{oldSent, newSent, lateSent} {
 		if err := s.FinishOutbox(seq, OutboxSynced, ""); err != nil {
 			t.Fatal(err)
@@ -54,7 +56,15 @@ func TestPruneSentOutbox(t *testing.T) {
 	}
 	s.FinishOutbox(refused, OutboxRejected, "refused")
 	s.FinishOutbox(partial, OutboxPartial, "partly refused")
-	for _, seq := range []int64{oldSent, newSent, lateSent, refused, partial, pending} {
+	for _, seq := range []int64{oldDiscarded, newDiscarded} {
+		s.FinishOutbox(seq, OutboxRejected, "refused")
+	}
+	// Discarded by a hub manager: kept as long after the discard as a sent entry.
+	if n, err := s.DiscardOutbox([]string{"EvOldDisc01", "EvNewDisc01"}, nil); err != nil || n != 2 {
+		t.Fatalf("discarded %d, %v; want 2", n, err)
+	}
+	age(oldDiscarded, "sent_at", long)
+	for _, seq := range []int64{oldSent, newSent, lateSent, refused, partial, pending, oldDiscarded, newDiscarded} {
 		age(seq, "created_at", long)
 	}
 	age(oldSent, "sent_at", long)
@@ -62,11 +72,11 @@ func TestPruneSentOutbox(t *testing.T) {
 	// lateSent: made long ago, sent just now (it waited): kept from when it was sent.
 
 	n, err := s.PruneSentOutbox()
-	if err != nil || n != 1 {
-		t.Fatalf("pruned %d, %v; want 1", n, err)
+	if err != nil || n != 2 {
+		t.Fatalf("pruned %d, %v; want 2", n, err)
 	}
 	for seq, want := range map[int64]string{oldSent: "", newSent: OutboxSynced, lateSent: OutboxSynced,
-		refused: OutboxRejected, partial: OutboxPartial, pending: OutboxPending} {
+		refused: OutboxRejected, partial: OutboxPartial, pending: OutboxPending, oldDiscarded: "", newDiscarded: OutboxDiscarded} {
 		if got := s.OutboxState(seq); got != want {
 			t.Errorf("entry %d: %q, want %q", seq, got, want)
 		}

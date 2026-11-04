@@ -20,6 +20,9 @@ const (
 	OutboxSynced   = "synced"   // every object accepted by central
 	OutboxPartial  = "partial"  // some objects rejected or blocked
 	OutboxRejected = "rejected" // every object rejected or blocked
+	// OutboxDiscarded: refused, and then discarded by a hub manager (the Facility Hub
+	// app's Discard). Kept SentOutboxKept, as a sent entry is, then pruned.
+	OutboxDiscarded = "discarded"
 )
 
 type OutboxEntry struct {
@@ -260,14 +263,48 @@ func (s *Store) Requeue(uids []string, seqs []int64, userID int64) (int, error) 
 	return n, err
 }
 
+// DiscardOutbox marks refused and partly refused entries as discarded: those named by
+// seq (aggregate edits), and those holding any of uids once none of their objects is
+// still refused. It returns the entries marked. sent_at is when they were discarded.
+func (s *Store) DiscardOutbox(uids []string, seqs []int64) (int, error) {
+	var n int
+	err := s.Tx(context.Background(), func(tx *sql.Tx) error {
+		mark := func(which string, arg any) error {
+			res, err := tx.Exec(`UPDATE outbox SET state=?, sent_at=? WHERE state IN (?,?) AND `+which+`
+ AND NOT EXISTS (SELECT 1 FROM outbox_objects oo JOIN objects ob ON ob.uid = oo.uid
+ WHERE oo.seq = outbox.seq AND ob.sync_state = ?)`, OutboxDiscarded, Now(), OutboxRejected, OutboxPartial, arg, SyncRejected)
+			if err != nil {
+				return err
+			}
+			k, _ := res.RowsAffected()
+			n += int(k)
+			return nil
+		}
+		for _, uid := range uids {
+			if err := mark(`seq IN (SELECT seq FROM outbox_objects WHERE uid=?)`, uid); err != nil {
+				return err
+			}
+		}
+		for _, seq := range seqs {
+			if err := mark(`seq=?`, seq); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return n, err
+}
+
 // SentOutboxKept is how long an entry central accepted stays in the outbox after it
 // was sent: long enough to send it again (a resend from the Facility Hub app), not
-// for ever, since each entry is a copy of a save with patient data.
+// for ever, since each entry is a copy of a save with patient data. A discarded entry
+// is kept as long after it was discarded.
 const SentOutboxKept = 30 * 24 * time.Hour
 
-// PruneSentOutbox deletes the entries central accepted more than SentOutboxKept ago,
-// with their object lists. Refused, partly refused and pending entries stay until they
-// are resolved. An entry sent before sent_at existed counts from its creation.
+// PruneSentOutbox deletes the entries central accepted, or a hub manager discarded,
+// more than SentOutboxKept ago, with their object lists. Refused, partly refused and
+// pending entries stay until they are resolved. An entry sent before sent_at existed
+// counts from its creation.
 // Issues may still name a deleted entry's seq: they are open by their object's state
 // (tracker) or their entry's refused state (aggregate), and neither is a sent entry.
 //
@@ -278,16 +315,16 @@ const SentOutboxKept = 30 * 24 * time.Hour
 // 2026-10-28).
 func (s *Store) PruneSentOutbox() (int64, error) {
 	cutoff := time.Now().Add(-SentOutboxKept).UTC().Format(time.RFC3339Nano)
-	const sent = `SELECT seq FROM outbox WHERE state = ? AND (CASE sent_at WHEN '' THEN created_at ELSE sent_at END) < ?
+	const sent = `SELECT seq FROM outbox WHERE state IN (?, ?) AND (CASE sent_at WHEN '' THEN created_at ELSE sent_at END) < ?
  ORDER BY seq LIMIT ?`
 	var total int64
 	for {
 		var n int64
 		err := s.Tx(context.Background(), func(tx *sql.Tx) error {
-			if _, err := tx.Exec(`DELETE FROM outbox_objects WHERE seq IN (`+sent+`)`, OutboxSynced, cutoff, pruneBatch); err != nil {
+			if _, err := tx.Exec(`DELETE FROM outbox_objects WHERE seq IN (`+sent+`)`, OutboxSynced, OutboxDiscarded, cutoff, pruneBatch); err != nil {
 				return err
 			}
-			res, err := tx.Exec(`DELETE FROM outbox WHERE seq IN (`+sent+`)`, OutboxSynced, cutoff, pruneBatch)
+			res, err := tx.Exec(`DELETE FROM outbox WHERE seq IN (`+sent+`)`, OutboxSynced, OutboxDiscarded, cutoff, pruneBatch)
 			if err != nil {
 				return err
 			}

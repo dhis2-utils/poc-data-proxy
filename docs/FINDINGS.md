@@ -479,7 +479,13 @@ What the hub does with a change central refuses (tested in `internal/e2e`: `Test
   - An unrelated change on central after the refusal also replaces the hub's copy. An example is another user editing a different field of the same event. The refused values then disappear from offline reads; they remain in the refused outbox entry, and in the issue on central with values masked.
   - A change on central within a second of the refusal does not count, so the hub keeps its copy until central's next change.
   - Wrong clocks on the hub do not matter: the comparison uses only central's times.
-- **Still open:** a refused change that can never pass as it is (repair).
+- **Discarded by a hub manager:** a refused change that can never pass as it is, because central was changed on purpose (a new rule, a closed period, a user moved) or because it is a duplicate. The manager presses "Discard" in the Facility Hub app, on a group or on one change (docs/DEPLOYMENT.md, "Refused in bulk"). Tested in `TestDiscardGroup` and `TestDiscardRefusedRegistration`.
+  - For each refused object, and each object it blocked, the hub reads central's version by UID, as the author, and keeps it. A person is read once for each programme the hub holds them in, with their enrollments and events, because central gives a programme's attributes only with the programme.
+  - Where central has no version (a refused registration, or an event central deleted), the hub keeps a tombstone. The record leaves the offline lists, and Android's next download marks it deleted. The author can register the person again.
+  - Both get the hub's time of the discard, in central's time, as their update time. Without it, Android's next incremental download would not include them, and the tablet would keep its copy with the refused values. The hub's time stays until central's version changes or the weekly full pull.
+  - The outbox entry is marked `discarded` (a new value in the `state` column) and kept 30 days from the discard, like a sent entry, then pruned. The issue closes, and its key on central is removed.
+  - Objects refused as "blocked by" an object, or with E5000, belong to their parent and are discarded with it.
+  - A hub that cannot read as the author (no token: the author must log in online on the hub first) keeps those changes refused. Its heartbeat lists the instruction with the reason (`retriesNotApplied`).
 - **Resent in bulk** once central is fixed: a hub manager presses "Resend" on a group in the Facility Hub app (docs/DEPLOYMENT.md, "Refused in bulk").
 
 

@@ -784,6 +784,37 @@ func TestAggregateRetrySkipsReplacedEdit(t *testing.T) {
 	}
 }
 
+// A discarded aggregate edit is not sent, even once central would take it: its issue
+// closes and its entry is kept as discarded.
+func TestAggregateDiscard(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	e.NeedFake()
+	pe := aggPeriod(e, ag)
+	e.Offline()
+	nurse.PostDataValue("/api/"+e.App.Hub.APIMinor()+"/dataValues", cell(e, ag.DataSet, pe, ag.Number, ag.COC, "value", "5"))
+	e.Fake.Approve(ag.DataSet, pe)
+	e.Online()
+	e.Sync()
+	if n, _ := e.App.Hub.Store.UnresolvedIssues(10); len(n) != 1 {
+		t.Fatalf("%d issues, want the refused edit's", len(n))
+	}
+	e.Fake.Unapprove(ag.DataSet, pe)
+	e.Fake.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"retries": json.RawMessage(
+		`{"retries":[{"id":"d1","action":"discard","kind":"aggregate","program":"","code":"E2017","at":"` +
+			time.Now().UTC().Format(time.RFC3339) + `","by":"admin"}]}`)}
+	e.Sync()
+	e.Sync()
+	if _, _, ok := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); ok {
+		t.Fatal("the discarded edit reached central")
+	}
+	if n, _ := e.App.Hub.Store.UnresolvedIssues(10); len(n) != 0 {
+		t.Fatalf("the discarded edit's issue stays open: %d", len(n))
+	}
+	if n := e.App.Hub.Store.CountOutbox(store.OutboxDiscarded); n != 1 {
+		t.Fatalf("%d discarded entries, want 1", n)
+	}
+}
+
 // A rate limit or a redirect on the way to central is not a refusal: the edit stays
 // pending and is pushed on the next cycle.
 func TestAggregatePushRetriesAnswersFromTheWay(t *testing.T) {

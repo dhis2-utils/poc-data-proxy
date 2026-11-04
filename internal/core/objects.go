@@ -19,6 +19,18 @@ import (
 // where central already scoped the query to the facility. A pending local version
 // wins until it is pushed. It returns the UIDs stored.
 func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool) ([]string, error) {
+	return h.upsertCentral(userID, payload, forceFacility, nil)
+}
+
+// ReplaceDiscarded stores central's versions, or tombstones, of refused objects a hub
+// manager discarded in the Facility Hub app: unlike UpsertCentral, they replace the
+// hub's refused copies of the objects in discarded. The objects are the facility's
+// already (forceFacility).
+func (h *Hub) ReplaceDiscarded(userID int64, payload tracker.M, discarded map[string]bool) ([]string, error) {
+	return h.upsertCentral(userID, payload, true, discarded)
+}
+
+func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool, discarded map[string]bool) ([]string, error) {
 	facility := h.Facility()
 	if facility == "" || !h.Store.Unlocked() {
 		return nil, nil
@@ -132,7 +144,8 @@ func (h *Hub) UpsertCentral(userID int64, payload tracker.M, forceFacility bool)
 			}
 		}
 		if old != nil {
-			if old.SyncState == store.SyncPending || (old.SyncState == store.SyncRejected && !h.changedSinceRefused(old.UID, it.Data)) {
+			if old.SyncState == store.SyncPending || (old.SyncState == store.SyncRejected && !discarded[old.UID] &&
+				!h.changedSinceRefused(old.UID, it.Data)) {
 				// Local version wins until pushed; only record that central showed it.
 				objs = append(objs, &tracker.Obj{UID: old.UID, Kind: "visibility-only", Slot: old.Slot})
 				batch[it.UID] = old

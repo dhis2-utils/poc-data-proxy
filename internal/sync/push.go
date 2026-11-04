@@ -416,8 +416,11 @@ func issueGroup(h *core.Hub, is *store.Issue) (program string, codes map[string]
 
 // retry is a resend instruction from the Facility Hub app (facility-hub-admin/retries).
 // User, if given, is the hub user to send the saves as instead of their authors.
+// Action "discard" throws the saves away instead (discard.go); "" or "resend" sends
+// them again. Issue, if given, is one refused change's key in facility-hub-issues
+// (<hub ID>-<n>) in place of a group: a key of another hub's names nothing here.
 type retry struct {
-	ID, Kind, Program, Code, At, User string
+	ID, Kind, Program, Code, At, User, Action, Issue string
 }
 
 const (
@@ -429,7 +432,7 @@ const (
 // app after central was fixed: this hub's saves refused with that kind, programme and
 // error code, and what they blocked, are sent again as their authors, or as the user
 // the instruction names, once per instruction, when the hub first sees it. Central's
-// new answer stands.
+// new answer stands. A discard instruction throws the same saves away (discard.go).
 func (w *Worker) applyRetries(ctx context.Context) error {
 	h := w.H
 	var v struct {
@@ -472,11 +475,60 @@ func (w *Worker) applyRetries(ctx context.Context) error {
 			program, codes, by := issueGroup(h, is)
 			if by != "" {
 				blocked[by] = append(blocked[by], is)
+			} else if o := h.Index.Get(is.ObjectUID); codes["E5000"] && o != nil {
+				// Central's "cannot be created because <parent> ... could not be created".
+				for _, p := range []string{o.TE, o.Enrollment} {
+					if p != "" && p != o.UID {
+						blocked[p] = append(blocked[p], is)
+					}
+				}
 			}
 			groups[is.ID] = group{program, codes}
 		}
+		// picked: the open issues an instruction names, with what they blocked.
+		picked := func(r retry) []*store.Issue {
+			sel := map[int64]bool{}
+			var queue []string
+			for _, is := range issues {
+				g := groups[is.ID]
+				if r.Issue != "" && r.Issue != fmt.Sprintf("%s-%d", h.HubID(), is.ID) ||
+					r.Issue == "" && (is.Kind != r.Kind || g.program != r.Program || !g.codes[r.Code]) {
+					continue
+				}
+				sel[is.ID] = true
+				queue = append(queue, is.ObjectUID)
+			}
+			seen := map[string]bool{}
+			for ; len(queue) > 0; queue = queue[1:] {
+				if seen[queue[0]] {
+					continue
+				}
+				seen[queue[0]] = true
+				for _, is := range blocked[queue[0]] {
+					sel[is.ID] = true
+					queue = append(queue, is.ObjectUID)
+				}
+			}
+			return slices.DeleteFunc(slices.Clone(issues), func(is *store.Issue) bool { return !sel[is.ID] })
+		}
 		reassigned := false
 		for _, r := range todo {
+			switch r.Action {
+			case "", "resend":
+			case discardAction:
+				why, err := w.discard(ctx, picked(r))
+				if err != nil {
+					return err
+				}
+				if why != "" {
+					kept[r.ID] = why
+					slog.Warn("discard from the Facility Hub app not applied in full", "id", r.ID, "reason", why)
+				}
+				continue
+			default:
+				kept[r.ID] = "unknown action " + r.Action
+				continue
+			}
 			var as int64 // 0: as their authors
 			if r.User != "" {
 				u, err := h.Store.UserByName(r.User)
@@ -497,11 +549,7 @@ func (w *Worker) applyRetries(ctx context.Context) error {
 				}
 			}
 			uids, seqs := map[string]bool{}, map[int64]bool{}
-			for _, is := range issues {
-				g := groups[is.ID]
-				if is.Kind != r.Kind || g.program != r.Program || !g.codes[r.Code] {
-					continue
-				}
+			for _, is := range picked(r) {
 				if is.Kind == store.OutboxAggregate && w.aggregateReplaced(is) {
 					// A later change of the cell reached central: sending this edit
 					// again would undo it. It is done, and its issue closes.
@@ -509,14 +557,6 @@ func (w *Worker) applyRetries(ctx context.Context) error {
 					continue
 				}
 				uids[is.ObjectUID], seqs[is.OutboxSeq] = true, true
-			}
-			for queue := slices.Collect(maps.Keys(uids)); len(queue) > 0; queue = queue[1:] {
-				for _, is := range blocked[queue[0]] {
-					if !uids[is.ObjectUID] {
-						uids[is.ObjectUID], seqs[is.OutboxSeq] = true, true
-						queue = append(queue, is.ObjectUID)
-					}
-				}
 			}
 			n, err := h.Store.Requeue(slices.Collect(maps.Keys(uids)), slices.Collect(maps.Keys(seqs)), as)
 			if err != nil {
