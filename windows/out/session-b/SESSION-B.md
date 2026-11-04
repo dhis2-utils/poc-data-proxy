@@ -11,7 +11,7 @@ The order keeps re-flashing to one card and puts the waiting inside other work.
 | 1 | Pi 5, SSD | Needy CHC, as set up in session A | any day before Friday | E9, E1, E2, E5, E6 | about 2 hours |
 | 2 | Windows VM, USB HDD | Ngelehun CHC | any day before Friday | E3, F2, E7, E4 | about 3 hours |
 | 3 | Pi 4, SD card | Needy CHC, restored from the Pi 5's stick | Friday 6 November, after the 72-hour run ends at about 14:00 | E5 and E9 (the restore), E1, E2, E6 | about 2½ hours |
-| 4 | Pi 4, SD card | Needy CHC | Saturday 7 November, morning | F1, with F3 | about 1 hour |
+| 4 | Pi 4, SD card | Needy CHC | Saturday 7 November, morning | F1, with F3 | about 1½ hours |
 
 The Pi 4 is busy with its 72-hour run until Friday 6 November at about 14:00 (windows/out/pi4-week/RUN.md). F1 on the Pi 4 therefore comes last. The Pi 5 is not re-flashed: part 1 uses the hub that session A set up, and part 1 ends by leaving that hub's copy on its USB stick for the restore on Friday. Only the Pi 4's card is flashed, and it must be flashed after the 72-hour run anyway.
 
@@ -24,6 +24,8 @@ The VM is set up as Ngelehun CHC, not Needy. Needy's hub must stay active until 
 - **E3 at Needy's size.** Needy's first pull is over before a cut can land in it. E3 runs on the VM at Ngelehun's size.
 - **A cut or a pull exactly during a stick write (E5, E9).** The hub copies a few kilobytes to the stick once a minute, in milliseconds. A pull by hand lands in a write only by chance. The test shows that pulls and cuts at random moments leave a copy that restores; the restore on Friday is the check.
 - **Periods in F1.** Friday evening to Saturday morning crosses no month and no week, so the Pi 4's clock behind central cannot show how it judges an aggregate period. F2 covers periods with the clock ahead, on the VM.
+- **F4 with the hub's clock behind.** The Pi image is built from dad9c4d, before the future-date check. With `ready2`'s hub, every Child Programme registration the driver saves offline in part 4 would be refused with E1020 and E1021 (docs/NO-RTC.md, `TestNoRTCEnrollmentDateCheck`). This run cannot show it.
+- **Android's incremental syncs with the clock behind.** No tablet in this session; docs/NO-RTC.md has what the code predicts.
 - **E8, E10, E11, E12 and F4** are not part of this session.
 
 ## Before part 1 (15 minutes)
@@ -477,17 +479,26 @@ Expected (E1, E2, E6 on the card): confirmed saves survive; no duplicate on cent
 
 ### 3.5 Prepare F1 (10 minutes, Friday evening)
 
-The Pi 4 has no clock battery. Raspberry Pi OS normally starts such a board at the time it last saved (the `fake-hwclock` package). Whether this image does that, or starts further back, is part of what F1 shows.
+The Pi 4 has no clock battery. Raspberry Pi OS normally starts such a board at the time it last saved (the `fake-hwclock` package). This image has no `fake-hwclock`, and `chrony` replaced `systemd-timesyncd`. Read from the image, the Pi 4 starts at a fixed date: 6 October 2026, 00:27 UTC, the base image's date (docs/NO-RTC.md, "Where the clock starts"). F1 checks this.
 
 1. Leave the Pi 4 running online for at least an hour after 3.4, with no driver.
 2. If Firewalla's NTP intercept is on for this network, turn it off until Saturday's test is over. Otherwise Firewalla would give the Pi the right time while its internet is blocked.
 3. In Firewalla, block the Pi 4's internet. Note the time.
 4. Pull the Pi 4's power cord. Note the time. Leave it unplugged overnight.
 
-## Part 4. Pi 4, Saturday 7 November: F1 (60 minutes)
+## Part 4. Pi 4, Saturday 7 November: F1 (90 minutes)
+
+What the code predicts is in docs/NO-RTC.md. Each prediction is under the step that shows it. Note the time of each step in your notes.
 
 1. Check that the Pi 4's internet is still blocked in Firewalla.
-2. On the server, in tmux, open a window that logs the hub's clock next to the server's every 30 seconds:
+2. On the server, read the dates of the demo central's certificate:
+
+   ```sh
+   echo | openssl s_client -connect implement.im.dhis2.org:443 -servername implement.im.dhis2.org 2>/dev/null | openssl x509 -noout -dates
+   ```
+
+   Expected: `notBefore` before 6 October 2026 (about 20 September), `notAfter` 19 December 2026. Then the hub can reach central even before its clock is set. If `notBefore` is after 6 October, the certificate was renewed: the hub cannot reach central until chrony sets its clock. Note both dates.
+3. On the server, in tmux, open a window that logs the hub's clock next to the server's every 30 seconds:
 
    ```sh
    cd ~/_tmp_sessionb
@@ -495,9 +506,13 @@ The Pi 4 has no clock battery. Raspberry Pi OS normally starts such a board at t
    while true; do echo "$(date -u '+%a, %d %b %Y %H:%M:%S GMT') server | hub $(curl -sI -m 5 http://$PI4/hub/status | grep -i '^date' | cut -d' ' -f2- | tr -d '\r')"; sleep 30; done | tee f1-clock.log
    ```
 
-3. Plug in the Pi 4. Note the time. When the hub answers, the log shows the hub's clock. Note how far behind it is.
-4. On the Mac, open `https://<the Pi 4's address>/hub/ui` and log in as `needy1`. The hub is offline and locked until this login. Note what the page shows: mode, "last pull", "last push", and the "PAT expires" column.
-5. In a second tmux window (Ctrl-b c), start the driver:
+4. Plug in the Pi 4. Note the time. When the hub answers, the log shows the hub's clock. Note the first hub time in full, and how long after power-on the hub answered.
+
+   Expected: the hub's clock reads Tue, 06 Oct 2026 00:28 GMT, or a minute or two later: the image's date plus the time since power-on. If it reads Friday evening's time, the image keeps a saved clock that the code reading missed: tell Claude. Compare how long the Pi took to answer with the Pi 4's times in 3.4. A longer boot may come from the file system check, which sees its last mount time in the future.
+5. On the Mac, open `https://<the Pi 4's address>/hub/ui` and log in as `needy1`. The hub is offline and locked until this login. Note what the page shows: mode, "last pull", "last push", and the "PAT expires" column.
+
+   Expected: the login works (no check in it depends on the clock). "Last pull" and "last push" show Friday's times, a month after the hub's clock. "PAT expires" shows the dates from Friday.
+6. In a second tmux window (Ctrl-b c), start the driver:
 
    ```sh
    cd ~/_tmp_sessionb
@@ -507,23 +522,36 @@ The Pi 4 has no clock battery. Raspberry Pi OS normally starts such a board at t
    ```
 
    If you used `-insecure` in 3.4, use it here too.
-6. Let it save offline for 20 minutes. Saves should be confirmed `by the hub alone`.
-7. In Firewalla, unblock the Pi 4's internet. Note the time.
-8. Watch both windows for 15 minutes. Note:
+7. Let it save offline for 20 minutes. Saves should be confirmed `by the hub alone`.
+
+   Expected: all confirmed. The image is built from dad9c4d and has no future-date check. A hub built from `ready2` would refuse every registration here (E1020).
+8. In Firewalla, unblock the Pi 4's internet. Note the time to the second.
+9. Watch both windows for 15 minutes. Note:
    - when the hub's clock in `f1-clock.log` jumps to the right time (F3: the jump while the hub runs);
-   - whether the hub goes online before or after its clock is right, and any error on its page ("last sync error");
+   - when the hub's page first shows it online, and any error on its page ("last sync error");
    - whether the driver's clients must log in again, or show errors, at the jump;
    - when `pending` reaches 0.
-9. Press Ctrl-C in the driver's window, then in the clock window.
-10. Copy the files to the Mac:
+
+   Expected: the hub probes central every 15 seconds. With the certificate from step 2 it is online within about 30 seconds of the unblock, whatever its clock. chrony steps the clock at its first answer from `pool.ntp.org`, which may come later. If the hub's first sync cycle runs before the jump (it starts within a random 5 minutes of going online), the code predicts three things for Claude to check: the hub's token is renewed at once, with an expiry about 4 January 2027 (6 October plus the default 90 days) instead of about 5 February; the heartbeat's time is 6 October, so the Facility Hub app shows Needy CHC as silent until the next heartbeat, an hour later; the aggregate forms are pulled for September's window. The driver's clients do not have to log in again: sessions and timers use Go's monotonic clock, which the jump does not move.
+10. Press Ctrl-C in the driver's window. Leave the clock window running.
+11. Wait until 35 minutes after the unblock, so that `hub-diag` has run once after the jump. Then press Ctrl-C in the clock window.
+12. Pull the Pi 4's power cord. Put its card in the Mac. In Terminal:
+
+    ```sh
+    cp /Volumes/bootfs/hub-diag.txt ~/Repos/PoC/poc-data-proxy/windows/out/session-b/f1-hub-diag.txt
+    grep -n -E 'stepped|wrong by|central still unreachable|connectivity|x509|in the future' /Volumes/bootfs/hub-diag.txt
+    ```
+
+    Expected: a chrony line "System clock was stepped by" or "System clock wrong by", with about 2 800 000 seconds (32 days). If it shows hours instead, the clock started at a saved time. A line with `x509` means the hub's clock was behind central's certificate when it probed; note its time. Put the card back in the Pi 4, plug in its power, and check that `https://<the Pi 4's address>/hub/ui` answers.
+13. Copy the files to the Mac:
 
     ```sh
     scp <your server's address>:_tmp_sessionb/needy-clock.jsonl <your server's address>:_tmp_sessionb/needy-clock.log <your server's address>:_tmp_sessionb/f1-clock.log ~/Repos/PoC/poc-data-proxy/windows/out/session-b/
     ```
 
-11. If you turned off Firewalla's NTP intercept, turn it back on.
+14. If you turned off Firewalla's NTP intercept, turn it back on.
 
-**Claude:** runs `hubdrive check` on `needy-clock.jsonl`. Claude reads on central the dates of the run's people and events (they must be the driver's, not the hub's), the hub's heartbeat times, and the expiry of the tokens the hub made for `needy1`–`needy3` while its clock was behind.
+**Claude:** runs `hubdrive check` on `needy-clock.jsonl`. Claude reads on central the dates of the run's people and events (they must be the driver's, not the hub's), the hub's heartbeat times (`time`, `lastPush`, `hubTokenExpires`), and the expiry of the tokens the hub made for itself and for `needy1`–`needy3` around the jump. In the Facility Hub app, Claude notes whether Needy CHC is flagged silent after the unblock, and until when. Claude reads `f1-hub-diag.txt` for the order of the probe errors, the switch online and chrony's step.
 
 Expected (F1): saves still accepted by central; dates on records come from clients; periods and expiry judged correctly once synced. Periods cannot be judged in this run (see "What this hardware cannot do"). F3, which this run also touches: no duplicate pulls, no lost watermarks, sessions survive.
 
