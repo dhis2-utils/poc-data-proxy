@@ -13,6 +13,12 @@ Where complexity already lives, and why, is in `docs/PERFORMANCE.md` ("How the h
 - **Shared listings** (`internal/sync`, `access.List.GroupKey`): safe only if the group key covers everything central uses to decide visibility. The twin users in the access matrix test it.
 - **Aggregate forms** (`internal/sync/aggregate.go`, `internal/aggregateapi`): what is served offline must match central's forms, and edits must reach central as their author. `TestAggregateOracle`, the `TestAggregate*` scenarios and `TestAggregateDataEntryApp`.
 
+## Offline sync questions: find out what Android does, and report it
+
+When an offline sync question has no clear answer (conflicts, refused changes, deletions, dates and clocks), first find out how DHIS2 Android Capture handles the same case on its own, without the hub: from its documentation and SDK, and on a tablet against central where that is cheap. Give what you find to the user to review, with what it would mean for the hub. Do not copy Android's behaviour into the hub without that review: Android is a reference, not the answer.
+
+Claims about what DHIS2 does are checked on a live instance before they go into a plan or a finding (for example, that a deleted record cannot be restored: checked on 2.42 and 2.43, 4 November 2026).
+
 ## Before committing
 
 - `go vet ./...` and `go test ./...`; `go test -race -timeout 40m` on `internal/e2e`, `internal/live`, `internal/tracker`, `internal/store` (with the race detector `internal/live` takes just over go test's default 10 minutes on 4 cores).
