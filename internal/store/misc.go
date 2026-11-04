@@ -187,6 +187,14 @@ func (s *Store) UnresolvedIssues(limit int) ([]*Issue, error) {
  WHERE `+sqlIssueOpen+` ORDER BY id DESC LIMIT ?`, OutboxAggregate, OutboxRejected, OutboxPartial, SyncRejected, limit)
 }
 
+// OpenIssuesOf returns the open issues of one author, newest first: the hub's page
+// shows staff their own refused changes.
+func (s *Store) OpenIssuesOf(userID int64, limit int) ([]*Issue, error) {
+	return s.issues(`SELECT id, outbox_seq, object_uid, kind, user_id, error_enc, created_at, reported_central_at FROM issues i
+ WHERE i.user_id = ? AND `+sqlIssueOpen+` ORDER BY id DESC LIMIT ?`, userID, OutboxAggregate, OutboxRejected, OutboxPartial,
+		SyncRejected, limit)
+}
+
 // sqlIssueOpen is the condition that the issue aliased i is still open; its arguments
 // are OutboxAggregate, OutboxRejected, OutboxPartial, SyncRejected.
 const sqlIssueOpen = `((i.kind = ? AND EXISTS (SELECT 1 FROM outbox o WHERE o.seq = i.outbox_seq AND o.state IN (?, ?)))

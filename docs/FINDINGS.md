@@ -488,6 +488,9 @@ What the hub does with a change central refuses (tested in `internal/e2e`: `Test
   - Objects refused as "blocked by" an object, or with E5000, belong to their parent and are discarded with it.
   - A hub that cannot read as the author (no token: the author must log in online on the hub first) keeps those changes refused. Its heartbeat lists the instruction with the reason (`retriesNotApplied`).
 - **Resent in bulk** once central is fixed: a hub manager presses "Resend" on a group in the Facility Hub app (docs/DEPLOYMENT.md, "Refused in bulk").
+- **The author sees their own** (built 4 November, `TestOwnRefusalsOnHubPage`). Neither Capture app shows a refusal that comes at push. The hub's page (`/hub/ui`) therefore shows signed-in staff their open refused changes under "Your sync errors", with Android's words: one per record as "<date> | <org unit>", and central's message as it is. Each shows the values the author entered, unmasked: they are the author, and the values are on this hub already. A short line says who closes it: "Fixed by the author", "Fixed on central" or "Fixed by nobody", from the error code, as in the plan of 4 November (`docs/superpowers/plans/2026-11-04-refused-changes.md`). A change blocked by its parent closes with the parent. Codes the plan does not name count as "Fixed on central". Other users' refusals show only in the issue table, masked as before, and a visitor who is not signed in sees neither.
+  - Attributes and data elements show by UID: the hub's catalog keeps no names for them.
+  - A refused outbox entry is not pruned, so the values stay while the refusal is open. If the entry is gone all the same, the page says so.
 
 
 ## Devices trusting the hub's certificate

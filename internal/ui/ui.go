@@ -1,5 +1,6 @@
 // Package ui serves the hub's own pages and API (spec 12): /hub/status, the setup flow
-// (spec 6.2) and the admin page. No patient data is shown beyond UIDs.
+// (spec 6.2) and the admin page. No patient data is shown beyond UIDs, except to
+// the signed-in user their own refused changes (refusals.go).
 package ui
 
 import (
@@ -288,6 +289,10 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		programs = append(programs, id+" "+h.Catalog().Programs[id].Name)
 	}
 	upgrade := h.Store.Meta(core.MetaUpgrade)
+	var own []*ownRefusal
+	if sess := h.Sessions.FromCookie(r); sess != nil && sess.UserID != 0 {
+		own = u.ownRefusals(sess.UserID)
+	}
 	u.render(w, "admin", map[string]any{
 		"Status": StatusBody(h), "Heartbeat": hubsync.Status(h), "Runtime": rt, "Programs": programs,
 		"Outbox": outbox, "Issues": irows, "Users": rows, "Names": names, "Objects": h.Index.Len(),
@@ -296,6 +301,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour), "Orphans": h.Store.PendingWithoutUser(),
 		"Offline": !h.Online(), "AccountCode": h.AccountCode(), "Housekeeping": h.Stats.HousekeepingError(),
 		"Reach": reachText(h.Reach()), "Proxy": h.Proxy(), "Net": u.netView(true),
+		"OwnRefusals": own,
 	})
 }
 

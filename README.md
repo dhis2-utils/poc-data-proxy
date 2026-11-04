@@ -142,7 +142,7 @@ The hub has no facility-specific configuration. It reads one small image-default
 Hub endpoints:
 
 - `GET /hub/status`: no auth. `{mode, hubId, lastPush, lastPull, pending, rejected, version, locked, setup}`.
-- `/hub/ui`: admin page, for staff assigned to the facility (log in at `/hub/login`). It shows status, outbox, issues and users with their access refresh times, and has these actions:
+- `/hub/ui`: admin page, for staff assigned to the facility (log in at `/hub/login`). It shows status, outbox, issues and users with their access refresh times. Under "Your sync errors" the signed-in user sees their own refused changes: one per record as "<date> | <org unit>", central's message, the values they entered and who closes it. Other users' refusals show only in the issue table, with values masked. The page has these actions:
   - sync now;
   - **simulate uplink cut**, for demos, only with `uplink_switch: true`;
   - **use my account** for the hub's own housekeeping (heartbeat, issue reports, generated IDs), when the person whose token it uses leaves;
