@@ -504,6 +504,8 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 			ExpiryPeriodType               string `json:"expiryPeriodType"`
 			ExpiryDays                     int    `json:"expiryDays"`
 			CompleteEventsExpiryDays       int    `json:"completeEventsExpiryDays"`
+			SelectEnrollmentDatesInFuture  *bool  `json:"selectEnrollmentDatesInFuture"`
+			SelectIncidentDatesInFuture    *bool  `json:"selectIncidentDatesInFuture"`
 		} `json:"programs"`
 	}
 	af := "trackedEntityAttribute[id,generated,unique,pattern]"
@@ -537,7 +539,8 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 			OnlyEnrollOnce:           p.OnlyEnrollOnce,
 			AttributeCombo:           p.CategoryCombo.IsDefault != nil && !*p.CategoryCombo.IsDefault,
 			EnrollmentAttributeCombo: p.EnrollmentCategoryCombo.IsDefault != nil && !*p.EnrollmentCategoryCombo.IsDefault,
-			ExpiryPeriodType:         p.ExpiryPeriodType, ExpiryDays: p.ExpiryDays, CompleteEventsExpiryDays: p.CompleteEventsExpiryDays}
+			ExpiryPeriodType:         p.ExpiryPeriodType, ExpiryDays: p.ExpiryDays, CompleteEventsExpiryDays: p.CompleteEventsExpiryDays,
+			SelectEnrollmentDatesInFuture: p.SelectEnrollmentDatesInFuture, SelectIncidentDatesInFuture: p.SelectIncidentDatesInFuture}
 		if pm.AttributeCombo {
 			pm.CategoryCombo = p.CategoryCombo.ID
 		}
@@ -578,8 +581,8 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 	}
 	for _, p := range evResp.Programs {
 		pm := &access.ProgramMeta{ID: p.ID, Name: p.Name, Event: true, Attributes: []access.AttrMeta{},
-			AttributeCombo:           p.CategoryCombo.IsDefault != nil && !*p.CategoryCombo.IsDefault,
-			ExpiryPeriodType:         p.ExpiryPeriodType, ExpiryDays: p.ExpiryDays, CompleteEventsExpiryDays: p.CompleteEventsExpiryDays}
+			AttributeCombo:   p.CategoryCombo.IsDefault != nil && !*p.CategoryCombo.IsDefault,
+			ExpiryPeriodType: p.ExpiryPeriodType, ExpiryDays: p.ExpiryDays, CompleteEventsExpiryDays: p.CompleteEventsExpiryDays}
 		if pm.AttributeCombo {
 			pm.CategoryCombo = p.CategoryCombo.ID
 		}

@@ -112,6 +112,8 @@ type Hub struct {
 	aggAccess map[int64]*aggregate.Access
 
 	reach     reach
+	clocks    clientClocks // each user's device clock, at their latest upload
+	seen      centralSeen  // the newest time central has shown (ClockBehind)
 	SyncNow   chan struct{}
 	Upgrading atomic.Bool
 	Stats     SyncStats
@@ -289,6 +291,7 @@ func New(cfg config.Config, version string, st *store.Store) *Hub {
 	}
 	central.SetProxy(st.Meta(MetaProxy))
 	h.Central = central.NewClient(base, mon)
+	h.Central.SawDate = h.noteCentralDate
 	return h
 }
 

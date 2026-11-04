@@ -22,6 +22,15 @@
 
 {{with .Heartbeat.unprotected}}<div class="card"><h2>Central's hub settings are not protected</h2><p>Any user on central may write <span class="mono">{{range $i, $k := .}}{{if $i}}, {{end}}{{$k}}{{end}}</span>. Until the national team protects them, this hub does not follow a planned move of central announced there. Ask them to protect the hub's data store entries (deployment guide, "Protect the data store namespaces").</p></div>{{end}}
 
+{{if ne .HubBehind ""}}<div class="card"><h2>The hub's clock is behind</h2>
+<p>The hub's clock is {{.HubBehind}} behind the latest time central has shown it, probably after a power cut with no network (a Pi 4 has no battery clock). Until it is set again, the hub leaves future dates to central, which judges them at the push, and does not check device clocks. It is set again once the hub reaches a time server.</p></div>{{end}}
+{{with .Clocks}}<div class="card"><h2>Device clocks ahead</h2>
+<p>These users' devices showed a time ahead of central's at their latest sync. A date the device calls today can then be in the future for central, and the hub refuses it, as central does.</p>
+<p>If every device is ahead by about the same whole number of hours, the devices are right and central's time zone is behind the facility's: tell the central team (DEPLOYMENT.md, "Central's time zone"), and do not change the devices. If one device is ahead and the others are not, set that device's date and time to automatic.</p>
+<table><tr><th>User</th><th>Ahead by</th><th>Seen</th></tr>
+{{range .}}<tr><td>{{.User}}</td><td>{{.Ahead}}</td><td>{{.At}}</td></tr>{{end}}
+</table><p class="muted">Read from what Android Capture sends. Capture web sends no device time.</p></div>{{end}}
+
 {{with .Net}}{{template "netsection" .}}{{end}}
 <div class="card"><h2>Devices</h2>
 <p>Devices open <span class="mono">https://dhis2.local</span>{{with .Heartbeat.addresses}}, or where that name does not work <span class="mono">{{range $i, $a := .}}{{if $i}}, {{end}}https://{{$a}}{{end}}</span>{{end}}. A device that does not trust the hub yet opens <span class="mono">http://dhis2.local</span> and follows its steps once.</p>

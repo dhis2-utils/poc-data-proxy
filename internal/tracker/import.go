@@ -93,8 +93,11 @@ type Importer struct {
 	Strategy           string // CREATE, UPDATE, CREATE_AND_UPDATE
 	// AtomicAll rejects the whole payload if any object fails (atomicMode=ALL, central's
 	// default). Accepting part of it left orphan tracked entities (FINDINGS.md).
-	AtomicAll   bool
-	Now         time.Time
+	AtomicAll bool
+	Now       time.Time
+	// ClockBehind: the hub's clock is behind the newest time central has shown it
+	// (core.Hub.ClockBehind), so the future-date check leaves the dates to central.
+	ClockBehind bool
 	pending     map[string]*Obj // accepted in this payload
 	rejected    map[string]bool
 	outcome     *ImportOutcome
@@ -354,10 +357,13 @@ func (im *Importer) validateEnrollment(it *Item, old *Obj) (*Obj, bool, []ErrorR
 	if !im.V.Access.TET(parent.TET).Read {
 		return nil, false, im.errf(it, "E1104", "User: `%s`, has no data read access to program: `%s`, TrackedEntityType: `%s`.", im.UserUID, program, parent.TET)
 	}
+	// Central runs these two checks together and reports both (EnrollmentValidator).
+	var errs []ErrorReport
 	if old == nil {
-		if errs := im.enrollOnce(it, te, program, pm.OnlyEnrollOnce); errs != nil {
-			return nil, false, errs
-		}
+		errs = im.enrollOnce(it, te, program, pm.OnlyEnrollOnce)
+	}
+	if errs = append(errs, im.checkEnrollmentDates(it, old, pm)...); len(errs) > 0 {
+		return nil, false, errs
 	}
 	o := im.newObj(it, old)
 	o.TE, o.Program = te, program
@@ -498,6 +504,41 @@ func (im *Importer) checkEventProgramRules(it *Item, old *Obj, program string, p
 		return im.errf(it, "E1047", "Event: `%s` date `%s` is not in the expiry period of program `%s`.", it.UID, occurred, program)
 	}
 	return nil
+}
+
+// checkEnrollmentDates applies central's future-date rule for enrollments offline
+// (F4): where the program does not allow it, an enrollment date (E1020) or incident
+// date (E1021) after central's today is refused. Central compares dates, not times,
+// in its own time zone; im.Now is the hub's clock in that zone. The date is read as
+// the wall-clock time the hub stores (NormaliseDate).
+func (im *Importer) checkEnrollmentDates(it *Item, old *Obj, pm *access.ProgramMeta) []ErrorReport {
+	if im.ClockBehind {
+		return nil // a hub without an RTC after a power cut would refuse today's dates
+	}
+	today := im.Now.Format(time.DateOnly)
+	var errs []ErrorReport
+	for _, c := range []struct {
+		field, code, label string
+		allowed            *bool
+	}{
+		{"enrolledAt", "E1020", "Enrollment", pm.SelectEnrollmentDatesInFuture},
+		{"occurredAt", "E1021", "Incident", pm.SelectIncidentDatesInFuture},
+	} {
+		if c.allowed == nil || *c.allowed {
+			continue
+		}
+		v := Str(it.Data, c.field)
+		if v == "" && old != nil {
+			v = Str(old.Data, c.field)
+		}
+		if _, ok := parseTime(v); !ok {
+			continue // none, or not a date the hub reads: central decides on push
+		}
+		if d := NormaliseDate(v); d[:len(time.DateOnly)] > today {
+			errs = append(errs, im.errf(it, c.code, "%s date: `%s` cannot be a future date.", c.label, d)...)
+		}
+	}
+	return errs
 }
 
 // checkAOC applies central's rule for a non-default attribute option combination

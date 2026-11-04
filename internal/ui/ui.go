@@ -283,6 +283,11 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		}
 		irows = append(irows, row)
 	}
+	type clockRow struct{ User, Ahead, At string }
+	var clocks []clockRow
+	for _, c := range h.ClientClocksAhead() {
+		clocks = append(clocks, clockRow{names[c.UserID], aheadText(c.Ahead), c.At.Format("2006-01-02 15:04")})
+	}
 	rt := h.Runtime()
 	var programs []string
 	for _, id := range h.Catalog().ProgramIDs() {
@@ -300,9 +305,25 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"ServerVersion": h.ServerVersion(), "Msg": r.URL.Query().Get("msg"),
 		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour), "Orphans": h.Store.PendingWithoutUser(),
 		"Offline": !h.Online(), "AccountCode": h.AccountCode(), "Housekeeping": h.Stats.HousekeepingError(),
-		"Reach": reachText(h.Reach()), "Proxy": h.Proxy(), "Net": u.netView(true),
+		"Reach": reachText(h.Reach()), "Proxy": h.Proxy(), "Net": u.netView(true), "Clocks": clocks, "HubBehind": behindText(h.ClockBehind()),
 		"OwnRefusals": own,
 	})
+}
+
+// aheadText is how far a device clock runs ahead, in hours or days.
+// behindText is how far the hub's clock is behind central's, "" when it is not.
+func behindText(d time.Duration) string {
+	if d <= 0 {
+		return ""
+	}
+	return aheadText(d)
+}
+
+func aheadText(d time.Duration) string {
+	if h := d.Round(time.Hour).Hours(); h < 36 {
+		return fmt.Sprintf("%.0f h", max(h, 1))
+	}
+	return fmt.Sprintf("%.0f days", d.Hours()/24)
 }
 
 func (u *UI) handleSyncNow(w http.ResponseWriter, r *http.Request) {

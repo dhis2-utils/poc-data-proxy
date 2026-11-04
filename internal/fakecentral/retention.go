@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dhis2/facility-hub/internal/tracker"
 )
@@ -69,6 +70,27 @@ func (c *Central) enrollOnce(it *tracker.Item, accepted []*tracker.Item) [][2]st
 	}
 	if e1015 {
 		out = append(out, [2]string{"E1015", fmt.Sprintf("TrackedEntity: `%s` already has an active Enrollment in Program `%s`.", te, program)})
+	}
+	return out
+}
+
+// futureDates is central's E1020 and E1021 for the TB program: an enrollment or
+// incident date after central's today, where the program does not allow it. Central
+// compares dates in its own time zone and names the date as a wall-clock time.
+func (c *Central) futureDates(it *tracker.Item) [][2]string {
+	if tracker.Str(it.Data, "program") != Program {
+		return nil
+	}
+	today := c.now()[:len(time.DateOnly)]
+	var out [][2]string
+	for _, f := range []struct {
+		field, code, label string
+		allowed            bool
+	}{{"enrolledAt", "E1020", "Enrollment", c.FutureEnrollmentDates}, {"occurredAt", "E1021", "Incident", c.FutureIncidentDates}} {
+		v := tracker.NormaliseDate(tracker.Str(it.Data, f.field))
+		if !f.allowed && len(v) >= len(time.DateOnly) && v[:len(time.DateOnly)] > today {
+			out = append(out, [2]string{f.code, fmt.Sprintf("%s date: `%s` cannot be a future date.", f.label, v)})
+		}
 	}
 	return out
 }

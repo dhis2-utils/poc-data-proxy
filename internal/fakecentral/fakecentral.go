@@ -117,6 +117,10 @@ type Central struct {
 	reserved       int
 	down           atomic.Bool
 	Version        string
+	// FutureEnrollmentDates and FutureIncidentDates are the TB program's
+	// selectEnrollmentDatesInFuture and selectIncidentDatesInFuture. False, as on a new
+	// program on central, refuses dates after central's today (E1020, E1021).
+	FutureEnrollmentDates, FutureIncidentDates bool
 	// Requests counts calls per "METHOD path" for assertions.
 	Requests map[string]int
 	gen      *generated // Generate: performance-test data
@@ -361,6 +365,9 @@ func (c *Central) Struggle(delay time.Duration, failShare float64) {
 
 func (c *Central) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c.mu.Lock()
+	if c.ClockSkew != 0 { // central's clock in its Date header too, as a real server's
+		w.Header().Set("Date", time.Now().Add(c.ClockSkew).UTC().Format(http.TimeFormat))
+	}
 	lose := c.LoseResponse[r.Method+" "+r.URL.Path] > 0
 	if lose {
 		c.LoseResponse[r.Method+" "+r.URL.Path]--
@@ -763,7 +770,8 @@ func (c *Central) programs(w http.ResponseWriter, r *http.Request, u *User) {
 		stages = append(stages, map[string]any{"id": s, "sortOrder": i + 1, "repeatable": true, "access": dataPerm(u.StageRead[s], u.StageWrite[s])})
 	}
 	prog := map[string]any{"id": Program, "name": "TB program", "programType": "WITH_REGISTRATION", "access": dataPerm(u.ProgramRead, u.ProgramWrite),
-		"onlyEnrollOnce": c.OnlyEnrollOnce,
+		"onlyEnrollOnce": c.OnlyEnrollOnce, "selectEnrollmentDatesInFuture": c.FutureEnrollmentDates,
+		"selectIncidentDatesInFuture": c.FutureIncidentDates,
 		"trackedEntityType": map[string]any{"id": TET, "access": dataPerm(true, true),
 			"trackedEntityTypeAttributes": []any{attr(AttrFirstName, false, false), attr(AttrLastName, false, false)}},
 		"programStages":                  stages,
@@ -1018,8 +1026,13 @@ func (c *Central) importTracker(w http.ResponseWriter, r *http.Request, u *User)
 				fail("E1068", "Could not find TrackedEntity")
 			} else if !u.ProgramWrite {
 				fail("E1091", "no data write access to Program")
-			} else if c.objects[it.UID] == nil {
-				for _, f := range c.enrollOnce(it, okItems) {
+			} else {
+				if c.objects[it.UID] == nil {
+					for _, f := range c.enrollOnce(it, okItems) {
+						fail(f[0], f[1])
+					}
+				}
+				for _, f := range c.futureDates(it) {
 					fail(f[0], f[1])
 				}
 			}

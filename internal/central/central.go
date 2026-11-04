@@ -47,6 +47,10 @@ type Client struct {
 	baseURL string
 	HTTP    *http.Client
 	Monitor *Monitor
+	// SawDate, when set, gets central's clock from the Date header of each answer:
+	// the hub's lower bound for the true time when its own clock is wrong (no RTC,
+	// docs/NO-RTC.md).
+	SawDate func(time.Time)
 }
 
 // proxyURL is the web proxy set on the hub's admin page; empty uses the environment's
@@ -175,6 +179,11 @@ func (c *Client) Do(ctx context.Context, method, pathAndQuery string, body []byt
 	if err != nil {
 		c.Failed(ctx, err)
 		return nil, fmt.Errorf("%w: %v", ErrNetwork, err)
+	}
+	if c.SawDate != nil {
+		if d, err := http.ParseTime(resp.Header.Get("Date")); err == nil {
+			c.SawDate(d)
+		}
 	}
 	return resp, nil
 }

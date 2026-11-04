@@ -199,6 +199,12 @@ type ProgramMeta struct {
 	ExpiryPeriodType         string `json:"expiryPeriodType,omitempty"`
 	ExpiryDays               int    `json:"expiryDays,omitempty"`
 	CompleteEventsExpiryDays int    `json:"completeEventsExpiryDays,omitempty"`
+	// SelectEnrollmentDatesInFuture and SelectIncidentDatesInFuture are central's
+	// settings: false refuses an enrollment or incident date after central's today
+	// (E1020, E1021). Central checks only when a setting is false, so nil, in a
+	// catalog from before these fields, leaves the check to central on push.
+	SelectEnrollmentDatesInFuture *bool `json:"selectEnrollmentDatesInFuture,omitempty"`
+	SelectIncidentDatesInFuture   *bool `json:"selectIncidentDatesInFuture,omitempty"`
 }
 
 // Catalog is the facility's program set plus tracked entity type attributes.

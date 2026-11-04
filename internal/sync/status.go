@@ -68,6 +68,9 @@ func Status(h *core.Hub) map[string]any {
 		// The facility's generated attributes (id, pattern), so the Facility Hub app
 		// can set each one's reserved-value pool (facility-hub-config/reserved).
 		"generatedAttributes": generatedAttributes(h),
+		// Users whose device clock ran more than half an hour ahead of central's at
+		// their latest upload (core.ClientClockAhead): their dates may be refused.
+		"clientClocksAhead": len(h.ClientClocksAhead()),
 	}
 }
 

@@ -202,6 +202,7 @@ func (a *API) storePersisted(userID int64, body []byte, status int, report []byt
 	if json.Unmarshal(body, &payload) != nil {
 		return
 	}
+	a.H.NoteClientClock(userID, payload)
 	uids, err := a.H.UpsertCentral(userID, filterPayload(payload, persisted), false)
 	if err != nil {
 		slog.Warn("store online write", "err", err)
@@ -367,10 +368,11 @@ func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Ses
 		a.H.WebError(w, 400, "Invalid JSON payload: "+err.Error(), "")
 		return
 	}
+	a.H.NoteClientClock(sess.UserID, payload)
 	u, _ := a.H.Store.UserByID(sess.UserID)
 	rt := a.H.Runtime()
 	im := &tracker.Importer{Ix: a.H.Index, V: v, Username: u.Username, UserUID: u.UserUID, DefaultAOC: rt.DefaultAOC,
-		Strategy: strategy, Now: a.H.CentralNow(), AtomicAll: q.Get("atomicMode") != "OBJECT"}
+		Strategy: strategy, Now: a.H.CentralNow(), ClockBehind: a.H.ClockBehind() > 0, AtomicAll: q.Get("atomicMode") != "OBJECT"}
 	// The author's names, from the /api/me kept at their online login.
 	if me, _ := a.H.Store.GetCache(sess.UserID, "GET", auth.MeCacheKey); me != nil {
 		var names struct{ FirstName, Surname string }
