@@ -284,7 +284,9 @@ func flat(items []*tracker.Item) tracker.M {
 // --- issues (spec 11.2) -----------------------------------------------------------
 
 // ReportIssues writes new issues to the central data store with the hub token.
-// No patient attribute values are included.
+// No patient attribute values are included. The author's username is, so a supervisor
+// knows whom to tell, and the record's person, for a link to it in Capture (the
+// Facility Hub app's hub page).
 func (w *Worker) ReportIssues(ctx context.Context) error {
 	h := w.H
 	issues, err := h.Store.Issues(true, 500)
@@ -293,9 +295,9 @@ func (w *Worker) ReportIssues(ctx context.Context) error {
 	}
 	slices.Reverse(issues) // oldest first
 	for _, is := range issues {
-		var userUID string
+		var userUID, username string
 		if u, _ := h.Store.UserByID(is.UserID); u != nil {
-			userUID = u.UserUID
+			userUID, username = u.UserUID, u.Username
 		}
 		var stored struct {
 			Message      string                `json:"message"`
@@ -304,8 +306,15 @@ func (w *Worker) ReportIssues(ctx context.Context) error {
 		json.Unmarshal(is.Error, &stored)
 		errBody := map[string]any{"message": tracker.OutgoingMessage(stored.Message, stored.ErrorReports),
 			"errorReports": tracker.OutgoingReports(stored.ErrorReports, w.sentValues(is))}
-		payload := map[string]any{"hub_id": h.HubID(), "facility": h.Facility(), "user": userUID, "objectUid": is.ObjectUID,
+		payload := map[string]any{"hub_id": h.HubID(), "facility": h.Facility(), "user": userUID, "username": username, "objectUid": is.ObjectUID,
 			"kind": is.Kind, "outboxSeq": is.OutboxSeq, "error": errBody, "createdAt": is.CreatedAt}
+		// An enrollment's or event's person ("" for an event programme's event): the app's
+		// link to the record in Capture needs it to tell the two kinds of event apart.
+		if is.Kind == store.KindEnrollment || is.Kind == store.KindEvent {
+			if o, _ := h.Store.GetObject(is.ObjectUID); o != nil {
+				payload["trackedEntity"] = o.TE
+			}
+		}
 		key := fmt.Sprintf("%s-%d", h.HubID(), is.ID)
 		err := h.Central.JSON(ctx, "POST", "/api/dataStore/facility-hub-issues/"+key, payload, h.HubAuth(), nil)
 		if err != nil && central.Status(err) != http.StatusConflict {

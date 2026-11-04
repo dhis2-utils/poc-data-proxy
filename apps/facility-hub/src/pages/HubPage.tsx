@@ -1,3 +1,4 @@
+import { useConfig } from '@dhis2/app-runtime'
 import i18n from '@dhis2/d2-i18n'
 import {
     Button,
@@ -22,6 +23,7 @@ import { HubHistory } from '@/components/hub/HubHistory'
 import { useCanManage } from '@/hooks/useCanManage'
 import { flagSentence } from '@/hubs/flagText'
 import { ago, gb, when } from '@/hubs/format'
+import { captureLink, closersOf, closerText } from '@/hubs/issues'
 import { parseMiss } from '@/hubs/misses'
 import { issueCodes } from '@/hubs/refusals'
 import { saveTotals } from '@/hubs/saves'
@@ -37,6 +39,7 @@ export const HubPage = () => {
     const { id = '' } = useParams()
     const { hubs, isLoading, error } = useHubs()
     const { canManage } = useCanManage()
+    const { baseUrl } = useConfig()
     const detail = useHub(id)
     const { value: settings } = useAdminEntry<AccountsSettings>(
         'facility-hub-admin',
@@ -366,7 +369,13 @@ export const HubPage = () => {
                                     {i18n.t('Object')}
                                 </DataTableColumnHeader>
                                 <DataTableColumnHeader>
+                                    {i18n.t('Author')}
+                                </DataTableColumnHeader>
+                                <DataTableColumnHeader>
                                     {i18n.t('Error codes')}
+                                </DataTableColumnHeader>
+                                <DataTableColumnHeader>
+                                    {i18n.t('What closes it')}
                                 </DataTableColumnHeader>
                                 <DataTableColumnHeader>
                                     {i18n.t('Message')}
@@ -383,7 +392,22 @@ export const HubPage = () => {
                                     <DataTableCell>{is.kind}</DataTableCell>
                                     <DataTableCell>
                                         {is.objectUid}
+                                        {captureLink(baseUrl, is) && (
+                                            <div>
+                                                <a
+                                                    href={captureLink(
+                                                        baseUrl,
+                                                        is
+                                                    )}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                >
+                                                    {i18n.t('Open in Capture')}
+                                                </a>
+                                            </div>
+                                        )}
                                     </DataTableCell>
+                                    <DataTableCell>{is.username}</DataTableCell>
                                     <DataTableCell>
                                         {[
                                             ...new Set(
@@ -392,6 +416,14 @@ export const HubPage = () => {
                                                     .filter(Boolean)
                                             ),
                                         ].join(', ')}
+                                    </DataTableCell>
+                                    <DataTableCell>
+                                        {closersOf(
+                                            issueCodes(is),
+                                            is.error?.message
+                                        )
+                                            .map(closerText)
+                                            .join('; ')}
                                     </DataTableCell>
                                     <DataTableCell>
                                         {is.error?.message}

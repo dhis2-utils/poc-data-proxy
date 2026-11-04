@@ -760,6 +760,20 @@ func TestRefusedCountsClearWhenFixed(t *testing.T) {
 	if !strings.Contains(refused(), "E1064") {
 		t.Fatalf("refused: %s", refused())
 	}
+	// The issues name their author, so the supervisor knows whom to tell, and an
+	// enrollment's its person, for the app's link to Capture.
+	issues := map[string]map[string]any{}
+	for _, k := range e.central.DataStoreKeys("facility-hub-issues") {
+		v := e.central.DataStoreValue("facility-hub-issues", k)
+		issues[fmt.Sprint(v["objectUid"])] = v
+	}
+	te, enr := issues["DupTe000079"], issues["DupEn000079"]
+	if user, _ := te["user"].(string); te["username"] != "nurse_a" || user == "" {
+		t.Fatalf("issue of the person: %v", te)
+	}
+	if enr["username"] != "nurse_a" || enr["trackedEntity"] != "DupTe000079" {
+		t.Fatalf("issue of the enrollment: %v", enr)
+	}
 	e.offline() // fixed at the facility, sent through the hub
 	a.json("POST", postSync, newPatient("DupTe000079", "DupEn000079", "Dup", "NAT-8080", nil), 200)
 	e.online()

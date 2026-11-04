@@ -354,6 +354,18 @@ msgstr "{{- n}} hours ago"
 msgid "{{- n}} days ago"
 msgstr "{{- n}} days ago"
 
+msgid "Fixed by the author"
+msgstr "Fixed by the author"
+
+msgid "Fixed on central"
+msgstr "Fixed on central"
+
+msgid "Fixed by nobody"
+msgstr "Fixed by nobody"
+
+msgid "Closes with the record it belongs to"
+msgstr "Closes with the record it belongs to"
+
 msgid "This hub was not retired by a replacement."
 msgstr "This hub was not retired by a replacement."
 
@@ -572,11 +584,20 @@ msgstr "Kind"
 msgid "Object"
 msgstr "Object"
 
+msgid "Author"
+msgstr "Author"
+
 msgid "Error codes"
 msgstr "Error codes"
 
+msgid "What closes it"
+msgstr "What closes it"
+
 msgid "Message"
 msgstr "Message"
+
+msgid "Open in Capture"
+msgstr "Open in Capture"
 
 msgid "working"
 msgstr "working"

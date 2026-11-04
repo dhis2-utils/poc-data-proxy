@@ -117,6 +117,10 @@ export type Issue = {
     key: string
     kind?: string
     objectUid?: string
+    /** The author's DHIS2 username (hubs from this version on). */
+    username?: string
+    /** An enrollment's or event's person; "" for an event programme's event. */
+    trackedEntity?: string
     createdAt?: string
     error?: {
         message?: string
