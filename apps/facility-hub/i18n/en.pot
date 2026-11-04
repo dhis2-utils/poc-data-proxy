@@ -48,6 +48,26 @@ msgstr "Cancel"
 msgid "Approve"
 msgstr "Approve"
 
+msgid "Discard asked for {{- when}} by {{- by}}"
+msgstr "Discard asked for {{- when}} by {{- by}}"
+
+msgid "Discard"
+msgstr "Discard"
+
+msgid "Discard this change"
+msgstr "Discard this change"
+
+msgid ""
+"The hub throws away this refused change to {{- object}}, and what it "
+"blocked, at its next sync. The values entered are not sent to central. The "
+"hub keeps central's version of the record, or drops it if central never had "
+"it. This cannot be undone from the app."
+msgstr ""
+"The hub throws away this refused change to {{- object}}, and what it "
+"blocked, at its next sync. The values entered are not sent to central. The "
+"hub keeps central's version of the record, or drops it if central never had "
+"it. This cannot be undone from the app."
+
 msgid "The hub listed no tokens, so none was deleted."
 msgstr "The hub listed no tokens, so none was deleted."
 
@@ -696,6 +716,19 @@ msgstr "Download CSV"
 msgid "Could not load the refusals"
 msgstr "Could not load the refusals"
 
+msgid ""
+"When central was changed on purpose and the waiting saves do not fit (a new "
+"rule, a closed period, a duplicate), Discard asks every hub to throw that "
+"group away, with what it blocked. Each hub then keeps central's version of "
+"the record, or drops a record central never had. Hubs keep a discarded save "
+"for 30 days."
+msgstr ""
+"When central was changed on purpose and the waiting saves do not fit (a new "
+"rule, a closed period, a duplicate), Discard asks every hub to throw that "
+"group away, with what it blocked. Each hub then keeps central's version of "
+"the record, or drops a record central never had. Hubs keep a discarded save "
+"for 30 days."
+
 msgid "Not every group is counted"
 msgstr "Not every group is counted"
 
@@ -712,6 +745,9 @@ msgid ""
 msgstr ""
 "{{- n}} hubs have more groups of refused saves than their reports list, so "
 "some of their refusals are not counted here."
+
+msgid "Could not ask for a discard"
+msgstr "Could not ask for a discard"
 
 msgid "Could not ask for a resend"
 msgstr "Could not ask for a resend"
@@ -758,17 +794,37 @@ msgstr "None yet."
 msgid "By"
 msgstr "By"
 
+msgid "Asked for"
+msgstr "Asked for"
+
 msgid "Sent as"
 msgstr "Sent as"
 
 msgid "Not applied"
 msgstr "Not applied"
 
+msgid "Discard {{- object}} on {{- hub}}"
+msgstr "Discard {{- object}} on {{- hub}}"
+
 msgid "their authors"
 msgstr "their authors"
 
 msgid "The last 50 are kept."
 msgstr "The last 50 are kept."
+
+msgid "Discard refused saves"
+msgstr "Discard refused saves"
+
+msgid ""
+"Every hub throws away its {{- kind}} saves refused with {{- code}} in {{- "
+"program}}, and what they blocked. The values entered are not sent to "
+"central. Each hub keeps central's version of the record, or drops a record "
+"central never had. This cannot be undone from the app."
+msgstr ""
+"Every hub throws away its {{- kind}} saves refused with {{- code}} in {{- "
+"program}}, and what they blocked. The values entered are not sent to "
+"central. Each hub keeps central's version of the record, or drops a record "
+"central never had. This cannot be undone from the app."
 
 msgid "A whole number from {{- min}} to {{- max}}"
 msgstr "A whole number from {{- min}} to {{- max}}"

@@ -1,6 +1,7 @@
 import i18n from '@dhis2/d2-i18n'
 import {
     Button,
+    ButtonStrip,
     CircularLoader,
     DataTable,
     DataTableBody,
@@ -9,6 +10,10 @@ import {
     DataTableHead,
     DataTableRow,
     InputField,
+    Modal,
+    ModalActions,
+    ModalContent,
+    ModalTitle,
     NoticeBox,
 } from '@dhis2/ui'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -20,7 +25,9 @@ import { useMe } from '@/hooks/useMe'
 import { useNamed } from '@/hooks/useNamed'
 import { when } from '@/hubs/format'
 import {
+    discardGroup,
     groupRefusals,
+    isDiscard,
     noLoginCode,
     notAppliedOn,
     partlyReported,
@@ -33,7 +40,10 @@ import {
 import { AccountsSettings, useAdminEntry, useHubs } from '@/hubs/useHubs'
 
 const sameGroup = (a: Retry, b: RefusalRow) =>
-    a.kind === b.kind && a.program === b.program && a.code === b.code
+    !a.issue &&
+    a.kind === b.kind &&
+    a.program === b.program &&
+    a.code === b.code
 
 const groupKey = (g: RefusalRow) => JSON.stringify([g.kind, g.program, g.code])
 
@@ -64,6 +74,23 @@ const Refusals = () => {
             }),
         { onSuccess: () => client.invalidateQueries(['retries']) }
     )
+    // The group a manager is about to discard, until they confirm.
+    const [confirming, setConfirming] = useState<RefusalRow | null>(null)
+    const discard = useMutation(
+        (g: RefusalRow) =>
+            discardGroup(api, g, {
+                by: me?.username ?? '',
+                at: new Date().toISOString(),
+                id: retryId(),
+                managers: settings?.managers,
+            }),
+        {
+            onSuccess: () => {
+                setConfirming(null)
+                client.invalidateQueries(['retries'])
+            },
+        }
+    )
     const rows = useMemo(() => groupRefusals(hubs ?? []), [hubs])
     const partly = useMemo(() => partlyReported(hubs ?? []), [hubs])
     const names = new Map(programs.list.map((p) => [p.id, p.displayName]))
@@ -85,13 +112,17 @@ const Refusals = () => {
         )
     }
     const earlier = [...(retries.data ?? [])].reverse()
-    const lastFor = (g: RefusalRow) => earlier.find((r) => sameGroup(r, g))?.at
+    const lastFor = (g: RefusalRow) =>
+        earlier.find((r) => !isDiscard(r) && sameGroup(r, g))?.at
 
     return (
         <>
             <div className={styles.muted}>
                 {i18n.t(
                     "Saves central refused, added up across the hubs still in use, by kind, programme and error code. Once the cause is fixed on central (a setting, an option, someone's access), Resend asks every hub to send that group's refused saves again, as their original authors, at its next sync. Central's new answer stands; a save it refuses again shows up here as a fresh refusal. Saves whose author could not log in online for 7 days after central stopped accepting their token (error code NO_LOGIN) can be resent as another user of the hub."
+                )}{' '}
+                {i18n.t(
+                    "When central was changed on purpose and the waiting saves do not fit (a new rule, a closed period, a duplicate), Discard asks every hub to throw that group away, with what it blocked. Each hub then keeps central's version of the record, or drops a record central never had. Hubs keep a discarded save for 30 days."
                 )}
             </div>
             {partly.length > 0 && (
@@ -106,6 +137,11 @@ const Refusals = () => {
                           )}
                 </NoticeBox>
             )}
+            {discard.error ? (
+                <NoticeBox error title={i18n.t('Could not ask for a discard')}>
+                    {(discard.error as Error).message}
+                </NoticeBox>
+            ) : null}
             {send.error ? (
                 <NoticeBox error title={i18n.t('Could not ask for a resend')}>
                     {(send.error as Error).message}
@@ -181,6 +217,14 @@ const Refusals = () => {
                                         onClick={() => send.mutate(g)}
                                     >
                                         {i18n.t('Resend')}
+                                    </Button>{' '}
+                                    <Button
+                                        small
+                                        destructive
+                                        disabled={!me || discard.isLoading}
+                                        onClick={() => setConfirming(g)}
+                                    >
+                                        {i18n.t('Discard')}
                                     </Button>
                                 </DataTableCell>
                             </DataTableRow>
@@ -205,6 +249,9 @@ const Refusals = () => {
                                     {i18n.t('By')}
                                 </DataTableColumnHeader>
                                 <DataTableColumnHeader>
+                                    {i18n.t('Asked for')}
+                                </DataTableColumnHeader>
+                                <DataTableColumnHeader>
                                     {i18n.t('Kind')}
                                 </DataTableColumnHeader>
                                 <DataTableColumnHeader>
@@ -226,13 +273,29 @@ const Refusals = () => {
                                 <DataTableRow key={r.id}>
                                     <DataTableCell>{when(r.at)}</DataTableCell>
                                     <DataTableCell>{r.by}</DataTableCell>
+                                    <DataTableCell>
+                                        {isDiscard(r)
+                                            ? r.issue
+                                                ? i18n.t(
+                                                      'Discard {{- object}} on {{- hub}}',
+                                                      {
+                                                          object: r.object,
+                                                          hub: r.hub,
+                                                      }
+                                                  )
+                                                : i18n.t('Discard')
+                                            : i18n.t('Resend')}
+                                    </DataTableCell>
                                     <DataTableCell>{r.kind}</DataTableCell>
                                     <DataTableCell>
                                         {programName(r.program)}
                                     </DataTableCell>
                                     <DataTableCell>{r.code}</DataTableCell>
                                     <DataTableCell>
-                                        {r.user ?? i18n.t('their authors')}
+                                        {isDiscard(r)
+                                            ? '—'
+                                            : (r.user ??
+                                              i18n.t('their authors'))}
                                     </DataTableCell>
                                     <DataTableCell>
                                         {notAppliedOn(hubs ?? [], r.id).map(
@@ -252,6 +315,35 @@ const Refusals = () => {
                     {i18n.t('The last 50 are kept.')}
                 </div>
             </div>
+            {confirming && (
+                <Modal small onClose={() => setConfirming(null)}>
+                    <ModalTitle>{i18n.t('Discard refused saves')}</ModalTitle>
+                    <ModalContent>
+                        {i18n.t(
+                            "Every hub throws away its {{- kind}} saves refused with {{- code}} in {{- program}}, and what they blocked. The values entered are not sent to central. Each hub keeps central's version of the record, or drops a record central never had. This cannot be undone from the app.",
+                            {
+                                kind: confirming.kind,
+                                code: confirming.code,
+                                program: programName(confirming.program),
+                            }
+                        )}
+                    </ModalContent>
+                    <ModalActions>
+                        <ButtonStrip end>
+                            <Button onClick={() => setConfirming(null)}>
+                                {i18n.t('Cancel')}
+                            </Button>
+                            <Button
+                                destructive
+                                loading={discard.isLoading}
+                                onClick={() => discard.mutate(confirming)}
+                            >
+                                {i18n.t('Discard')}
+                            </Button>
+                        </ButtonStrip>
+                    </ModalActions>
+                </Modal>
+            )}
         </>
     )
 }

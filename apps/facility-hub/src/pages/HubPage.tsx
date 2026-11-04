@@ -15,6 +15,7 @@ import React, { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import styles from './Pages.module.css'
 import { ApproveDialog } from '@/components/hub/ApproveDialog'
+import { DiscardChange } from '@/components/hub/DiscardChange'
 import { FlagTags } from '@/components/hub/FlagTags'
 import { RevokeTokens, UndoReplacement } from '@/components/hub/HubActions'
 import { HubHistory } from '@/components/hub/HubHistory'
@@ -22,6 +23,7 @@ import { useCanManage } from '@/hooks/useCanManage'
 import { flagSentence } from '@/hubs/flagText'
 import { ago, gb, when } from '@/hubs/format'
 import { parseMiss } from '@/hubs/misses'
+import { issueCodes } from '@/hubs/refusals'
 import { saveTotals } from '@/hubs/saves'
 import {
     AccountsSettings,
@@ -369,6 +371,7 @@ export const HubPage = () => {
                                 <DataTableColumnHeader>
                                     {i18n.t('Message')}
                                 </DataTableColumnHeader>
+                                {canManage && <DataTableColumnHeader />}
                             </DataTableRow>
                         </DataTableHead>
                         <DataTableBody>
@@ -403,6 +406,19 @@ export const HubPage = () => {
                                             )
                                         )}
                                     </DataTableCell>
+                                    {canManage && (
+                                        <DataTableCell>
+                                            <DiscardChange
+                                                issue={{
+                                                    key: is.key,
+                                                    hub: hub.id,
+                                                    kind: is.kind,
+                                                    objectUid: is.objectUid,
+                                                    codes: issueCodes(is),
+                                                }}
+                                            />
+                                        </DataTableCell>
+                                    )}
                                 </DataTableRow>
                             ))}
                         </DataTableBody>

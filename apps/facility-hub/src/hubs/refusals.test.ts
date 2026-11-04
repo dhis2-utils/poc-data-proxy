@@ -2,7 +2,11 @@
  * @jest-environment node
  */
 import {
+    discardChange,
+    discardGroup,
+    discardOf,
     groupRefusals,
+    issueCodes,
     notAppliedOn,
     partlyReported,
     refusedGroupsOf,
@@ -243,5 +247,96 @@ describe('notAppliedOn', () => {
                 'r1'
             )
         ).toEqual([{ hub: 'hub-a', reason: 'user x is not known on this hub' }])
+    })
+})
+
+describe('discardGroup', () => {
+    const group = { kind: 'event', program: 'P1', code: 'E1300' }
+    const who = { by: 'manager', at: '2026-11-04T12:00:00Z', id: 'd1' }
+
+    it('appends a discard of the group to the retries, with admin-entry sharing', async () => {
+        const api = new FakeApi()
+        api.store['facility-hub-admin'] = { retries: { retries: [retry(1)] } }
+        await discardGroup(api, group, { ...who, managers: 'HubGrpMgrs' })
+        expect(api.entry('facility-hub-admin', 'retries')).toEqual({
+            retries: [
+                retry(1),
+                {
+                    id: 'd1',
+                    action: 'discard',
+                    ...group,
+                    at: who.at,
+                    by: 'manager',
+                },
+            ],
+        })
+        expect(api.sharing['meta-facility-hub-admin-retries']).toEqual({
+            object: {
+                publicAccess: 'r-------',
+                userAccesses: [],
+                userGroupAccesses: [{ id: 'HubGrpMgrs', access: 'rw------' }],
+            },
+        })
+    })
+})
+
+describe('discardChange', () => {
+    const who = { by: 'manager', at: '2026-11-04T12:00:00Z', id: 'd2' }
+    const issue = {
+        key: 'hub-a-7',
+        hub: 'hub-a',
+        kind: 'trackedEntity',
+        objectUid: 'DupTe000085',
+        codes: ['E1064'],
+    }
+
+    it('names the one refused change by its issue key, for one hub', async () => {
+        const api = new FakeApi()
+        await discardChange(api, issue, who)
+        expect(api.entry('facility-hub-admin', 'retries')).toEqual({
+            retries: [
+                {
+                    id: 'd2',
+                    action: 'discard',
+                    issue: 'hub-a-7',
+                    hub: 'hub-a',
+                    object: 'DupTe000085',
+                    kind: 'trackedEntity',
+                    program: '',
+                    code: 'E1064',
+                    at: who.at,
+                    by: 'manager',
+                },
+            ],
+        })
+    })
+
+    it('is found again by its issue key, and resends are not', async () => {
+        const api = new FakeApi()
+        await resend(api, { kind: 'event', program: 'P1', code: 'E1' }, who)
+        const list = await discardChange(api, issue, { ...who, id: 'd3' })
+        expect(discardOf(list, 'hub-a-7')?.id).toBe('d3')
+        expect(discardOf(list, 'hub-a-8')).toBeUndefined()
+        expect(
+            discardOf([{ ...retry(1), issue: 'hub-a-7' }], 'hub-a-7')
+        ).toBeUndefined()
+    })
+})
+
+describe('issueCodes', () => {
+    it('lists each code once, leaving out reports without one', () => {
+        expect(
+            issueCodes({
+                key: 'k',
+                error: {
+                    errorReports: [
+                        { errorCode: 'E1064' },
+                        { errorCode: 'E1064' },
+                        { message: 'blocked' },
+                        { errorCode: 'E5000' },
+                    ],
+                },
+            })
+        ).toEqual(['E1064', 'E5000'])
     })
 })
