@@ -335,7 +335,15 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r.Header.Del("If-None-Match")
 			r.Header.Del("If-Modified-Since")
 		}
-		res, err := p.Forward(r.Context(), r, body, p.Upstream(sess))
+		fwd, copy := p.revalidate(r)
+		res, err := p.Forward(r.Context(), fwd, body, p.Upstream(sess))
+		if err == nil && copy != nil && res.Status == http.StatusNotModified {
+			served, status = "hub-copy", copy.Status
+			res = p.Localize(r, &Result{Status: copy.Status, Header: copy.Header, Body: copy.Body})
+			res.Header.Set("X-Hub-Cache", "revalidated; fetched="+copy.FetchedAt)
+			Write(w, res)
+			return
+		}
 		if err == nil {
 			if r.Method == http.MethodGet && cacheable(r, res.Status) && len(res.Body) <= maxCacheBody && !validationRe.MatchString(r.URL.Path) &&
 				p.H.Store.Unlocked() && (cacheUser(sess) > 0 || sess == nil) {
@@ -357,6 +365,36 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	served = "cache"
 	core.MarkOffline(w)
 	status = p.serveOffline(w, r, sess)
+}
+
+// revalidate: a browser without an app's file (a new tablet, a cleared cache, an
+// updated app) downloads it through the uplink, and Capture's bundle is 6.9 MB: 62 s at
+// 31 KB/s, compressed. When the hub holds a copy, it asks central whether the copy is
+// current instead (a 304 of a few hundred bytes) and serves the copy over the facility
+// network: 77 s to 1.1 s for Capture's start (docs/PERFORMANCE.md, "A slow uplink").
+// Central still decides, as the user, so nothing stale or unauthorised is served.
+// Returns the request to forward, and the copy to serve if central answers 304.
+func (p *Proxy) revalidate(r *http.Request) (*http.Request, *store.CachedResponse) {
+	if r.Method != http.MethodGet || !isStatic(r.URL.Path) || !p.H.Store.Unlocked() ||
+		r.Header.Get("If-None-Match") != "" || r.Header.Get("If-Modified-Since") != "" || r.Header.Get("Range") != "" {
+		return r, nil
+	}
+	c, err := p.H.Store.GetCacheAnyUser(r.Method, r.URL.RequestURI())
+	if err != nil || c == nil || c.Status != http.StatusOK {
+		return r, nil
+	}
+	etag, modified := c.Header.Get("ETag"), c.Header.Get("Last-Modified")
+	if etag == "" && modified == "" {
+		return r, nil
+	}
+	r = r.Clone(r.Context())
+	if etag != "" {
+		r.Header.Set("If-None-Match", etag)
+	}
+	if modified != "" {
+		r.Header.Set("If-Modified-Since", modified)
+	}
+	return r, c
 }
 
 func (p *Proxy) serveOffline(w http.ResponseWriter, r *http.Request, sess *core.Session) int {

@@ -231,16 +231,23 @@ The weekly full pull lists identifiers and update times only (`compat.pullValues
 
 On a clean link a single compressed request takes about a quarter of a second, mostly latency, whatever the bandwidth. That does not explain minutes per registration. Screens make many requests each (below), and real links lose packets and vary; this link did neither.
 
-`TestSlowLinkScreens` (`HUB_CLIENTS=1`, `clients/slowlink_screens.py`) timed Capture web in Chromium through the hub, as the nurse. The browser kept the app's files from a first visit, and each screen after the app's start was reached inside the app, as staff move. Medians of 3:
+`TestSlowLinkScreens` (`HUB_CLIENTS=1`, `clients/slowlink_screens.py`) timed Capture web in Chromium through the hub, as the nurse, with a browser profile on disk as staff's browsers have. Each screen after the app's start was reached inside the app, as staff move. Medians of 3:
 
 | Capture web | Through to central, full speed | 3 000 KB/s | 31 KB/s | Answered by the hub |
 |---|---|---|---|---|
-| Opening the app (55 requests) | 1.4 s | 15 s | 67 s | 0.9 s |
+| Opening the app, the browser holding its files (55 requests, 8 KB) | 1.3 s | 4.4 s | 5.0 s | 0.9 s |
+| Opening the app, the browser's cache empty (7.7 MB) | 1.4 s | 15 s | 77 s, now 6.4 s | 1.1 s |
 | Working list (5 requests) | 0.10 s | 0.34 s | 0.35 s | 0.09 s |
 | A person's dashboard (14–19 requests) | 0.14 s | 1.3 s | 1.3 s | 0.08 s |
 | The registration form, ready to fill (4–5 requests) | 0.29 s | 0.8 s | 0.8 s | 0.24 s |
 
-Opening the app is where a slow link costs: over a minute at 31 KB/s against under a second from the hub. The screens inside the app cost a second at most. Registering a patient online through the hub is then about a second of waiting plus the typing, on a clean link. The minutes reported from the field fit app starts (a page reload is one), a central that does not compress, and links that lose packets, which this test did not model.
+Almost all of an app start's bytes are one file, Capture's 6.9 MB bundle (1.6 MB compressed): 62 s at 31 KB/s. A browser holding it opens the app in 5 s, the 54 other requests mostly waiting on the link's latency. Its cache is empty on a new tablet, after the cache is cleared, and once after every Capture update, and then it downloaded the bundle through the uplink although the hub held a copy. Now, when the browser asks without a copy of its own, the hub asks central whether its copy is current (a 304 of a few hundred bytes, as the user, so central still decides) and serves the copy over the facility network: 77 s to 6.4 s (`proxy.revalidate`, `TestAppFileFromHubCopyWhenCurrent`). An updated file comes through in full once and replaces the copy.
+
+A first measurement on 5 November gave 67 s for every app start: the test's browser profile was in memory, and such a profile does not keep a file that large, so it downloaded the bundle at each start. Chromium with a profile on disk keeps it, as the table shows.
+
+The screens inside the app cost a second at most, and a warm app start 5 s. Registering a patient online through the hub is then a few seconds of waiting plus the typing, on a clean link. The minutes reported from the field fit an empty browser cache (before this change), a central that does not compress (almost 4 minutes for the bundle at 31 KB/s), and links that lose packets, which this test did not model.
+
+**Answering staff from the hub while online** would save, at 31 KB/s, 4 s per app start and about 2 s per patient (working list, dashboard, form). Central would lose about 30 requests per patient and 55 per app start, of small answers. Not built: the gain is small on these numbers, and the costs are real (changes made elsewhere reach staff only at the next pull; searches across the district must still go to central). Worth revisiting with numbers from a lossy link.
 
 **Name searches.** The hub's own answer to a name search was the slowest step: 174 ms. A filter that few people match read every enrollment of the program and checked each, so the time grew with the facility (`internal/perf.TestQueries`, "nobody (full scan)": 7.5 ms at 20 000 generated people, 151 ms at 100 000). Common names were fast because the first page filled early. Now the matches are looked up first in a covering index on the lowercased value (`te_attrs_lc`, migration 6), and up to 1 000 of them drive the search; the filter itself is unchanged. At 100 000 people: nobody 151 → 20 ms, a common name 1.7 → 2.0 ms, first and last name 4.8 → 21.5 ms (each filter reads its attribute's index entries). On the Sierra Leone setup every variant took 6–11 ms, from 170. The migration took 5.4 s on 2.4 million attribute values (`internal/store.TestAttrIndexMigrationOnFullStore`, `HUB_PERF_ATTRS`, the hc4-5y size).
 
@@ -544,3 +551,4 @@ Each page read and sorted the program's events; `objects_events` (creation order
 - **2026-10-30 to 11-02, 72 hours on the Pi 5.** 36 757 saves at 4 times an HC IV's rate, 4 outages and 5 power cuts: memory median 80 MB, the data folder 87 MB a day, 6.2 GB written a day; every confirmed save on central (section "72 hours on the Pi 5").
 - **2026-11-03, Android syncs on the Pi 4's card.** Incremental syncs of 220 people took 58 s on `rpi4`: the fake central's people, dated at its start, were candidates for 24 hours, and each was checked by reading its children. `changedTEs` now leaves out people with nothing written on the hub whose newest row is older than `updatedAfter`. In the sandbox at 60 k: 5.4 s → 0.37 s alone, 8.2 → 0.9 s six at once (section "Android syncs on the Pi 4's card").
 - **2026-11-05, a slow uplink; name searches.** At Ngelehun CHC size (20 000 people) the weekly full pull took 2 minutes at 31 KB/s compressed and 6 minutes uncompressed; single requests through to central took about 0.3 s, answered by the hub 1–4 ms (section "A slow uplink"). A name search that few people match read every enrollment of the program: 151 ms at 100 000 people. Its matches now drive the search from an index: 20 ms.
+- **2026-11-05, app files from the hub's copy.** A browser with an empty cache downloaded Capture's 6.9 MB bundle through the uplink although the hub held a copy: 77 s for the app's start at 31 KB/s. The hub now serves its copy once central confirms it is current: 6.4 s.

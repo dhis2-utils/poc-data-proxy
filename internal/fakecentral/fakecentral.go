@@ -6,6 +6,7 @@
 package fakecentral
 
 import (
+	"crypto/sha256"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -87,6 +88,11 @@ type Central struct {
 	// StallResponse ("GET /apps/...": n) starts the next n such answers and then holds
 	// them until the hub gives up on them, as when the client that asked went away.
 	StallResponse map[string]int
+	// AppFiles are app files served as central serves them: to logged-in users only,
+	// with an ETag, and 304 to a request that names the current one (tests).
+	AppFiles map[string]string
+	// NotModified counts the 304s given for AppFiles.
+	NotModified int
 	delay         time.Duration // Struggle
 	failShare     float64
 	struggled     int                        // requests counted for failShare
@@ -293,6 +299,29 @@ func (c *Central) DataStoreValue(ns, key string) map[string]any {
 	return v
 }
 
+func (c *Central) appFile(path string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.AppFiles[path]
+}
+
+// SetAppFile changes an app file, as an app update does.
+func (c *Central) SetAppFile(path, body string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.AppFiles == nil {
+		c.AppFiles = map[string]string{}
+	}
+	c.AppFiles[path] = body
+}
+
+// NotModifiedCount is the number of 304s given for AppFiles.
+func (c *Central) NotModifiedCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.NotModified
+}
+
 func (c *Central) RequestCount(key string) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -486,6 +515,24 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	case p == "/" && c.user(r) == nil: // as central: anonymous, to the login app
 		http.Redirect(w, r, "/dhis-web-login/", http.StatusFound)
+		return
+	case c.appFile(p) != "":
+		body := c.appFile(p)
+		if c.user(r) == nil {
+			http.Redirect(w, r, "/dhis-web-login/", http.StatusFound)
+			return
+		}
+		etag := fmt.Sprintf(`"%x"`, sha256.Sum256([]byte(body)))
+		w.Header().Set("ETag", etag)
+		if r.Header.Get("If-None-Match") == etag {
+			c.mu.Lock()
+			c.NotModified++
+			c.mu.Unlock()
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(body))
 		return
 	case strings.HasPrefix(p, "/dhis-web-capture/"):
 		w.Header().Set("Content-Type", "text/html")
