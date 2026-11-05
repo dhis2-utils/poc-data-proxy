@@ -111,6 +111,10 @@ func StatusBody(h *core.Hub) map[string]any {
 	if start, running := h.Stats.Cycle(); start != "" {
 		out["syncStarted"], out["syncing"] = start, running
 	}
+	if d := h.StoreDamaged(); d != "" {
+		out["storeDamaged"] = true
+		out["message"] = "the hub's store is damaged (" + d + "): " + core.StoreDamageAdvice
+	}
 	if h.Retired() {
 		out["retired"] = true
 		out["message"] = "this hub was replaced by another hub for the facility; it only sends its remaining changes"
@@ -157,6 +161,11 @@ func (u *UI) admin(next http.HandlerFunc) http.HandlerFunc {
 		sess := u.H.Sessions.FromCookie(r)
 		if sess == nil || sess.UserID == 0 {
 			http.Redirect(w, r, "/hub/login", http.StatusFound)
+			return
+		}
+		if d := u.H.StoreDamaged(); d != "" && !u.H.Unlocked() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			u.render(w, "login", map[string]any{"Error": "The hub's store is damaged and cannot be opened (" + d + "). " + core.StoreDamageAdvice})
 			return
 		}
 		if !u.H.Access(sess.UserID).InFacility(u.H.FacilityPath()) {
@@ -206,6 +215,11 @@ func (u *UI) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if f != nil {
 		w.WriteHeader(f.Status)
 		u.render(w, "login", map[string]any{"Error": "Login failed (HTTP " + fmt.Sprint(f.Status) + ")"})
+		return
+	}
+	if d := u.H.StoreDamaged(); d != "" && !u.H.Unlocked() {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		u.render(w, "login", map[string]any{"Error": "The hub's store is damaged and cannot be opened (" + d + "). " + core.StoreDamageAdvice})
 		return
 	}
 	core.SetSessionCookie(w, sess, u.H.Cfg.TLS, u.H.Sessions.Max)
@@ -306,7 +320,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour), "Orphans": h.Store.PendingWithoutUser(),
 		"Offline": !h.Online(), "AccountCode": h.AccountCode(), "Housekeeping": h.Stats.HousekeepingError(),
 		"Reach": reachText(h.Reach()), "Proxy": h.Proxy(), "Net": u.netView(true), "Clocks": clocks, "HubBehind": behindText(h.ClockBehind()),
-		"OwnRefusals": own,
+		"OwnRefusals": own, "StoreDamaged": h.StoreDamaged(), "DamageAdvice": core.StoreDamageAdvice,
 	})
 }
 

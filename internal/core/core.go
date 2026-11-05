@@ -91,6 +91,7 @@ type Hub struct {
 	histMu  sync.Mutex // the daily history (history.go)
 	// afterUnlock run after each unlock (the USB stick puts back restored saves).
 	afterUnlock []func() error
+	damage      storeDamage // a store SQLite calls malformed (storedamage.go)
 	// USBStatus reports the USB stick's health (nil without a stick configured).
 	USBStatus func() any
 	zoneMu    sync.Mutex
@@ -409,6 +410,7 @@ func (h *Hub) Unlock(dk hubcrypto.Key) (err error) {
 	// and saves made meanwhile failed (docs/ADVERSARIAL-TESTING.md, E1).
 	h.unlockMu.Lock()
 	defer h.unlockMu.Unlock()
+	defer func() { h.NoteStoreErr(err) }() // opening the data file finds most damage
 	if h.Store.Unlocked() {
 		return nil
 	}

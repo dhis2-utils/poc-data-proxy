@@ -123,6 +123,7 @@ func (w *Worker) Cycle(ctx context.Context) error {
 	start := time.Now()
 	h.Stats.Set(func(s *core.SyncStats) { s.CycleStart, s.Syncing = store.Now(), true })
 	err := w.cycle(ctx)
+	h.NoteStoreErr(err)
 	h.Stats.Set(func(s *core.SyncStats) {
 		s.Syncing = false
 		s.LastSync = store.Now()

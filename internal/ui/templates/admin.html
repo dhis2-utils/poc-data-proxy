@@ -5,13 +5,14 @@
 <span class="sp"></span><span class="mono">hub {{.Status.hubId}} · v{{.Status.version}}</span><a href="/hub/logout">Log out</a></header>
 <main>
 {{with .Msg}}<div class="msg">{{.}}</div>{{end}}
+{{with .StoreDamaged}}<div class="err"><b>The hub's store is damaged</b> ({{.}}). What the hub serves and saves can no longer be trusted. {{$.DamageAdvice}}</div>{{end}}
 {{with .Housekeeping}}<div class="err">The hub's housekeeping fails: {{.}}. Its heartbeat, reports of refused changes and programme list stop until a staff member takes it over under "The hub's own account" below. Staff saves are not affected.</div>{{end}}
 <div class="card"><div class="grid">
 <div class="stat"><b>{{.Status.pending}}</b><span>pending objects</span></div>
 <div class="stat"><b>{{.Status.rejected}}</b><span>rejected objects</span></div>
 <div class="stat"><b>{{.Objects}}</b><span>objects cached</span></div>
-<div class="stat"><b>{{or (short (printf "%v" .Status.lastPush)) "never"}}</b><span>last push</span></div>
-<div class="stat"><b>{{or (short (printf "%v" .Status.lastPull)) "never"}}</b><span>last pull</span></div>
+<div class="stat"><b>{{with .Status.lastPush}}{{short (printf "%v" .)}}{{else}}never{{end}}</b><span>last push</span></div>
+<div class="stat"><b>{{if .Status.lastPull}}{{short (printf "%v" .Status.lastPull)}}{{else if .Status.syncing}}first pull running{{else}}never{{end}}</b><span>last pull</span></div>
 </div>
 <p class="muted">Facility <span class="mono">{{with .Runtime}}{{.Facility}} {{.FacilityName}}{{end}}</span> · central <span class="mono">{{.Central}}</span> (DHIS2 {{.ServerVersion}}){{with .Heartbeat.lastError}} · last sync error: {{.}}{{end}}</p>
 <form class="inline" method="post" action="/hub/ui/sync"><button>Sync now</button></form>
