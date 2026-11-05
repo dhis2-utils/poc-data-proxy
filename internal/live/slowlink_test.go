@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime/pprof"
 	"sort"
 	"strconv"
 	"strings"
@@ -292,4 +293,61 @@ func TestSlowLinkSeed(t *testing.T) {
 		t.Errorf("%d batches failed", failed.Load())
 	}
 	t.Logf("seeded %d people in %s", n, time.Since(start).Round(time.Second))
+}
+
+// TestSlowLinkSearchProfile narrows down the hub's name search on the slow-link setup
+// (174 ms on 20 000 people, against central's 42 ms): variants of the query, each
+// answered by the hub offline, and a CPU profile of the slowest to HUB_PROFILE.
+func TestSlowLinkSearchProfile(t *testing.T) {
+	if os.Getenv("HUB_SLOWLINK") == "" {
+		t.Skip("set HUB_SLOWLINK=1")
+	}
+	e := tk.Start(t)
+	e.SetupAs(tk.RoleNurse)
+	m, p := e.M, slowProgram(e.M)
+	nurse := e.Web(tk.RoleNurse)
+	nurse.Login()
+	e.Sync()
+	if err := e.SetUplink(false); err != nil {
+		t.Fatal(err)
+	}
+	base := "/api/tracker/trackedEntities?program=" + p.ID
+	full := "&fields=:all,!relationships,programOwners[orgUnit,program]&pageSize=15&page=1"
+	variants := []struct{ label, path string }{
+		{"like, ACCESSIBLE, Capture's fields", base + "&orgUnitMode=ACCESSIBLE&filter=" + p.SearchAttr + ":like:Aminata%20140" + full},
+		{"like, no match", base + "&orgUnitMode=ACCESSIBLE&filter=" + p.SearchAttr + ":like:Nobody" + full},
+		{"like, common name (1 000 match)", base + "&orgUnitMode=ACCESSIBLE&filter=" + p.SearchAttr + ":like:Aminata" + full},
+		{"eq, exact name", base + "&orgUnitMode=ACCESSIBLE&filter=" + p.SearchAttr + ":eq:Aminata%20140" + full},
+		{"like, SELECTED facility", base + "&orgUnits=" + m.Facility.ID + "&orgUnitMode=SELECTED&filter=" + p.SearchAttr + ":like:Aminata%20140" + full},
+		{"like, identifiers only", base + "&orgUnitMode=ACCESSIBLE&filter=" + p.SearchAttr + ":like:Aminata%20140&fields=trackedEntity&pageSize=15"},
+		{"no filter, working list", base + "&orgUnits=" + m.Facility.ID + "&orgUnitMode=SELECTED&order=createdAt:desc" + full},
+	}
+	slowest, worst := "", time.Duration(0)
+	for _, v := range variants {
+		var ds []float64
+		for i := 0; i < 5; i++ {
+			start := time.Now()
+			st, b := nurse.Do("GET", v.path, nil)
+			d := time.Since(start)
+			if st != 200 {
+				t.Fatalf("%s: %d %.300s", v.label, st, b)
+			}
+			ds = append(ds, d.Seconds()*1000)
+			if d > worst {
+				slowest, worst = v.path, d
+			}
+		}
+		sort.Float64s(ds)
+		t.Logf("%-38s median %6.1f ms  %v", v.label, ds[2], ds)
+	}
+	if f := os.Getenv("HUB_PROFILE"); f != "" {
+		w, _ := os.Create(f)
+		pprof.StartCPUProfile(w)
+		for i := 0; i < 30; i++ {
+			nurse.Do("GET", slowest, nil)
+		}
+		pprof.StopCPUProfile()
+		w.Close()
+		t.Logf("profiled %s", slowest)
+	}
 }

@@ -56,6 +56,11 @@ func TestQueryPlansUseIndexes(t *testing.T) {
 	explain("slot origins", `SELECT slot, origin, program FROM objects WHERE slot IN (?,?)`, 1, 2)
 	explain("enrolled, owned", sqlEnrolledOwned, "p", "o", store.SyncSynced)
 	explain("enrolled, owned elsewhere", sqlEnrolledElsewhere, "p", "o", store.SyncSynced)
+	for _, cond := range []string{"a.value_lc LIKE ? ESCAPE '\\'", "a.value_lc = ?"} {
+		if p := explain("search candidates", "SELECT a.te_uid FROM te_attrs a WHERE a.attr = ? AND "+cond+" LIMIT ?", "a", "b", 1001); !strings.Contains(p, "COVERING INDEX te_attrs_lc") {
+			t.Errorf("search candidates read te_attrs rows: %s", p)
+		}
+	}
 	explain("unique", `SELECT count(*) FROM te_attrs WHERE attr = ? AND value = ? AND te_uid <> ?`, "a", "b", "c")
 	explain("old program events (pruning)", `SELECT uid FROM objects WHERE kind = ? AND program = ? AND owner_org_unit = ? AND te_uid = ''
  AND sync_state = ? AND ((occurred_at <> '' AND occurred_at < ?) OR (occurred_at = '' AND created_at < ?))

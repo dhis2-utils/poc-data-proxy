@@ -238,6 +238,10 @@ CREATE INDEX agg_forms_ds ON agg_forms(data_set, fetched_at);
 	// others, so one seen once is not repeated for ever. A new column with a constant
 	// default: existing rows are not rewritten.
 	`ALTER TABLE http_cache ADD COLUMN replayed INTEGER NOT NULL DEFAULT 0;`,
+	// 6: a search by an attribute value finds its few matches from this index rather
+	// than by reading every enrollment of the program (tracker.searchCandidates): a name
+	// nobody has took 151 ms at 100 000 people, growing with the facility (2026-11-05).
+	`CREATE INDEX te_attrs_lc ON te_attrs(attr, value_lc, te_uid);`,
 }
 
 // DataPath is the data file that belongs to the key file at path.

@@ -501,6 +501,39 @@ func (ix *Index) Search(v *Viewer, collection string, q url.Values) (*Result, *A
 	return res, nil
 }
 
+// searchCandidatesMax is how many people an attribute filter may match for its
+// matches to drive a search. Above it the search walks the program in its order, as
+// a common name fills the first page within a few rows.
+const searchCandidatesMax = 1000
+
+// searchCandidates returns, as a JSON list, the people whose attribute matches cond,
+// and whether they are few enough to drive the search. It reads only the te_attrs_lc
+// index. A filter that matches few people otherwise read every enrollment of the
+// program (151 ms at 100 000 people; docs/PERFORMANCE.md, "Name searches").
+func (ix *Index) searchCandidates(attr, cond, val string) (string, bool) {
+	if ix.store == nil || !ix.store.Unlocked() {
+		return "", false
+	}
+	rows, err := ix.store.DB().Query("SELECT a.te_uid FROM te_attrs a WHERE a.attr = ? AND "+cond+" LIMIT ?",
+		attr, val, searchCandidatesMax+1)
+	if err != nil {
+		return "", false
+	}
+	defer rows.Close()
+	var uids []string
+	for rows.Next() {
+		var uid string
+		if rows.Scan(&uid) == nil {
+			uids = append(uids, uid)
+		}
+	}
+	if rows.Err() != nil || len(uids) > searchCandidatesMax {
+		return "", false
+	}
+	b, _ := json.Marshal(uids)
+	return string(b), true
+}
+
 func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *APIError) {
 	if err := checkOrgUnits(v, q, len(listParam(q, "trackedEntities", "trackedEntity")) == 0); err != nil {
 		return nil, err
@@ -562,6 +595,11 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *API
 			cond, val = "a.value_lc = ?", strings.ToLower(f.value)
 		}
 		w.add("EXISTS (SELECT 1 FROM te_attrs a WHERE a.te_uid = "+person+" AND a.attr = ? AND "+cond+")", f.uid, val)
+		if list, few := ix.searchCandidates(f.uid, cond, val); few {
+			// The filter's few matches drive the search; the condition above still
+			// decides, so the answer is the same either way.
+			w.add(person+" IN (SELECT value FROM json_each(?))", list)
+		}
 	}
 	// Changed people are found once and checked in SQL, on the person's identifier in
 	// the index the search walks, so the rows of people who did not change are never

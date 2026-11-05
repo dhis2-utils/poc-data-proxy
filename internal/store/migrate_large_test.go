@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,4 +75,50 @@ func TestTempFilesBesideTheStore(t *testing.T) {
 	if fi, err := os.Stat(filepath.Join(dir, "tmp")); err != nil || !fi.IsDir() || (runtime.GOOS != "windows" && fi.Mode().Perm() != 0o700) {
 		t.Fatalf("temp folder: %v %v", fi, err)
 	}
+}
+
+// TestAttrIndexMigrationOnFullStore times migration 6 (te_attrs_lc) on a store with
+// HUB_PERF_ATTRS attribute values (hc4-5y: 300 000 people, about 2.4 million).
+func TestAttrIndexMigrationOnFullStore(t *testing.T) {
+	n, _ := strconv.Atoi(os.Getenv("HUB_PERF_ATTRS"))
+	if n == 0 {
+		t.Skip(`set HUB_PERF_ATTRS (e.g. 2400000, the attribute values of hc4-5y) to measure`)
+	}
+	s, err := Open(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	k, _ := hubcrypto.NewKey()
+	if err := s.SetDK(k); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB().Exec(`DROP INDEX te_attrs_lc`); err != nil {
+		t.Fatal(err)
+	}
+	attrs := []string{"AttrFirst01", "AttrLast001", "AttrSex0001", "AttrBirth01", "AttrPhone01", "AttrVillag1", "AttrIdNum01", "AttrNext001"}
+	for i := 0; i < n; i += 10000 {
+		tx, err := s.DB().Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for j := i; j < min(i+10000, n); j++ {
+			v := fmt.Sprintf("Value %d of person %d", j%len(attrs), j/len(attrs))
+			if _, err := tx.Exec(`INSERT INTO te_attrs(te_uid, attr, value, value_lc) VALUES(?,?,?,?)`,
+				fmt.Sprintf("Te%09d", j/len(attrs)), attrs[j%len(attrs)], v, strings.ToLower(v)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start := time.Now()
+	if _, err := s.DB().Exec(`PRAGMA user_version = ` + strconv.Itoa(len(dataMigrations)-1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(s.DB(), dataMigrations, true); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%d attribute values: migration 6 (te_attrs_lc) took %s", n, time.Since(start).Round(time.Millisecond))
 }
