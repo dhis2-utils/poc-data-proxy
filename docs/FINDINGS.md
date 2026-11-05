@@ -630,6 +630,31 @@ Checked on 29 October on DHIS2 2.43.2 (the eRegisters instance), with a hub in f
 
 Not measured: memory with several large downloads at once on a Pi (the 10 MB default bounds each). Android was not run (no tablet attached); the steps are in docs/ADVERSARIAL-TESTING.md, "Images and files on Android".
 
+## A slow uplink and search filters
+
+From the field visits of 28–29 October 2026 (Butaaka and St Joseph Buyege HC, Uganda; notes shared 5 November) and the measurements that followed on 5 November (PERFORMANCE.md, "A slow uplink"). Staff enter data on paper first and type it in later. A registration took about a minute, 3 minutes on a poor network, and Buyege measured 31 KB/s.
+
+**Fixed, 5 November:**
+
+- **A name search that few people match read every enrollment of the program.** It took 151 ms at 100 000 people and grew with the facility; a common name was fast because the first page filled early. The matches are now looked up first in an index on the lowercased value (`te_attrs_lc`, migration 6), and up to 1 000 of them drive the search. Nobody: 151 → 20 ms; a common name 1.7 → 2.0 ms.
+- **Offline the hub answered only three filter operators.** Any other got 400 "not supported offline". Capture web 107.8.5 sends a range (`ge`, `le`) for every number and date attribute, date of birth included, and `sw` or `ew` for text when an attribute's `preferredSearchOperator` says so (2.41+). Android's SDK (master, 14 October 2026) sends upper-case operators on person searches, the old lower-case ones on events (`!eq` for not equal), and filters on the person's attributes in `filterAttributes` on events. The hub now answers every operator of the tracker API as central does, on attributes (person searches, in SQL) and data values (event lists, in Go), and `filterAttributes`. It needs each attribute's and data element's value type, now kept in the catalog. `internal/live.TestFilterOperatorParity` compares 1 663 filters on probe records with central, on 2.42 and 2.43, and `TestFilterSQLMatchesGo` holds the two paths to the same answers. The rules, from the probes on 2.43 and from DHIS2's code (`QueryOperator`, `FilterJdbcPredicate`, branch 2.43):
+  - Text compares case-insensitively, accents included; `like` means "contains", with `%` and `_` taken literally; `in` splits on `;`. A comma separates filters, so `eq:Red,Blue` is refused (the second part is not a UID).
+  - Decimals (NUMBER, PERCENTAGE, UNIT_INTERVAL) compare as numbers for `eq`, `ne`, `in` and the ranges (`10.0` and `1e1` find 10); integers (INTEGER types) too, but refuse `10.0` and `1e1`; an operand that is not a number gets 400. `like`, `sw` and `ew` read the stored text. `ieq` and `nieq` do not cast: on data values they compare numbers as text (on attributes, as numbers, as measured).
+  - Dates, booleans and every other type compare as lower-cased text.
+  - A leading `!` means the "n" form: `!eq` is `neq`, `!like` is `nlike`; `!in` is refused. A bare `filter=<uid>` means `!null`.
+  - The negations leave out records without a value. MULTI_TEXT is a comma-separated list matched item by item; there a data value that is missing passes `ne` and `nlike`, and `nieq` is accepted on attributes only.
+  - 2.42 differs: MULTI_TEXT is plain text there (`eq:red` does not find "Red,Blue"), and `ieq` and `nieq` compare numbers as text on attributes too. The hub follows central's version.
+  - Ranges on text follow the central database's collation ("Åsa" sorts with the a's, punctuation is ignored at first). The hub cannot know it, so offline these answer "needs connection". No app seen sends them.
+- **The hub accepted event UIDs together with a filter.** Central refuses them (E1003, "Event UIDs and filters can not be specified at the same time"); the hub now does too.
+
+**Open:**
+
+- **Answering staff from the hub while online.** Through the hub at 31 KB/s, opening Capture web took 67 s, against 0.9 s answered by the hub; screens inside the app took up to 1.3 s, against 0.1 s. A setting per programme, in the shape of the retention table, would be small. Costs: changes made elsewhere reach staff at the hub's next pull, and central judges saves at the push, as offline today. A device's metadata sync still passes to central while the hub is online: the hub keeps metadata per user, loaded at that user's online login. Not decided.
+- **The demo central does not compress its answers.** A 212 KB listing and `/api/me` came back uncompressed when asked for gzip (5 November). Compressed, the weekly full pull at 31 KB/s took 2 minutes; uncompressed, 6. Most national servers compress at their proxy; worth checking per country.
+- **Offline the hub answers `orgUnits` together with `orgUnitMode=ACCESSIBLE`, which central refuses** (2.43: 400 E1003, "orgUnitMode ACCESSIBLE cannot be used with orgUnits"). Small; to align once checked on 2.42.
+- **The oracle's event list ordered by `scheduledAt` ascending differed once on 2.42** (5 November): central and the hub agreed on the first five events of page 1, then broke a tie differently. Run again on the same instance, main's code and this branch's both matched (116 known differences each, the same as before). It depends on the data at the time; not narrowed down.
+- **DHIS2: a person with no attribute values is refused with misleading errors** (2.43.2, as superuser): "Could not find TrackedEntityType" (E1005) or "Could not find OrganisationUnit … linked to Enrollment" (E1070), while the same person with one attribute value is accepted. Seen twice while seeding the parity test; not narrowed down.
+
 ## Found by adversarial testing (docs/ADVERSARIAL-TESTING.md)
 
 Found on 2026-10-27 by the adversarial scenarios (`internal/adversarial`), run against DHIS2 2.42.7 with the testkit's network switch between the hub and central. The result of each scenario is in ADVERSARIAL-TESTING.md, "Progress".

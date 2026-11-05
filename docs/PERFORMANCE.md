@@ -206,6 +206,44 @@ Question (2026-10-28): how fast does the hub push a backlog to a real DHIS2 over
 
 **Proposed, not built.** In `sync.cycle`, push again at once while a push makes progress, and run the housekeeping once after that, rather than once per push through `TriggerSync`. At 2 saves/s on 4G this would remove the 322 s of waits and the 61 cycles. The following pushes would each hold a few entries, so the outbox would empty and saves would pass through again. That outcome is estimated from the numbers above, not measured.
 
+## A slow uplink (2026-11-05)
+
+Question: the field visits of 28–29 October (Butaaka and St Joseph Buyege HC, Uganda) found staff entering data on paper first and typing it in later. Registering a patient took about a minute, and 3 minutes on a poor network; Buyege measured 31 KB/s. Do the hub's pulls fit such a link, and how much would answering staff from the hub while online save?
+
+`internal/live.TestSlowLinkPulls` and `TestSlowLinkWorkflow` (`HUB_SLOWLINK=1`) ran against `agent-slowlink-43` (2.43, Sierra Leone database) as the nurse at Ngelehun CHC. `TestSlowLinkSeed` first gave the facility 19 800 people in the Child Programme, each with an event in both stages, the size of Ngelehun on the demo central (20 841): 80 844 objects on the hub. The test kit's link (`Netcut`) set the rate and added 200 ms to each request on the slow links. It compressed answers as nginx in front of a DHIS2 usually does (`SetGzip`); one run went without, as the demo central answered on 5 November (a 212 KB listing and `/api/me` came back uncompressed when asked for gzip).
+
+| What one sync cycle asked of central | Full speed | 3 000 KB/s | 31 KB/s | 31 KB/s, uncompressed |
+|---|---|---|---|---|
+| First fill (set-up and first pull) | 84 s, 3.9 MB | | | |
+| Sync, nothing changed (50 requests) | 1.4 s, 0.23 MB | 14 s | 22 s | 39 s, 0.79 MB |
+| Weekly full pull, nothing changed (90 requests) | 19 s, 1.5 MB | 49 s | 2 min 3 s | 5 min 44 s, 9.2 MB |
+
+The weekly full pull lists identifiers and update times only (`compat.pullValues`, `idsOnly`) and fetches what changed, so at this size it costs little even at 31 KB/s. Compression matters more than anything the hub does: a page of 1 000 listed people is 307 KB plain and 47 KB compressed, and 50 people in full 148 KB and 5 KB. On the 3 000 KB/s link the 200 ms per request costs more than the bandwidth. Six requests of each test sync (0.2 MB) are the ownership check, which the test kit runs every cycle; in the field it runs hourly (`ownership_check_interval`).
+
+| One request of the workflow (median of 3) | Through to central, 3 000 KB/s | Through to central, 31 KB/s | Answered by the hub |
+|---|---|---|---|
+| Register a person (reserve IDs, save) | 0.25 s | 0.28 s | 4 ms |
+| Find by name | 0.24 s | 0.27 s | 174 ms, then 11 ms after the fix below |
+| Open the person | 0.24 s | 0.27 s | 1 ms |
+| Working list (15 newest) | 0.27 s | 0.36 s | 3 ms |
+| Save an event | 0.24 s | 0.28 s | 3 ms |
+| The next room opens it (another user) | 0.28 s | 0.31 s | under 1 ms |
+
+On a clean link a single compressed request takes about a quarter of a second, mostly latency, whatever the bandwidth. That does not explain minutes per registration. Screens make many requests each (below), and real links lose packets and vary; this link did neither.
+
+`TestSlowLinkScreens` (`HUB_CLIENTS=1`, `clients/slowlink_screens.py`) timed Capture web in Chromium through the hub, as the nurse. The browser kept the app's files from a first visit, and each screen after the app's start was reached inside the app, as staff move. Medians of 3:
+
+| Capture web | Through to central, full speed | 3 000 KB/s | 31 KB/s | Answered by the hub |
+|---|---|---|---|---|
+| Opening the app (55 requests) | 1.4 s | 15 s | 67 s | 0.9 s |
+| Working list (5 requests) | 0.10 s | 0.34 s | 0.35 s | 0.09 s |
+| A person's dashboard (14–19 requests) | 0.14 s | 1.3 s | 1.3 s | 0.08 s |
+| The registration form, ready to fill (4–5 requests) | 0.29 s | 0.8 s | 0.8 s | 0.24 s |
+
+Opening the app is where a slow link costs: over a minute at 31 KB/s against under a second from the hub. The screens inside the app cost a second at most. Registering a patient online through the hub is then about a second of waiting plus the typing, on a clean link. The minutes reported from the field fit app starts (a page reload is one), a central that does not compress, and links that lose packets, which this test did not model.
+
+**Name searches.** The hub's own answer to a name search was the slowest step: 174 ms. A filter that few people match read every enrollment of the program and checked each, so the time grew with the facility (`internal/perf.TestQueries`, "nobody (full scan)": 7.5 ms at 20 000 generated people, 151 ms at 100 000). Common names were fast because the first page filled early. Now the matches are looked up first in a covering index on the lowercased value (`te_attrs_lc`, migration 6), and up to 1 000 of them drive the search; the filter itself is unchanged. At 100 000 people: nobody 151 → 20 ms, a common name 1.7 → 2.0 ms, first and last name 4.8 → 21.5 ms (each filter reads its attribute's index entries). On the Sierra Leone setup every variant took 6–11 ms, from 170. The migration took 5.4 s on 2.4 million attribute values (`internal/store.TestAttrIndexMigrationOnFullStore`, `HUB_PERF_ATTRS`, the hc4-5y size).
+
 ## Ten hours in the sandbox (2026-10-29)
 
 Question: does a hub stay flat over hours of work with outages and power cuts, and does every confirmed save reach central? This is the sandbox part of M1 (docs/ADVERSARIAL-TESTING.md). The 72 hours on the Pi 5 follow in the next section.
@@ -505,3 +543,4 @@ Each page read and sorted the program's events; `objects_events` (creation order
 - **2026-10-29, a week offline at HC IV size.** 21 000 saves offline at 300 000 people: memory 150–210 MB, answers flat; drained in 43 minutes over 4G and 49 s unlimited; every save on central, and on a real DHIS2 21 020 saves in a 12.5-minute cycle (section "A week offline at HC IV size"). Found: Android incremental syncs re-downloaded every person written during the outage (fixed 30 October).
 - **2026-10-30 to 11-02, 72 hours on the Pi 5.** 36 757 saves at 4 times an HC IV's rate, 4 outages and 5 power cuts: memory median 80 MB, the data folder 87 MB a day, 6.2 GB written a day; every confirmed save on central (section "72 hours on the Pi 5").
 - **2026-11-03, Android syncs on the Pi 4's card.** Incremental syncs of 220 people took 58 s on `rpi4`: the fake central's people, dated at its start, were candidates for 24 hours, and each was checked by reading its children. `changedTEs` now leaves out people with nothing written on the hub whose newest row is older than `updatedAfter`. In the sandbox at 60 k: 5.4 s → 0.37 s alone, 8.2 → 0.9 s six at once (section "Android syncs on the Pi 4's card").
+- **2026-11-05, a slow uplink; name searches.** At Ngelehun CHC size (20 000 people) the weekly full pull took 2 minutes at 31 KB/s compressed and 6 minutes uncompressed; single requests through to central took about 0.3 s, answered by the hub 1–4 ms (section "A slow uplink"). A name search that few people match read every enrollment of the program: 151 ms at 100 000 people. Its matches now drive the search from an index: 20 ms.

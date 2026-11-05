@@ -5,7 +5,11 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime/pprof"
 	"sort"
 	"strconv"
@@ -349,5 +353,67 @@ func TestSlowLinkSearchProfile(t *testing.T) {
 		pprof.StopCPUProfile()
 		w.Close()
 		t.Logf("profiled %s", slowest)
+	}
+}
+
+// TestSlowLinkScreens times Capture web screens through the hub on a slow uplink,
+// passed through to central and answered by the hub (clients/slowlink_screens.py;
+// HUB_SLOWLINK=1 and HUB_CLIENTS=1).
+func TestSlowLinkScreens(t *testing.T) {
+	if os.Getenv("HUB_SLOWLINK") == "" || os.Getenv("HUB_CLIENTS") == "" {
+		t.Skip("set HUB_SLOWLINK=1 and HUB_CLIENTS=1 to time Capture web screens")
+	}
+	e := tk.Start(t)
+	e.Net.SetGzip(true)
+	e.SetupAs(tk.RoleNurse)
+	m, p := e.M, slowProgram(e.M)
+	nurse := e.Web(tk.RoleNurse)
+	nurse.Login()
+	e.Sync()
+	var enr struct {
+		Enrollments []struct{ Enrollment string } `json:"enrollments"`
+	}
+	if err := e.Central.JSON("GET", "/api/tracker/enrollments?program="+p.ID+"&orgUnits="+m.Facility.ID+
+		"&orgUnitMode=SELECTED&pageSize=1&fields=enrollment", nil, &enr); err != nil || len(enr.Enrollments) == 0 {
+		t.Fatalf("an enrollment to open: %v", err)
+	}
+	control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		switch r.URL.Path {
+		case "/link":
+			rate, _ := strconv.Atoi(r.URL.Query().Get("rate"))
+			delay, _ := strconv.Atoi(r.URL.Query().Get("delay"))
+			e.Net.SetRate(rate)
+			e.Net.SetDelay(time.Duration(delay) * time.Millisecond)
+		case "/offline":
+			err = e.SetUplink(false)
+		case "/online":
+			err = e.SetUplink(true)
+		}
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+		}
+	}))
+	defer control.Close()
+	out := t.TempDir()
+	if f := os.Getenv("HUB_REPORT"); f != "" {
+		out = filepath.Join(filepath.Dir(f), "screens")
+		os.MkdirAll(out, 0o755)
+	}
+	cmd := exec.Command("python3", "-I", "../../clients/slowlink_screens.py")
+	cmd.Env = append(os.Environ(), "HUB_URL="+e.Srv.URL, "CONTROL_URL="+control.URL, "HUB_USER="+nurse.User,
+		"HUB_PASSWORD="+m.Password, "ORG_UNIT="+m.Facility.ID, "PROGRAM="+p.ID,
+		"ENROLLMENT="+enr.Enrollments[0].Enrollment, "OUT="+out)
+	cmd.Stderr = os.Stderr
+	b, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("slowlink_screens.py: %v\n%s", err, b)
+	}
+	t.Log(string(b))
+	if f := os.Getenv("HUB_REPORT"); f != "" {
+		if w, err := os.OpenFile(f, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+			w.Write(append(bytes.TrimSpace(b), '\n'))
+			w.Close()
+		}
 	}
 }

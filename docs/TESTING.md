@@ -54,6 +54,10 @@ Hand-written expectations do not scale across configurations. Instead, for each 
 
 Queries come from a generator: per program and role, every search the Capture apps make (recorded endpoint lists in `testdata/<version>/`), crossed with org unit modes, attribute filters on values sampled from the data, ordering, paging and field selections, plus single-object reads for objects the user may and may not see. A difference is a finding, reported with the user, the request and both answers.
 
+Search filters have a parity test of their own (`TestFilterOperatorParity`): every operator of the tracker API, on probe records with chosen values (case, accents, numbers written as text, missing values, lists), compared with central on 2.42 and 2.43 (FINDINGS.md, "A slow uplink and search filters").
+
+**Candidate, not built:** DHIS2 core's own tests as a source of queries. `dhis-test-e2e` sends HTTP requests with fixtures of its own (`TrackerExportTest`, `EventFiltersTest`); `dhis-test-integration` lists the edge cases core cares about (`FilterExporterTest`, `OrderAndPaginationExporterTest`). Their requests and fixtures, not their assertions, would feed the oracle: import a fixture set into a disposable instance, send each read the hub answers offline to central and to the hub, compare. The work is mostly in mapping their org units and users onto a hub's facility and access.
+
 Writes are checked the same way after the fact: what reaches central through the hub's outbox must equal what the same user writing online would have produced, including author, dates and rejections.
 
 ### 4. Real clients
