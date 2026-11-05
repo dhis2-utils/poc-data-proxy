@@ -2,6 +2,7 @@ package testkit
 
 import (
 	"bytes"
+	"compress/gzip"
 	"io"
 	"net"
 	"net/http"
@@ -24,6 +25,7 @@ type Netcut struct {
 	down    atomic.Bool
 	delay   atomic.Int64                  // nanoseconds added to every request
 	rate    atomic.Int64                  // bytes per second each way; 0: unlimited
+	gzip    atomic.Bool                   // compress answers, as a reverse proxy in front of central does (SetGzip)
 	held    atomic.Pointer[chan struct{}] // half open while set: closed to release
 	refused atomic.Int64                  // requests cut while down
 	version atomic.Pointer[string]        // central's version as /api/system/info answers it (SetVersion)
@@ -189,7 +191,14 @@ func NewNetcut(target string) (*Netcut, error) {
 			if bps := n.rate.Load(); bps > 0 {
 				m.ResponseWriter = &slowWriter{ResponseWriter: w, bps: bps}
 			}
-			rp.ServeHTTP(m, r)
+			if n.gzip.Load() && strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+				// The meter counts what crosses the link: the compressed bytes.
+				z := &gzipWriter{ResponseWriter: m}
+				rp.ServeHTTP(z, r)
+				z.close()
+			} else {
+				rp.ServeHTTP(m, r)
+			}
 			record(m.status, m.bytes)
 			return
 		}
@@ -299,6 +308,10 @@ func servePortal(w http.ResponseWriter, kind string) {
 }
 
 var versionRe = regexp.MustCompile(`"version"\s*:\s*"[^"]*"`)
+
+// SetGzip compresses central's answers when the hub asks for it, as nginx in front of
+// a DHIS2 usually does; a DHIS2 on its own (Tomcat) answers uncompressed.
+func (n *Netcut) SetGzip(on bool) { n.gzip.Store(on) }
 
 // SetRate limits the link to bps bytes per second each way (0: unlimited), as a slow
 // mobile uplink; SetDelay adds its latency.
@@ -518,5 +531,51 @@ func (s *slowWriter) Write(p []byte) (int, error) {
 func (s *slowWriter) Flush() {
 	if f, ok := s.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
+	}
+}
+
+// gzipWriter compresses an answer that is not compressed already.
+type gzipWriter struct {
+	http.ResponseWriter
+	zw      *gzip.Writer
+	decided bool
+}
+
+func (g *gzipWriter) WriteHeader(status int) {
+	if g.decided {
+		return
+	}
+	g.decided = true
+	h := g.ResponseWriter.Header()
+	if h.Get("Content-Encoding") == "" && status == http.StatusOK {
+		h.Set("Content-Encoding", "gzip")
+		h.Del("Content-Length")
+		g.zw = gzip.NewWriter(g.ResponseWriter)
+	}
+	g.ResponseWriter.WriteHeader(status)
+}
+
+func (g *gzipWriter) Write(b []byte) (int, error) {
+	if !g.decided {
+		g.WriteHeader(http.StatusOK)
+	}
+	if g.zw != nil {
+		return g.zw.Write(b)
+	}
+	return g.ResponseWriter.Write(b)
+}
+
+func (g *gzipWriter) Flush() {
+	if g.zw != nil {
+		g.zw.Flush()
+	}
+	if f, ok := g.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (g *gzipWriter) close() {
+	if g.zw != nil {
+		g.zw.Close()
 	}
 }
