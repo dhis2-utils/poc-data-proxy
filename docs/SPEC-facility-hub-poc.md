@@ -272,7 +272,7 @@ Implement for the target version:
 - `GET /api/tracker/events`, `/events/{uid}`
 - `GET /api/tracker/relationships`
 
-Query parameters to support: `orgUnits`/`orgUnit`, `orgUnitMode` (SELECTED only; others refused), `program`, `programStage`, `trackedEntity`, `trackedEntityType`, `enrollment`, `filter` (attribute filters with `eq`, `like`, `ilike`), `status`, `enrollmentStatus`, `updatedAfter`, `occurredAfter`, `occurredBefore`, `scheduledAfter`, `scheduledBefore`, `order`, `page`, `pageSize`, `totalPages`, `paging`, `fields`.
+Query parameters to support: `orgUnits`/`orgUnit`, `orgUnitMode` (SELECTED only; others refused), `program`, `programStage`, `trackedEntity`, `trackedEntityType`, `enrollment`, `filter` (every operator of the tracker API, on attributes and data values, since 2026-11-05: `internal/tracker/filter.go`), `status`, `enrollmentStatus`, `updatedAfter`, `occurredAfter`, `occurredBefore`, `scheduledAfter`, `scheduledBefore`, `order`, `page`, `pageSize`, `totalPages`, `paging`, `fields`.
 
 For `fields`, return the full stored object and then filter out nested objects the user cannot see. Do not implement field selection syntax in the POC beyond `*` and the nested collections (`enrollments`, `events`, `relationships`, `attributes`).
 

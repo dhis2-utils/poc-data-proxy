@@ -522,8 +522,12 @@ func (h *Hub) Viewer(userID int64) *tracker.Viewer {
 	if rt := h.Runtime(); rt != nil {
 		path = rt.FacilityPath
 	}
-	return &tracker.Viewer{UserID: userID, Access: acc, Facility: h.Facility(), Catalog: h.Catalog(),
+	v := &tracker.Viewer{UserID: userID, Access: acc, Facility: h.Facility(), Catalog: h.Catalog(),
 		AccessibleAsFacility: h.Cfg.OfflineSearchFacility, SearchScope: path != "" && acc.SearchesIn(path)}
+	if api := h.API(); api != nil {
+		v.Major = api.Major()
+	}
+	return v
 }
 
 // UpstreamAuth is how calls to central authenticate for a stored user: their PAT, or

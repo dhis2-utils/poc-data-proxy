@@ -308,7 +308,7 @@ func (v42) JobNotifications(jobID, status string, s tracker.Stats, at string) an
 // the expiry fields decide when events are too old to save (E1047), and the two
 // select*DatesInFuture whether an enrollment may be dated after today (E1020, E1021).
 func (v42) ProgramFields(af string) string {
-	return "id,name,onlyEnrollOnce,trackedEntityType[id,trackedEntityTypeAttributes[" + af + "]],programStages[id,sortOrder,repeatable]," +
+	return "id,name,onlyEnrollOnce,trackedEntityType[id,trackedEntityTypeAttributes[" + af + "]],programStages[id,sortOrder,repeatable,programStageDataElements[dataElement[id,valueType]]]," +
 		"categoryCombo[id,isDefault],programTrackedEntityAttributes[" + af + "],expiryPeriodType,expiryDays,completeEventsExpiryDays," +
 		"selectEnrollmentDatesInFuture,selectIncidentDatesInFuture"
 }

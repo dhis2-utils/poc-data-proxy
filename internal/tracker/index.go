@@ -320,6 +320,9 @@ type Viewer struct {
 	Access      *access.List
 	Facility    string
 	Catalog     *access.Catalog
+	// Major is central's DHIS2 major version (42, 43); search filters follow its rules
+	// (filterKind). 0 when unknown: the newest rules.
+	Major int
 	// IncludeDeleted: the request asked for includeDeleted=true (Android's download),
 	// so tombstones are read too, marked deleted. Otherwise they are not there.
 	IncludeDeleted bool
@@ -329,6 +332,15 @@ type Viewer struct {
 
 	payloads map[string]M      // full payloads loaded for this request (prefetch)
 	related  map[string][]*Obj // children looked up for this request (enrollmentsFor and the like)
+}
+
+// valueType is the value type of an attribute or data element, "" if the catalog
+// does not say (one from before value types: filters then compare as text).
+func (v *Viewer) valueType(uid string) string {
+	if v.Catalog == nil {
+		return ""
+	}
+	return v.Catalog.ValueTypes[uid]
 }
 
 // gone is the answer to a search whose client has gone (nginx's code: nobody reads it).

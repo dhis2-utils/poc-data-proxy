@@ -221,6 +221,11 @@ type Catalog struct {
 	// ComboAOCs: each such combination's option combinations.
 	AOCs      map[string][]string `json:"aocs,omitempty"`
 	ComboAOCs map[string][]string `json:"comboAocs,omitempty"`
+	// ValueTypes: each attribute's and stage data element's value type (NUMBER, DATE,
+	// TEXT, ...), which decides how a search filter compares (tracker/filter.go).
+	// Catalogs from before this field have none: filters then compare as text until the
+	// next refresh.
+	ValueTypes map[string]string `json:"valueTypes,omitempty"`
 }
 
 // TETs lists the tracked entity types of the catalog's programs, sorted.
@@ -248,6 +253,14 @@ func (c *Catalog) Merge(o *Catalog) {
 	for tet, as := range o.TETAttributes {
 		if _, ok := c.TETAttributes[tet]; !ok {
 			c.TETAttributes[tet] = as
+		}
+	}
+	for id, vt := range o.ValueTypes {
+		if c.ValueTypes == nil {
+			c.ValueTypes = map[string]string{}
+		}
+		if _, ok := c.ValueTypes[id]; !ok {
+			c.ValueTypes[id] = vt
 		}
 	}
 	for aoc, opts := range o.AOCs {

@@ -510,12 +510,12 @@ const searchCandidatesMax = 1000
 // and whether they are few enough to drive the search. It reads only the te_attrs_lc
 // index. A filter that matches few people otherwise read every enrollment of the
 // program (151 ms at 100 000 people; docs/PERFORMANCE.md, "Name searches").
-func (ix *Index) searchCandidates(attr, cond, val string) (string, bool) {
+func (ix *Index) searchCandidates(attr, cond string, args []any) (string, bool) {
 	if ix.store == nil || !ix.store.Unlocked() {
 		return "", false
 	}
 	rows, err := ix.store.DB().Query("SELECT a.te_uid FROM te_attrs a WHERE a.attr = ? AND "+cond+" LIMIT ?",
-		attr, val, searchCandidatesMax+1)
+		append(append([]any{attr}, args...), searchCandidatesMax+1)...)
 	if err != nil {
 		return "", false
 	}
@@ -589,17 +589,8 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *API
 	if program != "" {
 		person = "e.te_uid"
 	}
-	for _, f := range filters {
-		cond, val := "a.value_lc LIKE ? ESCAPE '\\'", likePattern(f.value)
-		if f.op == "eq" {
-			cond, val = "a.value_lc = ?", strings.ToLower(f.value)
-		}
-		w.add("EXISTS (SELECT 1 FROM te_attrs a WHERE a.te_uid = "+person+" AND a.attr = ? AND "+cond+")", f.uid, val)
-		if list, few := ix.searchCandidates(f.uid, cond, val); few {
-			// The filter's few matches drive the search; the condition above still
-			// decides, so the answer is the same either way.
-			w.add(person+" IN (SELECT value FROM json_each(?))", list)
-		}
+	if err := ix.attrSQL(v, w, filters, person); err != nil {
+		return nil, err
 	}
 	// Changed people are found once and checked in SQL, on the person's identifier in
 	// the index the search walks, so the rows of people who did not change are never
@@ -863,6 +854,17 @@ func (ix *Index) searchEvents(v *Viewer, q url.Values, program string) (*plan, *
 	if err != nil {
 		return nil, err
 	}
+	if len(filters) > 0 && len(uids) > 0 {
+		return nil, &APIError{Status: 400, Code: "E1003", Message: "Event UIDs and filters can not be specified at the same time"}
+	}
+	kinds := make([]valueKind, len(filters))
+	for i, f := range filters {
+		vt := v.valueType(f.uid)
+		kinds[i] = v.filterKind(f, vt, true)
+		if err := f.check(kinds[i], vt, "data element"); err != nil {
+			return nil, err
+		}
+	}
 	upd := timeFilter{"updatedAt", "updatedAfter", "updatedBefore"}
 	tfs := []timeFilter{{"occurredAt", "occurredAfter", "occurredBefore"}, {"scheduledAt", "scheduledAfter", "scheduledBefore"}}
 	w := &where{}
@@ -890,6 +892,15 @@ func (ix *Index) searchEvents(v *Viewer, q url.Values, program string) (*plan, *
 	if err := updatedSince(w, "ev", q); err != nil {
 		return nil, err
 	}
+	// Filters on the person's attributes (Android's filterAttributes): events of
+	// people who match, as person searches apply them.
+	attrFilters, err := parseFilterParam(q, "filterAttributes")
+	if err != nil {
+		return nil, err
+	}
+	if err := ix.attrSQL(v, w, attrFilters, "ev.te_uid"); err != nil {
+		return nil, err
+	}
 	byValue := len(filters) > 0
 	for _, p := range splitList(q.Get("order")) {
 		f, _, _ := strings.Cut(p, ":")
@@ -905,8 +916,8 @@ func (ix *Index) searchEvents(v *Viewer, q url.Values, program string) (*plan, *
 			for _, o := range cands {
 				vals := attrValues(ix.fullFor(v, o), "dataValues", "dataElement")
 				match := true
-				for _, f := range filters {
-					if !f.match(vals) {
+				for i, f := range filters {
+					if !f.matchDataValue(vals, kinds[i]) {
 						match = false
 						break
 					}

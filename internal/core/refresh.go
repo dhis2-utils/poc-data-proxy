@@ -468,12 +468,23 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 			Generated bool   `json:"generated"`
 			Unique    bool   `json:"unique"`
 			Pattern   string `json:"pattern"`
+			ValueType string `json:"valueType"`
 		} `json:"trackedEntityAttribute"`
 	}
+	type stageDE struct {
+		DataElement struct {
+			ID        string `json:"id"`
+			ValueType string `json:"valueType"`
+		} `json:"dataElement"`
+	}
+	valueTypes := map[string]string{}
 	conv := func(as []attr) []access.AttrMeta {
 		out := []access.AttrMeta{}
 		for _, a := range as {
 			t := a.TrackedEntityAttribute
+			if t.ValueType != "" {
+				valueTypes[t.ID] = t.ValueType
+			}
 			out = append(out, access.AttrMeta{ID: t.ID, Generated: t.Generated, Unique: t.Unique, Pattern: t.Pattern})
 		}
 		return out
@@ -488,9 +499,10 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 				TrackedEntityTypeAttributes []attr `json:"trackedEntityTypeAttributes"`
 			} `json:"trackedEntityType"`
 			ProgramStages []struct {
-				ID         string `json:"id"`
-				SortOrder  int    `json:"sortOrder"`
-				Repeatable bool   `json:"repeatable"`
+				ID         string    `json:"id"`
+				SortOrder  int       `json:"sortOrder"`
+				Repeatable bool      `json:"repeatable"`
+				DEs        []stageDE `json:"programStageDataElements"`
 			} `json:"programStages"`
 			CategoryCombo struct {
 				ID        string `json:"id"`
@@ -508,7 +520,7 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 			SelectIncidentDatesInFuture    *bool  `json:"selectIncidentDatesInFuture"`
 		} `json:"programs"`
 	}
-	af := "trackedEntityAttribute[id,generated,unique,pattern]"
+	af := "trackedEntityAttribute[id,generated,unique,pattern,valueType]"
 	path := central.Q("/api/programs", "filter", "programType:eq:WITH_REGISTRATION",
 		"filter", "organisationUnits.id:eq:"+facility,
 		"fields", programFields(h.API(), af),
@@ -517,7 +529,14 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 		return nil, err
 	}
 	c := &access.Catalog{Programs: map[string]*access.ProgramMeta{}, TETAttributes: map[string][]access.AttrMeta{},
-		TypeAttributes: map[string]bool{}}
+		TypeAttributes: map[string]bool{}, ValueTypes: valueTypes}
+	stageTypes := func(des []stageDE) {
+		for _, d := range des {
+			if d.DataElement.ValueType != "" {
+				valueTypes[d.DataElement.ID] = d.DataElement.ValueType
+			}
+		}
+	}
 	var types struct {
 		TrackedEntityTypes []struct {
 			Attributes []struct {
@@ -549,6 +568,7 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 		}
 		for _, s := range p.ProgramStages {
 			pm.Stages = append(pm.Stages, s.ID)
+			stageTypes(s.DEs)
 			if !s.Repeatable {
 				pm.NonRepeatable = append(pm.NonRepeatable, s.ID)
 			}
@@ -566,7 +586,8 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 				IsDefault *bool  `json:"isDefault"`
 			} `json:"categoryCombo"`
 			ProgramStages []struct {
-				ID string `json:"id"`
+				ID  string    `json:"id"`
+				DEs []stageDE `json:"programStageDataElements"`
 			} `json:"programStages"`
 			ExpiryPeriodType         string `json:"expiryPeriodType"`
 			ExpiryDays               int    `json:"expiryDays"`
@@ -575,7 +596,7 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 	}
 	if err := h.Central.JSON(ctx, "GET", central.Q("/api/programs", "filter", "programType:eq:WITHOUT_REGISTRATION",
 		"filter", "organisationUnits.id:eq:"+facility,
-		"fields", "id,name,categoryCombo[id,isDefault],programStages[id],expiryPeriodType,expiryDays,completeEventsExpiryDays",
+		"fields", "id,name,categoryCombo[id,isDefault],programStages[id,programStageDataElements[dataElement[id,valueType]]],expiryPeriodType,expiryDays,completeEventsExpiryDays",
 		"paging", "false"), nil, auth, &evResp); err != nil {
 		return nil, err
 	}
@@ -588,6 +609,7 @@ func (h *Hub) FetchCatalog(ctx context.Context, auth central.Auth, facility stri
 		}
 		for _, s := range p.ProgramStages {
 			pm.Stages = append(pm.Stages, s.ID)
+			stageTypes(s.DEs)
 		}
 		c.Programs[p.ID] = pm
 	}

@@ -55,7 +55,7 @@ var allowed = map[string][]string{
 		"status", "programStatus", "enrollmentStatus", "updatedAfter", "updatedBefore", "enrolledAfter",
 		"enrolledBefore", "order", "page", "pageSize", "totalPages", "paging", "skipPaging", "fields", "includeDeleted"},
 	"events": {"orgUnits", "orgUnit", "orgUnitMode", "ouMode", "program", "programStage", "trackedEntity",
-		"enrollment", "enrollments", "events", "event", "filter", "status", "enrollmentStatus", "programStatus",
+		"enrollment", "enrollments", "events", "event", "filter", "filterAttributes", "status", "enrollmentStatus", "programStatus",
 		"updatedAfter", "updatedBefore", "occurredAfter", "occurredBefore", "scheduledAfter", "scheduledBefore",
 		"order", "page", "pageSize", "totalPages", "paging", "skipPaging", "fields", "includeDeleted"},
 	"relationships": {"trackedEntity", "enrollment", "event", "order", "page", "pageSize", "totalPages", "paging",
@@ -193,33 +193,6 @@ func (f timeFilter) match(data M, q url.Values) (bool, *APIError) {
 	return true, nil
 }
 
-// valueFilter is one "uid:op:value" condition on attributes or data values.
-type valueFilter struct{ uid, op, value string }
-
-func parseFilters(q url.Values) ([]valueFilter, *APIError) {
-	var out []valueFilter
-	for _, raw := range q["filter"] {
-		for _, f := range splitUnescaped(raw, ',') {
-			parts := splitUnescaped(f, ':')
-			if len(parts) == 1 {
-				out = append(out, valueFilter{uid: parts[0]}) // "has a value" form is not supported; treat as unsupported below
-				return nil, unsupported("filter=" + parts[0])
-			}
-			for i := 1; i+1 < len(parts); i += 2 {
-				op := strings.ToLower(parts[i])
-				if op != "eq" && op != "like" && op != "ilike" {
-					return nil, unsupported("filter operator " + op)
-				}
-				out = append(out, valueFilter{uid: parts[0], op: op, value: parts[i+1]})
-			}
-			if len(parts)%2 == 0 {
-				return nil, badRequest("invalid filter: %s", f)
-			}
-		}
-	}
-	return out, nil
-}
-
 // splitUnescaped splits on sep, honouring DHIS2's "/" escape character.
 func splitUnescaped(s string, sep byte) []string {
 	var out []string
@@ -237,19 +210,6 @@ func splitUnescaped(s string, sep byte) []string {
 		}
 	}
 	return append(out, b.String())
-}
-
-func (f valueFilter) match(values map[string]string) bool {
-	v, ok := values[f.uid]
-	if !ok {
-		return false
-	}
-	switch f.op {
-	case "eq":
-		return strings.EqualFold(v, f.value)
-	default: // like, ilike: case-insensitive contains
-		return strings.Contains(strings.ToLower(v), strings.ToLower(f.value))
-	}
 }
 
 func attrValues(m M, listKey, idKey string) map[string]string {
