@@ -94,9 +94,16 @@ func listParam(q url.Values, names ...string) []string {
 	return out
 }
 
-// checkOrgUnits enforces "SELECTED only, facility only" (spec 8.2, 10.1).
-func checkOrgUnits(v *Viewer, q url.Values, required bool) *APIError {
+// checkOrgUnits enforces "SELECTED only, facility only" (spec 8.2, 10.1). own is the
+// org unit parameter central reads on this endpoint: orgUnits for people and
+// enrollments, orgUnit for events (central ignores the other name). Central refuses
+// its own parameter with a mode that already names the scope (2.42 and 2.43).
+func checkOrgUnits(v *Viewer, q url.Values, required bool, own string) *APIError {
 	mode := cmp.Or(q.Get("orgUnitMode"), q.Get("ouMode"))
+	if (mode == "ACCESSIBLE" || mode == "CAPTURE" || mode == "ALL") && len(listParam(q, own)) > 0 {
+		return &APIError{Status: 400, Code: "E1003", Message: "orgUnitMode " + mode +
+			" cannot be used with orgUnits. Please remove the orgUnit parameter and try again."}
+	}
 	ous := listParam(q, "orgUnits", "orgUnit")
 	if (mode == "ACCESSIBLE" || mode == "CAPTURE") && v.AccessibleAsFacility && len(ous) == 0 {
 		return nil // offline the hub only holds facility data: search that

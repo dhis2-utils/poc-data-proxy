@@ -535,7 +535,7 @@ func (ix *Index) searchCandidates(attr, cond string, args []any) (string, bool) 
 }
 
 func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *APIError) {
-	if err := checkOrgUnits(v, q, len(listParam(q, "trackedEntities", "trackedEntity")) == 0); err != nil {
+	if err := checkOrgUnits(v, q, len(listParam(q, "trackedEntities", "trackedEntity")) == 0, "orgUnits"); err != nil {
 		return nil, err
 	}
 	tet := q.Get("trackedEntityType")
@@ -649,7 +649,7 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *API
 func (ix *Index) searchEnrollments(v *Viewer, q url.Values, program string) (*plan, *APIError) {
 	te := q.Get("trackedEntity")
 	uids := listParam(q, "enrollments")
-	if err := checkOrgUnits(v, q, te == "" && len(uids) == 0); err != nil {
+	if err := checkOrgUnits(v, q, te == "" && len(uids) == 0, "orgUnits"); err != nil {
 		return nil, err
 	}
 	status := cmp.Or(q.Get("status"), q.Get("enrollmentStatus"), q.Get("programStatus"))
@@ -841,7 +841,7 @@ func (ix *Index) searchEvents(v *Viewer, q url.Values, program string) (*plan, *
 	te := q.Get("trackedEntity")
 	enrs := listParam(q, "enrollment", "enrollments")
 	uids := listParam(q, "events", "event")
-	if err := checkOrgUnits(v, q, te == "" && len(enrs) == 0 && len(uids) == 0); err != nil {
+	if err := checkOrgUnits(v, q, te == "" && len(enrs) == 0 && len(uids) == 0, "orgUnit"); err != nil {
 		return nil, err
 	}
 	stage := q.Get("programStage")

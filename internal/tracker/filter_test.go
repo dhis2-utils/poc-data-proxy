@@ -2,6 +2,7 @@ package tracker
 
 import (
 	"fmt"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -159,4 +160,29 @@ func onlyNumbers(uids, values []string) []string {
 		}
 	}
 	return out
+}
+
+// Central refuses the endpoint's own org unit parameter with a mode that names the
+// scope itself (2.42 and 2.43, 5 November 2026); the other name it ignores.
+func TestOrgUnitsWithScopeModeRefused(t *testing.T) {
+	v := &Viewer{Facility: "FacAbcdefgh", AccessibleAsFacility: true}
+	for _, c := range []struct {
+		query, own string
+		refused    bool
+	}{
+		{"orgUnits=FacAbcdefgh&orgUnitMode=ACCESSIBLE", "orgUnits", true},
+		{"orgUnits=FacAbcdefgh&orgUnitMode=CAPTURE", "orgUnits", true},
+		{"orgUnits=FacAbcdefgh&ouMode=ALL", "orgUnits", true},
+		{"orgUnit=FacAbcdefgh&orgUnitMode=ACCESSIBLE", "orgUnit", true},
+		{"orgUnitMode=ACCESSIBLE", "orgUnits", false},
+		{"orgUnits=FacAbcdefgh&orgUnitMode=SELECTED", "orgUnits", false},
+		{"orgUnits=FacAbcdefgh&orgUnitMode=ACCESSIBLE", "orgUnit", false}, // events ignore orgUnits
+	} {
+		q, _ := url.ParseQuery(c.query)
+		err := checkOrgUnits(v, q, false, c.own)
+		refused := err != nil && err.Status == 400 && err.Code == "E1003"
+		if refused != c.refused {
+			t.Errorf("%s (%s): %+v", c.query, c.own, err)
+		}
+	}
 }
