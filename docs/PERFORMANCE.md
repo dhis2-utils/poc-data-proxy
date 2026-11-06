@@ -208,6 +208,8 @@ Question (2026-10-28): how fast does the hub push a backlog to a real DHIS2 over
 
 ## A slow uplink (2026-11-05)
 
+What links at facilities look like, and which conditions the tests should use: docs/CONNECTIVITY.md.
+
 Question: the field visits of 28–29 October (Butaaka and St Joseph Buyege HC, Uganda) found staff entering data on paper first and typing it in later. Registering a patient took about a minute, and 3 minutes on a poor network; Buyege measured 31 KB/s. Do the hub's pulls fit such a link, and how much would answering staff from the hub while online save?
 
 `internal/live.TestSlowLinkPulls` and `TestSlowLinkWorkflow` (`HUB_SLOWLINK=1`) ran against `agent-slowlink-43` (2.43, Sierra Leone database) as the nurse at Ngelehun CHC. `TestSlowLinkSeed` first gave the facility 19 800 people in the Child Programme, each with an event in both stages, the size of Ngelehun on the demo central (20 841): 80 844 objects on the hub. The test kit's link (`Netcut`) set the rate and added 200 ms to each request on the slow links. It compressed answers as nginx in front of a DHIS2 usually does (`SetGzip`); one run went without, as the demo central answered on 5 November (a 212 KB listing and `/api/me` came back uncompressed when asked for gzip).
