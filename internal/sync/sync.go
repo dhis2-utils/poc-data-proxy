@@ -192,11 +192,18 @@ func (w *Worker) cycle(ctx context.Context) error {
 	if err := h.RenewHubToken(ctx); err != nil {
 		errs = append(errs, err)
 	}
+	hourly := false
 	if every := h.Cfg.AccessRefreshInterval; every <= 0 || time.Since(w.lastRefresh) >= every {
 		if err := w.refreshAccess(ctx, &errs); err != nil {
 			return err
 		}
-		w.lastRefresh = time.Now()
+		w.lastRefresh, hourly = time.Now(), true
+	}
+	if err := w.checkMetadata(ctx, hourly); err != nil {
+		if central.IsNetwork(err) {
+			return err
+		}
+		errs = append(errs, fmt.Errorf("metadata check: %w", err))
 	}
 	if pruned, err := h.Store.PruneKeySlots(h.Cfg.KeySlotMaxAge, 3); err != nil {
 		errs = append(errs, fmt.Errorf("key slots: %w", err))

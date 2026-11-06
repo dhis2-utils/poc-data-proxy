@@ -69,6 +69,7 @@ func (u *UI) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/hub/logout", u.handleLogout)
 	mux.HandleFunc("/hub/ui", u.admin(u.handleAdmin))
 	mux.HandleFunc("/hub/ui/sync", u.admin(u.handleSyncNow))
+	mux.HandleFunc("/hub/ui/refresh-metadata", u.admin(u.handleRefreshMetadata))
 	mux.HandleFunc("/hub/ui/uplink", u.admin(u.handleUplink))
 	mux.HandleFunc("/hub/ui/proxy", u.admin(u.handleProxy))
 	mux.HandleFunc("/hub/ui/usb", u.admin(u.handleUSB))
@@ -241,6 +242,9 @@ type userRow struct {
 	Username, LastLogin, AccessRefreshed, PATExpires string
 	Credential                                       string
 	NeedsLogin, InFacility                           bool
+	// StaleCopies: copies older than the last metadata change, fetched again from
+	// central when the user next opens those screens online (local reads only).
+	StaleCopies int
 }
 
 func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
@@ -260,8 +264,10 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 			cred = "password (PAT fallback)"
 		}
 		rows = append(rows, userRow{Username: us.Username, LastLogin: us.LastLoginAt, AccessRefreshed: us.AccessRefreshedAt,
-			PATExpires: us.PATExpires, Credential: cred, NeedsLogin: us.NeedsLogin, InFacility: h.Access(us.ID).InFacility(h.FacilityPath())})
+			PATExpires: us.PATExpires, Credential: cred, NeedsLogin: us.NeedsLogin, InFacility: h.Access(us.ID).InFacility(h.FacilityPath()),
+			StaleCopies: h.Store.CountCacheBefore(us.ID, h.MetadataCutoff(us.ID))})
 	}
+	metaChecked, metaChanged := h.MetadataTimes()
 	type issueRow struct {
 		*store.Issue
 		User    string
@@ -315,6 +321,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	u.render(w, "admin", map[string]any{
 		"Status": StatusBody(h), "Heartbeat": hubsync.Status(h), "Runtime": rt, "Programs": programs,
 		"Outbox": outbox, "Issues": irows, "Users": rows, "Names": names, "Objects": h.Index.Len(),
+		"LocalReads": len(h.LocalReads().Programs) > 0, "MetaChecked": metaChecked, "MetaChanged": metaChanged,
 		"Forced": h.Monitor.ForcedOffline(), "UplinkSwitch": h.Cfg.UplinkSwitch, "Upgrade": upgrade, "Central": h.Central.BaseURL(),
 		"ServerVersion": h.ServerVersion(), "Msg": r.URL.Query().Get("msg"),
 		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour), "Orphans": h.Store.PendingWithoutUser(),
@@ -349,6 +356,22 @@ func (u *UI) handleSyncNow(w http.ResponseWriter, r *http.Request) {
 	// first pull of a large facility takes longer than any fixed one.
 	u.H.TriggerSync()
 	http.Redirect(w, r, "/hub/ui?msg=Sync+started", http.StatusFound)
+}
+
+// handleRefreshMetadata: staff's next screens fetch metadata and settings from
+// central, not from their copies (core/metadata.go). Online only: offline there is
+// nothing to fetch them from.
+func (u *UI) handleRefreshMetadata(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Redirect(w, r, "/hub/ui", http.StatusFound)
+		return
+	}
+	if !u.H.Online() {
+		http.Redirect(w, r, "/hub/ui?msg=Needs+connection:+metadata+can+only+be+refreshed+online", http.StatusFound)
+		return
+	}
+	u.H.MetadataChanged("refreshed on the hub page")
+	http.Redirect(w, r, "/hub/ui?msg=Metadata+will+be+fetched+again+from+central+as+staff+open+their+screens", http.StatusFound)
 }
 
 // handleUplink lets a demo or test "cut the uplink" without touching the network.

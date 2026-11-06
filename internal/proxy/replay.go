@@ -91,7 +91,8 @@ func (p *Proxy) ReplayAfterLogin(sess *core.Session) {
 	r := &p.replay
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.closed || time.Since(r.last[sess.UserID]) < replayFresh {
+	// Again within the day when the hub has since learnt of a change.
+	if r.closed || (time.Since(r.last[sess.UserID]) < replayFresh && r.last[sess.UserID].After(p.H.MetadataCutoff(sess.UserID))) {
 		return
 	}
 	if r.last == nil {
@@ -128,7 +129,11 @@ func (p *Proxy) stopped() bool {
 // stored and their size in kB.
 func (p *Proxy) replayFor(userID int64, a central.Auth) (n, kb int, err error) {
 	now := time.Now()
-	uris, err := p.H.Store.ReplaySources(userID, now.Add(-replaySeen), now.Add(-replayFresh))
+	fresh := now.Add(-replayFresh) // copies fetched since are kept, unless older than a change
+	if cut := p.H.MetadataCutoff(userID); cut.After(fresh) {
+		fresh = cut
+	}
+	uris, err := p.H.Store.ReplaySources(userID, now.Add(-replaySeen), fresh)
 	if err != nil {
 		return 0, 0, err
 	}

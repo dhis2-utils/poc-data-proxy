@@ -506,6 +506,11 @@ func (h *Hub) Access(userID int64) *access.List {
 
 func (h *Hub) SetAccess(userID int64, l *access.List) error {
 	b, _ := json.Marshal(l)
+	if was := h.Access(userID); was != nil {
+		if wb, _ := json.Marshal(was); string(wb) != string(b) {
+			h.accessChanged(userID) // their metadata copies were answered for the old access
+		}
+	}
 	if err := h.Store.SetAccess(userID, b); err != nil {
 		return err
 	}

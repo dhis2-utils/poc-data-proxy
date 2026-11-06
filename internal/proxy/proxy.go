@@ -335,6 +335,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r.Header.Del("If-None-Match")
 			r.Header.Del("If-Modified-Since")
 		}
+		if copy := p.localCopy(r, sess); copy != nil {
+			served, status = "hub-copy", copy.Status
+			Write(w, copy)
+			return
+		}
 		fwd, copy := p.revalidate(r)
 		res, err := p.Forward(r.Context(), fwd, body, p.Upstream(sess))
 		if err == nil && copy != nil && res.Status == http.StatusNotModified {
@@ -352,6 +357,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					slog.Warn("cache write", "err", err)
 				}
 			}
+			if r.Method != http.MethodGet && r.Method != http.MethodHead && res.Status/100 == 2 && p.H.Store.Unlocked() &&
+				replayable(r.URL.Path, nil) {
+				// A setting or a data store entry changed through the hub: copies of it
+				// may now be out of date, for this user and others (not for messages,
+				// files and other data, which are not copies' business).
+				p.H.MetadataChanged(r.Method + " " + r.URL.Path)
+			}
 			status = res.Status
 			Write(w, p.Localize(r, res))
 			return
@@ -365,6 +377,44 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	served = "cache"
 	core.MarkOffline(w)
 	status = p.serveOffline(w, r, sess)
+}
+
+// localCopy answers a metadata or settings request from the user's own copy while
+// online, when programs are listed in localReads and the copy was fetched after the
+// last change the hub knows of (core/metadata.go). What counts as metadata is what the
+// login replay loads (replayable): not data, effects, validation or other users.
+func (p *Proxy) localCopy(r *http.Request, sess *core.Session) *Result {
+	if r.Method != http.MethodGet || sess == nil || sess.UserID <= 0 || !p.H.Store.Unlocked() ||
+		len(p.H.LocalReads().Programs) == 0 {
+		return nil
+	}
+	uri := r.URL.RequestURI()
+	me := meRe.MatchString(r.URL.Path)
+	// Answers that do not depend on who asks (the login page's settings and logo,
+	// languages) come from any user's copy, as offline.
+	common := strings.HasPrefix(r.URL.Path, "/api/") && shared(r.URL.Path)
+	if !me && !common && !replayable(uri, nil) {
+		return nil
+	}
+	key := uri
+	if me {
+		key = auth.MeCacheKey // kept at login, the fields selected here as offline
+	}
+	c, err := p.H.Store.GetCache(sess.UserID, http.MethodGet, key)
+	if err == nil && c == nil && common {
+		c, err = p.H.Store.GetCacheAnyUser(http.MethodGet, uri)
+	}
+	if err != nil || c == nil || !store.ParseTime(c.FetchedAt).After(p.H.MetadataCutoff(sess.UserID)) {
+		return nil
+	}
+	res := &Result{Status: c.Status, Header: c.Header, Body: c.Body}
+	if me {
+		res = &Result{Status: 200, Header: http.Header{"Content-Type": {"application/json;charset=UTF-8"}},
+			Body: selectFields(c.Body, r.URL.Query().Get("fields"))}
+	}
+	res = p.Localize(r, res)
+	res.Header.Set("X-Hub-Cache", "local; fetched="+c.FetchedAt)
+	return res
 }
 
 // revalidate: a browser without an app's file (a new tablet, a cleared cache, an

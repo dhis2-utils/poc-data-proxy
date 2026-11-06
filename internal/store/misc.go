@@ -109,6 +109,15 @@ func (s *Store) HasCache(userID int64, anyUser bool, method, url string) bool {
 	return n > 0
 }
 
+// CountCacheBefore counts a user's copies of API answers fetched before t (apps'
+// files are checked with central at each use, so they are not counted).
+func (s *Store) CountCacheBefore(userID int64, t time.Time) int {
+	var n int
+	s.DB().QueryRow(`SELECT count(*) FROM http_cache WHERE user_id=? AND fetched_at<? AND url LIKE '/api/%' AND url NOT LIKE '/api/apps/%'`,
+		userID, t.UTC().Format(time.RFC3339Nano)).Scan(&n)
+	return n
+}
+
 // GetCacheAnyUser returns a cached response for url from any user. Only used for
 // static app files, which hold no user data.
 func (s *Store) GetCacheAnyUser(method, url string) (*CachedResponse, error) {

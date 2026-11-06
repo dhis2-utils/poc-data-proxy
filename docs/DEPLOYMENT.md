@@ -408,6 +408,27 @@ Where a programme relies on photos or documents (for example a scanned birth cer
 - **dataStore volume.** Measured on 2.42 (docs/FINDINGS.md): single-key reads and writes stay at 0.1 s up to a million entries in a namespace. Browsing slows as a namespace grows, because filters have no index on the values and deep pages read all rows before them: 0.3–0.6 s for a filter that matches little, 1.7 s for a deep page at a million. Only the issues namespace could grow without bound, hence the clean-up above.
 - **Heartbeat volume:** one key per hub, overwritten hourly, with its 90-day history inside, so the namespace does not grow. A heartbeat is about 14 KB with that history (20 KB with 100 refusal groups; the offline misses add under 1 KB): sent every cycle it was 1.3 MB a day per hub, much of it over 4G, and 650 MB a day into central for 500 hubs; hourly it is a quarter of that (measured 2026-10-21, docs/reviews/KISS-2026-10-20.md). dataStore writes are not audited (measured on 2.42 and 2.43: 5 500 heartbeat writes from 500 hubs left every audit table unchanged). 500 hubs need 0.14 writes per second; reading all their heartbeats takes about 0.1 s (docs/FINDINGS.md). No archiving is needed.
 
+### Answering staff from the hub while online (built 2026-11-06)
+
+Where the uplink is slow or unreliable, the national team can have hubs answer staff from their own copy even while central is reachable: Facility Hub app, Settings, "Answer from the hub while online", a list of programmes. Hubs read it with their other settings, within an hour. Off by default: with no programme listed, everything passes to central while online, as before. Measurements and the reasoning: docs/PERFORMANCE.md ("A slow uplink"), docs/CONNECTIVITY.md.
+
+With programmes listed, a hub answers from its copy:
+
+- **Patient data of the listed programmes:** working lists, searches within the facility, a person, their enrollments, events and relationships, once the hub has finished a full pull of the programme for that user. Searches across the district stay with central, unless a user's search scope is their facility alone. Whatever the hub cannot answer goes on to central.
+- **Metadata and settings** the user's apps asked for before (forms, rules, option sets, the user's own settings), from the copies the hub keeps for offline use.
+
+Saves, reserved IDs and validation always go to central while online.
+
+**How staff get changes.** A change made elsewhere (another facility, a district officer) reaches staff at the hub's next sync, 15 minutes by default. For metadata, a hub answers from a copy only if it is newer than the last change it knows of, and learns of changes:
+
+- hourly, asking central what metadata changed, as one member of each group of staff with the same access;
+- when the national team presses "Refresh metadata on all hubs" (Settings): every online hub within 15 minutes, an offline hub when it reconnects;
+- when someone at the facility presses "Refresh metadata now" on the hub page;
+- when a setting or data store entry is changed through the hub;
+- for one user, when their access changes.
+
+The hourly check does not see deletions (central lists them only to superusers), changes to which org units a programme or data set is assigned to (they change no `lastUpdated` on central), or changes to settings and app configuration; those reach staff at their next online login within a day, or at once with either refresh button. **After deleting metadata, reassigning forms, or changing settings that staff should see at once, press "Refresh metadata on all hubs".** Offline nothing changes: the hub serves the copies it has.
+
 ### Upgrades
 
 - **Hub software** (built 2026-10-19): the supplier publishes signed releases on GitHub (`dhis2-utils/poc-data-proxy`, tag `v<version>`; the source and the public key are built into the binary). Each country chooses which version its hubs run in the Facility Hub app's "Hub version" page, which writes `facility-hub-admin/release`, and stages it:

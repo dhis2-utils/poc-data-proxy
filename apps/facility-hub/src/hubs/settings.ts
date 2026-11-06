@@ -24,6 +24,17 @@ export const localReadsValue = (
     stored?: LocalReads | null
 ): LocalReads => ({ ...stored, programs: [...programs].sort() })
 
+/**
+ * facility-hub-config/metadataReload: a time the hubs have not seen makes each of
+ * them fetch metadata and settings from central again (core/metadata.go).
+ */
+export type MetadataReload = { at?: string; [field: string]: unknown }
+
+export const metadataReloadValue = (
+    now: Date,
+    stored?: MetadataReload | null
+): MetadataReload => ({ ...stored, at: now.toISOString() })
+
 /** facility-hub-config/aggregate: periods kept, the current one included (0: the default). */
 export type AggregateRetention = {
     retentionPeriods?: number

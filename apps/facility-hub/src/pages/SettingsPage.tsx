@@ -22,6 +22,8 @@ import {
     limits,
     LocalReads,
     localReadsValue,
+    MetadataReload,
+    metadataReloadValue,
     Retention,
     retentionForm,
     retentionValue,
@@ -307,6 +309,47 @@ const LocalReadsCard = ({ stored }: { stored: LocalReads | null }) => {
     )
 }
 
+const MetadataReloadCard = ({ stored }: { stored: MetadataReload | null }) => {
+    const { save } = useAdminEntry<MetadataReload>(
+        'facility-hub-config',
+        'metadataReload'
+    )
+    return (
+        <div className={styles.card}>
+            <h2 className={styles.subtitle}>
+                {i18n.t('Refresh metadata on all hubs')}
+            </h2>
+            <div className={styles.muted}>
+                {i18n.t(
+                    'Hubs that answer from their own copy while online notice most metadata changes within an hour. They do not notice deletions, changes to which org units a programme or data set is assigned to, or changes to settings. After such a change, or to roll out a fix at once, refresh here: every online hub fetches metadata and settings from central again within 15 minutes, and an offline hub when it reconnects.'
+                )}
+            </div>
+            <div className={styles.muted}>
+                {stored?.at
+                    ? i18n.t('Last refresh asked for: {{- at}}', {
+                          at: new Date(stored.at).toLocaleString(),
+                      })
+                    : i18n.t('Never asked for.')}
+            </div>
+            {save.error ? (
+                <NoticeBox error title={i18n.t('Could not save')}>
+                    {(save.error as Error).message}
+                </NoticeBox>
+            ) : null}
+            <ButtonStrip>
+                <Button
+                    loading={save.isLoading}
+                    onClick={() =>
+                        save.mutate(metadataReloadValue(new Date(), stored))
+                    }
+                >
+                    {i18n.t('Refresh metadata on all hubs')}
+                </Button>
+            </ButtonStrip>
+        </div>
+    )
+}
+
 const AggregateRetentionCard = ({
     stored,
 }: {
@@ -441,8 +484,13 @@ const Settings = () => {
         'facility-hub-config',
         'localReads'
     )
+    const metadataReload = useAdminEntry<MetadataReload>(
+        'facility-hub-config',
+        'metadataReload'
+    )
     if (
         localReads.isLoading ||
+        metadataReload.isLoading ||
         retention.isLoading ||
         aggregate.isLoading ||
         tokens.isLoading ||
@@ -459,7 +507,8 @@ const Settings = () => {
         aggregate.error ??
         tokens.error ??
         reserved.error ??
-        localReads.error
+        localReads.error ??
+        metadataReload.error
     if (error) {
         return (
             <NoticeBox error title={i18n.t('Could not read the settings')}>
@@ -477,6 +526,7 @@ const Settings = () => {
             <TrackerRetention stored={retention.value ?? null} />
             <AggregateRetentionCard stored={aggregate.value ?? null} />
             <LocalReadsCard stored={localReads.value ?? null} />
+            <MetadataReloadCard stored={metadataReload.value ?? null} />
             <TokenLifetime stored={tokens.value ?? null} />
             <ReservedValues stored={reserved.value ?? null} />
         </>

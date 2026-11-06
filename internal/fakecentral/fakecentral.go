@@ -93,6 +93,9 @@ type Central struct {
 	AppFiles map[string]string
 	// NotModified counts the 304s given for AppFiles.
 	NotModified int
+	// MetadataChangedAt answers /api/metadata?filter=lastUpdated:gt:<time>: the
+	// program, as changed at this time (UTC; tests).
+	MetadataChangedAt time.Time
 	delay         time.Duration // Struggle
 	failShare     float64
 	struggled     int                        // requests counted for failShare
@@ -568,6 +571,15 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 200, map[string]any{"keyUiLocale": "en"})
+	case p == "/api/metadata" && r.Method == http.MethodGet:
+		out := map[string]any{"system": map[string]any{"version": c.Version}}
+		since, err := time.Parse("2006-01-02T15:04:05.000", strings.TrimPrefix(r.URL.Query().Get("filter"), "lastUpdated:gt:"))
+		c.mu.Lock()
+		if err == nil && c.MetadataChangedAt.After(since) {
+			out["programs"] = []any{map[string]any{"id": Program}}
+		}
+		c.mu.Unlock()
+		writeJSON(w, 200, out)
 	case p == "/api/system/info":
 		writeJSON(w, 200, map[string]any{"version": c.Version, "revision": "fake", "serverTimeZoneId": c.zone().String()})
 	case p == "/api/me":

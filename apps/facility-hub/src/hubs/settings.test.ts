@@ -5,6 +5,7 @@ import {
     aggregateForm,
     aggregateValue,
     localReadsValue,
+    metadataReloadValue,
     retentionForm,
     retentionValue,
     tokensForm,
@@ -181,5 +182,16 @@ describe('localReadsValue', () => {
     })
     it('writes an empty list for none', () => {
         expect(localReadsValue([], null)).toEqual({ programs: [] })
+    })
+})
+
+describe('metadataReloadValue', () => {
+    it('writes the time, keeping other fields', () => {
+        expect(
+            metadataReloadValue(new Date('2026-11-06T13:00:00Z'), {
+                at: 'old',
+                note: 'x',
+            })
+        ).toEqual({ at: '2026-11-06T13:00:00.000Z', note: 'x' })
     })
 })

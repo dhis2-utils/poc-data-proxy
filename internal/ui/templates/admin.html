@@ -16,6 +16,7 @@
 </div>
 <p class="muted">Facility <span class="mono">{{with .Runtime}}{{.Facility}} {{.FacilityName}}{{end}}</span> · central <span class="mono">{{.Central}}</span> (DHIS2 {{.ServerVersion}}){{with .Heartbeat.lastError}} · last sync error: {{.}}{{end}}</p>
 <form class="inline" method="post" action="/hub/ui/sync"><button>Sync now</button></form>
+{{if .LocalReads}}<form class="inline" method="post" action="/hub/ui/refresh-metadata"><button class="secondary"{{if .Offline}} disabled title="needs connection"{{end}}>Refresh metadata now</button></form>{{end}}
 {{if not .UplinkSwitch}}{{else if .Forced}}<form class="inline" method="post" action="/hub/ui/uplink"><input type="hidden" name="state" value="auto"><button class="secondary">Restore uplink</button></form>
 {{else}}<form class="inline" method="post" action="/hub/ui/uplink"><input type="hidden" name="state" value="off"><button class="secondary">Simulate uplink cut</button></form>{{end}}
 <a href="/hub/ui/endpoints">Endpoint log</a>
@@ -42,11 +43,12 @@
 <p class="muted">Only where the facility's network forces a web proxy: used for central and for upgrades. Empty uses none.</p>
 <form method="post" action="/hub/ui/proxy"><label for="px">Proxy</label><input id="px" type="text" name="proxy" value="{{.Proxy}}" placeholder="http://proxy.example.org:3128"><p><button>Save</button></p></form></div>
 
+{{if .LocalReads}}<p class="muted">Metadata answered by the hub while online: last checked on central {{or (short .MetaChecked) "never"}} (central's time) · last change seen {{or (short .MetaChanged) "none"}}</p>{{end}}
 <div class="card"><h2>Programs cached</h2><ul>{{range .Programs}}<li class="mono">{{.}}</li>{{else}}<li>none</li>{{end}}</ul></div>
 
 <div class="card"><h2>Users</h2><div class="scroll"><table>
-<tr><th>Username</th><th>Last login</th><th>Access refreshed</th><th>Upstream credential</th><th>PAT expires</th><th>Facility</th><th>Needs online login</th></tr>
-{{range .Users}}<tr><td>{{.Username}}</td><td>{{short .LastLogin}}</td><td>{{short .AccessRefreshed}}</td><td>{{.Credential}}</td><td>{{short .PATExpires}}</td><td>{{if .InFacility}}yes{{else}}<b>no</b>{{end}}</td><td>{{if .NeedsLogin}}<b>yes</b>{{end}}</td></tr>{{end}}
+<tr><th>Username</th><th>Last login</th><th>Access refreshed</th><th>Upstream credential</th><th>PAT expires</th><th>Facility</th><th>Needs online login</th>{{if .LocalReads}}<th>Screens to refresh</th>{{end}}</tr>
+{{range .Users}}<tr><td>{{.Username}}</td><td>{{short .LastLogin}}</td><td>{{short .AccessRefreshed}}</td><td>{{.Credential}}</td><td>{{short .PATExpires}}</td><td>{{if .InFacility}}yes{{else}}<b>no</b>{{end}}</td><td>{{if .NeedsLogin}}<b>yes</b>{{end}}</td>{{if $.LocalReads}}<td>{{if .StaleCopies}}{{.StaleCopies}}{{end}}</td>{{end}}</tr>{{end}}
 </table></div>
 <p class="muted">The store stays locked until a known user logs in. If every staff password changed on central while the hub was locked, the old password still unlocks it offline; the new one does not, until someone logs in online (deployment guide, RECOVERY.md).</p></div>
 

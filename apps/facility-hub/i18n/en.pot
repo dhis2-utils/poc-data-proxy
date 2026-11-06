@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-11-06T08:00:19.056Z\n"
-"PO-Revision-Date: 2026-11-06T08:00:19.056Z\n"
+"POT-Creation-Date: 2026-11-06T13:33:26.994Z\n"
+"PO-Revision-Date: 2026-11-06T13:33:26.994Z\n"
 
 msgid "Approve the hub of {{- facility}}"
 msgstr "Approve the hub of {{- facility}}"
@@ -932,6 +932,12 @@ msgstr ""
 
 msgid "Programmes"
 msgstr "Programmes"
+
+msgid "Refresh metadata on all hubs"
+msgstr "Refresh metadata on all hubs"
+
+msgid "Never asked for."
+msgstr "Never asked for."
 
 msgid "Aggregate retention"
 msgstr "Aggregate retention"

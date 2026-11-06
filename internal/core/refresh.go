@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -390,6 +391,12 @@ func (h *Hub) RefreshCatalog(ctx context.Context) error {
 	}
 	if !complete {
 		cat.Merge(h.Catalog())
+	}
+	// Assigning a program to an org unit changes no lastUpdated on central, so the
+	// metadata check cannot see it; a change in the facility's programs moves the
+	// metadata cutoff here (core/metadata.go).
+	if before := h.Catalog(); before != nil && !slices.Equal(sortedIDs(before.ProgramIDs()), sortedIDs(cat.ProgramIDs())) {
+		h.MetadataChanged("the facility's programs changed")
 	}
 	if uerr := h.UpdateRuntime(func(rt *Runtime) { rt.Catalog = cat }); uerr != nil {
 		return uerr
