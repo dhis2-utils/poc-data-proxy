@@ -16,7 +16,8 @@ func TestLocalReadsWhileOnline(t *testing.T) {
 	e := newEnv(t)
 	e.central.Users["nurse_b"].SearchOrgUnits = []string{fc.District} // searches the district
 	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{
-		"localReads": json.RawMessage(`{"programs":["` + fc.Program + `"]}`)}
+		"localReads": json.RawMessage(`{"programs":["` + fc.Program + `","` + fc.EventProgram + `"]}`)}
+	e.central.SeedProgramEvent("LocEvent001", fc.EventProgram, fc.EventStage, "2026-11-01T00:00:00.000", fc.DefaultAOC)
 	e.setup()
 	a, b := e.web("nurse_a"), e.web("nurse_b")
 	a.login()
@@ -40,6 +41,9 @@ func TestLocalReadsWhileOnline(t *testing.T) {
 		"&orgUnitMode=ACCESSIBLE&filter="+fc.AttrFirstName+":like:seed")
 	local("a person without program=", "/api/tracker/trackedEntities/SeedTe00001")
 	local("an enrollment", "/api/tracker/enrollments/SeedEn00001")
+	local("an event program's list", "/api/tracker/events?program="+fc.EventProgram+"&orgUnit="+fc.Facility)
+	local("an event of an event program", "/api/tracker/events/LocEvent001")
+	local("an event of a tracker program", "/api/tracker/events/SeedEv00001")
 
 	// A user who searches the district: central answers.
 	before := central("/api/tracker/trackedEntities")
