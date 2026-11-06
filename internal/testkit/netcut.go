@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
+	"math"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -25,6 +27,7 @@ type Netcut struct {
 	down    atomic.Bool
 	delay   atomic.Int64                  // nanoseconds added to every request
 	rate    atomic.Int64                  // bytes per second each way; 0: unlimited
+	loss    atomic.Uint64                 // math.Float64bits of the packet loss rate (SetLoss)
 	gzip    atomic.Bool                   // compress answers, as a reverse proxy in front of central does (SetGzip)
 	held    atomic.Pointer[chan struct{}] // half open while set: closed to release
 	refused atomic.Int64                  // requests cut while down
@@ -132,6 +135,9 @@ func NewNetcut(target string) (*Netcut, error) {
 		}
 		if d := n.delay.Load(); d > 0 {
 			time.Sleep(time.Duration(d))
+		}
+		if loss := math.Float64frombits(n.loss.Load()); loss > 0 && rand.Float64() < 1-math.Pow(1-loss, lossPackets) {
+			time.Sleep(lossStall)
 		}
 		asked := *r.URL // the proxy rewrites r.URL
 		if rw := n.rewriteFor(r); rw != nil {
@@ -316,6 +322,18 @@ func (n *Netcut) SetGzip(on bool) { n.gzip.Store(on) }
 // SetRate limits the link to bps bytes per second each way (0: unlimited), as a slow
 // mobile uplink; SetDelay adds its latency.
 func (n *Netcut) SetRate(bps int) { n.rate.Store(int64(bps)) }
+
+// SetLoss models packet loss as TCP feels it: a lost packet waits for its resend. A
+// request stalls lossStall (the usual first retransmission timeout, RFC 6298) when any
+// of lossPackets packets of a small exchange is lost: 11 % of requests at 3 % loss,
+// 28 % at 8 %. A rough model, for docs/CONNECTIVITY.md's test conditions; fast
+// retransmits within large answers are not modelled.
+func (n *Netcut) SetLoss(rate float64) { n.loss.Store(math.Float64bits(rate)) }
+
+const (
+	lossPackets = 4
+	lossStall   = time.Second
+)
 
 // HalfOpen holds every new request without an answer or a reset, as a link whose
 // packets stop: the hub's own timeouts must free it. Requests already being answered

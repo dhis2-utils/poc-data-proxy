@@ -396,7 +396,7 @@ func (h *Hub) RefreshCatalog(ctx context.Context) error {
 	}
 	// The country's settings from the Facility Hub app (facility-hub-config).
 	for key, state := range map[string]string{"aggregate": aggRetentionKey, "retention": retentionKey, "tokens": tokenSettingsKey,
-		"reserved": reservedPoolKey} {
+		"reserved": reservedPoolKey, "localReads": localReadsKey} {
 		if cerr := h.refreshConfig(ctx, key, state); cerr != nil && central.IsNetwork(cerr) {
 			return cerr
 		}

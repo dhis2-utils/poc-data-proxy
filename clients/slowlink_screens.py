@@ -26,13 +26,21 @@ OU, PROGRAM, ENROLLMENT = os.environ["ORG_UNIT"], os.environ["PROGRAM"], os.envi
 OUT = os.environ.get("OUT", ".")
 APP = f"{HUB}/dhis-web-capture/index.html"
 
-CONDITIONS = [  # label, link rate (bytes/s, 0 = unlimited), latency (ms), answered by the hub, cache cleared
-    ("through to central, full speed", 0, 0, False, False),
-    ("through to central, 3000 KB/s", 3_000_000, 200, False, False),
-    ("through to central, 31 KB/s", 31_000, 200, False, False),
-    ("answered by the hub", 31_000, 200, True, False),
-    ("through to central, 31 KB/s, browser cache cleared", 31_000, 200, False, True),
-    ("answered by the hub, browser cache cleared", 31_000, 200, True, True),
+CONDITIONS = [  # label, link rate (bytes/s, 0 = unlimited), wait per request (ms), offline, cache cleared,
+    # packet loss, local reads (facility-hub-config/localReads lists the program). The last six are
+    # docs/CONNECTIVITY.md's test conditions.
+    ("through to central, full speed", 0, 0, False, False, 0, False),
+    ("through to central, 3000 KB/s", 3_000_000, 200, False, False, 0, False),
+    ("through to central, 31 KB/s", 31_000, 200, False, False, 0, False),
+    ("answered by the hub", 31_000, 200, True, False, 0, False),
+    ("through to central, 31 KB/s, browser cache cleared", 31_000, 200, False, True, 0, False),
+    ("answered by the hub, browser cache cleared", 31_000, 200, True, True, 0, False),
+    ("typical rural, through to central", 31_000, 1000, False, False, 0.03, False),
+    ("typical rural, local reads", 31_000, 1000, False, False, 0.03, True),
+    ("typical rural, offline", 31_000, 1000, True, False, 0.03, False),
+    ("poor, through to central", 31_000, 2000, False, False, 0.08, False),
+    ("poor, local reads", 31_000, 2000, False, False, 0.08, True),
+    ("poor, offline", 31_000, 2000, True, False, 0.08, False),
 ]
 SCREENS = [  # label, route, what shows when it is ready
     ("working list", f"/?orgUnitId={OU}&programId={PROGRAM}", "table tbody tr"),
@@ -72,7 +80,7 @@ def main():
                 detail["list"].append({"url": r.url[len(HUB):][:300], "status": resp.status if resp else None,
                                        "bytes": r.sizes()["responseBodySize"],
                                        "ms": round(t["responseEnd"] - t["requestStart"]) if t["responseEnd"] > 0 else None,
-                                       "hub": (resp.headers.get("x-hub-cache") or "") if resp else "",
+                                       "hub": (resp.headers.get("x-hub-cache") or resp.headers.get("x-hub-mode") or "") if resp else "",
                                        "conditional": "if-none-match" in r.all_headers() or "if-modified-since" in r.all_headers()})
             except Exception as e:
                 detail["list"].append({"url": r.url[len(HUB):][:300], "error": str(e)[:100]})
@@ -108,8 +116,9 @@ def main():
 
         only = os.environ.get("CONDITIONS")  # indexes into CONDITIONS, e.g. "2,3"
         chosen = [c for i, c in enumerate(CONDITIONS) if not only or str(i) in only.split(",")]
-        for label, rate, delay, local, cold in chosen:
-            control(f"link?rate={rate}&delay={delay}")
+        for label, rate, delay, local, cold, loss, localreads in chosen:
+            control(f"link?rate={rate}&delay={delay}&loss={loss}")
+            control(f"localreads?on={1 if localreads else 0}")
             if local:
                 control("offline")
             res = {}
@@ -137,7 +146,8 @@ def main():
             if local:
                 control("online")
             out["conditions"][label] = res
-        control("link?rate=0&delay=0")
+        control("link?rate=0&delay=0&loss=0")
+        control("localreads?on=0")
         ctx.close()
         shutil.rmtree(profile, ignore_errors=True)
     print(json.dumps(out))

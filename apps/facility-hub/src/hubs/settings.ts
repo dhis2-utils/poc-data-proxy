@@ -9,6 +9,21 @@ export type Retention = {
     [field: string]: unknown
 }
 
+/**
+ * facility-hub-config/localReads: programmes whose data each hub answers from its own
+ * copy while central is reachable (access.LocalReads). Saves still go to central.
+ */
+export type LocalReads = {
+    programs?: string[]
+    [field: string]: unknown
+}
+
+/** The value to write: the chosen programmes, other fields kept. */
+export const localReadsValue = (
+    programs: string[],
+    stored?: LocalReads | null
+): LocalReads => ({ ...stored, programs: [...programs].sort() })
+
 /** facility-hub-config/aggregate: periods kept, the current one included (0: the default). */
 export type AggregateRetention = {
     retentionPeriods?: number

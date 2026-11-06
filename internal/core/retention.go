@@ -13,3 +13,13 @@ func (h *Hub) Retention() access.Retention {
 	h.configState(retentionKey, &r)
 	return r
 }
+
+const localReadsKey = "localReads"
+
+// LocalReads is the list of programs answered from the hub while online, read from
+// central (facility-hub-config/localReads) at the last catalog refresh.
+func (h *Hub) LocalReads() access.LocalReads {
+	var l access.LocalReads
+	h.configState(localReadsKey, &l)
+	return l
+}

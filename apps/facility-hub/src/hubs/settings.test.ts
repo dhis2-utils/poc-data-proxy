@@ -4,6 +4,7 @@
 import {
     aggregateForm,
     aggregateValue,
+    localReadsValue,
     retentionForm,
     retentionValue,
     tokensForm,
@@ -122,7 +123,11 @@ describe('reserved-value pool', () => {
         expect(poolForm(null)).toEqual({ defaultPool: '500', attributes: [] })
     })
     it('round-trips a stored value, keeping fields it does not edit', () => {
-        const stored = { default: 800, attributes: { xs8A6tQJY0s: 3000 }, other: 1 }
+        const stored = {
+            default: 800,
+            attributes: { xs8A6tQJY0s: 3000 },
+            other: 1,
+        }
         expect(poolForm(stored)).toEqual({
             defaultPool: '800',
             attributes: [{ id: 'xs8A6tQJY0s', value: '3000' }],
@@ -162,5 +167,19 @@ describe('reserved-value pool', () => {
             poolValue({ ...form, attributes: [{ id: 'x', value: '-1' }] }, null)
         ).toBe(null)
         expect(poolValue({ ...form, defaultPool: '0' }, null)).toBe(null)
+    })
+})
+
+describe('localReadsValue', () => {
+    it('writes the chosen programmes, sorted, keeping other fields', () => {
+        expect(
+            localReadsValue(['ProgB', 'ProgA'], {
+                programs: ['Old'],
+                note: 'x',
+            })
+        ).toEqual({ programs: ['ProgA', 'ProgB'], note: 'x' })
+    })
+    it('writes an empty list for none', () => {
+        expect(localReadsValue([], null)).toEqual({ programs: [] })
     })
 })

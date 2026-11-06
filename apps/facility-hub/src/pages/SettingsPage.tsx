@@ -4,6 +4,8 @@ import {
     ButtonStrip,
     CircularLoader,
     InputField,
+    MultiSelectField,
+    MultiSelectOption,
     NoticeBox,
     SingleSelectField,
     SingleSelectOption,
@@ -18,6 +20,8 @@ import {
     AggregateRetention,
     Limits,
     limits,
+    LocalReads,
+    localReadsValue,
     Retention,
     retentionForm,
     retentionValue,
@@ -244,6 +248,65 @@ const TrackerRetention = ({ stored }: { stored: Retention | null }) => {
     )
 }
 
+const LocalReadsCard = ({ stored }: { stored: LocalReads | null }) => {
+    const { save } = useAdminEntry<LocalReads>(
+        'facility-hub-config',
+        'localReads'
+    )
+    const programs = useNamed('programs')
+    const [chosen, setChosen] = useState<string[]>(() => stored?.programs ?? [])
+    return (
+        <div className={styles.card}>
+            <h2 className={styles.subtitle}>
+                {i18n.t('Answer from the hub while online')}
+            </h2>
+            <div className={styles.muted}>
+                {i18n.t(
+                    "For these programmes, each hub answers staff from its own copy even when central is reachable, so screens do not wait on a slow or unreliable link. Saves still go to central at once. Changes made elsewhere (another facility, a district officer) reach staff at the hub's next sync, 15 minutes by default. Searches across the district still go to central, unless a user's search scope is their facility alone. Hubs read this setting within an hour."
+                )}
+            </div>
+            {programs.error && (
+                <NoticeBox error title={i18n.t('Could not load the list')}>
+                    {programs.error.message}
+                </NoticeBox>
+            )}
+            {programs.isLoading ? (
+                <CircularLoader small />
+            ) : (
+                <MultiSelectField
+                    className={styles.picker}
+                    label={i18n.t('Programmes')}
+                    placeholder={i18n.t(
+                        'None: everything goes to central while online'
+                    )}
+                    filterable
+                    noMatchText={i18n.t('No match')}
+                    selected={chosen.filter((id) =>
+                        programs.list.some((o) => o.id === id)
+                    )}
+                    onChange={({ selected }) => setChosen(selected)}
+                >
+                    {programs.list.map((o) => (
+                        <MultiSelectOption
+                            key={o.id}
+                            value={o.id}
+                            label={o.displayName}
+                        />
+                    ))}
+                </MultiSelectField>
+            )}
+            <SaveBar
+                valid
+                unset={!stored}
+                save={{
+                    ...save,
+                    mutate: () => save.mutate(localReadsValue(chosen, stored)),
+                }}
+            />
+        </div>
+    )
+}
+
 const AggregateRetentionCard = ({
     stored,
 }: {
@@ -333,7 +396,7 @@ const ReservedValues = ({ stored }: { stored: ReservedPool | null }) => {
             <h2 className={styles.subtitle}>{i18n.t('Reserved values')}</h2>
             <div className={styles.muted}>
                 {i18n.t(
-                    'How many generated values (patient numbers, for example) each hub keeps in reserve for offline registration. The hub refills the pool from central when it falls below a quarter of this, in requests of at most 1000 values. Without a setting here, each hub uses its own configuration\'s default (500). Set an attribute\'s pool to 0 to turn its offline pool off.'
+                    "How many generated values (patient numbers, for example) each hub keeps in reserve for offline registration. The hub refills the pool from central when it falls below a quarter of this, in requests of at most 1000 values. Without a setting here, each hub uses its own configuration's default (500). Set an attribute's pool to 0 to turn its offline pool off."
                 )}
             </div>
             <NumberField
@@ -370,8 +433,16 @@ const Settings = () => {
         'aggregate'
     )
     const tokens = useAdminEntry<TokenSettings>('facility-hub-config', 'tokens')
-    const reserved = useAdminEntry<ReservedPool>('facility-hub-config', 'reserved')
+    const reserved = useAdminEntry<ReservedPool>(
+        'facility-hub-config',
+        'reserved'
+    )
+    const localReads = useAdminEntry<LocalReads>(
+        'facility-hub-config',
+        'localReads'
+    )
     if (
+        localReads.isLoading ||
         retention.isLoading ||
         aggregate.isLoading ||
         tokens.isLoading ||
@@ -384,7 +455,11 @@ const Settings = () => {
         )
     }
     const error =
-        retention.error ?? aggregate.error ?? tokens.error ?? reserved.error
+        retention.error ??
+        aggregate.error ??
+        tokens.error ??
+        reserved.error ??
+        localReads.error
     if (error) {
         return (
             <NoticeBox error title={i18n.t('Could not read the settings')}>
@@ -401,6 +476,7 @@ const Settings = () => {
             </div>
             <TrackerRetention stored={retention.value ?? null} />
             <AggregateRetentionCard stored={aggregate.value ?? null} />
+            <LocalReadsCard stored={localReads.value ?? null} />
             <TokenLifetime stored={tokens.value ?? null} />
             <ReservedValues stored={reserved.value ?? null} />
         </>

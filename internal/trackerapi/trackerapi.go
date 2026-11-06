@@ -96,6 +96,10 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Online writes go to central even during an upgrade: central holds them, and
 	// what the hub learns from them comes back with the next pull. After an outage the
 	// hub keeps answering until its outbox is pushed (core.PassThrough).
+	if a.H.PassThrough() && a.localWhileOnline(sess, r) && a.serveLocalFirst(w, r, sess) {
+		served = "hub-local"
+		return
+	}
 	if a.H.PassThrough() {
 		res, err := a.Proxy.Forward(r.Context(), r, body, a.Proxy.Upstream(sess))
 		if err == nil {

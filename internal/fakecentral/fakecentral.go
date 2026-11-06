@@ -322,6 +322,19 @@ func (c *Central) NotModifiedCount() int {
 	return c.NotModified
 }
 
+// RequestsUnder counts the requests whose "METHOD /path" starts with prefix.
+func (c *Central) RequestsUnder(prefix string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := 0
+	for k, v := range c.Requests {
+		if strings.HasPrefix(k, prefix) {
+			n += v
+		}
+	}
+	return n
+}
+
 func (c *Central) RequestCount(key string) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()

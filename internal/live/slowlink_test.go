@@ -383,8 +383,23 @@ func TestSlowLinkScreens(t *testing.T) {
 		case "/link":
 			rate, _ := strconv.Atoi(r.URL.Query().Get("rate"))
 			delay, _ := strconv.Atoi(r.URL.Query().Get("delay"))
+			loss, _ := strconv.ParseFloat(r.URL.Query().Get("loss"), 64)
 			e.Net.SetRate(rate)
 			e.Net.SetDelay(time.Duration(delay) * time.Millisecond)
+			e.Net.SetLoss(loss)
+		case "/localreads":
+			// The program in facility-hub-config/localReads, or none; the hub reads it
+			// with its catalog.
+			body := map[string]any{"programs": []string{}}
+			if r.URL.Query().Get("on") == "1" {
+				body["programs"] = []string{p.ID}
+			}
+			if err = e.Central.JSON("PUT", "/api/dataStore/facility-hub-config/localReads", body, nil); err != nil {
+				err = e.Central.JSON("POST", "/api/dataStore/facility-hub-config/localReads", body, nil)
+			}
+			if err == nil {
+				err = e.App.Hub.RefreshCatalog(r.Context())
+			}
 		case "/offline":
 			err = e.SetUplink(false)
 		case "/online":
