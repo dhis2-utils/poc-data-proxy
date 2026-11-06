@@ -349,6 +349,24 @@ Question: in the 72-hour run on `rpi4` (1 GB, microSD) from 3 November 13:49, ea
 
 Rerun: `fakecentral -tes 60000 -enrollments 100000 -events 240000 -users 20` (add `-changed 0.0001` for central's changes over a day old); `hubload -setup -fill -users 20 -paced -reconnect=false -duration 5m -day-people 140 -day-events 650 -day-reads 2000`; then `hubload -users 6 -web 0 -android-first none -android-sync 1m -reconnect=false -duration 5m` logs each sync's people and time.
 
+## 72 hours offline on the Pi 4's card (2026-11-03 to 11-06)
+
+The run of windows/out/pi4-week/RUN.md: `rpi4` (1 GB, microSD), image 0.1.5-local.dad9c4d in load-test mode, a fake central at 60 000 people, 100 000 enrollments and 240 000 events, 20 users. The uplink was cut on 3 November at 13:49 for exactly 72 hours, under three busy HC IV days at field rate (`hubload -paced`: 1 680 registrations, 7 800 events and 81 000 working lists), with 6 Android devices syncing every 5 minutes from a second `hubload`.
+
+| | |
+|---|---|
+| Restarts | none (the Pi 4 restarted on its own on 30 October; not again) |
+| Hub memory | 285 MB at most, during the first pull; 77–145 MB offline. Least free memory 470 MB |
+| Temperature | 65.7 °C at most, never throttled |
+| Written to the card | 6.8 GB by the first pull (60 000 people in 25 minutes); then **1.1–1.3 GB a day** offline (1 105, 1 278 and 1 288 MB) |
+| Answers offline | working list 27 ms median, 41 ms p95; new event 56 ms; new person 87 ms |
+| Errors | 1 connection error in 7 800 events, 7 in 81 000 working lists |
+| Reconnect | online 6 s after the uplink came back; 15 593 pending objects pushed in 3 min 57 s, none refused |
+
+**Long waits.** One new event waited 44 s and one working list 60 s. The card's own counters show 10-second intervals in which writes queued for 30–43 s in total, spread over all three days: the card stalling now and then. Single requests cannot be matched to them, as load-test mode does not log each request. At 1.1–1.3 GB a day, a card rated for 100 TB written lasts far longer than the board; what the stalls mean for staff is an answer that occasionally takes tens of seconds.
+
+**Not answered: W1 on hardware.** Whether Android's incremental syncs levelled off at a day's work after the first day of the outage (section "Android syncs on the Pi 4's card"). The Android `hubload`'s log was not in RUN.md's list of files to copy and was deleted with the server's run folder. The fix is checked in the sandbox (`TestWeekAndroidSyncGetsTheLastDay`). Nor could every confirmed save be checked on central: the run's `confirmed.tsv` is empty. The push's count (none refused, the outbox empty) is the evidence.
+
 ## A week offline at HC IV size (2026-10-29)
 
 Question: a large facility works a whole week offline, then the link returns. Does the hub stay responsive while the backlog grows, how long does the backlog take to reach central, and does every save get there?
@@ -563,4 +581,5 @@ Each page read and sorted the program's events; `objects_events` (creation order
 - **2026-11-03, Android syncs on the Pi 4's card.** Incremental syncs of 220 people took 58 s on `rpi4`: the fake central's people, dated at its start, were candidates for 24 hours, and each was checked by reading its children. `changedTEs` now leaves out people with nothing written on the hub whose newest row is older than `updatedAfter`. In the sandbox at 60 k: 5.4 s → 0.37 s alone, 8.2 → 0.9 s six at once (section "Android syncs on the Pi 4's card").
 - **2026-11-05, a slow uplink; name searches.** At Ngelehun CHC size (20 000 people) the weekly full pull took 2 minutes at 31 KB/s compressed and 6 minutes uncompressed; single requests through to central took about 0.3 s, answered by the hub 1–4 ms (section "A slow uplink"). A name search that few people match read every enrollment of the program: 151 ms at 100 000 people. Its matches now drive the search from an index: 20 ms.
 - **2026-11-05, app files from the hub's copy.** A browser with an empty cache downloaded Capture's 6.9 MB bundle through the uplink although the hub held a copy: 77 s for the app's start at 31 KB/s. The hub now serves its copy once central confirms it is current: 6.4 s.
+- **2026-11-06, 72 hours offline on the Pi 4's card.** No restart; memory 285 MB at most; 1.1–1.3 GB written to the card a day; 15 593 objects pushed in 4 minutes at reconnect, none refused. W1 not confirmed on hardware: the Android log was lost (section "72 hours offline on the Pi 4's card").
 - **2026-11-06, answering staff from the hub while online.** On a typical rural link (31 KB/s, 1 s per request, 3 % loss) Capture's dashboard took 4.4 s through to central and 0.12 s from the hub, its start 19 s and 4.8 s; a setting per programme (section "A slow uplink").
