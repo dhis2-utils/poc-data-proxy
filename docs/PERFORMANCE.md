@@ -180,6 +180,172 @@ The generated users share one access, so the last row is the best case; a real f
 
 **When central struggles** (`TestStrugglingCentral`, 2026-10-26; the fake central's `Struggle` answers late or with 503). A hub's sync sends one request at a time, so 500 hubs have at most 500 requests open at central; a cycle against a slow central just takes longer (651 requests at 200 ms each: 2 min 13 s), and the next starts when it ends. A failed request is not retried within the cycle. When central answers every request with 503, the cycle that meets it carries on user by user (212 requests, all refused, against 651 when healthy); two failed pings, 30 s apart at most, then take the hub offline, and it sends nothing but a ping every 15 s until central answers again (2 requests in the measured cycle, both pings). When half the requests fail, the pings mostly pass and the hub keeps its rhythm (337 requests). No back-off was added: nothing measured shows hubs adding to central's trouble beyond their normal rate. Devices' requests pass through the hub while it is online, as they would go to central without it.
 
+## Central's load from one facility, three ways (measured 9 November 2026)
+
+Question: how much work does central do for one health facility without a hub, with a hub that passes everything through, and with a hub that answers staff from its copies? Counting requests does not answer it: a ping and a form's metadata are one request each. This section measures central's database work and its time per unit of work, and adds the units up to a facility-day.
+
+**Set-up.** `agent-load-43`: DHIS2 2.43.2.1 with a 4 GB heap and Postgres 16, on the Docker host, with Uganda's eRegisters configuration (`clients/eregisters_setup.py`). Its programme, Medical Registers, has 795 programme rules, 404 rule variables, 5 218 data elements and 2 128 programme indicators; the Medical Visit stage alone has 935 data elements. There are 10 HMIS data sets. `clients/central_load_seed.py` gave one facility ten staff and 3 000 people with 11 745 visits over two years. The units added their own saves as they ran: 4 723 people and about 17 000 events at the end of the first run.
+
+**How it was measured** (`internal/perf/central_work_test.go`, `TestCentralWork` and `TestCentralWorkReport`):
+
+- Each unit of work ran alone. Before it, Postgres' `pg_stat_statements` was reset; after it, read. **DB time** is the sum of the statements' execution time, **statements** their number, **rows** the rows they returned or changed, **blocks** the 8 KB pages they touched in Postgres' cache or on disk.
+- Every request passed an unthrottled Netcut in the sandbox, on the same Docker network as central. **Server time** is the sum of the time from each request to its full answer: central's time (Java and database), not the link's. **Requests** and **MB** (answers) are given for context.
+- Idle, DHIS2's own scheduler costs 10 ms of DB time, 96 statements and 2 778 rows a minute. That rate is taken off each unit for its duration.
+- Three runs, each unit 3 or 5 times; the tables give medians. Run 1: the hub's own units, the monthly form, idle. Run 2: eRegisters, 3 times, with the 5½-minute wait (below). Run 3: Capture web and Android, direct and through a hub, with the hub limited to one CPU (`GOMAXPROCS=1`, next point).
+- The sandbox and central share one Docker VM with 4 CPUs. In run 1 a hub using several cores slowed central's answers to the browser's requests passing through it by 2–4 times (the same requests, the same rows). Limited to one CPU in run 3, a Capture visit's server time through the hub was 2.7–6.4 s, against 3.5–5.5 s direct. Times also wander: a Capture visit's median server time was 3.4 s in run 1 and 4.5 s in run 3. Statements, rows and blocks repeat more closely: for the hub's own units within 6 % from smallest to largest, where DB and server time spread by 40–100 %. Client units spread more in both, with single outliers (a hub refresh during one eRegisters save, the first pull of a new browser), which the medians leave out.
+
+**The clients:**
+
+- **Capture web and eRegisters 1.1.9**, the real apps in Chromium (`clients/central_load_visit.py`), each browser with a profile on disk. Its first start is a unit of its own; after it, one visit is made unmeasured, so the browser holds what it would on any later day. *App start*: log in and open the app. *Visit*: find a person by first name and surname, open them, add a Medical Visit (date, service type Outpatient, five vital signs; eRegisters also asks the type of patient and the outcome), save. *Registration*: a new person with the five mandatory attributes, enrolled, then a first visit. eRegisters searches its own copy in the browser. Version 1.1.9 did not send a save to central by itself, so the driver pressed Push Data after each save: one push per save, the most a device sends. *Pull*: eRegisters' Pull Data after a facility-day of other staff's saves on central (200 visits and 100 registrations), 5½ minutes later, because the app re-reads the 5 minutes before its last pull.
+- **Android Capture**, approximated: no device was attached, so the test replays the requests of SDK 1.14, read from its source (`*Call.kt`, `*Fields.kt`) and from `testdata/2.42/capture_android_endpoints.txt`. The endpoints, filters, chunking and paging are the SDK's. The field lists are shortened by hand, but every nested collection the SDK asks for is kept (a stage's data elements in full, a rule's actions). Like the SDK, it sends the password until central gives it a session cookie, then the cookie. *Metadata sync*: 62 requests. *Daily data sync*: the people changed since the last sync, after a facility-day of saves (about 300 people, 50 a page, `orgUnitMode=DESCENDANTS`, `includeDeleted`, `updatedAfter`), and the values and completions of the 10 data sets. *Record sync* after a save: the upload (asynchronous), its job and report, and the person downloaded again.
+- **The monthly form**, approximated: HMIS 105:01 opened (`dataValueSets` for the month), 150 values sent in one `dataValueSets` request and the form completed, as eRegisters sends its HMIS reports.
+- **The hub**, the real code in process (the test kit, as `internal/live` uses it), set up by the facility's admin; the ten staff then log in through it. *First pull*: setup, the ten logins and the first sync, a fresh hub each time. *Sync cycle*: the 15-minute cycle after a quarter hour of the facility's saves on central (6 visits, 3 registrations). *Hourly refresh*: the same with the access refresh and the ownership check, which run hourly. *Weekly full pull*: a cycle with every user's full pull due. *Catch-up*: the cycle when the link returns after half a day offline, in which four staff saved 150 patients (a third of them registrations) through the hub. *60 pings*: online the hub pings central once a minute.
+- **Through the hub** the same clients ran against a hub that passes everything through, then with `facility-hub-config/localReads` listing Medical Registers. What reached central is what was measured.
+
+**The facility-day.** Ten staff, eight on a web app and two on Android, 30 patients each, a third of them new registrations; half a day offline; one monthly form a month. The counts per day:
+
+| Unit | 1. No hub | 2. and 3. With a hub |
+|---|---|---|
+| Web app start | 8 | 8 |
+| Web visit / registration | 160 / 80 | 80 / 40 online; the other half saved offline and pushed in the catch-up |
+| eRegisters pull | 8 | 8 |
+| Android record sync after a visit / a registration | 40 / 20 | 20 / 10 online |
+| Android daily data sync / metadata sync | 2 / 2⁄7 | 2 / 2⁄7 |
+| Monthly form | 1⁄22 | 1⁄22 |
+| Hub sync cycle / hourly refresh | – | 24 / 8 (32 cycles in the working day, 8 of them hourly) |
+| Hub weekly full pull / catch-up / pings | – | 1⁄7 / 1 / 1 440 (once a minute, day and night) |
+
+Without a hub, the half day offline is counted as changing nothing for central: web staff enter those patients when the link returns (or from paper later), Android devices sync them later. In scenario 3, Capture could not open a person it had just registered (below), so its registration unit lacks the first visit; one visit is added for each registration.
+
+**Per unit** (medians; database figures without DHIS2's idle background; KB are answers):
+
+| Unit | Runs | DB time (ms) | Statements | Rows | Blocks | Requests | Server time (ms) | KB |
+|---|---|---|---|---|---|---|---|---|
+| direct: capture app start | 5 | 6 | 384 | 1 309 | 1 332 | 41 | 1 054 | 105 |
+| direct: capture first start, once per browser | 1 | 83 | 1 268 | 10 391 | 14 891 | 130 | 5 650 | 10 618 |
+| direct: capture registration | 5 | 224 | 1 576 | 10 602 | 32 351 | 47 | 5 309 | 1 860 |
+| direct: capture visit | 5 | 373 | 1 117 | 6 998 | 28 366 | 44 | 4 508 | 1 902 |
+| via hub: capture app start | 5 | 27 | 691 | 2 557 | 3 211 | 52 | 1 676 | 3 479 |
+| via hub: capture first start, once per browser | 1 | 235 | 3 089 | 16 437 | 69 930 | 137 | 5 317 | 14 070 |
+| via hub: capture registration | 5 | 258 | 1 841 | 11 729 | 37 286 | 47 | 4 959 | 10 |
+| via hub: capture visit | 5 | 361 | 1 308 | 7 088 | 30 734 | 44 | 6 089 | 23 |
+| via hub, local reads: capture app start | 5 | 8 | 167 | 1 067 | 1 319 | 16 | 1 522 | 3 466 |
+| via hub, local reads: capture first start, once per browser | 1 | 13 | 380 | 1 100 | 1 653 | 70 | 1 928 | 3 466 |
+| via hub, local reads: capture registration | 5 | 32 | 163 | 1 116 | 20 176 | 5 | 182 | 2 |
+| via hub, local reads: capture visit | 5 | 116 | 189 | 902 | 19 518 | 2 | 423 | 9 |
+| direct: eregisters app start | 3 | 1 | 14 | 0 | 41 | 18 | 1 263 | 4 |
+| direct: eregisters first start, once per browser | 1 | 1 465 | 386 | 17 500 | 81 671 | 196 | 15 101 | 57 349 |
+| direct: eregisters pull | 3 | 416 | 120 | 4 547 | 21 753 | 6 | 1 683 | 4 859 |
+| direct: eregisters registration | 3 | 77 | 372 | 2 682 | 3 226 | 4 | 768 | 3 |
+| direct: eregisters visit | 3 | 47 | 161 | 441 | 2 154 | 2 | 460 | 1 |
+| via hub: eregisters app start | 3 | 15 | 231 | 1 020 | 895 | 29 | 1 725 | 3 456 |
+| via hub: eregisters first start, once per browser | 1 | 2 451 | 2 336 | 46 287 | 140 837 | 196 | 35 397 | 52 329 |
+| via hub: eregisters pull | 3 | 417 | 143 | 4 412 | 18 268 | 6 | 1 149 | 4 145 |
+| via hub: eregisters registration | 3 | 83 | 450 | 3 000 | 5 557 | 4 | 491 | 4 |
+| via hub: eregisters visit | 3 | 70 | 204 | 1 399 | 2 486 | 3 | 377 | 2 |
+| via hub, local reads: eregisters first start, once per browser | 1 | 33 | 384 | 3 641 | 13 595 | 74 | 3 108 | 3 466 |
+| direct: android daily data sync | 5 | 1 194 | 2 003 | 5 439 | 148 884 | 10 | 1 594 | 2 988 |
+| direct: android metadata sync | 5 | 32 | 2 308 | 4 600 | 12 828 | 62 | 1 552 | 7 322 |
+| direct: android registration, record sync | 5 | 34 | 213 | 1 054 | 2 669 | 5 | 87 | 9 |
+| direct: android visit, record sync | 5 | 45 | 224 | 1 064 | 2 665 | 5 | 78 | 12 |
+| via hub: android daily data sync | 5 | 1 106 | 1 739 | 5 155 | 151 355 | 10 | 1 375 | 2 240 |
+| via hub: android metadata sync | 5 | 32 | 2 556 | 4 721 | 13 203 | 62 | 1 425 | 7 322 |
+| via hub: android registration, record sync | 5 | 23 | 235 | 1 067 | 2 702 | 5 | 64 | 9 |
+| via hub: android visit, record sync | 5 | 40 | 248 | 1 077 | 2 699 | 5 | 64 | 12 |
+| via hub, local reads: android daily data sync | 5 | 1 118 | 27 | 1 079 | 3 607 | 2 | 1 191 | 295 |
+| via hub, local reads: android metadata sync | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| via hub, local reads: android registration, record sync | 5 | 38 | 234 | 1 063 | 2 702 | 5 | 92 | 9 |
+| via hub, local reads: android visit, record sync | 5 | 57 | 246 | 1 074 | 2 703 | 5 | 102 | 12 |
+| direct: aggregate monthly form | 5 | 13 | 360 | 617 | 14 021 | 3 | 300 | 2 |
+| via hub: aggregate monthly form | 5 | 28 | 349 | 767 | 15 496 | 3 | 104 | 30 |
+| via hub, local reads: aggregate monthly form | 5 | 21 | 349 | 880 | 16 025 | 3 | 206 | 52 |
+| hub: 60 pings | 5 | 0 | 0 | 0 | 0 | 120 | 484 | 145 |
+| hub: catch-up after half a day offline | 5 | 3 911 | 26 800 | 155 752 | 378 212 | 178 | 15 331 | 2 708 |
+| hub: hourly refresh | 5 | 225 | 2 379 | 25 019 | 39 323 | 127 | 7 045 | 38 758 |
+| hub: setup and first pull | 5 | 4 649 | 80 305 | 375 766 | 640 283 | 398 | 28 960 | 172 092 |
+| hub: sync cycle | 5 | 117 | 448 | 2 089 | 21 541 | 27 | 601 | 671 |
+| hub: weekly full pull | 5 | 1 755 | 31 809 | 70 308 | 182 571 | 38 | 8 348 | 4 307 |
+| hub, local reads: hourly refresh | 5 | 254 | 2 409 | 24 781 | 40 709 | 130 | 7 383 | 38 772 |
+| hub, local reads: metadata check alone | 5 | 6 | 43 | 3 | 1 198 | 2 | 40 | 0 |
+| hub, local reads: sync cycle | 5 | 131 | 441 | 2 049 | 21 570 | 28 | 594 | 598 |
+| idle, 60 s | 5 | 10 | 96 | 2 778 | 348 | 0 | 0 | 0 |
+
+**Per facility-day:**
+
+| Web app | Scenario | DB time (s) | Statements | Rows | Blocks | Server time (s) | Requests | MB |
+|---|---|---|---|---|---|---|---|---|
+| eRegisters | 1. No hub | 21.9 | 74 494 | 397 356 | 1 239 122 | 167 | 1 170 | 49 |
+| eRegisters | 2. Hub passing through | 24.5 | 109 974 | 735 364 | 2 198 512 | 177 | 5 595 | 411 |
+| eRegisters | 3. Hub with local reads | not measured: eRegisters did not start (below) | | | | | | |
+| eRegisters | 3., eRegisters' units as passed through (an upper bound) | 25.5 | 105 842 | 722 904 | 1 911 132 | 180 | 5 610 | 403 |
+| Capture web | 1. No hub | 82.5 | 325 774 | 2 054 172 | 7 599 346 | 1 163 | 11 466 | 474 |
+| Capture web | 2. Hub passing through | 51.5 | 256 470 | 1 516 644 | 5 599 896 | 803 | 10 731 | 379 |
+| Capture web | 3. Hub with local reads | 28.4 | 99 066 | 608 944 | 4 496 420 | 177 | 5 498 | 370 |
+
+Where it comes from (the monthly form adds under 0.1 s of DB time a day in every scenario):
+
+| Web app | Scenario | Part | DB time (s) | Rows | Server time (s) | MB |
+|---|---|---|---|---|---|---|
+| eRegisters | 1 | web staff | 17.0 | 321 496 | 159 | 40 |
+| eRegisters | 1 | Android | 4.9 | 75 832 | 8.5 | 8.9 |
+| eRegisters | 2 | web staff | 12.4 | 275 376 | 73 | 63 |
+| eRegisters | 2 | Android | 3.3 | 43 869 | 5.1 | 7.1 |
+| eRegisters | 2 | the hub's own work | 8.8 | 416 084 | 99 | 341 |
+| Capture web | 1 | web staff | 77.6 | 1 978 312 | 1 154 | 465 |
+| Capture web | 1 | Android | 4.9 | 75 832 | 8.5 | 8.9 |
+| Capture web | 2 | web staff | 39.4 | 1 056 656 | 699 | 31 |
+| Capture web | 2 | Android | 3.3 | 43 869 | 5.1 | 7.1 |
+| Capture web | 2 | the hub's own work | 8.8 | 416 084 | 99 | 341 |
+| Capture web | 3 | web staff | 15.3 | 161 416 | 70 | 30 |
+| Capture web | 3 | Android | 3.8 | 34 268 | 5.3 | 0.9 |
+| Capture web | 3 | the hub's own work | 9.3 | 413 220 | 102 | 339 |
+
+The hub's own work in the working day: its 24 cycles 2.8 s of DB time and 14 s of server time, its 8 hourly refreshes 1.8 s and 56 s, the catch-up 3.9 s and 15 s, the pings 12 s of server time and no database work. Counted for 24 hours instead (72 cycles and 24 hourly refreshes, as the hub runs day and night), its own work is 18 s of DB time, 240 s of server time and about 1 GB a day.
+
+**What the numbers say:**
+
+- **With Capture web, a hub that answers from its copies cuts central's work most:** a third of the DB time, under a third of the rows and 15 % of the server time of the same facility without a hub. A Capture visit through to central is 44 requests, 7 000 rows and 4.5 s of server time; most of it goes to `GET /api/programs/{uid}` (6 a visit, 2.2 s) and `GET /api/tracker/trackedEntities/{uid}` (15, 1.1 s). With local reads, 2 requests reach central: the search by name and the save.
+- **With eRegisters, a hub adds work.** The app already works from its own copy and sends little: a visit is a push of 2 requests, 440 rows. Scenarios 1 and 2 cost about the same DB and server time (22 and 25 s, 167 and 177 s); the hub adds rows (735 000 against 397 000) and bytes (411 MB against 49 MB). Its cycles, hourly refreshes and catch-up read 416 000 rows; the hourly refreshes alone fetch 310 of its 341 MB.
+- **The hub's hourly refresh is the largest of its own costs:** 127 requests, 25 000 rows, 7 s of server time and 39 MB each time. Eleven of the requests are `dataEntry/metadata`, one per user (here ten staff and the admin), 3.5 MB and 0.5 s each with this configuration's ten HMIS data sets: 5.2 s of its 7 s and nearly all its bytes. The same per-user refresh runs at each login through the hub: a Capture app start through the hub is 52 requests and 3.5 MB, against 41 requests and 105 KB direct.
+- **The metadata check itself is cheap** on this heavy metadata: 2 requests (two access groups), 43 statements, 6 ms of DB time, 40 ms of server time. Turning local reads on adds it to the hourly refresh and one `metadataReload` read to each cycle, within the runs' spread.
+- **Android:** with the SDK's session cookie, a record sync is 5 requests and about 1 000 rows. The daily data sync's most expensive request is `dataValueSets` for the user's ten data sets (about 1 s of DB time on its own). With local reads it and the completions are all that reach central of that sync: the hub answers the people and every metadata request. (The hub had not yet pulled the day's changes, so it answered with none; at a facility it would hand them over after its next cycle, whose cost is the hub's.)
+- **The catch-up after half a day offline** (150 patients, 178 requests) costs central 3.9 s of DB time, 156 000 rows and 15 s of server time: 109 ms of server time a save, against 310 ms for Capture's save online in run 3.
+- **Central checks a password in about 100 ms** (BCrypt; 116 ms a request with Basic auth, 11 ms with a session cookie, 20 ms with a personal access token, measured on this instance). A client that sent Basic auth on every request would cost central more than anything above; the Android SDK sends the cookie once it has one (`PasswordAndCookieAuthenticator`), and the replay does the same.
+
+**Found on the way** (no hub change in this work; to follow up):
+
+- **With local reads on, Capture web did not open a person it had just registered:** after the save (passed to central, 200), the hub answered the new person's dashboard from its copy, and Capture showed "Akello 36 is not enrolled in this program" (5 of 5 registrations, `TestCentralWork`, run 1 and 3).
+- **With local reads on, eRegisters 1.1.9 did not start** in a new browser: after 15 minutes without its start screen it showed "Something went wrong! … Cannot read properties of undefined (reading 'length')" (runs 1 and 2). Through a hub passing everything through, it worked.
+- **eRegisters 1.1.9 does not push a save by itself:** the save stays in the browser until Push Data. Staff who push a few times a day send fewer, larger pushes; that was not measured.
+- **eRegisters' first pull after a browser's first download re-read half the facility** (51 pages and 76 MB, against 6 pages on the following days), once per browser.
+
+**For 500 facilities.** This is a sum of per-unit costs measured one at a time on an idle server, not a concurrency test. Multiplied by 500 and spread over an 8-hour working day:
+
+| Web app | Scenario | DB time a day | DB time per second of the working day | Server time a day | Requests in progress on average |
+|---|---|---|---|---|---|
+| eRegisters | 1. No hub | 3.0 h | 0.38 s | 23 h | 2.9 |
+| eRegisters | 2. Hub passing through | 3.4 h | 0.43 s | 25 h | 3.1 |
+| Capture web | 1. No hub | 11.5 h | 1.4 s | 162 h | 20 |
+| Capture web | 2. Hub passing through | 7.2 h | 0.9 s | 112 h | 14 |
+| Capture web | 3. Hub with local reads | 3.9 h | 0.5 s | 25 h | 3.1 |
+
+"DB time per second" is how many seconds of statement time Postgres runs per second on average, about how many of its cores are busy if the statements are CPU-bound. "Requests in progress" is server time divided by the working day's seconds. Counting the hubs' nights as well (above) adds about 140 s of server time and 9 s of DB time per hub a day: 19 h and 1.3 h for 500, outside working hours. Not covered: peaks (everyone opening the app at 8, 500 hubs catching up after a national outage, whose wait of up to 5 minutes at random spreads them, "Load on central"), a central with millions of people instead of 5 000 (each listing reads more), other programmes, analytics, and the heap and garbage collection of a busy JVM.
+
+**Limits.** One configuration, one facility of 3 000 people at the start and 5 768 at the end, a server with nothing else to do. Android is a replay, not the app. The monthly form is a stand-in for eRegisters' HMIS reports. The visit is short (six or eight values); real visits record more, which adds to the save in every scenario alike. Capture's browser cached some answers between runs (a visit's answers were 22 KB to 3.8 MB); requests and bytes are context only. Server time includes waiting for the database and Java's own work; it does not separate CPU from waiting.
+
+Run it again: set the instance up with `clients/eregisters_setup.py`, seed it with `clients/central_load_seed.py MANIFEST 3000`, enable `pg_stat_statements` (`shared_preload_libraries`, a restart, `CREATE EXTENSION`), then from `internal/perf`:
+
+```sh
+HUB_MANIFEST=… HUB_CENTRAL_PG=postgres://dhis:dhis@<db>:5432/dhis2 HUB_CENTRAL_RUNS=5 \
+  HUB_CENTRAL_OUT=run1.jsonl go test -run 'TestCentralWork$' -v -timeout 180m .
+HUB_CENTRAL_UNITS=web,android,via-hub HUB_CENTRAL_APPS=eregisters PULL_WAIT=330 HUB_CENTRAL_RUNS=3 \
+  HUB_CENTRAL_OUT=run2.jsonl go test -run 'TestCentralWork$' …
+GOMAXPROCS=1 HUB_CENTRAL_UNITS=web,android,via-hub HUB_CENTRAL_APPS=capture HUB_CENTRAL_OUT=run3.jsonl go test …
+HUB_CENTRAL_OUT=run1.jsonl,run2.jsonl,run3.jsonl go test -run TestCentralWorkReport -v .
+```
+
+The report takes each unit from the last file that has it.
+
 ## Push over a slow uplink
 
 Question (2026-10-28): how fast does the hub push a backlog to a real DHIS2 over a mobile uplink, and does the backlog shrink while staff keep saving? In the hardware session that day (`rpi5` on a 4G router, the demo central on 2.43.2) the backlog grew from 1 309 to 1 667 objects in the hub's first 2 minutes online, with 6 clients saving about 1.2 times a second.
@@ -403,6 +569,7 @@ In process on a development machine (unconstrained), with `HUB_PERF_SCALE="tes,e
 - `TestPull`: first pull, heap, disk, reboot to first login.
 - `TestQueries`: working lists, searches, Android pages, dashboards (`HUB_PERF_ONLY` and `HUB_PERF_RUNS` to profile one kind).
 - `TestCentralLoad`: what the hub asks of central.
+- `TestCentralWork` and `TestCentralWorkReport`: central's database work and time per unit of work, against a live eRegisters instance (section "Central's load from one facility, three ways").
 - `HUB_PPROF=127.0.0.1:6060` on a running hub serves Go's profiler there (loopback only), for looking into a slow case.
 
 In containers on the Docker host (`perf/pi.sh`, from the repository root):
@@ -583,3 +750,4 @@ Each page read and sorted the program's events; `objects_events` (creation order
 - **2026-11-05, app files from the hub's copy.** A browser with an empty cache downloaded Capture's 6.9 MB bundle through the uplink although the hub held a copy: 77 s for the app's start at 31 KB/s. The hub now serves its copy once central confirms it is current: 6.4 s.
 - **2026-11-06, 72 hours offline on the Pi 4's card.** No restart; memory 285 MB at most; 1.1–1.3 GB written to the card a day; 15 593 objects pushed in 4 minutes at reconnect, none refused. W1 not confirmed on hardware: the Android log was lost (section "72 hours offline on the Pi 4's card").
 - **2026-11-06, answering staff from the hub while online.** On a typical rural link (31 KB/s, 1 s per request, 3 % loss) Capture's dashboard took 4.4 s through to central and 0.12 s from the hub, its start 19 s and 4.8 s; a setting per programme (section "A slow uplink").
+- **2026-11-09, central's load from one facility.** Central's database work and server time per unit, on 2.43 with Uganda's eRegisters configuration, added up to a facility-day: with Capture web, a hub answering from its copies takes central from 82 s of DB time and 1 163 s of server time a day to 28 s and 177 s; with eRegisters, which works from its own copy, a hub adds about 10 % of time and nearly doubles the rows, and its hourly per-user refresh of `dataEntry/metadata` fetches 39 MB each time (section "Central's load from one facility, three ways"). Found: with local reads, Capture does not open a person it has just registered, and eRegisters does not start.
