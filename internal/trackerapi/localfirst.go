@@ -134,7 +134,7 @@ func (a *API) ownRefusedRecord(sess *core.Session, r *http.Request) bool {
 		uid = q.Get("trackedEntity") + q.Get("enrollment") + q.Get("event")
 	}
 	rec := a.record(uid)
-	if rec == "" {
+	if rec == "" || !a.H.Store.RecordHasRejected(rec) {
 		return false
 	}
 	uids, _ := a.H.Store.OpenIssueObjectsOf(sess.UserID)

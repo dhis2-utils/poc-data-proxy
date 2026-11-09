@@ -236,6 +236,18 @@ func (s *Store) OpenIssueObjectsOf(userID int64) ([]string, error) {
 	return uids, err
 }
 
+// sqlRecordRejected finds a refused object of a record: the person or event itself, or
+// one of the person's enrollments and events (both through an index).
+const sqlRecordRejected = `SELECT 1 FROM objects WHERE (uid = ? OR te_uid = ?) AND sync_state = ? LIMIT 1`
+
+// RecordHasRejected reports whether a record (a person, or an event program's event)
+// holds a refused object. It spares the issues query for the records without one: most
+// of them, and a hub can hold thousands of refusals (3 411 on the Pi 4, 9 November).
+func (s *Store) RecordHasRejected(record string) bool {
+	var one int
+	return s.DB().QueryRow(sqlRecordRejected, record, record, SyncRejected).Scan(&one) == nil
+}
+
 // sqlIssueOpen is the condition that the issue aliased i is still open; its arguments
 // are OutboxAggregate, OutboxRejected, OutboxPartial, SyncRejected.
 const sqlIssueOpen = `((i.kind = ? AND EXISTS (SELECT 1 FROM outbox o WHERE o.seq = i.outbox_seq AND o.state IN (?, ?)))
