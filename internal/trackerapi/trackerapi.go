@@ -96,7 +96,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Online writes go to central even during an upgrade: central holds them, and
 	// what the hub learns from them comes back with the next pull. After an outage the
 	// hub keeps answering until its outbox is pushed (core.PassThrough).
-	if a.H.PassThrough() && a.localWhileOnline(sess, r) && a.serveLocalFirst(w, r, sess) {
+	if a.H.PassThrough() && (a.localWhileOnline(sess, r) || a.ownRefusedRecord(sess, r)) && a.serveLocalFirst(w, r, sess) {
 		served = "hub-local"
 		return
 	}
@@ -208,7 +208,7 @@ func (a *API) storePersisted(userID int64, body []byte, status int, report []byt
 	}
 	a.H.NoteClientClock(userID, payload)
 	fillAssigned(payload, persisted)
-	uids, err := a.H.UpsertCentral(userID, filterPayload(payload, persisted), false)
+	uids, err := a.H.UpsertSaved(userID, filterPayload(payload, persisted), persisted)
 	if err != nil {
 		slog.Warn("store online write", "err", err)
 		return

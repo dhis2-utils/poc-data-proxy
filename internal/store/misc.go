@@ -222,6 +222,20 @@ func (s *Store) OpenIssuesOf(userID int64, limit int) ([]*Issue, error) {
 		SyncRejected, limit)
 }
 
+// OpenIssueObjectsOf are the objects of one author's open issues.
+func (s *Store) OpenIssueObjectsOf(userID int64) ([]string, error) {
+	rows, err := s.DB().Query(`SELECT DISTINCT object_uid FROM issues i WHERE i.user_id = ? AND `+sqlIssueOpen, userID,
+		OutboxAggregate, OutboxRejected, OutboxPartial, SyncRejected)
+	var uids []string
+	err = scanRows(rows, err, func(r *sql.Rows) error {
+		var u string
+		err := r.Scan(&u)
+		uids = append(uids, u)
+		return err
+	})
+	return uids, err
+}
+
 // sqlIssueOpen is the condition that the issue aliased i is still open; its arguments
 // are OutboxAggregate, OutboxRejected, OutboxPartial, SyncRejected.
 const sqlIssueOpen = `((i.kind = ? AND EXISTS (SELECT 1 FROM outbox o WHERE o.seq = i.outbox_seq AND o.state IN (?, ?)))

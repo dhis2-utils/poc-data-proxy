@@ -1,8 +1,14 @@
 package e2e
 
 import (
+	"encoding/json"
+	"fmt"
+	"html"
+	"slices"
 	"strings"
 	"testing"
+
+	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 )
 
 // The hub's page shows signed-in staff their own refused changes with what they
@@ -30,15 +36,8 @@ func TestOwnRefusalsOnHubPage(t *testing.T) {
 		}
 		return string(p)
 	}
-	own := func(p string) string {
-		i := strings.Index(p, `id="own-refusals"`)
-		if i < 0 {
-			return ""
-		}
-		return p[i : i+strings.Index(p[i:], "Issues (rejected by central)")]
-	}
 	pa := page(a)
-	sa := own(pa)
+	sa := ownSection(pa)
 	for _, want := range []string{"Your sync errors", "OwnTe000081", "NAT-8181", "Amina",
 		"Non-unique attribute value `NAT-8181`", "E1064", "Fixed by the author", " | ",
 		"OwnEn000081", "with <span class=\"mono\">OwnTe000081</span>"} {
@@ -59,7 +58,7 @@ func TestOwnRefusalsOnHubPage(t *testing.T) {
 		strings.Contains(rest, "Bakari") {
 		t.Error("a value shows outside the user's own sync errors")
 	}
-	if sb := own(page(b)); !strings.Contains(sb, "NAT-8282") || strings.Contains(sb, "NAT-8181") {
+	if sb := ownSection(page(b)); !strings.Contains(sb, "NAT-8282") || strings.Contains(sb, "NAT-8181") {
 		t.Errorf("nurse_b's sync errors:\n%s", sb)
 	}
 	st, anon := e.web("nurse_a").do("GET", "/hub/ui", nil)
@@ -72,7 +71,137 @@ func TestOwnRefusalsOnHubPage(t *testing.T) {
 	a.json("POST", postSync, newPatient("OwnTe000081", "OwnEn000081", "Amina", "NAT-8383", nil), 200)
 	e.online()
 	e.sync()
-	if s := own(page(a)); s != "" {
+	if s := ownSection(page(a)); s != "" {
 		t.Errorf("fixed, still listed:\n%s", s)
 	}
+}
+
+// Staff fix their own refused change in Capture through the hub (FINDINGS.md, "The
+// author sees their own"): the hub page links to Capture for the refusals the author
+// fixes; the hub answers the author's reads of such a record from its copy, online
+// too, so Capture shows what they entered, a refused new registration included; others
+// read central's. A save central accepts closes the refusal at once.
+func TestOpenRefusalInCapture(t *testing.T) {
+	e := newEnv(t)
+	e.central.Seed("CapTe000092", "CapEn000092", "Existing", "NAT-9292", nil)
+	e.setup()
+	a, b := e.web("nurse_a"), e.web("nurse_b")
+	a.login()
+	b.login()
+	e.sync()
+	e.central.Seed("CentralTe91", "CentralEn91", "Other", "NAT-9191", nil)
+	e.central.Seed("CentralTe94", "CentralEn94", "Other", "NAT-9494", nil)
+	e.central.Seed("CentralTe95", "CentralEn95", "Other", "NAT-9595", nil)
+	person := func(te, first, nat string) map[string]any {
+		return map[string]any{"trackedEntities": []any{map[string]any{"trackedEntity": te, "trackedEntityType": fc.TET,
+			"orgUnit": fc.Facility, "attributes": []any{map[string]any{"attribute": fc.AttrFirstName, "value": first},
+				map[string]any{"attribute": fc.AttrNationalI, "value": nat}}}}}
+	}
+	e.offline()
+	// A new registration and an update of a person central has, both refused for a
+	// national ID central holds already (E1064, fixed by the author); an event refused
+	// because central took away the stage's write access (E1095, fixed on central);
+	// nurse_b's own refused registration.
+	a.json("POST", postSync, newPatient("CapTe000091", "CapEn000091", "Amina", "NAT-9191",
+		map[string]string{"CapEv000091": fc.Stage1}), 200)
+	a.json("POST", postSync, person("CapTe000092", "Existing", "NAT-9595"), 200)
+	a.json("POST", postSync, event("CapEv000093", "SeedEn00001", fc.Stage2), 200)
+	b.json("POST", postSync, newPatient("CapTe000094", "CapEn000094", "Bakari", "NAT-9494", nil), 200)
+	e.central.Users["nurse_a"].StageWrite[fc.Stage2] = false
+	e.online()
+	e.sync()
+	e.central.Users["nurse_a"].StageWrite[fc.Stage2] = true
+
+	page := func(c *client) string {
+		t.Helper()
+		st, p := c.do("GET", "/hub/ui", nil)
+		if st != 200 {
+			t.Fatalf("%s: page %d", c.user, st)
+		}
+		return string(p)
+	}
+	links := func(p string) []string {
+		var out []string
+		for _, s := range strings.Split(p, `<a href="/dhis-web-capture/index.html#/`)[1:] {
+			out = append(out, html.UnescapeString(s[:strings.Index(s, `"`)]))
+		}
+		return out
+	}
+	pa := page(a)
+	if got, want := links(pa), []string{"enrollment?teiId=CapTe000092&enrollmentId=CapEn000092",
+		"enrollment?teiId=CapTe000091&enrollmentId=CapEn000091"}; !slices.Equal(got, want) {
+		t.Errorf("nurse_a's links to Capture: %q, want %q (not for what waits, nor for E1095)", got, want)
+	}
+	if !strings.Contains(pa, "E1095") || !strings.Contains(pa, "Fixed on central") {
+		t.Error("nurse_a's page lacks the event refused for its stage, fixed on central")
+	}
+	if got := links(page(b)); !slices.Equal(got, []string{"enrollment?teiId=CapTe000094&enrollmentId=CapEn000094"}) {
+		t.Errorf("nurse_b's links to Capture: %q", got)
+	}
+
+	// Reads online: the author gets the hub's copy, the others central's.
+	nat := func(c *client, te string) string {
+		t.Helper()
+		st, body := c.do("GET", "/api/tracker/trackedEntities/"+te+"?program="+fc.Program+"&fields=attributes", nil)
+		if st != 200 {
+			return fmt.Sprint(st)
+		}
+		var p struct {
+			Attributes []struct{ Attribute, Value string }
+		}
+		json.Unmarshal(body, &p)
+		for _, x := range p.Attributes {
+			if x.Attribute == fc.AttrNationalI {
+				return x.Value
+			}
+		}
+		return ""
+	}
+	if got := nat(a, "CapTe000092"); got != "NAT-9595" {
+		t.Errorf("the author reads CapTe000092 online: %s, want the refused NAT-9595", got)
+	}
+	if got := nat(b, "CapTe000092"); got != "NAT-9292" {
+		t.Errorf("nurse_b reads CapTe000092 online: %s, want central's NAT-9292", got)
+	}
+	if got := nat(a, "CapTe000091"); got != "NAT-9191" {
+		t.Errorf("the author reads the refused registration online: %s", got)
+	}
+	a.json("GET", "/api/tracker/enrollments/CapEn000091", nil, 200)
+	a.json("GET", "/api/tracker/events/CapEv000091", nil, 200)
+	if got := nat(b, "CapTe000091"); got != "404" {
+		t.Errorf("nurse_b reads nurse_a's refused registration online: %s, want central's 404", got)
+	}
+
+	// Corrected and saved online, as Capture's profile form does: central takes it and
+	// the refusal closes at once; reads go to central again.
+	a.json("POST", "/api/tracker?async=false", person("CapTe000092", "Existing", "NAT-9299"), 200)
+	if own := ownSection(page(a)); strings.Contains(own, "CapTe000092") {
+		t.Errorf("fixed and saved online, still in the user's sync errors:\n%s", own)
+	}
+
+	if got := nat(a, "CapTe000092"); got != "NAT-9299" {
+		t.Errorf("after the save the author reads %s", got)
+	}
+	// The refused registration: its person reaches central. The enrollment that
+	// waited for it is not sent with it, and stays refused (FINDINGS.md).
+	a.json("POST", "/api/tracker?async=false", person("CapTe000091", "Amina", "NAT-9199"), 200)
+	if e.central.Object("CapTe000091") == nil {
+		t.Fatal("the corrected registration did not reach central")
+	}
+	pa = page(a)
+	if got := links(pa); len(got) != 0 {
+		t.Errorf("links after both saves: %q", got)
+	}
+	if !strings.Contains(pa, "CapEn000091") || e.central.Object("CapEn000091") != nil {
+		t.Error("the enrollment that waited for the person: no longer listed, or on central")
+	}
+}
+
+// ownSection is the hub page's "Your sync errors" ("" if it has none).
+func ownSection(p string) string {
+	i := strings.Index(p, `id="own-refusals"`)
+	if i < 0 {
+		return ""
+	}
+	return p[i : i+strings.Index(p[i:], "Issues (rejected by central)")]
 }

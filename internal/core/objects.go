@@ -30,6 +30,13 @@ func (h *Hub) ReplaceDiscarded(userID int64, payload tracker.M, discarded map[st
 	return h.upsertCentral(userID, payload, true, discarded)
 }
 
+// UpsertSaved stores what central persisted of a save sent through the hub online. It
+// replaces the hub's refused copies of those objects: central took a newer version,
+// as at a pull (changedSinceRefused), and the refusal closes.
+func (h *Hub) UpsertSaved(userID int64, payload tracker.M, persisted map[string]bool) ([]string, error) {
+	return h.upsertCentral(userID, payload, false, persisted)
+}
+
 func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool, discarded map[string]bool) ([]string, error) {
 	facility := h.Facility()
 	if facility == "" || !h.Store.Unlocked() {

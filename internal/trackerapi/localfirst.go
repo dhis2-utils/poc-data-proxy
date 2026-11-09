@@ -117,3 +117,43 @@ type bufferedResponse struct {
 func (b *bufferedResponse) Header() http.Header         { return b.header }
 func (b *bufferedResponse) WriteHeader(s int)           { b.status = s }
 func (b *bufferedResponse) Write(p []byte) (int, error) { return b.body.Write(p) }
+
+// ownRefusedRecord reports whether this read is of a record that holds an open refusal
+// of the user's own: a person with their enrollments and events, or an event program's
+// event. The hub answers it from its copy, online too, which holds what the user
+// entered, so they can correct it in Capture and save it to central again (the
+// hub page's "Open in Capture"). Central has not got the refused values, nor a
+// refused new registration.
+func (a *API) ownRefusedRecord(sess *core.Session, r *http.Request) bool {
+	coll, uid := split(r.URL.Path)
+	if r.Method != http.MethodGet || sess == nil || sess.UserID == 0 || collections[coll] == "" {
+		return false
+	}
+	if coll == "relationships" && uid == "" {
+		q := r.URL.Query()
+		uid = q.Get("trackedEntity") + q.Get("enrollment") + q.Get("event")
+	}
+	rec := a.record(uid)
+	if rec == "" {
+		return false
+	}
+	uids, _ := a.H.Store.OpenIssueObjectsOf(sess.UserID)
+	for _, u := range uids {
+		if a.record(u) == rec {
+			return true
+		}
+	}
+	return false
+}
+
+// record is the person an object belongs to, or an event program's event itself.
+func (a *API) record(uid string) string {
+	o := a.H.Index.Get(uid)
+	switch {
+	case o == nil:
+		return ""
+	case o.TE != "":
+		return o.TE
+	}
+	return o.UID
+}

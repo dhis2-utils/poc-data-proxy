@@ -64,6 +64,10 @@ type ownRefusal struct {
 	// WaitsFor is the parent the change waits for ("blocked by", E5000): it closes
 	// with that parent.
 	WaitsFor string
+	// Capture opens the record in Capture through this hub, which answers the author's
+	// reads of it from its copy (trackerapi.ownRefusedRecord): for those the author
+	// fixes, and not for a change that waits for its parent.
+	Capture string
 }
 
 // ownRefusals are the signed-in user's open refused changes, newest first, unmasked.
@@ -144,6 +148,7 @@ func (u *UI) ownRefusals(userID int64) []*ownRefusal {
 				r.Program = p.Name
 			}
 			r.Values = itemValues(it)
+			r.Capture = captureLink(h.Index, it)
 			if r.WaitsFor == "" && slices.Contains(r.Codes, "E5000") {
 				switch it.Kind {
 				case store.KindEnrollment:
@@ -156,6 +161,9 @@ func (u *UI) ownRefusals(userID int64) []*ownRefusal {
 			r.ValuesGone = true
 		}
 		r.Closes = closedBy(r.Codes)
+		if r.Closes != ClosedByAuthor || r.WaitsFor != "" {
+			r.Capture = ""
+		}
 		out = append(out, r)
 		byUID[r.Object] = r
 	}
@@ -199,4 +207,25 @@ func itemValues(it *tracker.Item) []ownValue {
 		vs = append(vs, ownValue{"from", it.From.UID}, ownValue{"to", it.To.UID})
 	}
 	return vs
+}
+
+// captureLink is the record's page in Capture at this hub's address, with the routes
+// the Facility Hub app links to on central (apps/facility-hub/src/hubs/issues.ts).
+func captureLink(ix *tracker.Index, it *tracker.Item) string {
+	app := "/dhis-web-capture/index.html#/"
+	switch it.Kind {
+	case store.KindTrackedEntity:
+		if enrs := ix.EnrollmentsOf(it.UID); len(enrs) > 0 {
+			return app + "enrollment?teiId=" + it.UID + "&enrollmentId=" + enrs[0].UID
+		}
+		return app + "enrollment?teiId=" + it.UID
+	case store.KindEnrollment:
+		return app + "enrollment?enrollmentId=" + it.UID
+	case store.KindEvent:
+		if it.Enrollment != "" {
+			return app + "enrollmentEventEdit?eventId=" + it.UID
+		}
+		return app + "viewEvent?viewEventId=" + it.UID
+	}
+	return ""
 }
