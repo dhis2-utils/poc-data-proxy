@@ -649,3 +649,50 @@ func TestReservedPoolSetting(t *testing.T) {
 		t.Errorf("target 0: pool %d after the refused request, want the 3 leftovers", have)
 	}
 }
+
+// A22: when a generated attribute's pattern changes on central, the next sync empties
+// the hub's pool for it and refills under the new pattern, so tablets stop getting
+// values of the old one. A sync with the pattern unchanged keeps the pool.
+func TestReservedPoolPatternChange(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.android("nurse_a")
+	a.json("GET", "/api/me", nil, 200)
+	count := func() int { return e.app.Hub.Store.CountReservedValues(fc.AttrTBID, e.app.Hub.CentralTime(time.Now())) }
+	reserve := func(n int) {
+		t.Helper()
+		st, body := a.do("GET", "/api/trackedEntityAttributes/"+fc.AttrTBID+"/generateAndReserve?numberToReserve="+fmt.Sprint(n), nil)
+		if st != 200 {
+			t.Fatalf("reserve %d offline: %d %.200s", n, st, body)
+		}
+	}
+	full := e.app.Hub.Cfg.ReservedPoolSize // 5 in this env
+	e.sync()
+	if have := count(); have != full {
+		t.Fatalf("pool %d after the first sync, want %d", have, full)
+	}
+	e.offline()
+	reserve(1)
+	e.online()
+	e.sync()
+	if have := count(); have != full-1 {
+		t.Fatalf("pattern unchanged: pool %d after the sync, want %d kept (above the low watermark)", have, full-1)
+	}
+
+	e.central.GeneratedPattern = `"PX" + SEQUENTIAL(#######)`
+	if err := e.app.Hub.RefreshCatalog(context.Background()); err != nil { // the cycle refreshes it only at its interval
+		t.Fatal(err)
+	}
+	e.sync()
+	// Without the drop, full-1 values of the old pattern stay: above the watermark, no refill.
+	if have := count(); have != full {
+		t.Errorf("pattern changed: pool %d after the sync, want %d (old values dropped, refilled)", have, full)
+	}
+	e.offline()
+	reserve(1)
+	e.online()
+	e.sync()
+	if have := count(); have != full-1 {
+		t.Errorf("new pattern unchanged since: pool %d after the sync, want %d kept", have, full-1)
+	}
+}

@@ -18,6 +18,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/central"
 	"github.com/dhis2/facility-hub/internal/compat"
 	"github.com/dhis2/facility-hub/internal/config"
+	"github.com/dhis2/facility-hub/internal/diskfree"
 	"github.com/dhis2/facility-hub/internal/hubcrypto"
 	"github.com/dhis2/facility-hub/internal/store"
 	"github.com/dhis2/facility-hub/internal/tracker"
@@ -581,6 +582,24 @@ func (h *Hub) WebError(w http.ResponseWriter, status int, msg, code string) {
 		api = compat.For("2.42")
 	}
 	WriteJSON(w, status, api.WebMessage(status, msg, code))
+}
+
+// diskFullBelow: a save the store cannot write with less free space than this is
+// answered as a full disk. On Windows SQLite reports a full disk as "disk I/O error"
+// (session B, E7, 9 November).
+const diskFullBelow = 50 << 20
+
+// diskSpace reads the free space where the hub keeps its data (a variable for tests).
+var diskSpace = diskfree.Space
+
+// SaveFailed answers a save the store could not write. A full disk says so, as a 503
+// clients retry; otherwise msg, as a 500. The save was not kept either way.
+func (h *Hub) SaveFailed(w http.ResponseWriter, msg string) {
+	if free, ok := diskSpace(h.Cfg.DataDir); ok && free < diskFullBelow {
+		h.WebError(w, http.StatusServiceUnavailable, "the hub's disk is full: the save was not kept. Free space on the hub's computer, then save again", "")
+		return
+	}
+	h.WebError(w, http.StatusInternalServerError, msg, "")
 }
 
 // NeedsConnectionHeader marks the hub's own "needs connection" answers: what it could

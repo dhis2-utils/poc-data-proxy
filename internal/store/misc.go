@@ -133,6 +133,24 @@ func (s *Store) GetCacheAnyUser(method, url string) (*CachedResponse, error) {
 	return s.GetCache(id, method, url)
 }
 
+// GetAppShell returns the latest cached 200 for an app page /apps/<app>, of any app
+// and user: central's global shell (2.42+) answers every app with the same page, and
+// switching apps in the shell never loads the next app's page, so a reload offline
+// asks for one the hub may not hold.
+func (s *Store) GetAppShell() (*CachedResponse, error) {
+	var id int64
+	var url string
+	err := s.DB().QueryRow(`SELECT user_id, url FROM http_cache WHERE method='GET' AND status=200 AND url LIKE '/apps/_%'
+ AND url NOT LIKE '/apps/%/%' AND url NOT LIKE '/apps/%?%' ORDER BY fetched_at DESC LIMIT 1`).Scan(&id, &url)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.GetCache(id, "GET", url)
+}
+
 // --- issues (spec 11.2) ---------------------------------------------------------
 
 type Issue struct {
@@ -364,6 +382,15 @@ func (s *Store) TakeReservedValues(attr string, n int, now string) ([]ReservedVa
 		}
 	}
 	return out, tx.Commit()
+}
+
+// DropReservedValues removes all of an attribute's values (its pattern changed).
+func (s *Store) DropReservedValues(attr string) (int64, error) {
+	res, err := s.write(`DELETE FROM reserved_values WHERE attribute=?`, attr)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func (s *Store) CountReservedValues(attr, now string) int {

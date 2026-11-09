@@ -396,7 +396,7 @@ func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Ses
 	seq, err := a.H.PersistImport(sess.UserID, out, keep.Encode())
 	if err != nil {
 		slog.Error("persist offline import", "err", err)
-		a.H.WebError(w, 500, "could not store import: "+err.Error(), "")
+		a.H.SaveFailed(w, "could not store import: "+err.Error())
 		return
 	}
 	if seq > 0 {

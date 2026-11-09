@@ -266,6 +266,8 @@ func (u *Upgrader) check(ctx context.Context) error {
 	// old binary, Recover puts the old store back; on the new one, AfterBoot checks it.
 	if err := swapStore(u.StorePath, next, prev); err != nil {
 		slog.Error("store swap failed", "err", err)
+		mk.Reason = "store swap failed: " + err.Error()
+		writeMarker(u.dir("upgrade.json"), mk) // for AfterBoot's report
 		os.Exit(1)
 	}
 	if err := replaceBinary(newBin, exe); err != nil {
@@ -527,6 +529,7 @@ func (u *Upgrader) AfterBoot(ctx context.Context, selfStatusURL string) {
 	switch mk.State {
 	case "rolledback":
 		os.Remove(path)
+		removeStore(u.StorePath + ".next") // the migrated copy, put aside by Recover
 		u.H.Store.SetMeta("upgrade_skip", mk.To)
 		u.record(Result{Result: "failed", From: mk.From, To: mk.To, Reason: "rolled back: " + mk.Reason})
 		return
@@ -537,7 +540,11 @@ func (u *Upgrader) AfterBoot(ctx context.Context, selfStatusURL string) {
 			// nothing against the release, which may be the only one there is: it is
 			// tried once more, and skipped after a second stop.
 			os.Remove(path)
+			removeStore(u.StorePath + ".next") // the migrated copy, put aside by Recover
 			reason := "the upgrade stopped before " + mk.To + " started"
+			if mk.Reason != "" {
+				reason = mk.Reason
+			}
 			if u.H.Store.Meta("upgrade_cut") == mk.To {
 				u.H.Store.SetMeta("upgrade_skip", mk.To)
 				reason += ", a second time"
@@ -752,11 +759,33 @@ func moveFile(from, to string) error {
 		return nil
 	}
 	for _, sfx := range []string{"-wal", "-shm", ""} {
-		if err := os.Rename(from+sfx, to+sfx); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := renameHeld(from+sfx, to+sfx); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}
 	return nil
+}
+
+// renameWait is how long a rename is retried while the file is held open. Windows
+// refuses to rename an open file ("being used by another process"): a request still
+// running after the hub stopped serving, or a virus scanner reading a new file. On the
+// VM, 9 November, the store's -wal was held at the swap and the upgrade failed.
+var renameWait = time.Minute
+
+// rename is os.Rename (a variable for tests).
+var rename = os.Rename
+
+// renameHeld renames, retrying every half second for renameWait while it fails for any
+// reason but a missing file.
+func renameHeld(from, to string) error {
+	deadline := time.Now().Add(renameWait)
+	for {
+		err := rename(from, to)
+		if err == nil || errors.Is(err, os.ErrNotExist) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 func exists(path string) bool {

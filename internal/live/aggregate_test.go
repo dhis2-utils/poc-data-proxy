@@ -83,6 +83,36 @@ func TestAggregateAccessRefreshed(t *testing.T) {
 	nurse.JSON("GET", "/api/"+h.APIMinor()+"/dataEntry/metadata", nil, 200)
 }
 
+// The hourly refresh asks with the ETag of the copy it holds: unchanged forms cost
+// no body (central answers 304 with nothing; 3.5 MB a user an hour with Uganda's
+// eRegisters forms otherwise), and a change is fetched in full.
+func TestAggregateRefreshNotModified(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	e.NeedFake()
+	h := e.App.Hub
+	u, _ := h.Store.UserByName(nurse.User)
+	before := e.Fake.AggMetadataNotModified
+	if err := h.RefreshAccess(context.Background(), u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if e.Fake.AggMetadataNotModified != before+1 {
+		t.Fatalf("an unchanged refresh: %d answered 304, want 1", e.Fake.AggMetadataNotModified-before)
+	}
+	if acc := h.AggAccess(u.ID); acc == nil || acc.DataSets[ag.DataSet] == nil {
+		t.Fatalf("after a 304 the nurse's access is %+v, want the copy kept", acc)
+	}
+	e.Fake.AggExpiryDays = 7
+	if err := h.RefreshAccess(context.Background(), u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if e.Fake.AggMetadataNotModified != before+1 {
+		t.Errorf("a changed form was answered 304")
+	}
+	if acc := h.AggAccess(u.ID); acc == nil || acc.DataSets[ag.DataSet] == nil || acc.DataSets[ag.DataSet].ExpiryDays != 7 {
+		t.Errorf("after the change the nurse's access is %+v, want expiry 7", acc.DataSets[ag.DataSet])
+	}
+}
+
 func formPath(e *tk.Env, ds, pe string) string {
 	q := url.Values{"ds": {ds}, "pe": {pe}, "ou": {e.M.Facility.ID}}
 	return "/api/" + e.App.Hub.APIMinor() + "/dataEntry/dataValues?" + q.Encode()
@@ -202,6 +232,10 @@ func TestAggregateCompletionWaitsForValues(t *testing.T) {
 	nurse.PostDataValue(v, cell(e, ag.DataSet, pe, ag.Required, ag.COC, "value", "3"))
 	clerk.JSON("POST", "/api/"+e.App.Hub.APIMinor()+"/dataEntry/dataSetCompletion",
 		map[string]any{"dataSet": ag.DataSet, "period": pe, "orgUnit": e.M.Facility.ID, "completed": true}, 200)
+	// The hub page's "aggregate edits waiting" counts values and completions.
+	if n := e.App.Hub.Store.CountAggregatePending(); n != 2 {
+		t.Errorf("offline: %d aggregate edits waiting, want 2 (a value and a completion)", n)
+	}
 	u, _ := e.App.Hub.Store.UserByName(nurse.User)
 	e.Fake.RevokeToken(u.PATUID) // central refuses the nurse's token: her value waits
 	e.Online()
@@ -213,6 +247,9 @@ func TestAggregateCompletionWaitsForValues(t *testing.T) {
 	e.Sync()
 	if !e.Fake.Complete(ag.DataSet, pe, ag.DefaultAOC) {
 		t.Fatal("completion not pushed after the value")
+	}
+	if n := e.App.Hub.Store.CountAggregatePending(); n != 0 {
+		t.Errorf("after the push: %d aggregate edits waiting, want 0", n)
 	}
 }
 

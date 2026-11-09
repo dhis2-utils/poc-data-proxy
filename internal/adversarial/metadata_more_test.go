@@ -227,7 +227,6 @@ func TestA22GeneratedPatternChanges(t *testing.T) {
 		}
 	}
 	if oldShape {
-		finding(t, "A22: after a sync the hub's pool still hands out values of the old pattern")
 		t.Errorf("after the sync the hub hands out %s, a value of the old pattern (%d left in the pool)", v, left)
 	}
 }

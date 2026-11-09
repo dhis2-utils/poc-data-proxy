@@ -315,14 +315,32 @@ const maxReservePerRequest = 1000
 // the watermark of a target below 4 to 0, so a pool of 1–3 never refilled, even empty.
 const poolLowWatermark = 4
 
+// poolPatternKey + attribute is the pattern the attribute's pool was filled under.
+const poolPatternKey = "pool_pattern:"
+
 // RefillPool tops up the reserved value pool for every generated attribute, from the
 // low watermark to the target (the app's per-attribute setting, else the default).
+// When an attribute's pattern changed on central, its pool is emptied first, so the
+// hub stops handing out values of the old pattern (A22); the values dropped stay
+// reserved on central until they expire, as values a reset tablet loses do.
 func (w *Worker) RefillPool(ctx context.Context) error {
 	h := w.H
 	rt := h.Runtime()
 	now := h.CentralTime(time.Now())
 	var errs []error
 	for _, a := range h.Catalog().GeneratedAttributes() {
+		if old := h.Store.Private(poolPatternKey + a.ID); old != a.Pattern {
+			if old != "" {
+				n, err := h.Store.DropReservedValues(a.ID)
+				if err != nil {
+					return err
+				}
+				slog.Info("reserved values dropped: the pattern changed", "attribute", a.ID, "from", old, "to", a.Pattern, "dropped", n)
+			}
+			if err := h.Store.SetPrivate(poolPatternKey+a.ID, a.Pattern); err != nil {
+				return err
+			}
+		}
 		have := h.Store.CountReservedValues(a.ID, now)
 		target := h.PoolTarget(a.ID)
 		if have*poolLowWatermark >= target {

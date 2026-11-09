@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dhis2/facility-hub/internal/devkey"
+	"github.com/dhis2/facility-hub/internal/diskfree"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -324,15 +325,30 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"LocalReads": len(h.LocalReads().Programs) > 0, "MetaChecked": metaChecked, "MetaChanged": metaChanged,
 		"Forced": h.Monitor.ForcedOffline(), "UplinkSwitch": h.Cfg.UplinkSwitch, "Upgrade": upgrade, "Central": h.Central.BaseURL(),
 		"ServerVersion": h.ServerVersion(), "Msg": r.URL.Query().Get("msg"),
-		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour), "Orphans": h.Store.PendingWithoutUser(),
+		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour), "AggPending": h.Store.CountAggregatePending(), "Orphans": h.Store.PendingWithoutUser(),
 		"Offline": !h.Online(), "AccountCode": h.AccountCode(), "Housekeeping": h.Stats.HousekeepingError(),
 		"Reach": reachText(h.Reach()), "Proxy": h.Proxy(), "Net": u.netView(true), "Clocks": clocks, "HubBehind": behindText(h.ClockBehind()),
 		"OwnRefusals": own, "StoreDamaged": h.StoreDamaged(), "DamageAdvice": core.StoreDamageAdvice,
+		"DiskLow": diskText(diskfree.Space(h.Cfg.DataDir)),
 	})
 }
 
 // aheadText is how far a device clock runs ahead, in hours or days.
 // behindText is how far the hub's clock is behind central's, "" when it is not.
+// lowDisk is where the hub's page warns about free space: the Facility Hub app's flag
+// on central ("under 2 GB free", apps/facility-hub/src/hubs/flags.ts), which comes
+// with the hourly heartbeat and so never shows while the hub is offline.
+const lowDisk = 2e9
+
+// diskText is the page's warning for free bytes where the hub keeps its data, or
+// "" when there is enough or it could not be read.
+func diskText(free uint64, known bool) string {
+	if !known || free >= lowDisk {
+		return ""
+	}
+	return fmt.Sprintf("%.1f GB", float64(free)/1e9)
+}
+
 func behindText(d time.Duration) string {
 	if d <= 0 {
 		return ""

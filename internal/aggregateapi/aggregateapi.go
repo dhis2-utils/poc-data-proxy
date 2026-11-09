@@ -285,7 +285,7 @@ func (a *API) queue(w http.ResponseWriter, sess *core.Session, ed *aggregate.Edi
 	})
 	if err != nil {
 		slog.Error("queue aggregate edit", "err", err)
-		a.H.WebError(w, http.StatusInternalServerError, "could not save the edit", "")
+		a.H.SaveFailed(w, "could not save the edit")
 		return false
 	}
 	a.H.NoteSave(false)

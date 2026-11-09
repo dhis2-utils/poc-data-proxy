@@ -130,6 +130,10 @@ type Central struct {
 	// selectEnrollmentDatesInFuture and selectIncidentDatesInFuture. False, as on a new
 	// program on central, refuses dates after central's today (E1020, E1021).
 	FutureEnrollmentDates, FutureIncidentDates bool
+	// AggMetadataNotModified counts dataEntry/metadata requests answered 304.
+	AggMetadataNotModified int
+	// GeneratedPattern replaces the generated attribute's pattern when set.
+	GeneratedPattern string
 	// Requests counts calls per "METHOD path" for assertions.
 	Requests map[string]int
 	gen      *generated // Generate: performance-test data
@@ -833,9 +837,13 @@ func (c *Central) programs(w http.ResponseWriter, r *http.Request, u *User) {
 		writeJSON(w, 200, map[string]any{"programs": []any{}})
 		return
 	}
+	pattern := "RANDOM(##########)"
+	if c.GeneratedPattern != "" {
+		pattern = c.GeneratedPattern
+	}
 	attr := func(id string, gen, uniq bool) map[string]any {
 		return map[string]any{"trackedEntityAttribute": map[string]any{"id": id, "generated": gen, "unique": uniq,
-			"pattern": map[bool]string{true: "RANDOM(##########)"}[gen]}}
+			"pattern": map[bool]string{true: pattern}[gen]}}
 	}
 	var stages []any
 	for i, s := range []string{Stage1, Stage2, Stage3} {

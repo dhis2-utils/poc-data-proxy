@@ -60,6 +60,11 @@ type ref struct {
 	ID string `json:"id"`
 }
 
+// Bypass: authorities under which expiry days do not lock periods.
+func Bypass(authorities []string) bool {
+	return slices.Contains(authorities, "F_EDIT_EXPIRED") || slices.Contains(authorities, "ALL")
+}
+
 // ParseMetadata reads central's dataEntry/metadata answer for a user with these
 // authorities.
 func ParseMetadata(b []byte, authorities []string) (*Access, error) {
@@ -109,7 +114,7 @@ func ParseMetadata(b []byte, authorities []string) (*Access, error) {
 		return nil, err
 	}
 	a := &Access{DataSets: map[string]*DataSet{}, Elements: map[string]*Element{}, Combos: map[string]*Combo{},
-		Options: map[string]bool{}, Bypass: slices.Contains(authorities, "F_EDIT_EXPIRED") || slices.Contains(authorities, "ALL")}
+		Options: map[string]bool{}, Bypass: Bypass(authorities)}
 	for _, e := range md.DataElements {
 		a.Elements[e.ID] = &Element{ID: e.ID, Name: e.DisplayName, ValueType: e.ValueType, CategoryCombo: e.CategoryCombo.ID}
 	}

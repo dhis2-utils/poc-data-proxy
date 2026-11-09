@@ -1,6 +1,7 @@
 package fakecentral
 
 import (
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"mime"
@@ -71,7 +72,19 @@ func (c *Central) aggregate(w http.ResponseWriter, r *http.Request, u *User) boo
 				"categories": []any{}, "categoryOptions": []any{}, "optionSets": []any{}, "indicators": []any{}})
 			return true
 		}
-		writeJSON(w, 200, c.aggMetadata(opts))
+		// With an ETag, as central sends: a request with the current one gets 304.
+		b, _ := json.Marshal(c.aggMetadata(opts))
+		etag := fmt.Sprintf(`"%x"`, md5.Sum(b))
+		w.Header().Set("ETag", etag)
+		if r.Header.Get("If-None-Match") == etag {
+			c.mu.Lock()
+			c.AggMetadataNotModified++
+			c.mu.Unlock()
+			w.WriteHeader(http.StatusNotModified)
+			return true
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(b)
 	case "/api/dataEntry/dataValues":
 		q := r.URL.Query()
 		aoc, ok := aggAOC(q.Get("ds"), q.Get("cc"), q.Get("cp"))

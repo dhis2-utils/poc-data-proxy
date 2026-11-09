@@ -6,9 +6,11 @@
 <main>
 {{with .Msg}}<div class="msg">{{.}}</div>{{end}}
 {{with .StoreDamaged}}<div class="err"><b>The hub's store is damaged</b> ({{.}}). What the hub serves and saves can no longer be trusted. {{$.DamageAdvice}}</div>{{end}}
+{{with .DiskLow}}<div class="err"><b>The hub's disk is nearly full: {{.}} free.</b> When it runs out, saves fail until space is freed. Free space on this computer, or tell whoever looks after the hub.</div>{{end}}
 {{with .Housekeeping}}<div class="err">The hub's housekeeping fails: {{.}}. Its heartbeat, reports of refused changes and programme list stop until a staff member takes it over under "The hub's own account" below. Staff saves are not affected.</div>{{end}}
 <div class="card"><div class="grid">
 <div class="stat"><b>{{.Status.pending}}</b><span>pending objects</span></div>
+<div class="stat"><b>{{.AggPending}}</b><span>aggregate edits waiting</span></div>
 <div class="stat"><b>{{.Status.rejected}}</b><span>rejected objects</span></div>
 <div class="stat"><b>{{.Objects}}</b><span>objects cached</span></div>
 <div class="stat"><b>{{with .Status.lastPush}}{{short (printf "%v" .)}}{{else}}never{{end}}</b><span>last push</span></div>

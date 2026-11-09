@@ -2,10 +2,13 @@ package upgrade
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 // A store's files, by role: the key file, its data file and their write-ahead logs.
@@ -144,4 +147,38 @@ func TestReleaseThatCannotStartRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	storeIs(t, h.live, "old", "old release")
+}
+
+// Windows refuses to rename a file someone still holds open (the store's -wal at the
+// swap, VM, 9 November): the swap waits for it, and gives up after renameWait.
+func TestSwapWaitsForHeldFile(t *testing.T) {
+	defer func(f func(string, string) error, w time.Duration) { rename, renameWait = f, w }(rename, renameWait)
+	held := errors.New("The process cannot access the file because it is being used by another process.")
+	fails := 0
+	rename = func(from, to string) error {
+		if strings.HasSuffix(from, ".data") && fails < 3 { // the data file, held for a while
+			fails++
+			return &os.LinkError{Op: "rename", Old: from, New: to, Err: held}
+		}
+		return os.Rename(from, to)
+	}
+	renameWait = 10 * time.Second
+	h := newCrashHub(t, "swapped")
+	if err := swapStore(h.live, h.next, h.prev); err != nil {
+		t.Fatalf("a file held for 1.5 s: %v", err)
+	}
+	storeIs(t, h.live, "new", "after the wait")
+	storeIs(t, h.prev, "old", "after the wait")
+
+	rename = func(from, to string) error { return &os.LinkError{Op: "rename", Old: from, New: to, Err: held} }
+	renameWait = time.Second
+	h = newCrashHub(t, "swapped")
+	start := time.Now()
+	if err := swapStore(h.live, h.next, h.prev); err == nil || time.Since(start) < time.Second {
+		t.Fatalf("a file held for good: %v after %v, want an error after renameWait", err, time.Since(start))
+	}
+	if err := func() error { rename = os.Rename; return Recover(h.dir, h.live, "0.1.0") }(); err != nil {
+		t.Fatal(err)
+	}
+	storeIs(t, h.live, "old", "after giving up")
 }

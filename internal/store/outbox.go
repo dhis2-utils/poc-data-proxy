@@ -220,6 +220,13 @@ func (s *Store) FailingSince(seq int64) time.Time {
 	return t
 }
 
+// CountAggregatePending: aggregate edits and completions waiting to be pushed.
+func (s *Store) CountAggregatePending() int {
+	var n int
+	s.DB().QueryRow(`SELECT count(*) FROM outbox WHERE state=? AND kind=?`, OutboxPending, OutboxAggregate).Scan(&n)
+	return n
+}
+
 func (s *Store) CountOutbox(state string) int {
 	var n int
 	s.DB().QueryRow(`SELECT count(*) FROM outbox WHERE state=?`, state).Scan(&n)

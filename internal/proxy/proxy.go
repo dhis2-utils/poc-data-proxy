@@ -285,6 +285,12 @@ func cacheUser(sess *core.Session) int64 {
 	return sess.UserID
 }
 
+// isAppShell: /apps/<app>, the page 2.42+ opens an app at.
+func isAppShell(p string) bool {
+	rest, ok := strings.CutPrefix(p, "/apps/")
+	return ok && rest != "" && !strings.Contains(rest, "/")
+}
+
 // isStatic reports whether a path is an app's static file, which holds no user data
 // and may be served offline from any user's cache entry.
 func isStatic(p string) bool {
@@ -293,7 +299,7 @@ func isStatic(p string) bool {
 	}
 	// 2.42+ opens apps at /apps/<app> in its global shell: an app file without an
 	// extension.
-	if rest, ok := strings.CutPrefix(p, "/apps/"); ok && rest != "" && !strings.Contains(rest, "/") {
+	if isAppShell(p) {
 		return true
 	}
 	switch strings.ToLower(path.Ext(p)) {
@@ -495,6 +501,9 @@ func (p *Proxy) serveOffline(w http.ResponseWriter, r *http.Request, sess *core.
 	if err == nil && cached == nil && r.URL.Path == "/" {
 		http.Redirect(w, r, "/dhis-web-capture/index.html", http.StatusFound)
 		return 302
+	}
+	if err == nil && cached == nil && sess != nil && r.Method == "GET" && isAppShell(r.URL.Path) {
+		cached, err = p.H.Store.GetAppShell()
 	}
 	if err != nil || cached == nil {
 		p.H.NeedsConnection(w, r.URL.Path+" was not cached while online")

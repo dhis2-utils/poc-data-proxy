@@ -894,7 +894,8 @@ func TestCentralOlderKeepsRefused(t *testing.T) {
 }
 
 // TestOfflineAppShellAndConditionalGets: on 2.42+ apps open at /apps/<app>, a page
-// without a file extension; offline it is served to any user, like other app files.
+// without a file extension; offline it is served to any user, like other app files,
+// and for an app whose page was never fetched, another app's (the same page).
 // A browser that holds another user's copy asks conditionally: the hub must still
 // get (and cache) a full answer for this user.
 func TestOfflineAppShellAndConditionalGets(t *testing.T) {
@@ -912,6 +913,12 @@ func TestOfflineAppShellAndConditionalGets(t *testing.T) {
 	e.offline()
 	if st, b := clerk.do("GET", "/apps/aggregate-data-entry", nil); st != 200 || !strings.Contains(string(b), "global shell") {
 		t.Fatalf("offline, a user who never opened the shell page: %d %s", st, b)
+	}
+	// Switching apps inside the shell never loads the next app's page, so a reload
+	// offline can ask for one nobody fetched: central's shell is the same page for
+	// every app (2.42.7.1 and 2.43.2, checked 9 November), and the hub answers with the one it has.
+	if st, b := clerk.do("GET", "/apps/capture", nil); st != 200 || !strings.Contains(string(b), "global shell") {
+		t.Fatalf("offline, an app page nobody fetched online: %d %.200s", st, b)
 	}
 	if st, b := clerk.do("GET", "/api/42/userSettings", nil); st != 200 || !strings.Contains(string(b), "keyUiLocale") {
 		t.Fatalf("offline userSettings for the clerk: %d %s", st, b)

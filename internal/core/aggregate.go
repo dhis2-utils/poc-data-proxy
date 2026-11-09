@@ -54,7 +54,18 @@ func (h *Hub) APIMinor() string {
 // user without the app's authority gets 403 or an empty list: no aggregate access.
 func (h *Hub) RefreshAggAccess(ctx context.Context, userID int64, auth central.Auth, authorities []string) error {
 	path := "/api/" + h.APIMinor() + "/dataEntry/metadata"
-	resp, err := h.Central.Do(ctx, "GET", path, nil, auth, nil)
+	// Asked with the ETag of the copy the hub holds: unchanged, central answers 304
+	// with no body (3.5 MB a user an hour with Uganda's eRegisters forms otherwise;
+	// PERFORMANCE.md, "Central's load from one facility"). A change to the forms or
+	// to the user's access changes the ETag.
+	var cond http.Header
+	old := h.AggAccess(userID)
+	if c, _ := h.Store.GetCache(userID, "GET", path); c != nil && c.Status == http.StatusOK && old != nil {
+		if et := c.Header.Get("ETag"); et != "" {
+			cond = http.Header{"If-None-Match": {et}}
+		}
+	}
+	resp, err := h.Central.Do(ctx, "GET", path, nil, auth, cond)
 	if err != nil {
 		return err
 	}
@@ -62,6 +73,14 @@ func (h *Hub) RefreshAggAccess(ctx context.Context, userID int64, auth central.A
 	resp.Body.Close()
 	a := &aggregate.Access{}
 	switch resp.StatusCode {
+	case http.StatusNotModified:
+		// The authorities are the hub's own reading of the user, not in the answer.
+		if cp := *old; cp.Bypass != aggregate.Bypass(authorities) {
+			cp.Bypass = aggregate.Bypass(authorities)
+			a = &cp
+		} else {
+			return nil
+		}
 	case http.StatusOK:
 		if a, err = aggregate.ParseMetadata(b, authorities); err != nil {
 			return fmt.Errorf("dataEntry/metadata: %w", err)
