@@ -197,36 +197,43 @@ var validationRe = regexp.MustCompile(`^/api/([0-9]{2}/)?validation/`)
 
 // selectFields applies a top-level DHIS2 fields selection ("authorities",
 // "settings[keyUiLocale]") to a JSON object, as central does for /api/me. Fields the
-// object lacks are left out ("userCredentials[userRoles]" gives {} on 2.42).
-func selectFields(body []byte, fields string) []byte {
+// object lacks are left out ("userCredentials[userRoles]" gives {} on 2.42). exact is
+// false when it cannot do what central would: fields of a list's items
+// ("organisationUnits[id,programs[id]]"), which the login copy of /api/me names by id
+// only.
+func selectFields(body []byte, fields string) (out []byte, exact bool) {
 	var obj map[string]any
 	if fields == "" || json.Unmarshal(body, &obj) != nil {
-		return body
+		return body, true
 	}
-	out := map[string]any{}
+	exact = true
+	sel := map[string]any{}
 	for _, f := range splitTop(fields) {
 		name, sub, _ := strings.Cut(f, "[")
 		name = strings.TrimSpace(name)
 		if name == "*" || name == ":all" {
-			return body
+			return body, true
 		}
 		v, ok := obj[name]
 		if !ok {
 			continue
 		}
+		if _, isList := v.([]any); isList && sub != "" {
+			exact = false
+		}
 		if m, isMap := v.(map[string]any); isMap && sub != "" {
-			sel := map[string]any{}
+			part := map[string]any{}
 			for _, k := range splitTop(strings.TrimSuffix(sub, "]")) {
 				if x, ok := m[strings.TrimSpace(k)]; ok {
-					sel[strings.TrimSpace(k)] = x
+					part[strings.TrimSpace(k)] = x
 				}
 			}
-			v = sel
+			v = part
 		}
-		out[name] = v
+		sel[name] = v
 	}
-	b, _ := json.Marshal(out)
-	return b
+	out, _ = json.Marshal(sel)
+	return out, exact
 }
 
 // splitTop splits on commas that are not inside brackets.
@@ -415,8 +422,11 @@ func (p *Proxy) localCopy(r *http.Request, sess *core.Session) *Result {
 	}
 	res := &Result{Status: c.Status, Header: c.Header, Body: c.Body}
 	if me {
-		res = &Result{Status: 200, Header: http.Header{"Content-Type": {"application/json;charset=UTF-8"}},
-			Body: selectFields(c.Body, r.URL.Query().Get("fields"))}
+		body, exact := selectFields(c.Body, r.URL.Query().Get("fields"))
+		if !exact {
+			return nil // central answers what the login copy lacks
+		}
+		res = &Result{Status: 200, Header: http.Header{"Content-Type": {"application/json;charset=UTF-8"}}, Body: body}
 	}
 	res = p.Localize(r, res)
 	res.Header.Set("X-Hub-Cache", "local; fetched="+c.FetchedAt)
@@ -494,7 +504,8 @@ func (p *Proxy) serveOffline(w http.ResponseWriter, r *http.Request, sess *core.
 		if me, _ := p.H.Store.GetCache(sess.UserID, "GET", auth.MeCacheKey); me != nil {
 			w.Header().Set("Content-Type", "application/json;charset=UTF-8")
 			w.Header().Set("X-Hub-Cache", "offline; me")
-			w.Write(selectFields(me.Body, r.URL.Query().Get("fields")))
+			body, _ := selectFields(me.Body, r.URL.Query().Get("fields")) // offline: the best it has
+			w.Write(body)
 			return 200
 		}
 	}

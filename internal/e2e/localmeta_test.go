@@ -83,3 +83,33 @@ func TestMetadataFromHubWhileOnline(t *testing.T) {
 		t.Fatalf("offline after a change: %d %s, want the copy", st, b)
 	}
 }
+
+// eRegisters asks /api/me for its org units with their programs
+// (organisationUnits[id,name,path,programs[id,name],...]). The copy of /api/me kept at
+// login names each org unit by id only, so it cannot give those fields; answered from
+// it with local reads on, eRegisters 1.1.9 failed to start ("Cannot read properties of
+// undefined (reading 'length')", unit.programs.length; found by TestCentralWork on
+// 2.43, 9 November). Such a request goes to central.
+func TestMeNestedFieldsWhileOnline(t *testing.T) {
+	e := newEnv(t)
+	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{
+		"localReads": json.RawMessage(`{"programs":["` + fc.Program + `"]}`)}
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.sync()
+
+	before := e.central.RequestCount("GET /api/me")
+	if st, b := a.do("GET", "/api/me?fields=id,username", nil); st != 200 || !strings.Contains(string(b), "nurse_a") {
+		t.Fatalf("/api/me?fields=id,username: %d %s", st, b)
+	}
+	if e.central.RequestCount("GET /api/me") != before {
+		t.Error("top-level fields went to central: the login copy can answer them")
+	}
+	if st, b := a.do("GET", "/api/me?fields=id,organisationUnits[id,name,path,programs[id,name]]", nil); st != 200 {
+		t.Fatalf("/api/me with org units' programs: %d %s", st, b)
+	}
+	if e.central.RequestCount("GET /api/me") != before+1 {
+		t.Error("/api/me with fields of its org units was answered from the login copy, which lacks them")
+	}
+}
