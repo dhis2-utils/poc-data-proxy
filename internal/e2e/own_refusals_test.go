@@ -194,14 +194,18 @@ func TestOpenRefusalInCapture(t *testing.T) {
 	if e.central.Object("CapEv000093") == nil || strings.Contains(ownSection(page(a)), "CapEv000093") {
 		t.Error("the author's refused new event, saved as an update: not on central, or still listed")
 	}
-	// The refused registration: its person reaches central. The enrollment that
-	// waited for it is not sent with it, and stays refused (FINDINGS.md).
+	// The refused registration: its person reaches central, and the enrollment and
+	// event that waited for it are sent again at the next push.
 	a.json("POST", "/api/tracker?async=false", person("CapTe000091", "Amina", "NAT-9199"), 200)
 	if e.central.Object("CapTe000091") == nil {
 		t.Fatal("the corrected registration did not reach central")
 	}
-	if !strings.Contains(ownSection(page(a)), "CapEn000091") || e.central.Object("CapEn000091") != nil {
-		t.Error("the enrollment that waited for the person: no longer listed, or on central")
+	e.sync()
+	if e.central.Object("CapEn000091") == nil || e.central.Object("CapEv000091") == nil {
+		t.Error("the enrollment or event that waited for the corrected person did not reach central")
+	}
+	if own := ownSection(page(a)); own != "" {
+		t.Errorf("after the saves the author's sync errors still list:\n%s", own)
 	}
 }
 

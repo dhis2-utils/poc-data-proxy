@@ -32,9 +32,25 @@ func (h *Hub) ReplaceDiscarded(userID int64, payload tracker.M, discarded map[st
 
 // UpsertSaved stores what central persisted of a save sent through the hub online. It
 // replaces the hub's refused copies of those objects: central took a newer version,
-// as at a pull (changedSinceRefused), and the refusal closes.
+// as at a pull (changedSinceRefused), and the refusal closes. Their refused children
+// (an enrollment and events that waited for a refused person) are sent again, as a
+// retry from the Facility Hub app sends them.
 func (h *Hub) UpsertSaved(userID int64, payload tracker.M, persisted map[string]bool) ([]string, error) {
-	return h.upsertCentral(userID, payload, false, persisted)
+	var kids []string
+	for uid, ok := range persisted {
+		if o := h.Index.Get(uid); ok && o != nil && o.SyncState == store.SyncRejected {
+			for _, k := range slices.Concat(h.Index.EnrollmentsOf(uid), h.Index.EventsOfTE(uid), h.Index.EventsOf(uid)) {
+				if k.SyncState == store.SyncRejected && !persisted[k.UID] {
+					kids = append(kids, k.UID)
+				}
+			}
+		}
+	}
+	uids, err := h.upsertCentral(userID, payload, false, persisted)
+	if n, _ := h.Store.Requeue(kids, nil, 0); n > 0 {
+		h.TriggerSync()
+	}
+	return uids, err
 }
 
 func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool, discarded map[string]bool) ([]string, error) {
