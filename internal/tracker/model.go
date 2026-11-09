@@ -417,11 +417,14 @@ func NewUID() string {
 
 // AssignUIDs gives every object in a nested or flat payload that has no UID a new one,
 // as central does. Capture's registration payload has no enrollment UID.
-func AssignUIDs(payload M) {
+func AssignUIDs(payload M) { AssignUIDsWith(payload, NewUID) }
+
+// AssignUIDsWith is AssignUIDs with the UIDs from next.
+func AssignUIDsWith(payload M, next func() string) {
 	var walk func(m M, key string)
 	set := func(m M, key string) {
 		if Str(m, key) == "" {
-			m[key] = NewUID()
+			m[key] = next()
 		}
 	}
 	walk = func(m M, key string) {

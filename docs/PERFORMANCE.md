@@ -314,7 +314,7 @@ The hub's own work in the working day: its 24 cycles 2.8 s of DB time and 14 s o
 
 **Found on the way** (no hub change in this work; to follow up):
 
-- **With local reads on, Capture web did not open a person it had just registered:** after the save (passed to central, 200), the hub answered the new person's dashboard from its copy, and Capture showed "Akello 36 is not enrolled in this program" (5 of 5 registrations, `TestCentralWork`, run 1 and 3).
+- **With local reads on, Capture web did not open a person it had just registered:** after the save (passed to central, 200), the hub answered the new person's dashboard from its copy, and Capture showed "Akello 36 is not enrolled in this program" (5 of 5 registrations, `TestCentralWork`, run 1 and 3). Cause: Capture sends the enrollment without a UID; central assigns one and names it in its report, but the hub stored only the objects whose UIDs it had sent. Fixed the same day: a single object sent without a UID gets the one central reports (`trackerapi.fillAssigned`, `TestLocalReadsRegistrationWithoutEnrollmentUID`); the real app then opened the person with their visit.
 - **With local reads on, eRegisters 1.1.9 did not start** in a new browser: after 15 minutes without its start screen it showed "Something went wrong! … Cannot read properties of undefined (reading 'length')" (runs 1 and 2). Through a hub passing everything through, it worked.
 - **eRegisters 1.1.9 does not push a save by itself:** the save stays in the browser until Push Data. Staff who push a few times a day send fewer, larger pushes; that was not measured.
 - **eRegisters' first pull after a browser's first download re-read half the facility** (51 pages and 76 MB, against 6 pages on the following days), once per browser.

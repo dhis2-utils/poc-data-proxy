@@ -87,3 +87,40 @@ func TestLocalReadsWhileOnline(t *testing.T) {
 		t.Error("with no programs listed, a working list was answered by the hub")
 	}
 }
+
+// Capture web registers a person with an enrollment that has no UID; central assigns
+// one and names it in its report. With local reads, the hub must hold that
+// enrollment, or Capture opens the new person as "not enrolled in this program"
+// (found by TestCentralWork on 2.43, 9 November).
+func TestLocalReadsRegistrationWithoutEnrollmentUID(t *testing.T) {
+	e := newEnv(t)
+	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{
+		"localReads": json.RawMessage(`{"programs":["` + fc.Program + `"]}`)}
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.sync()
+
+	st, body := a.do("POST", "/api/tracker?async=false", map[string]any{"trackedEntities": []any{map[string]any{
+		"trackedEntity": "LocNoEnr001", "trackedEntityType": fc.TET, "orgUnit": fc.Facility,
+		"attributes": []any{map[string]any{"attribute": fc.AttrFirstName, "value": "Noenrollmentuid"}},
+		"enrollments": []any{map[string]any{"program": fc.Program, "orgUnit": fc.Facility,
+			"enrolledAt": "2026-11-09", "status": "ACTIVE"}}}}})
+	if st != 200 {
+		t.Fatalf("registration: %d %s", st, body)
+	}
+	reads := e.central.RequestsUnder("GET /api/tracker")
+	// Capture's reads of the new person's dashboard.
+	st, body = a.do("GET", "/api/tracker/trackedEntities/LocNoEnr001?fields=programOwners[orgUnit],enrollments[program,status]&program="+fc.Program, nil)
+	if e.central.RequestsUnder("GET /api/tracker") != reads {
+		t.Fatal("the read went to central; this test is about the hub's answer")
+	}
+	var got struct {
+		Enrollments   []map[string]any `json:"enrollments"`
+		ProgramOwners []map[string]any `json:"programOwners"`
+	}
+	json.Unmarshal(body, &got)
+	if st != 200 || len(got.Enrollments) != 1 || len(got.ProgramOwners) != 1 {
+		t.Fatalf("the hub's answer for the new person: %d %s, want one enrollment and one owner", st, body)
+	}
+}

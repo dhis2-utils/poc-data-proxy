@@ -207,12 +207,36 @@ func (a *API) storePersisted(userID int64, body []byte, status int, report []byt
 		return
 	}
 	a.H.NoteClientClock(userID, payload)
+	fillAssigned(payload, persisted)
 	uids, err := a.H.UpsertCentral(userID, filterPayload(payload, persisted), false)
 	if err != nil {
 		slog.Warn("store online write", "err", err)
 		return
 	}
 	a.H.ShareByRules(uids)
+}
+
+// fillAssigned gives an object the client sent without a UID the one central assigned
+// (Capture registers a person with an enrollment that has none). Central's report
+// names the new UID but not which object it belongs to, so only a single one is
+// filled; otherwise the next pull brings them.
+func fillAssigned(payload tracker.M, persisted map[string]bool) {
+	sent, blank := map[string]bool{}, 0
+	for _, it := range tracker.Flatten(payload) {
+		sent[it.UID] = true
+		if it.UID == "" {
+			blank++
+		}
+	}
+	var assigned []string
+	for uid, ok := range persisted {
+		if ok && !sent[uid] {
+			assigned = append(assigned, uid)
+		}
+	}
+	if blank == 1 && len(assigned) == 1 {
+		tracker.AssignUIDsWith(payload, func() string { return assigned[0] })
+	}
 }
 
 // filterPayload keeps only persisted objects (flattened).

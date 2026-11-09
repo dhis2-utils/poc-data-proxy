@@ -1058,6 +1058,7 @@ func (c *Central) importTracker(w http.ResponseWriter, r *http.Request, u *User)
 		return
 	}
 	atomicAll := r.URL.Query().Get("atomicMode") != "OBJECT"
+	tracker.AssignUIDs(payload) // as central does: Capture registers without an enrollment UID
 	items := tracker.Flatten(payload)
 	c.mu.Lock()
 	defer c.mu.Unlock()
