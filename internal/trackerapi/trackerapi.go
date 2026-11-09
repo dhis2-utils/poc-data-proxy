@@ -101,6 +101,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.H.PassThrough() {
+		a.createRefused(sess, r, body)
 		res, err := a.Proxy.Forward(r.Context(), r, body, a.Proxy.Upstream(sess))
 		if err == nil {
 			if coll, _ := split(r.URL.Path); r.Method == http.MethodPost && coll == "" && res.Status/100 == 2 {

@@ -2,11 +2,14 @@ package trackerapi
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/dhis2/facility-hub/internal/core"
 	"github.com/dhis2/facility-hub/internal/store"
+	"github.com/dhis2/facility-hub/internal/tracker"
 )
 
 // Answering staff from the hub while online. For the programs a country lists in
@@ -156,4 +159,27 @@ func (a *API) record(uid string) string {
 		return o.TE
 	}
 	return o.UID
+}
+
+// createRefused sends an update (Capture's save of an edit) as CREATE_AND_UPDATE when
+// it holds only the user's own open refusals: central may never have had them (a new
+// event or enrollment it refused), and an update of what it lacks fails (E1032, E1081).
+func (a *API) createRefused(sess *core.Session, r *http.Request, body []byte) {
+	q := r.URL.Query()
+	var p tracker.M
+	if coll, _ := split(r.URL.Path); r.Method != http.MethodPost || coll != "" || q.Get("importStrategy") != "UPDATE" ||
+		sess.UserID == 0 || json.Unmarshal(body, &p) != nil {
+		return
+	}
+	items := tracker.Flatten(p)
+	own, _ := a.H.Store.OpenIssueObjectsOf(sess.UserID)
+	for _, it := range items {
+		if !slices.Contains(own, it.UID) {
+			return
+		}
+	}
+	if len(items) > 0 {
+		q.Set("importStrategy", "CREATE_AND_UPDATE")
+		r.URL.RawQuery = q.Encode()
+	}
 }

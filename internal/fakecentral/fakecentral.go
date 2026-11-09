@@ -1078,6 +1078,12 @@ func (c *Central) importTracker(w http.ResponseWriter, r *http.Request, u *User)
 			fail(code, fmt.Sprintf("%s: `%s`, is already deleted and can't be modified.", label, it.UID))
 			continue
 		}
+		if r.URL.Query().Get("importStrategy") == "UPDATE" && c.objects[it.UID] == nil {
+			// As 2.42.7: an update of an object central does not have (Capture's edits).
+			code := map[string]string{"trackedEntity": "E1063", "enrollment": "E1081", "event": "E1032", "relationship": "E4015"}[it.Kind]
+			fail(code, fmt.Sprintf("%s: `%s`, do not exist.", tt, it.UID))
+			continue
+		}
 		switch it.Kind {
 		case "trackedEntity":
 			if !slices.Contains(u.OrgUnits, tracker.Str(it.Data, "orgUnit")) {

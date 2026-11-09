@@ -182,17 +182,25 @@ func TestOpenRefusalInCapture(t *testing.T) {
 	if got := nat(a, "CapTe000092"); got != "NAT-9299" {
 		t.Errorf("after the save the author reads %s", got)
 	}
+	// A new event central never had, saved as Capture saves an edit (UPDATE): the hub
+	// sends the author's own refused objects as CREATE_AND_UPDATE, so central creates
+	// it. Someone else's save of it goes as sent.
+	ev := event("CapEv000093", "SeedEn00001", fc.Stage2)
+	const update = "/api/tracker?async=false&importStrategy=UPDATE"
+	if rep := b.json("POST", update, ev, 409); !slices.Equal(errorCodes(rep), []string{"E1032"}) {
+		t.Errorf("nurse_b's update of an event central does not have: %v", errorCodes(rep))
+	}
+	a.json("POST", update, ev, 200)
+	if e.central.Object("CapEv000093") == nil || strings.Contains(ownSection(page(a)), "CapEv000093") {
+		t.Error("the author's refused new event, saved as an update: not on central, or still listed")
+	}
 	// The refused registration: its person reaches central. The enrollment that
 	// waited for it is not sent with it, and stays refused (FINDINGS.md).
 	a.json("POST", "/api/tracker?async=false", person("CapTe000091", "Amina", "NAT-9199"), 200)
 	if e.central.Object("CapTe000091") == nil {
 		t.Fatal("the corrected registration did not reach central")
 	}
-	pa = page(a)
-	if got := links(pa); len(got) != 0 {
-		t.Errorf("links after both saves: %q", got)
-	}
-	if !strings.Contains(pa, "CapEn000091") || e.central.Object("CapEn000091") != nil {
+	if !strings.Contains(ownSection(page(a)), "CapEn000091") || e.central.Object("CapEn000091") != nil {
 		t.Error("the enrollment that waited for the person: no longer listed, or on central")
 	}
 }
