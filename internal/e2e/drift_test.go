@@ -1,6 +1,8 @@
 package e2e
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
@@ -99,5 +101,34 @@ func TestNoTimeIsNotOld(t *testing.T) {
 	}
 	if o := h.Index.Get("NoTimeEn001"); o == nil || o.Stub {
 		t.Errorf("enrollment saved online: %+v, want stored whole", o)
+	}
+}
+
+// Two offline imports of one new person at the same time: one creates it, the other
+// is refused as a create of an existing object (review R-33). Validation and storage
+// used to run under a shared lock only, so both could validate as creates.
+func TestConcurrentCreatesOneWins(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a, b := e.android("nurse_a"), e.android("nurse_a")
+	a.json("GET", "/api/me", nil, 200)
+	e.sync()
+	e.offline()
+	const create = "/api/tracker?async=false&importStrategy=CREATE&atomicMode=ALL"
+	for i := range 20 {
+		te, enr := fmt.Sprintf("RaceTe%05d", i), fmt.Sprintf("RaceEn%05d", i)
+		var wg sync.WaitGroup
+		codes := make([]int, 2)
+		for j, c := range []*client{a, b} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				codes[j], _ = c.do("POST", create, newPatient(te, enr, "Race", "", nil))
+			}()
+		}
+		wg.Wait()
+		if ok := (codes[0] == 200) != (codes[1] == 200); !ok {
+			t.Fatalf("round %d: answers %v, want one 200", i, codes)
+		}
 	}
 }

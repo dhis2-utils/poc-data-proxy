@@ -29,8 +29,9 @@ type API struct {
 	Auth  *auth.Auth
 	Proxy *proxy.Proxy
 
-	jobsMu sync.Mutex
-	jobs   map[string]*job // offline async imports, kept in memory
+	importMu sync.Mutex // offline imports, validation to storage
+	jobsMu   sync.Mutex
+	jobs     map[string]*job // offline async imports, kept in memory
 	// onlineJobs holds payloads of async imports passed to central, until the client
 	// fetches the job report; the hub then stores what central persisted.
 	onlineJobs map[string]onlineJob
@@ -415,7 +416,6 @@ func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Ses
 		json.Unmarshal(me.Body, &names)
 		im.FirstName, im.Surname = names.FirstName, names.Surname
 	}
-	out := im.Import(payload)
 	// Flags that only switch off checks or side effects on central: the hub runs
 	// neither offline, and central must skip them on push as the client asked
 	// (eRegisters sends skipPatternValidation and skipSideEffects).
@@ -425,7 +425,13 @@ func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Ses
 			keep.Set(k, "true")
 		}
 	}
+	// One import at a time from validation to storage: two imports of one new UID
+	// would both validate as creates, and unique values or enrol-once checks pass
+	// for both (review R-33).
+	a.importMu.Lock()
+	out := im.Import(payload)
 	seq, err := a.H.PersistImport(sess.UserID, out, keep.Encode())
+	a.importMu.Unlock()
 	if err != nil {
 		slog.Error("persist offline import", "err", err)
 		a.H.SaveFailed(w, "could not store import: "+err.Error())
