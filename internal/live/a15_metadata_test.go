@@ -49,7 +49,7 @@ func TestA15MetadataReloadOffline(t *testing.T) {
 		t.Fatalf("the tablet's online sync: %v", err)
 	}
 	time.Sleep(30 * time.Second) // let the metadata sync settle
-	e.Requests()                // forget the online requests
+	e.Requests()                 // forget the online requests
 
 	// The control the web script calls between phases: rename the program on central,
 	// then cut the hub's uplink.

@@ -6,8 +6,8 @@
 package fakecentral
 
 import (
-	"crypto/sha256"
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -96,14 +96,14 @@ type Central struct {
 	// MetadataChangedAt answers /api/metadata?filter=lastUpdated:gt:<time>: the
 	// program, as changed at this time (UTC; tests).
 	MetadataChangedAt time.Time
-	delay         time.Duration // Struggle
-	failShare     float64
-	struggled     int                        // requests counted for failShare
-	passwords     map[string]string          // users created through the API, with their own password
-	readers       map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (read)
-	writers       map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (write)
-	creators      map[string]string          // dataStore entry id -> username who created it
-	public        map[string]string          // dataStore entry id -> public access its sharing sets
+	delay             time.Duration // Struggle
+	failShare         float64
+	struggled         int                        // requests counted for failShare
+	passwords         map[string]string          // users created through the API, with their own password
+	readers           map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (read)
+	writers           map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (write)
+	creators          map[string]string          // dataStore entry id -> username who created it
+	public            map[string]string          // dataStore entry id -> public access its sharing sets
 	// HubWriters, when set, are the only users who may write the facility-hub-*
 	// dataStore namespaces (protected by sharing, as DEPLOYMENT.md advises).
 	HubWriters   map[string]bool

@@ -84,9 +84,9 @@ func TestLockStatus(t *testing.T) {
 		want bool
 	}{
 		{time.Date(2026, 9, 30, 23, 59, 0, 0, time.UTC), false}, // the day before it opens
-		{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), true},     // the opening day, from its start
-		{time.Date(2026, 10, 5, 23, 59, 59, 0, time.UTC), true},  // the closing day, all of it
-		{time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC), false},    // the day after it closes
+		{time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), true},    // the opening day, from its start
+		{time.Date(2026, 10, 5, 23, 59, 59, 0, time.UTC), true}, // the closing day, all of it
+		{time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC), false},   // the day after it closes
 	} {
 		if got := InputOpen(ds, sep, c.now); got != c.want {
 			t.Errorf("InputOpen at %v: %v, want %v", c.now, got, c.want)

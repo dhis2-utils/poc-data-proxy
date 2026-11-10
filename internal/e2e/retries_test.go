@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
-
 )
 
 // refusedGroups is the heartbeat's refusals by kind, programme and error code ("refused").
