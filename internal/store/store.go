@@ -24,6 +24,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -440,6 +441,15 @@ func (s *Store) SetDK(k hubcrypto.Key) error {
 		return fmt.Errorf("data file %s is missing", path)
 	}
 	db, err := openData(path, k)
+	if _, serr := os.Stat(path); err != nil && serr == nil && !s.hasSlots() {
+		// A set-up that stopped before its first key slot left a data file whose key
+		// was only in memory: nothing can open it, and set-up failed on it for ever
+		// (review R-09). It holds nothing that is not on central; start a new one.
+		slog.Warn("removing a data file no key slot opens, left by an interrupted set-up", "err", err)
+		if err = removeData(path); err == nil {
+			db, err = openData(path, k)
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -565,15 +575,23 @@ func (s *Store) SetState(key string, value []byte) error {
 // rows. The store is locked afterwards.
 func (s *Store) Wipe() error {
 	s.lock()
-	for _, sfx := range []string{"", "-wal", "-shm"} {
-		if err := os.Remove(DataPath(s.Path) + sfx); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
+	if err := removeData(DataPath(s.Path)); err != nil {
+		return err
 	}
 	if _, err := s.Keys.Exec(`DELETE FROM meta; DELETE FROM key_slots`); err != nil {
 		return err
 	}
 	return s.vacuumKeys()
+}
+
+// removeData deletes a data file with its write-ahead log.
+func removeData(path string) error {
+	for _, sfx := range []string{"", "-wal", "-shm"} {
+		if err := os.Remove(path + sfx); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }
 
 func Now() string { return time.Now().UTC().Format(time.RFC3339Nano) }

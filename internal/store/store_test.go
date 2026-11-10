@@ -67,6 +67,10 @@ func TestDataFileEncrypted(t *testing.T) {
 			t.Fatalf("%q in plain text in %v", needle, f)
 		}
 	}
+	// A key slot, as every set-up hub has: a data file no slot opens is removed (R-09).
+	if _, err := s.UpsertCredentials("nurse_a", "uid", []byte("salt"), []byte("slot")); err != nil {
+		t.Fatal(err)
+	}
 	s.SetDK(nil)
 	s.Close()
 
