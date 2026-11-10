@@ -71,6 +71,9 @@ type setupFlow struct {
 	mu      sync.Mutex
 	pending *pendingSetup
 	server  *checkedServer
+	// running is held while set-up completes: a form submitted twice must not
+	// register the hub twice (review R-38).
+	running sync.Mutex
 }
 
 // checkedServer is central's address as the set-up's first step checked it: https
@@ -217,6 +220,15 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 	case len(p.Others) > 0 && r.FormValue("step") != "confirm":
 		u.render(w, "setup", map[string]any{"Pending": p, "Step": "confirm", "HubID": h.HubID()})
 	default:
+		if !u.setup.running.TryLock() {
+			u.render(w, "setup", map[string]any{"Error": "set-up already running", "CentralURL": p.CentralURL, "HubID": h.HubID(), "Step": ""})
+			return
+		}
+		defer u.setup.running.Unlock()
+		if h.Mode() != core.ModeSetup { // the other submit finished first
+			http.Redirect(w, r, "/hub/ui", http.StatusFound)
+			return
+		}
 		sess, err := u.completeSetup(ctx, p)
 		if err != nil && h.Mode() == core.ModeActive {
 			// Set up; only the set-up user's session on the hub failed: they log in.
