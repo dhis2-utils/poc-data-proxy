@@ -40,6 +40,9 @@ var (
 	startFail  = "false"
 )
 
+// maxHeaderBytes caps a request's line and headers (review R-06).
+const maxHeaderBytes = 64 << 10
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	cmd, args := "serve", os.Args[1:]
@@ -143,8 +146,10 @@ func serveCtx(ctx context.Context, cfgPath string) error {
 		}
 	}
 	// No WriteTimeout: app downloads over weak facility Wi-Fi can take minutes.
+	// MaxHeaderBytes: Go's default of 1 MB per request lets anyone hold a lot of
+	// memory with long paths; real clients send a few kB.
 	srv = &http.Server{Addr: cfg.Listen, Handler: a.Handler, ReadHeaderTimeout: 30 * time.Second,
-		ReadTimeout: 10 * time.Minute, IdleTimeout: 2 * time.Minute}
+		ReadTimeout: 10 * time.Minute, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: maxHeaderBytes}
 	ln, err := listen(cfg.Listen, 15*time.Second)
 	if err != nil {
 		return err
@@ -160,7 +165,7 @@ func serveCtx(ctx context.Context, cfgPath string) error {
 		if a.Net != nil {
 			page.Captive = a.Net.Captive
 		}
-		start := &http.Server{Handler: page,
+		start := &http.Server{Handler: page, MaxHeaderBytes: maxHeaderBytes,
 			ReadHeaderTimeout: 30 * time.Second, ReadTimeout: time.Minute, IdleTimeout: 2 * time.Minute}
 		hln, err := listen(cfg.HTTPListen, 15*time.Second)
 		if err != nil {

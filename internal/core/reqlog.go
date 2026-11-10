@@ -78,11 +78,11 @@ func (l *RequestLog) Record(r *http.Request, client, servedBy string, status int
 	k := key(r, client)
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.counts[k]++
+	bump(l.counts, k)
 	if l.enabled {
 		// Parameter names only: values can hold search terms (patient names).
 		fmt.Fprintf(l.file, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n", time.Now().UTC().Format(time.RFC3339), client, r.Method,
-			Template(r.URL.Path), status, servedBy, strings.Join(params, ","))
+			trunc(Template(r.URL.Path)), status, servedBy, trunc(strings.Join(params, ",")))
 	}
 }
 
@@ -94,7 +94,30 @@ func key(r *http.Request, client string) string {
 		params = append(params, k)
 	}
 	slices.Sort(params)
-	return fmt.Sprintf("%s %s ?%s [%s]", r.Method, Template(r.URL.Path), strings.Join(params, ","), client)
+	return fmt.Sprintf("%s %s ?%s [%s]", trunc(r.Method), trunc(Template(r.URL.Path)), trunc(strings.Join(params, ",")), client)
+}
+
+// The request log's maps hold at most maxKeys keys of at most a few hundred bytes:
+// anyone on the network can send requests with made-up paths (review R-06).
+const (
+	maxKeys    = 4000
+	maxKeyPart = 200
+	otherKey   = "other"
+)
+
+// bump counts k, or "other" once the map is full.
+func bump(m map[string]int, k string) {
+	if _, ok := m[k]; !ok && len(m) >= maxKeys {
+		k = otherKey
+	}
+	m[k]++
+}
+
+func trunc(s string) string {
+	if len(s) <= maxKeyPart {
+		return s
+	}
+	return strings.ToValidUTF8(s[:maxKeyPart], "") + "..."
 }
 
 // Miss counts a read the hub answered "needs connection" offline: a screen nobody had
@@ -103,7 +126,7 @@ func key(r *http.Request, client string) string {
 func (l *RequestLog) Miss(r *http.Request) {
 	k := key(r, ClientKind(r))
 	l.mu.Lock()
-	l.misses[k]++
+	bump(l.misses, k)
 	l.mu.Unlock()
 }
 
@@ -127,7 +150,7 @@ func (l *RequestLog) OfflineMisses(n int) (top []map[string]any, total int) {
 func (l *RequestLog) Unsupported(path, param string) {
 	slog.Warn("not supported offline", "path", path, "param", param)
 	l.mu.Lock()
-	l.unsupp[Template(path)+" "+param]++
+	bump(l.unsupp, trunc(Template(path))+" "+trunc(param))
 	l.mu.Unlock()
 }
 
