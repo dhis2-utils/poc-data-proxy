@@ -536,9 +536,18 @@ func (s *Store) OpenBlob(aad string, ct []byte) ([]byte, error) {
 // and version, upgrade state.
 
 func (s *Store) Meta(key string) string {
-	var v string
-	s.Keys.QueryRow(`SELECT value FROM meta WHERE key=?`, key).Scan(&v)
+	v, _ := s.MetaErr(key)
 	return v
+}
+
+// MetaErr is Meta that tells a missing key ("", nil) from a failed read.
+func (s *Store) MetaErr(key string) (string, error) {
+	var v string
+	err := s.Keys.QueryRow(`SELECT value FROM meta WHERE key=?`, key).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return v, err
 }
 
 func (s *Store) SetMeta(key, value string) error {

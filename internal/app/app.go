@@ -48,13 +48,24 @@ type App struct {
 }
 
 // EnsureIdentity gives a fresh store a hub ID and puts it in setup mode (spec 6.2 step 1).
-func EnsureIdentity(s *store.Store) {
-	if s.Meta(core.MetaHubID) == "" {
-		s.SetMeta(core.MetaHubID, "hub-"+core.NewUID())
+// A key file that cannot be read is not a fresh one: a new ID there would make a set-up
+// hub another hub, in setup mode (review R-45).
+func EnsureIdentity(s *store.Store) error {
+	for key, fresh := range map[string]func() string{
+		core.MetaHubID: func() string { return "hub-" + core.NewUID() },
+		core.MetaMode:  func() string { return core.ModeSetup },
+	} {
+		v, err := s.MetaErr(key)
+		if err != nil {
+			return fmt.Errorf("reading the hub's %s: %w", key, err)
+		}
+		if v == "" {
+			if err := s.SetMeta(key, fresh()); err != nil {
+				return err
+			}
+		}
 	}
-	if s.Meta(core.MetaMode) == "" {
-		s.SetMeta(core.MetaMode, core.ModeSetup)
-	}
+	return nil
 }
 
 // New opens the store in cfg.DataDir and builds the hub. shutdown is called by the
@@ -82,7 +93,10 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 		return nil, err
 	}
 	st.NewDataFile = stick.RestorePending(cfg.DataDir) // a restored hub's cache is pulled again
-	EnsureIdentity(st)
+	if err := EnsureIdentity(st); err != nil {
+		st.Close()
+		return nil, err
+	}
 	h := core.New(cfg, version, st)
 	if upgrade.Unconfirmed(cfg.DataDir, version) {
 		h.FreezeLocalWrites() // until AfterBoot's health check passes
@@ -305,7 +319,9 @@ func wipe(h *core.Hub) error {
 	if err := h.Store.Wipe(); err != nil {
 		return err
 	}
-	EnsureIdentity(h.Store)
+	if err := EnsureIdentity(h.Store); err != nil {
+		return err
+	}
 	if err := ui.EnsureSetupToken(h); err != nil {
 		slog.Error("reset: setup token", "err", err)
 	}
