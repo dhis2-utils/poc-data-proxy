@@ -69,11 +69,7 @@ type Result struct {
 // Forward sends the request to central. A network error is returned as such so the
 // caller can fall back to offline handling.
 func (p *Proxy) Forward(ctx context.Context, r *http.Request, body []byte, a central.Auth) (*Result, error) {
-	hdr := r.Header.Clone()
-	for _, k := range hopHeaders {
-		hdr.Del(k)
-	}
-	hdr.Del("X-Forwarded-For")
+	hdr := forwardHeader(r.Header)
 	resp, err := p.H.Central.Do(ctx, r.Method, r.URL.RequestURI(), body, a, hdr)
 	if err != nil {
 		return nil, err
@@ -94,6 +90,24 @@ func (p *Proxy) Forward(ctx context.Context, r *http.Request, body []byte, a cen
 		h.Del(k)
 	}
 	return &Result{Status: resp.StatusCode, Header: h, Body: b}, nil
+}
+
+// forwardHeader is a client's request header as sent on to central. Without the
+// forwarded family too: central builds the base URL it writes into app pages from
+// X-Forwarded-*, and the hub serves that page to every user (review R-17). The hub
+// sets none of them itself.
+func forwardHeader(h http.Header) http.Header {
+	hdr := h.Clone()
+	for _, k := range hopHeaders {
+		hdr.Del(k)
+	}
+	hdr.Del("Forwarded")
+	for k := range hdr {
+		if strings.HasPrefix(http.CanonicalHeaderKey(k), "X-Forwarded-") {
+			delete(hdr, k)
+		}
+	}
+	return hdr
 }
 
 // notCentral says why an answer to an /api/ request cannot be central's, or "": a

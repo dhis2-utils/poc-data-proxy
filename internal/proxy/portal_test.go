@@ -45,3 +45,25 @@ func TestNotCentralIsNarrow(t *testing.T) {
 		}
 	}
 }
+
+// Client X-Forwarded-* and Forwarded headers do not reach central (review R-17):
+// central writes its base URL into app pages from them.
+func TestForwardHeaderDropsForwarded(t *testing.T) {
+	h := http.Header{}
+	h.Set("X-Forwarded-Port", "9999")
+	h.Set("X-Forwarded-Host", "evil.example")
+	h.Set("X-Forwarded-Proto", "http")
+	h.Set("X-Forwarded-For", "10.0.0.1")
+	h.Set("Forwarded", "host=evil.example")
+	h["x-forwarded-prefix"] = []string{"/x"} // not canonical
+	h.Set("Authorization", "Bearer x")
+	h.Set("Accept", "application/json")
+	h.Set("If-None-Match", `"x"`)
+	got := forwardHeader(h)
+	if len(got) != 2 || got.Get("Accept") != "application/json" || got.Get("If-None-Match") != `"x"` {
+		t.Errorf("forwarded %v, want only Accept and If-None-Match", got)
+	}
+	if h.Get("X-Forwarded-Port") == "" {
+		t.Error("the client's header was changed")
+	}
+}
