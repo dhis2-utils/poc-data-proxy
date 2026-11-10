@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 
 	"github.com/dhis2/facility-hub/internal/compat"
 	"github.com/dhis2/facility-hub/internal/tracker"
@@ -25,6 +26,10 @@ func (w *Worker) pullEvents(ctx context.Context, api compat.API, g []*puller, fa
 		if err := h.Central.JSON(ctx, "GET", api.EventsPath(facility, program, after, cutoff, page, listPageSize), nil,
 			rep.auth, &res); err != nil {
 			return "", total, err
+		}
+		if res.Events == nil {
+			// {} is not an empty listing (review R-34); central answers "events": [].
+			return "", total, errors.New("central's answer has no events")
 		}
 		keep := make([]any, len(res.Events))
 		for i, ev := range res.Events {

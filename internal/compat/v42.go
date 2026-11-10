@@ -5,6 +5,7 @@ package compat
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -271,13 +272,17 @@ func (v42) PullItems(body []byte, page, pageSize int) ([]tracker.M, bool, error)
 		Pager *struct {
 			NextPage string `json:"nextPage"`
 		} `json:"pager"`
-		TrackedEntities []tracker.M `json:"trackedEntities"`
+		TrackedEntities *[]tracker.M `json:"trackedEntities"`
 	}
 	if err := json.Unmarshal(body, &r); err != nil {
 		return nil, false, err
 	}
-	more := r.Pager != nil && r.Pager.NextPage != "" && len(r.TrackedEntities) == pageSize
-	return r.TrackedEntities, more, nil
+	if r.TrackedEntities == nil {
+		// {} or another body that is not a listing: not an empty one (review R-34).
+		return nil, false, errors.New("central's answer has no trackedEntities")
+	}
+	more := r.Pager != nil && r.Pager.NextPage != "" && len(*r.TrackedEntities) == pageSize
+	return *r.TrackedEntities, more, nil
 }
 
 // ReservePath: Android and the hub's pool use generateAndReserve (a bare JSON array,

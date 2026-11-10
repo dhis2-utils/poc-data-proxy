@@ -172,6 +172,15 @@ func TestPullItemsFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = more // the fixture body is trimmed, so "more" depends on the trimmed length
+	// An answer without the collection is not an empty listing (review R-34).
+	for _, b := range []string{`{}`, `{"pager":{"page":1}}`} {
+		if _, _, err := For("2.42.6").PullItems([]byte(b), 1, 50); err == nil {
+			t.Errorf("%s read as a listing", b)
+		}
+	}
+	if items, _, err := For("2.42.6").PullItems([]byte(`{"trackedEntities":[]}`), 1, 50); err != nil || len(items) != 0 {
+		t.Errorf("empty listing: %v %v", items, err)
+	}
 }
 
 func TestVersions(t *testing.T) {

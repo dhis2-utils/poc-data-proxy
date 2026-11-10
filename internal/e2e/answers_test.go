@@ -88,6 +88,52 @@ func TestPullRateLimitKeepsAccess(t *testing.T) {
 	}
 }
 
+// A 403 page that is not DHIS2's (a proxy's), or a listing answered with {}, says
+// nothing about access either (review R-34): the nurse keeps what she sees.
+func TestPullForeignAnswerKeepsAccess(t *testing.T) {
+	for name, answer := range map[string]func(http.ResponseWriter){
+		"proxy 403": func(w http.ResponseWriter) {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(403)
+			w.Write([]byte("<html><body>Access denied by proxy</body></html>"))
+		},
+		"empty object": func(w http.ResponseWriter) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte("{}"))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t)
+			var foreign atomic.Bool
+			e.cSrv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if foreign.Load() && r.URL.Path == "/api/tracker/trackedEntities" {
+					answer(w)
+					return
+				}
+				e.central.ServeHTTP(w, r)
+			})
+			e.setup()
+			h := e.app.Hub
+			a := e.web("nurse_a")
+			a.login()
+			e.sync()
+			u, _ := h.Store.UserByName("nurse_a")
+			before := seenOf(t, h, u.ID)
+			if before[fc.Program] == 0 || before[""] == 0 {
+				t.Fatalf("the nurse sees too little: %v", before)
+			}
+			foreign.Store(true)
+			h.Cfg.FullPullInterval = time.Nanosecond // a full pull now
+			e.app.Worker.Cycle(context.Background())
+			h.Cfg.FullPullInterval = 7 * 24 * time.Hour
+			foreign.Store(false)
+			if after := seenOf(t, h, u.ID); after[fc.Program] != before[fc.Program] || after[""] != before[""] {
+				t.Fatalf("the nurse sees %v after the answer, %v before (program objects, tracked entities)", after, before)
+			}
+		})
+	}
+}
+
 // A person central no longer shows the nurse disappears from her view at the next
 // full pull that completes.
 func TestFullPullHidesWhoCentralNoLongerLists(t *testing.T) {

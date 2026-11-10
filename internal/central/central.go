@@ -236,6 +236,20 @@ func ErrorCode(body []byte) string {
 	return m.ErrorCode
 }
 
+// FromCentral reports whether err is an answer of DHIS2 itself: an HTTP error whose
+// body is a web message (JSON with httpStatusCode). A proxy's or a captive portal's
+// error page is not one.
+func FromCentral(err error) bool {
+	var he *HTTPError
+	if !errors.As(err, &he) {
+		return false
+	}
+	var m struct {
+		Code *int `json:"httpStatusCode"`
+	}
+	return json.Unmarshal(he.Body, &m) == nil && m.Code != nil
+}
+
 // JSON does a request and decodes a 2xx JSON response into out (if non-nil).
 func (c *Client) JSON(ctx context.Context, method, pathAndQuery string, in any, auth Auth, out any) error {
 	var body []byte

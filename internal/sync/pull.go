@@ -270,14 +270,15 @@ func (w *Worker) pullFor(ctx context.Context, g []*puller, p string, full bool, 
 		case st == http.StatusUnauthorized:
 			h.Store.SetNeedsLogin(rep.u.ID, true)
 			return false, true, nil
-		case st >= 400 && st < 500 && !onTheWay(st):
+		case st >= 400 && st < 500 && !onTheWay(st) && central.FromCentral(perr):
 			// Central refuses this access the program: they lose what they saw of it,
-			// and the other pulls go on.
+			// and the other pulls go on. Only DHIS2's own answer says so: a proxy's
+			// 403 page would hide the program until the next full pull (review R-34).
 			slog.Warn("pull refused by central", "user", rep.u.Username, "program", p, "err", perr)
 			return true, false, nil
 		default:
-			// A server error, or a rate limit on the way, says nothing about access: keep
-			// what the users see.
+			// A server error, a rate limit or an error page on the way says nothing
+			// about access: keep what the users see.
 			slog.Warn("pull failed", "user", rep.u.Username, "program", p, "err", perr)
 			*failed = append(*failed, fmt.Errorf("pull %s/%s: %w", rep.u.Username, p, perr))
 			return false, false, nil
