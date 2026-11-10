@@ -73,6 +73,15 @@ func Load(dir string, d Device) error {
 		set(nil, "")
 		return nil
 	case errors.Is(err, fs.ErrNotExist):
+		// Files sealed with a key that is gone: a new key would not open them, and the
+		// hub would fail on them at every start with no word why (review R-42).
+		for _, f := range Files {
+			if Sealed(filepath.Join(dir, f)) {
+				slog.Error("the device key is missing, but files sealed with it are here", "file", f)
+				set(nil, "This hub's device key ("+File+") is missing from its data folder, so what it sealed cannot be opened. Restore the hub from its USB stick onto an empty disk.")
+				return nil
+			}
+		}
 		k, err := hubcrypto.NewKey()
 		if err != nil {
 			return err

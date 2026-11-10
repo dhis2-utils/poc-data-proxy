@@ -119,6 +119,27 @@ func TestLoadMakesKeepsAndMissesTheKey(t *testing.T) {
 	}
 }
 
+// A device.key gone while files sealed with it remain is a problem to show, not a
+// reason to make a new key that opens none of them (review R-42).
+func TestMissingKeyWithSealedFiles(t *testing.T) {
+	dir := t.TempDir()
+	t.Cleanup(func() { set(nil, "") })
+	d := NewFake()
+	if err := Load(dir, d); err != nil || Key() == nil {
+		t.Fatalf("with a TPM: no key: %v", err)
+	}
+	if err := WriteFile(filepath.Join(dir, "ca.key"), []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(filepath.Join(dir, File))
+	if err := Load(dir, d); err != nil || Key() != nil || Problem() == "" {
+		t.Fatalf("key %x, problem %q, err %v", Key(), Problem(), err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, File)); err == nil {
+		t.Fatal("a new device key was made")
+	}
+}
+
 func TestSealedFiles(t *testing.T) {
 	dir := t.TempDir()
 	t.Cleanup(func() { set(nil, "") })
