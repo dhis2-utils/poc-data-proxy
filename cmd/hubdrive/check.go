@@ -201,7 +201,18 @@ func check(d *dhis, recs []record) (result, error) {
 		}
 		byEvent[r.Event] = append(byEvent[r.Event], r)
 	}
-	people := map[string]map[string]any{} // read once per person, with enrollments and events
+	// The run's people, read in pages: one read per person took more than a day for
+	// the 128 000 registrations of a three-day run (10 November), and pressed the demo
+	// central until it answered 503. Anyone not listed (deleted, or not the run's) is
+	// read on their own below.
+	listed, err := runPeople(d, recs, personFields)
+	if err != nil {
+		return out, err
+	}
+	people := map[string]map[string]any{}
+	for _, x := range listed {
+		people[fmt.Sprint(x["trackedEntity"])] = x
+	}
 	for _, ev := range order {
 		saves := byEvent[ev]
 		first := saves[0] // the save that creates the event comes first
@@ -215,9 +226,7 @@ func check(d *dhis, recs []record) (result, error) {
 		}
 		te, ok := people[first.TE]
 		if !ok {
-			q := url.Values{"program": {first.Program}, "fields": {"trackedEntity,createdBy,deleted,attributes[attribute,value]," +
-				"enrollments[enrollment,deleted,events[event,createdBy,deleted,dataValues[dataElement,value]]]"}}
-			var err error
+			q := url.Values{"program": {first.Program}, "fields": {personFields}}
 			if te, err = d.get("/api/tracker/trackedEntities/" + first.TE + "?" + q.Encode()); err != nil {
 				return out, err
 			}
@@ -279,54 +288,73 @@ func check(d *dhis, recs []record) (result, error) {
 			}
 		}
 	}
-	dups, err := duplicates(d, recs)
-	out.Duplicates = dups
-	return out, err
+	out.Duplicates = duplicates(recs, listed)
+	return out, nil
 }
 
-// duplicates lists the run's people on central (by the tag in their name): each must
-// be in the ledger, and so must each of their events.
-func duplicates(d *dhis, recs []record) ([]string, error) {
-	known := map[string]bool{}
+const personFields = "trackedEntity,createdBy,deleted,attributes[attribute,value]," +
+	"enrollments[enrollment,deleted,events[event,createdBy,deleted,dataValues[dataElement,value]]]"
+
+// runPeople lists the people of the ledger's runs on central, by the tag that starts
+// one of their attributes, in pages of 500.
+func runPeople(d *dhis, recs []record, fields string) ([]map[string]any, error) {
 	type run struct{ tag, program, ou, attr string }
 	runs := map[run]bool{}
 	for _, r := range recs {
-		known[r.TE], known[r.Event] = true, true
 		for k, v := range r.Attrs {
 			if strings.HasPrefix(v, r.Tag+"-") {
 				runs[run{r.Tag, r.Program, r.OrgUnit, k}] = true
 			}
 		}
 	}
-	var out []string
+	var out []map[string]any
 	for rn := range runs {
-		q := url.Values{"program": {rn.program}, "orgUnits": {rn.ou}, "filter": {rn.attr + ":like:" + rn.tag + "-"},
-			"fields": {"trackedEntity,attributes[attribute,value],enrollments[enrollment,events[event]]"}, "paging": {"false"}}
-		res, err := d.get("/api/tracker/trackedEntities?" + q.Encode())
-		if err != nil {
-			return out, err
+		for page := 1; ; page++ {
+			q := url.Values{"program": {rn.program}, "orgUnits": {rn.ou}, "filter": {rn.attr + ":like:" + rn.tag + "-"},
+				"fields": {fields}, "page": {fmt.Sprint(page)}, "pageSize": {"500"}, "order": {"createdAt:asc"}}
+			res, err := d.get("/api/tracker/trackedEntities?" + q.Encode())
+			if err != nil {
+				return out, err
+			}
+			xs := list(res["trackedEntities"])
+			for _, x := range xs {
+				if strings.HasPrefix(value(x, "attributes", "attribute", rn.attr), rn.tag+"-") {
+					out = append(out, x) // central's filter is a substring match
+				}
+			}
+			if len(xs) < 500 {
+				break
+			}
 		}
-		seen := map[string]bool{}
-		for _, x := range list(res["trackedEntities"]) {
-			te := fmt.Sprint(x["trackedEntity"])
-			if !strings.HasPrefix(value(x, "attributes", "attribute", rn.attr), rn.tag+"-") {
-				continue // central's filter is a substring match
-			}
-			if seen[te] || !known[te] {
-				out = append(out, "person "+te+" on central, not in the ledger")
-			}
-			seen[te] = true
-			for _, en := range list(x["enrollments"]) {
-				for _, ev := range list(en["events"]) {
-					if e := fmt.Sprint(ev["event"]); !known[e] {
-						out = append(out, fmt.Sprintf("event %s of person %s on central, not in the ledger", e, te))
-					}
+	}
+	return out, nil
+}
+
+// duplicates checks the run's people on central (by the tag in their name): each must
+// be in the ledger once, and so must each of their events.
+func duplicates(recs []record, listed []map[string]any) []string {
+	known := map[string]bool{}
+	for _, r := range recs {
+		known[r.TE], known[r.Event] = true, true
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, x := range listed {
+		te := fmt.Sprint(x["trackedEntity"])
+		if seen[te] || !known[te] {
+			out = append(out, "person "+te+" on central, not in the ledger")
+		}
+		seen[te] = true
+		for _, en := range list(x["enrollments"]) {
+			for _, ev := range list(en["events"]) {
+				if e := fmt.Sprint(ev["event"]); !known[e] {
+					out = append(out, fmt.Sprintf("event %s of person %s on central, not in the ledger", e, te))
 				}
 			}
 		}
 	}
 	sort.Strings(out)
-	return out, nil
+	return out
 }
 
 // possible is the set of values central may hold for an event's number: the last
