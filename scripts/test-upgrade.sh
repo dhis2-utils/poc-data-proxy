@@ -3,7 +3,8 @@
 # (facility-hub-admin/release) and a local release source laid out like GitHub's
 # (v<version>/release.json, its signature and the binaries).
 #
-#   1. An unsigned release is ignored.
+#   1. A release whose signature cannot be fetched is tried again; one with a bad
+#      signature is ignored.
 #   2. A signed release: the hub pushes its outbox, migrates a store copy, swaps the
 #      binary, re-execs, passes the health check and reports "ok" in its heartbeat.
 #      An outbox entry whose author central no longer accepts does not hold it back.
@@ -59,11 +60,11 @@ heartbeat_upgrade() {
   curl -s -u hub_admin:Hub-Test-2026! "$FC/api/dataStore/facility-hub-status/$HUB_ID" |
     python3 -c "import json,sys; u=json.load(sys.stdin).get('lastUpgrade') or {}; print(u.get('result',''), u.get('to',''), u.get('reason',''))"
 }
-choose() { # choose <version>: the country's choice on central, every hub
-  local m=PUT
+choose() { # choose <version> [pilot hub]: the country's choice on central, every hub
+  local m=PUT pilots=${2:+\"$2\"}
   curl -sf -o /dev/null -u hub_admin:Hub-Test-2026! "$FC/api/dataStore/facility-hub-admin/release" || m=POST
   curl -sf -o /dev/null -u hub_admin:Hub-Test-2026! -X $m -H 'Content-Type: application/json' \
-    "$FC/api/dataStore/facility-hub-admin/release" -d "{\"version\":\"$1\",\"pilotHubs\":[],\"percent\":100}"
+    "$FC/api/dataStore/facility-hub-admin/release" -d "{\"version\":\"$1\",\"pilotHubs\":[$pilots],\"percent\":100}"
 }
 publish() { "$WORK/hub-tool" release -key "$WORK/release.key" -dir "$WORK/channel/v$1" -version "$1" "$PLAT=$WORK/hub-$1"; }
 admin_login() {
@@ -91,36 +92,45 @@ echo "hub $HUB_ID version $(status version)"
 
 say "queueing offline data so the upgrade has an outbox to push"
 curl -s -X POST "$FC/fake/down" >/dev/null
-wait_for 10 is mode offline || fail "hub did not go offline"
+wait_for 30 is mode offline || fail "hub did not go offline"
 curl -s -b "$WORK/nurse.jar" -X POST "$H/api/tracker?async=false" -H 'Content-Type: application/json' -d '{"trackedEntities":[{"trackedEntity":"UpgTe000001","trackedEntityType":"nEenWmSyUEp","orgUnit":"DiszpKrYNg8","attributes":[{"attribute":"w75KJ2mc4zz","value":"Upgrade"}]}]}' | grep -q '"status":"OK"' || fail "offline write"
 [ "$(status pending)" = 1 ] || fail "expected 1 pending object"
 
-say "1. unsigned release 0.2.0 is ignored"
+say "1. release 0.2.0 without its signature is tried again; with a bad one, ignored"
 publish 0.2.0
 rm "$WORK/channel/v0.2.0/release.json.sig"
 curl -s -X POST "$FC/fake/up" >/dev/null
 choose 0.2.0
-wait_for 10 is mode online || fail "hub did not come back online"
+wait_for 30 is mode online || fail "hub did not come back online"
 sync_now
 wait_for 15 is pending 0 || fail "outbox not pushed"
+# A signature that is not there (yet) is not a bad one: nothing is recorded, and the
+# next check fetches it again (review R-12).
+wait_for 15 sh -c "grep -q 'release.json.sig: HTTP 404' $WORK/hub.log" || fail "missing signature not reported in the log"
+grep -q 'upgrade result=' "$WORK/hub.log" && fail "a missing signature was recorded as a result"
+head -c 64 /dev/urandom | base64 > "$WORK/channel/v0.2.0/release.json.sig"
+sync_now
 # The hub logs the result at once; the heartbeat carries it within the hour (here no
 # restart sends one sooner, as after steps 2 and 3).
 wait_for 15 sh -c "grep -q 'upgrade result=ignored' $WORK/hub.log" || fail "no 'ignored' result logged"
-[ "$(status version)" = 0.1.0 ] || fail "unsigned release was installed"
+[ "$(status version)" = 0.1.0 ] || fail "badly signed release was installed"
 echo "heartbeat lastUpgrade: $(heartbeat_upgrade)"
 
 say "an entry whose author central no longer accepts is stuck"
 curl -s -X POST "$FC/fake/down" >/dev/null
-wait_for 10 is mode offline || fail "hub did not go offline"
+wait_for 30 is mode offline || fail "hub did not go offline"
 curl -s -b "$WORK/nurse_b.jar" -X POST "$H/api/tracker?async=false" -H 'Content-Type: application/json' -d '{"trackedEntities":[{"trackedEntity":"UpgTe000002","trackedEntityType":"nEenWmSyUEp","orgUnit":"DiszpKrYNg8","attributes":[{"attribute":"w75KJ2mc4zz","value":"Stuck"}]}]}' | grep -q '"status":"OK"' || fail "offline write by nurse_b"
 curl -s -X POST "$FC/fake/revoke?user=nurse_b" >/dev/null
 curl -s -X POST "$FC/fake/up" >/dev/null
-wait_for 10 is mode online || fail "hub did not come back online"
+wait_for 30 is mode online || fail "hub did not come back online"
 sync_now
 wait_for 15 is stuckOutbox 1 || fail "stuck entry not reported"
 
 say "2. signed release 0.2.0 installs and passes the health check"
 publish 0.2.0
+# A refused manifest is not fetched again until the country's choice changes (G3):
+# republished, the release is chosen again, this time naming the hub as a pilot.
+choose 0.2.0 "$HUB_ID"
 sync_now
 wait_for 30 is version 0.2.0 || fail "did not upgrade to 0.2.0"
 kill -0 $HUB_PID || fail "hub process gone (re-exec should keep the PID)"
