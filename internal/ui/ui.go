@@ -183,15 +183,21 @@ func (u *UI) admin(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// sameOrigin refuses cross-site form posts to the setup and admin pages. Browsers send
-// Origin on form posts, and Sec-Fetch-Site on every request; a post with neither is
-// refused (REVIEW-2 F9).
+// sameOrigin refuses cross-site form posts to the setup, login and admin pages.
+// Browsers send Origin on form posts, and Sec-Fetch-Site on every request; a post with
+// neither is refused (REVIEW-2 F9).
 func sameOrigin(r *http.Request) bool {
 	// Hub pages send Referrer-Policy: no-referrer, under which browsers post forms with
 	// "Origin: null"; their Sec-Fetch-Site then tells (every browser login and setup was
 	// refused before this was noticed by hand).
 	if o := r.Header.Get("Origin"); o != "" && o != "null" {
-		return o == "http://"+r.Host || o == "https://"+r.Host
+		// Only the scheme the page is served on: with TLS on, a page on plain http at
+		// the same name is not the hub's (review R-35).
+		scheme := "http://"
+		if r.TLS != nil {
+			scheme = "https://"
+		}
+		return o == scheme+r.Host
 	}
 	site := r.Header.Get("Sec-Fetch-Site")
 	return site == "same-origin" || site == "none"
@@ -208,6 +214,10 @@ func (u *UI) handleLogin(w http.ResponseWriter, r *http.Request) {
 			data = map[string]any{"Addresses": u.H.DeviceAddresses()}
 		}
 		u.render(w, "login", data)
+		return
+	}
+	if !sameOrigin(r) { // a cross-site login would plant someone else's session (review R-36)
+		http.Error(w, "cross-origin request refused", http.StatusForbidden)
 		return
 	}
 	r.ParseForm()
@@ -228,7 +238,13 @@ func (u *UI) handleLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/hub/ui", http.StatusFound)
 }
 
+// handleLogout acts only on a same-origin POST: a link or image elsewhere must not end
+// the session (review R-36).
 func (u *UI) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost || !sameOrigin(r) {
+		http.Redirect(w, r, "/hub/ui", http.StatusFound)
+		return
+	}
 	if s := u.H.Sessions.FromCookie(r); s != nil {
 		u.H.Sessions.Delete(s.Token)
 		u.H.Sessions.DropBasic(s.Username)

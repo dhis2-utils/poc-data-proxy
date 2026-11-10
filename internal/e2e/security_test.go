@@ -175,6 +175,47 @@ func TestWrongBasicPasswordKeepsUserLoggedIn(t *testing.T) {
 	e.web("nurse_a").login()
 }
 
+// R-36: the hub's login page refuses a cross-site post, and logout acts only on a
+// same-origin POST, not on a link or image elsewhere.
+func TestHubLoginOriginAndLogoutPost(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("hub_admin")
+	req, _ := http.NewRequest("POST", e.srv.URL+"/hub/login", strings.NewReader(url.Values{"username": {"hub_admin"}, "password": {fc.Password}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "http://evil.example")
+	resp, err := a.http.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 403 {
+		t.Fatalf("cross-site login: %d, want 403", resp.StatusCode)
+	}
+	resp, err = a.postForm("/hub/login", url.Values{"username": {"hub_admin"}, "password": {fc.Password}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 302 || resp.Header.Get("Location") != "/hub/ui" {
+		t.Fatalf("login: %d %s", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	if st, _ := a.do("GET", "/hub/logout", nil); st != 302 {
+		t.Fatalf("GET logout: %d", st)
+	}
+	if st, b := a.do("GET", "/hub/ui", nil); st != 200 || !strings.Contains(string(b), "Log out") {
+		t.Fatalf("a GET of /hub/logout ended the session: %d", st)
+	}
+	resp, err = a.postForm("/hub/logout", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if st, _ := a.do("GET", "/hub/ui", nil); st != 302 {
+		t.Fatalf("still logged in after POST logout: %d", st)
+	}
+}
+
 // M3: repeated failed logins lock out that user from that address, for the web login
 // and Basic auth alike; other users are unaffected.
 func TestLoginThrottle(t *testing.T) {

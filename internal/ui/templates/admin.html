@@ -2,7 +2,7 @@
 <header><h1>Facility hub</h1>
 <span class="pill {{.Status.mode}}">{{.Status.mode}}</span>{{if .Forced}}<span class="pill offline">uplink switched off</span>{{end}}
 {{if .Status.needsUpgrade}}<span class="pill offline">hub needs upgrade</span>{{end}}
-<span class="sp"></span><span class="mono">hub {{.Status.hubId}} · v{{.Status.version}}</span><a href="/hub/logout">Log out</a></header>
+<span class="sp"></span><span class="mono">hub {{.Status.hubId}} · v{{.Status.version}}</span><form method="post" action="/hub/logout" class="inline" style="margin:0"><button type="submit" class="secondary">Log out</button></form></header>
 <main>
 {{with .Msg}}<div class="msg">{{.}}</div>{{end}}
 {{with .StoreDamaged}}<div class="err"><b>The hub's store is damaged</b> ({{.}}). What the hub serves and saves can no longer be trusted. {{$.DamageAdvice}}</div>{{end}}
