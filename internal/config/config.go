@@ -4,6 +4,7 @@ package config
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -89,6 +90,11 @@ type Config struct {
 	// UplinkSwitch shows "Simulate uplink cut" on the admin page, for demonstrations.
 	// Off in the field: a hub that looks offline lets staff type in a new central.
 	UplinkSwitch bool
+	// Unknown are the keys Load did not know ("hub.yaml:3: release_channel"), for the
+	// log. Not refused: a release that drops or renames a key would otherwise exit at
+	// every start, before an upgrade's failed starts are counted for its rollback
+	// (review R-13), and a hub.yaml with a key of a newer release could not go back.
+	Unknown []string
 }
 
 func Default() Config {
@@ -140,7 +146,9 @@ func Load(path string) (Config, error) {
 		}
 		k = strings.TrimSpace(k)
 		v = unquote(strings.TrimSpace(v))
-		if err := c.set(k, v); err != nil {
+		if err := c.set(k, v); errors.Is(err, errUnknown) {
+			c.Unknown = append(c.Unknown, fmt.Sprintf("%s:%d: %s", path, line, k))
+		} else if err != nil {
 			return c, fmt.Errorf("%s:%d: %w", path, line, err)
 		}
 	}
@@ -214,10 +222,12 @@ func (c *Config) set(k, v string) error {
 	case "uplink_switch":
 		c.UplinkSwitch, err = strconv.ParseBool(v)
 	default:
-		return fmt.Errorf("unknown key %q", k)
+		return errUnknown
 	}
 	return err
 }
+
+var errUnknown = errors.New("unknown key")
 
 func splitList(v string) []string {
 	var out []string

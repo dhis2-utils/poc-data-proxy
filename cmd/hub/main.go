@@ -116,6 +116,9 @@ func serveCtx(ctx context.Context, cfgPath string) error {
 		return err
 	}
 	logToFile(cfg.DataDir)
+	for _, k := range cfg.Unknown {
+		slog.Warn("hub.yaml: unknown key, ignored (a typo?)", "at", k)
+	}
 	// A swapped-in release that keeps exiting before its health check is rolled back.
 	if err := upgrade.CountStart(cfg.DataDir, filepath.Join(cfg.DataDir, "hub.db"), version); err != nil {
 		return err

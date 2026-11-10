@@ -228,19 +228,8 @@ func (u *Upgrader) check(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// The data file's migrations need the data key: on standard input (on every system;
-	// Windows cannot pass other file handles to a child).
-	cctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	cmd := exec.CommandContext(cctx, newBin, "migrate", "-db", next)
-	cmd.Stdin = strings.NewReader(hex.EncodeToString(dk))
-	cmd.Env = append(os.Environ(), DKEnv+"=stdin")
-	out, err := cmd.CombinedOutput()
-	cancel()
-	if err != nil {
-		removeStore(next)
-		u.record(Result{Result: "failed", From: u.H.Version, To: m.Version, Reason: "migration failed: " + strings.TrimSpace(string(out))})
-		u.H.Store.SetMeta("upgrade_skip", m.Version)
-		return fmt.Errorf("migration: %v: %s", err, out)
+	if err := u.migrate(ctx, newBin, next, m.Version, dk); err != nil {
+		return err
 	}
 	// 4. Swap binary and store, then re-exec.
 	exe, err := os.Executable()
@@ -280,6 +269,42 @@ func (u *Upgrader) check(ctx context.Context) error {
 	return err
 }
 
+// migrateTimeout bounds a migration; local writes are frozen while it runs.
+var migrateTimeout = 2 * time.Minute
+
+// migrate runs the new binary's migrations on the store copy next. A version whose
+// migration fails is not tried again. One that ran out of time may only have needed
+// more on a slow disk: like an upgrade cut short, it is tried once more, and skipped
+// after a second time (review R-13).
+func (u *Upgrader) migrate(ctx context.Context, newBin, next, version string, dk []byte) error {
+	// The data file's migrations need the data key: on standard input (on every system;
+	// Windows cannot pass other file handles to a child).
+	cctx, cancel := context.WithTimeout(ctx, migrateTimeout)
+	cmd := exec.CommandContext(cctx, newBin, "migrate", "-db", next)
+	cmd.Stdin = strings.NewReader(hex.EncodeToString(dk))
+	cmd.Env = append(os.Environ(), DKEnv+"=stdin")
+	out, err := cmd.CombinedOutput()
+	timedOut := errors.Is(cctx.Err(), context.DeadlineExceeded)
+	cancel()
+	if err == nil {
+		return nil
+	}
+	removeStore(next)
+	reason := "migration failed: " + strings.TrimSpace(string(out))
+	if timedOut {
+		reason = "migration took longer than " + migrateTimeout.String()
+		if u.H.Store.Meta("upgrade_cut") != version {
+			u.H.Store.SetMeta("upgrade_cut", version)
+			u.record(Result{Result: "failed", From: u.H.Version, To: version, Reason: reason + "; it is tried once more"})
+			return fmt.Errorf("migration: %v", err)
+		}
+		reason += ", a second time"
+	}
+	u.record(Result{Result: "failed", From: u.H.Version, To: version, Reason: reason})
+	u.H.Store.SetMeta("upgrade_skip", version)
+	return fmt.Errorf("migration: %v: %s", err, out)
+}
+
 // fetchChoice reads the country's choice from central; nil when there is none.
 func (u *Upgrader) fetchChoice(ctx context.Context) (*Choice, error) {
 	var c Choice
@@ -298,14 +323,19 @@ func (u *Upgrader) fetchChoice(ctx context.Context) (*Choice, error) {
 }
 
 // fetchManifest returns the release manifest of version, or nil if it is not
-// correctly signed. Nothing from an unsigned manifest is used (REVIEW-2 F2).
+// correctly signed (refused), or an error if either file could not be fetched. Nothing from an unsigned manifest is used (REVIEW-2 F2).
 func (u *Upgrader) fetchManifest(ctx context.Context, version string) (*Manifest, error) {
 	raw, err := u.get(ctx, "v"+version+"/release.json", 64<<10)
 	if err != nil {
 		return nil, err
 	}
 	sig, err := u.get(ctx, "v"+version+"/release.json.sig", 1<<10)
-	if err != nil || !Verify(u.Key, raw, sig) {
+	if err != nil {
+		// Not fetched (a timeout, or a 404 while the release is being uploaded) says
+		// nothing about the signature: tried again at the next check, not refused.
+		return nil, fmt.Errorf("release signature: %w", err)
+	}
+	if !Verify(u.Key, raw, sig) {
 		if u.H.Store.Meta("upgrade_refused") != version { // report each such manifest once, and fetch it no more (G3)
 			u.record(Result{Result: "ignored", From: u.H.Version, To: version, Reason: "the release has no valid signature"})
 			u.H.Store.SetMeta("upgrade_refused", version)
