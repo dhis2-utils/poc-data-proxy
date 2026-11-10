@@ -28,6 +28,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -411,8 +412,10 @@ func (s *Store) BackupTo(dst string) error {
 		return err
 	}
 	os.Remove(DataPath(dst))
+	// The driver takes the key only in the URI, and SQLite quotes the URI in some
+	// errors, which the upgrade logs (review R-24).
 	if _, err := s.DB().Exec(`VACUUM INTO ?`, dataDSN(DataPath(dst))+"&hexkey="+key); err != nil {
-		return fmt.Errorf("data file: %w", err)
+		return fmt.Errorf("data file: %s", strings.ReplaceAll(err.Error(), key, "..."))
 	}
 	_, err = s.Keys.Exec(`VACUUM INTO ?`, dst)
 	return err
