@@ -146,3 +146,18 @@ func TestProbeOpensANewConnectionEachTime(t *testing.T) {
 		t.Errorf("3 probes used %d connections; want one per probe (no keep-alive)", len(conns))
 	}
 }
+
+// A transport error does not carry the request's query: aggregate values and search
+// terms travel there, and the error reaches logs and the heartbeat (review R-44).
+func TestTransportErrorOmitsQuery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	srv.Close() // nothing listens: connection refused
+	c := NewClient(srv.URL, NewMonitor(time.Second, time.Second))
+	_, err := c.Do(context.Background(), "POST", "/api/dataEntry/dataValues?de=x&value=Amina", nil, Auth{}, nil)
+	if err == nil || !IsNetwork(err) {
+		t.Fatalf("got %v, want a network error", err)
+	}
+	if strings.Contains(err.Error(), "Amina") || !strings.Contains(err.Error(), "/api/dataEntry/dataValues") {
+		t.Errorf("error text: %v", err)
+	}
+}

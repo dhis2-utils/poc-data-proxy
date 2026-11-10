@@ -177,6 +177,12 @@ func (c *Client) Do(ctx context.Context, method, pathAndQuery string, body []byt
 	auth.Apply(req.Header)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
+		// The URL in a transport error reaches logs, the outbox's last error and the
+		// heartbeat; its query can hold data values and search terms (review R-44).
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			ue.URL, _, _ = strings.Cut(ue.URL, "?")
+		}
 		c.Failed(ctx, err)
 		return nil, fmt.Errorf("%w: %v", ErrNetwork, err)
 	}
