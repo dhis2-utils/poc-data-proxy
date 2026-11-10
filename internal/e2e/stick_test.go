@@ -70,9 +70,9 @@ func TestSetupCodeOnStick(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(usb, "facility-hub", "setup-code.txt")); err == nil {
 		t.Fatal("an old setup-code.txt is still on the stick")
 	}
-	// 6 digits: it only proves that whoever sets the hub up holds the box, and wrong
-	// codes are throttled (50, then one per 15 minutes, from every device together).
-	if len(c) != 6 || strings.Trim(c, "0123456789") != "" {
+	// 8 digits: it only proves that whoever sets the hub up holds the box, and wrong
+	// codes are throttled (50 per 15 minutes, from every device together).
+	if len(c) != 8 || strings.Trim(c, "0123456789") != "" {
 		t.Fatalf("setup code %q", c)
 	}
 

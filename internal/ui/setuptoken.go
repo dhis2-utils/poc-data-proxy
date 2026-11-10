@@ -17,10 +17,13 @@ import (
 // every staff login it forwards, at their own server. The hub writes it at first
 // boot; the depot prints it on the label.
 
-// The setup code is 6 digits: it only proves that whoever sets the hub up holds the
-// box (facility-hub/hub.txt on its USB stick), and wrong codes are throttled (auth: 50, then
-// one per 15 minutes, from every device together), so guessing takes years.
-const tokenDigits = 6
+// The setup code is 8 digits: it only proves that whoever sets the hub up holds the
+// box (facility-hub/hub.txt on its USB stick). Wrong codes are throttled from every
+// device together (auth: 50 per 15 minutes, then locked), so someone who stops at 49
+// and waits out the window gets about 4,700 guesses a day: an even chance of finding
+// one of 10^8 codes takes about 29 years, 1% about 7 months (review R-04, R-29). It is
+// read from the stick, so its length costs nobody typing it from memory.
+const tokenDigits = 8
 
 func setupTokenPath(h *core.Hub) string { return h.SetupCodePath() }
 
