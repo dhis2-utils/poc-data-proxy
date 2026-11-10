@@ -1,8 +1,13 @@
 package hubtls
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -391,5 +396,32 @@ func TestBareHostNameLeftOut(t *testing.T) {
 	}
 	if got := ownNames("pi.clinic.example.org", nil); !slices.Contains(got, "pi.clinic.example.org") {
 		t.Fatalf("names %v", got)
+	}
+}
+
+// An authority without critical name constraints, as one put into a per-user folder
+// that the installer moves, is set aside and replaced, never used (review R-27).
+func TestUnconstrainedAuthorityReplaced(t *testing.T) {
+	f, dir := newFake(), t.TempDir()
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "any name"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour * 24 * 365),
+		KeyUsage: x509.KeyUsageCertSign, IsCA: true, BasicConstraintsValid: true}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kb, _ := x509.MarshalECPrivateKey(key)
+	os.WriteFile(filepath.Join(dir, "ca.key"), pemBlock("EC PRIVATE KEY", kb), 0o600)
+	os.WriteFile(filepath.Join(dir, "ca.crt"), pemBlock("CERTIFICATE", der), 0o644)
+	c, err := load(dir, f.env())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ca.Subject.CommonName == "any name" || !c.ca.PermittedDNSDomainsCritical {
+		t.Fatalf("authority used: %v", c.ca.Subject)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ca.crt.bad")); err != nil {
+		t.Error("the authority was not kept aside")
 	}
 }

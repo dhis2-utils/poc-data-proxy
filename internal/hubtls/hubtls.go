@@ -281,11 +281,18 @@ func (c *Certs) loadCA() error {
 		return fmt.Errorf("the hub's certificate authority: %w", err)
 	}
 	ca, key, err := parsePair(crtPEM, keyPEM)
-	if err == nil && c.env.now().Before(ca.NotAfter) {
+	// Every authority the hub makes has critical name constraints. One without came
+	// from elsewhere (a per-user folder the installer moves, review R-27) and would be
+	// trusted on this PC for every name: it is not used.
+	unconstrained := err == nil && (!ca.PermittedDNSDomainsCritical || len(ca.PermittedDNSDomains) == 0)
+	if err == nil && !unconstrained && c.env.now().Before(ca.NotAfter) {
 		c.ca, c.caKey = ca, key
 		return nil
 	}
-	if err == nil {
+	switch {
+	case unconstrained:
+		err = errors.New("without name constraints")
+	case err == nil:
 		err = errors.New("expired")
 	}
 	slog.Error("the hub's certificate authority is unusable; making a new one, which devices must install", "err", err)
