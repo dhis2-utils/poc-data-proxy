@@ -67,3 +67,13 @@ func TestForwardHeaderDropsForwarded(t *testing.T) {
 		t.Error("the client's header was changed")
 	}
 }
+
+// The apps menu is per user, not an app file anyone may be served (review R-16).
+func TestAppsMenuIsNotShared(t *testing.T) {
+	if isStatic("/api/apps/menu.json") || shared("/api/apps/menu.json") {
+		t.Error("/api/apps/menu.json is classed as shared by all")
+	}
+	if !isStatic("/api/apps/capture/index.html") {
+		t.Error("an installed app's file is no longer static")
+	}
+}

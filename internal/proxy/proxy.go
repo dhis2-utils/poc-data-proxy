@@ -318,6 +318,11 @@ func isStatic(p string) bool {
 	if strings.HasPrefix(p, "/api/") && !strings.HasPrefix(p, "/api/apps/") {
 		return false
 	}
+	// The apps menu lists the apps the user may open: central answers it per user
+	// (checked on 2.42, review R-16).
+	if p == "/api/apps/menu.json" {
+		return false
+	}
 	// 2.42+ opens apps at /apps/<app> in its global shell: an app file without an
 	// extension.
 	if isAppShell(p) {

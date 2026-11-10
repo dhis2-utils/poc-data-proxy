@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -130,6 +131,13 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 			return
 		}
 		h.NoteReach(r.Host, r.RemoteAddr)
+		if !cleanPath(r.URL.Path) {
+			// "//h/api/x.json" or "/a/../api/x": the cache and the replay would read
+			// such a path differently (review R-16). Central behind Tomcat answers 400
+			// too; a redirect is no answer for Android (above).
+			http.Error(w, "bad path", http.StatusBadRequest)
+			return
+		}
 		// Apps call versioned paths (/api/42/tracker/...). Route them like the
 		// unversioned ones; central accepts either.
 		p := r.URL.Path
@@ -301,6 +309,16 @@ func wipe(h *core.Hub) error {
 	}
 	slog.Info("hub reset; back in setup mode", "hubId", h.HubID())
 	return nil
+}
+
+// cleanPath reports whether p is what path.Clean makes of it, a trailing slash
+// allowed.
+func cleanPath(p string) bool {
+	c := path.Clean(p)
+	if strings.HasSuffix(p, "/") && c != "/" {
+		c += "/"
+	}
+	return c == p
 }
 
 var apiVersion = regexp.MustCompile(`^/api/[0-9]{2}/`)

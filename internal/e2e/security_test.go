@@ -103,6 +103,23 @@ func TestHostHeader(t *testing.T) {
 	}
 }
 
+// Paths that are not clean are refused before the cache or the replay sees them: the
+// replay re-parses "//h/api/x.json" as host h and path /api/x.json (review R-16).
+func TestUncleanPathRefused(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	for _, p := range []string{"//h/api/me.json", "/dhis-web-capture/../api/me.json", "/api//me.json"} {
+		if st, body := a.do("GET", p, nil); st != 400 {
+			t.Errorf("%s: %d %s, want 400", p, st, body)
+		}
+		if c, _ := e.app.Hub.Store.GetCacheAnyUser("GET", p); c != nil {
+			t.Errorf("%s: cached", p)
+		}
+	}
+}
+
 // M4: sessions end after inactivity.
 func TestSessionIdleExpiry(t *testing.T) {
 	e := newEnv(t)
