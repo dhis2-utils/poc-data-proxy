@@ -13,9 +13,19 @@ ExecStart=/usr/local/lib/hub/hub serve -config /etc/hub/hub.yaml
 Restart=always
 RestartSec=5
 StateDirectory=hub
+# The data folder and every file the hub writes are its own: the key slots and TLS keys
+# are not for other local accounts (review R-26). Self-upgrade's new binary is then 0700
+# too, which only the hub (and root) run.
+StateDirectoryMode=0700
+UMask=0077
 # Ports 443 and 80 (https:// and http://dhis2.local), as an unprivileged user.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+# The hub runs only itself and nmcli, neither setuid; the ambient capability survives
+# its re-exec at upgrade. No core dumps: they would hold the data key and records.
+NoNewPrivileges=yes
+PrivateTmp=yes
+LimitCORE=0
 
 [Install]
 WantedBy=multi-user.target

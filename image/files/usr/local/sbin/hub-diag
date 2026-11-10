@@ -6,7 +6,9 @@
 out=/boot/firmware/hub-diag.txt
 {
   echo "== $(date -Is), up $(cut -d' ' -f1 /proc/uptime) s, $(tr -d '\0' < /proc/device-tree/model)"
-  echo "== hub $(/usr/local/lib/hub/hub version 2>&1)"
+  # As the hub's user, who owns the binary: root never runs a file the hub can replace
+  # (review R-26).
+  echo "== hub $(setpriv --reuid=hub --regid=hub --clear-groups --no-new-privs /usr/local/lib/hub/hub version 2>&1)"
   systemctl status hub.service --no-pager -l 2>&1 | head -12
   [ -f /boot/firmware/hub-loadtest.txt ] && { echo; echo "== load-test mode"; systemctl status hub-loadtest.service --no-pager -l 2>&1 | head -12; }
   echo; echo "== failed units"; systemctl --failed --no-pager 2>&1

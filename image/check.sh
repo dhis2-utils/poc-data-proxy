@@ -78,6 +78,12 @@ check "curl is installed (load-test mode)" exists /usr/bin/curl
 wifi_on() { cat_ /var/lib/NetworkManager/NetworkManager.state | grep -q '^WirelessEnabled=true'; }
 check "NetworkManager starts with the Wi-Fi on" wifi_on
 check "hub.service may bind ports 80 and 443" sh -c "debugfs -R 'cat /etc/systemd/system/hub.service' '$R' 2>/dev/null | grep -q CAP_NET_BIND_SERVICE"
+UNIT=$(cat_ /etc/systemd/system/hub.service)
+for want in StateDirectoryMode=0700 UMask=0077 NoNewPrivileges=yes PrivateTmp=yes LimitCORE=0; do
+  check "hub.service: $want" grep -qx "$want" <<<"$UNIT"
+done
+check "setpriv is installed (hub-diag)" exists /usr/bin/setpriv
+check "hub-diag runs the hub binary as the hub's user, not root" sh -c "debugfs -R 'cat /usr/local/sbin/hub-diag' '$R' 2>/dev/null | grep -F 'lib/hub/hub version' | grep -q 'setpriv --reuid=hub'"
 YAML=$(cat_ /etc/hub/hub.yaml)
 check "hub.yaml has no central_url (one image for every country)" sh -c "! grep -q '^central_url' <<'X'
 $YAML
