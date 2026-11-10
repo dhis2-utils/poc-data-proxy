@@ -58,11 +58,15 @@ var BasicRecheck = 5 * time.Minute
 // used. Callers hold s.mu.
 func (s *Sessions) live(sess *Session) bool {
 	now := time.Now()
-	if now.Sub(sess.Created) > s.Max || now.Sub(sess.lastSeen) > s.Idle {
+	if s.expired(sess, now) {
 		return false
 	}
 	sess.lastSeen = now
 	return true
+}
+
+func (s *Sessions) expired(sess *Session, now time.Time) bool {
+	return now.Sub(sess.Created) > s.Max || now.Sub(sess.lastSeen) > s.Idle
 }
 
 func (s *Sessions) New(userID int64, username string, upstream central.Auth) *Session {
@@ -72,6 +76,18 @@ func (s *Sessions) New(userID int64, username string, upstream central.Auth) *Se
 	sess := &Session{Token: hex.EncodeToString(b), UserID: userID, Username: username, Created: now, lastSeen: now,
 		verified: now, Upstream: upstream}
 	s.mu.Lock()
+	// Expired sessions otherwise leave only when looked up (review R-18); a login is
+	// rare enough to sweep at.
+	for k, v := range s.byTok {
+		if s.expired(v, now) {
+			delete(s.byTok, k)
+		}
+	}
+	for k, v := range s.basic {
+		if s.expired(v, now) {
+			delete(s.basic, k)
+		}
+	}
 	s.byTok[sess.Token] = sess
 	s.mu.Unlock()
 	return sess
