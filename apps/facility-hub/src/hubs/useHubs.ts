@@ -184,7 +184,8 @@ const adminEntryQuery = <T>(
 /**
  * An entry of facility-hub-admin (accounts, central-move, release) or facility-hub-config
  * (the country's settings for every hub: retention, aggregate, tokens): its value, or
- * null if it is not set, and save, which writes it as writeAdminEntry does. Every entry
+ * null if it is not set; save, which writes it as writeAdminEntry does; and update, which
+ * writes a change to the entry as it is now. Every entry
  * but accounts is writable by the hub managers group that accounts names; accounts
  * itself is written by superusers only.
  */
@@ -207,11 +208,27 @@ export const useAdminEntry = <T>(namespace: AdminNamespace, key: string) => {
             }),
         { onSuccess: () => client.invalidateQueries(entry.queryKey) }
     )
+    // Writes change(the entry as central has it now), so that a write based on what
+    // the page showed does not undo another manager's change made since. change may
+    // throw to refuse; the entry is read again either way.
+    const update = useMutation(
+        async (change: (latest: T | null) => T) => {
+            const latest = await entry.queryFn()
+            await writeAdminEntry(api, {
+                namespace,
+                key,
+                value: change(latest),
+                managers: shared ? accounts.data?.managers : undefined,
+            })
+        },
+        { onSettled: () => client.invalidateQueries(entry.queryKey) }
+    )
     return {
         value: query.data,
         isLoading: query.isLoading,
         error: query.error as Error | null,
         save,
+        update,
     }
 }
 

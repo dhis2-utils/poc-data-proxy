@@ -22,7 +22,13 @@ import { Link } from 'react-router-dom'
 import styles from './Pages.module.css'
 import { ManagersOnly } from '@/components/hub/ManagersOnly'
 import { progress } from '@/hubs/progress'
-import { nextStage, ReleaseChoice, stageLabel } from '@/hubs/stage'
+import {
+    mergePilots,
+    nextStage,
+    ReleaseChoice,
+    sameChoice,
+    stageLabel,
+} from '@/hubs/stage'
 import { useAdminEntry, useHubs } from '@/hubs/useHubs'
 import { GitHubRelease, releasedVersions } from '@/hubs/versions'
 
@@ -52,7 +58,7 @@ const Version = () => {
         value: choice,
         isLoading,
         error,
-        save,
+        update: save,
     } = useAdminEntry<ReleaseChoice>('facility-hub-admin', 'release')
     const github = useGitHubVersions()
     const [version, setVersion] = useState('')
@@ -75,12 +81,14 @@ const Version = () => {
             ),
         [active]
     )
+    const shown = useMemo(() => new Set(names.keys()), [names])
     if (isLoading || hubsLoading) {
         return <CircularLoader small />
     }
     const current = choice?.version ? choice : null
     const p = current ? progress(hubs ?? [], current) : null
-    const write = (c: ReleaseChoice) => save.mutate(c)
+    const write = (change: (latest: ReleaseChoice | null) => ReleaseChoice) =>
+        save.mutate(change)
     const versionOk = versionPattern.test(version.trim())
     const listed = github.data ?? []
 
@@ -132,7 +140,20 @@ const Version = () => {
                                 disabled={
                                     current.percent >= 100 || save.isLoading
                                 }
-                                onClick={() => write(nextStage(current))}
+                                onClick={() =>
+                                    write((latest) => {
+                                        // Not over a change made since the page read it
+                                        // (another manager's Stop).
+                                        if (!sameChoice(latest, current)) {
+                                            throw new Error(
+                                                i18n.t(
+                                                    'The choice was changed meanwhile. Check it and try again.'
+                                                )
+                                            )
+                                        }
+                                        return nextStage(current)
+                                    })
+                                }
                             >
                                 {i18n.t('Next stage')}
                             </Button>
@@ -144,11 +165,11 @@ const Version = () => {
                                     save.isLoading
                                 }
                                 onClick={() =>
-                                    write({
-                                        ...current,
+                                    write((latest) => ({
+                                        ...(latest ?? current),
                                         pilotHubs: [],
                                         percent: 0,
-                                    })
+                                    }))
                                 }
                             >
                                 {i18n.t('Stop')}
@@ -223,7 +244,13 @@ const Version = () => {
                     label={i18n.t('Pilot hubs')}
                     filterable
                     selected={pilots.filter((id) => names.has(id))}
-                    onChange={({ selected }) => setPilots(selected)}
+                    // Pilots the user does not see stay chosen.
+                    onChange={({ selected }) =>
+                        setPilots([
+                            ...pilots.filter((id) => !names.has(id)),
+                            ...selected,
+                        ])
+                    }
                 >
                     {active.map((h) => (
                         <MultiSelectOption
@@ -240,11 +267,11 @@ const Version = () => {
                             !versionOk || pilots.length === 0 || save.isLoading
                         }
                         onClick={() =>
-                            write({
+                            write((latest) => ({
                                 version: version.trim(),
-                                pilotHubs: pilots,
+                                pilotHubs: mergePilots(latest, pilots, shown),
                                 percent: 0,
-                            })
+                            }))
                         }
                     >
                         {i18n.t('Start with pilot hubs')}

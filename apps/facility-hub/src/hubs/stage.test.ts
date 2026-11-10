@@ -4,7 +4,13 @@
 /// <reference types="node" />
 import fs from 'fs'
 import path from 'path'
-import { inStage, nextStage, stageLabel } from './stage'
+import {
+    inStage,
+    mergePilots,
+    nextStage,
+    sameChoice,
+    stageLabel,
+} from './stage'
 
 // internal/upgrade/testdata/stages.json: the rule the hubs use (upgrade.InStage).
 const rows = JSON.parse(
@@ -52,5 +58,39 @@ describe('nextStage', () => {
         )
         expect(stageLabel({ ...c, percent: 100 })).toBe('All hubs')
         expect(stageLabel({ ...c, pilotHubs: [], percent: 0 })).toBe('No hubs')
+    })
+})
+
+describe('sameChoice', () => {
+    const c = { version: '0.3.0', pilotHubs: ['hub-a', 'hub-b'], percent: 10 }
+    it('ignores the order of pilot hubs, nothing else', () => {
+        expect(sameChoice(c, { ...c, pilotHubs: ['hub-b', 'hub-a'] })).toBe(
+            true
+        )
+        expect(sameChoice(c, { ...c, percent: 0 })).toBe(false)
+        expect(sameChoice(c, { ...c, pilotHubs: ['hub-a'] })).toBe(false)
+        expect(sameChoice(c, { ...c, version: '0.3.1' })).toBe(false)
+        expect(sameChoice(c, null)).toBe(false)
+        expect(sameChoice(null, null)).toBe(true)
+    })
+})
+
+describe('mergePilots', () => {
+    const latest = {
+        version: '0.3.0',
+        pilotHubs: ['hub-mine', 'hub-other-district'],
+        percent: 0,
+    }
+    const shown = new Set(['hub-mine', 'hub-mine-2'])
+    it("keeps the pilots the user does not see, from central's current choice", () => {
+        expect(mergePilots(latest, ['hub-mine-2'], shown)).toEqual([
+            'hub-other-district',
+            'hub-mine-2',
+        ])
+    })
+    it('takes only seen hubs from the selection', () => {
+        expect(
+            mergePilots(null, ['hub-mine', 'hub-stale-hidden'], shown)
+        ).toEqual(['hub-mine'])
     })
 })

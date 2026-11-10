@@ -110,3 +110,59 @@ describe('useAdminEntry', () => {
         })
     })
 })
+
+// A write based on what the page showed must not undo a change made since (review R-30).
+describe('useAdminEntry update', () => {
+    beforeEach(() => {
+        mockCentral.api = new FakeApi()
+        mockCentral.api.store['facility-hub-admin'] = {
+            accounts: { group: 'G', role: 'R', managers: 'HubGrpMgrs' },
+            release: { version: '0.3.0', pilotHubs: ['a'], percent: 10 },
+        }
+    })
+
+    it('changes the entry as central has it now, not as it was read', async () => {
+        type C = { version: string; pilotHubs: string[]; percent: number }
+        const entry = render<C>('facility-hub-admin', 'release')
+        await until(() => entry().value?.percent === 10)
+        // Another manager stops the rollout.
+        mockCentral.api.store['facility-hub-admin'].release = {
+            version: '0.3.0',
+            pilotHubs: [],
+            percent: 0,
+        }
+        const seen: (C | null)[] = []
+        await act(() =>
+            entry().update.mutateAsync((latest) => {
+                seen.push(latest)
+                return { ...latest!, version: '0.3.1' }
+            })
+        )
+        expect(seen).toEqual([{ version: '0.3.0', pilotHubs: [], percent: 0 }])
+        expect(mockCentral.api.entry('facility-hub-admin', 'release')).toEqual({
+            version: '0.3.1',
+            pilotHubs: [],
+            percent: 0,
+        })
+        await until(() => entry().value?.version === '0.3.1')
+    })
+
+    it('writes nothing when the change refuses', async () => {
+        const entry = render<{ percent: number }>(
+            'facility-hub-admin',
+            'release'
+        )
+        await until(() => !entry().isLoading)
+        await act(() =>
+            entry()
+                .update.mutateAsync(() => {
+                    throw new Error('changed meanwhile')
+                })
+                .catch(() => undefined)
+        )
+        await until(() => !!entry().update.error)
+        expect(mockCentral.api.log.filter((l) => !l.startsWith('GET'))).toEqual(
+            []
+        )
+    })
+})

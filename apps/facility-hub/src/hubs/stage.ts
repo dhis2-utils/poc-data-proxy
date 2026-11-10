@@ -29,6 +29,33 @@ export const nextStage = (c: ReleaseChoice): ReleaseChoice => ({
     percent: steps.find((p) => p > c.percent) ?? 100,
 })
 
+const sameSet = (a: string[], b: string[]) =>
+    a.length === b.length && a.every((x) => b.includes(x))
+
+/** Whether two choices are the same (pilot hubs in any order). */
+export const sameChoice = (a: ReleaseChoice | null, b: ReleaseChoice | null) =>
+    a === b ||
+    (!!a &&
+        !!b &&
+        a.version === b.version &&
+        a.percent === b.percent &&
+        sameSet(a.pilotHubs, b.pilotHubs))
+
+/**
+ * The pilot hubs to write: those chosen among the hubs the user sees, and those of the
+ * current choice the user does not see (another manager's, outside their org units).
+ */
+export const mergePilots = (
+    latest: ReleaseChoice | null,
+    chosen: string[],
+    shown: Set<string>
+): string[] => [
+    ...new Set([
+        ...(latest?.pilotHubs ?? []).filter((id) => !shown.has(id)),
+        ...chosen.filter((id) => shown.has(id)),
+    ]),
+]
+
 export const stageLabel = (c: ReleaseChoice): string => {
     if (c.percent >= 100) {
         return i18n.t('All hubs')
