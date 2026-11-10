@@ -268,19 +268,26 @@ func Stage(usbDir, dataDir, id, username, password string, centralOK func(string
 }
 
 // Finish, at start before the store opens: puts a staged restore in place of the new
-// disk's store (a hub still waiting for set-up), as the same hub as the copy.
+// disk's store (a hub still waiting for set-up), as the same hub as the copy. A Finish
+// cut short after the staged key file was moved into place carries on from there: the
+// store is then the restored one, and must not be deleted again (review R-37).
 func Finish(dataDir, storePath string) error {
 	b, err := os.ReadFile(filepath.Join(dataDir, restoreReady))
 	if err != nil {
 		return nil
 	}
 	staging := strings.TrimSpace(string(b))
-	for _, p := range []string{storePath, store.DataPath(storePath)} {
-		for _, sfx := range []string{"", "-wal", "-shm"} {
-			os.Remove(p + sfx)
+	staged := filepath.Join(staging, "hub.db")
+	if _, err := os.Stat(staged); err == nil {
+		for _, p := range []string{storePath, store.DataPath(storePath)} {
+			for _, sfx := range []string{"", "-wal", "-shm"} {
+				os.Remove(p + sfx)
+			}
 		}
-	}
-	if err := os.Rename(filepath.Join(staging, "hub.db"), storePath); err != nil {
+		if err := os.Rename(staged, storePath); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	if b, err := devkey.ReadFile(filepath.Join(staging, certsStaged)); err == nil {
