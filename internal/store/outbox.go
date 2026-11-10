@@ -227,6 +227,26 @@ func (s *Store) CountAggregatePending() int {
 	return n
 }
 
+// PendingOutboxByUser counts pending entries per author, without reading them
+// (/hub/status asks on every probe, review R-19).
+func (s *Store) PendingOutboxByUser() (map[int64]int, error) {
+	rows, err := s.DB().Query(`SELECT user_id, count(*) FROM outbox WHERE state=? GROUP BY user_id`, OutboxPending)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]int{}
+	for rows.Next() {
+		var u int64
+		var n int
+		if err := rows.Scan(&u, &n); err != nil {
+			return nil, err
+		}
+		out[u] = n
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) CountOutbox(state string) int {
 	var n int
 	s.DB().QueryRow(`SELECT count(*) FROM outbox WHERE state=?`, state).Scan(&n)

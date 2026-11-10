@@ -175,21 +175,14 @@ func (h *Hub) ThawLocalWrites() { h.Upgrading.Store(false) }
 // logs in online again (central refused their token). Such an entry may never push,
 // for instance when the author has left (REVIEW-2 F3).
 func (h *Hub) StuckOutbox() int {
-	entries, err := h.Store.PendingOutbox()
+	counts, err := h.Store.PendingOutboxByUser()
 	if err != nil {
 		return 0
 	}
-	blocked := map[int64]bool{}
 	n := 0
-	for _, e := range entries {
-		b, seen := blocked[e.UserID]
-		if !seen {
-			u, _ := h.Store.UserByID(e.UserID)
-			b = u == nil || u.NeedsLogin
-			blocked[e.UserID] = b
-		}
-		if b {
-			n++
+	for id, c := range counts {
+		if u, _ := h.Store.UserByID(id); u == nil || u.NeedsLogin {
+			n += c
 		}
 	}
 	return n
