@@ -191,7 +191,9 @@ func (h *Hub) StuckOutbox() int {
 }
 
 // OutboxWaiting reports whether the outbox holds entries the next push can send: any
-// pending entry whose author does not need an online login first. While it does, the
+// pending entry whose author does not need an online login first, and that does not
+// wait for an entry that is still pending (one whose author must log in; review
+// R-21: else such a chain kept the hub answering locally for days). While it does, the
 // hub answers tracker requests itself even when central is reachable (PassThrough).
 func (h *Hub) OutboxWaiting() bool {
 	if !h.Store.Unlocked() {

@@ -72,9 +72,12 @@ func (s *Store) AppendOutbox(tx *sql.Tx, userID int64, payload []byte, params st
 	return seq, nil
 }
 
-// PendingAuthors returns the users with pending entries, without opening any entry.
+// PendingAuthors returns the users with pending entries the push would try now,
+// without opening any entry: not those that wait for a pending entry they depend on
+// (review R-21), as the push skips them.
 func (s *Store) PendingAuthors() []int64 {
-	rows, err := s.DB().Query(`SELECT DISTINCT user_id FROM outbox WHERE state = ?`, OutboxPending)
+	rows, err := s.DB().Query(`SELECT DISTINCT user_id FROM outbox o WHERE state = ?1 AND NOT EXISTS
+ (SELECT 1 FROM outbox p WHERE p.seq = o.depends_on_seq AND p.state = ?1)`, OutboxPending)
 	if err != nil {
 		return nil
 	}

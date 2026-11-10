@@ -96,3 +96,42 @@ func TestPruneSentOutbox(t *testing.T) {
 		t.Fatalf("legacy entry: pruned %d, %v, state %q", n, err, s.OutboxState(legacy))
 	}
 }
+
+// An entry that waits for another pending entry (its parent, whose author must log in
+// again, say) is not one the push can send now (review R-21): its author is not
+// listed for it.
+func TestPendingAuthorsSkipsWaitingChildren(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	k, _ := hubcrypto.NewKey()
+	if err := s.SetDK(k); err != nil {
+		t.Fatal(err)
+	}
+	add := func(user, dep int64, uid string) int64 {
+		t.Helper()
+		var seq int64
+		err := s.Tx(context.Background(), func(tx *sql.Tx) error {
+			var err error
+			seq, err = s.AppendOutbox(tx, user, []byte(`{}`), "", []OutboxRef{{UID: uid, Kind: KindEvent}}, dep)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return seq
+	}
+	parent := add(1, 0, "ParentEv001")
+	add(2, parent, "ChildEv0001")
+	if got := s.PendingAuthors(); len(got) != 1 || got[0] != 1 {
+		t.Fatalf("authors %v, want only the parent's", got)
+	}
+	if err := s.FinishOutbox(parent, OutboxSynced, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.PendingAuthors(); len(got) != 1 || got[0] != 2 {
+		t.Fatalf("authors %v after the parent was sent, want the child's", got)
+	}
+}
