@@ -53,7 +53,7 @@ func TestQueryPlansUseIndexes(t *testing.T) {
 	explain("newest central child", sqlCentralChildrenLive, "x", "o")
 	explain("newest central child, deleted too", sqlCentralChildrenAll, "x", "o")
 	explain("object states", `SELECT o.uid, o.updated_at, o.slot, EXISTS (SELECT 1 FROM objects s INDEXED BY objects_stubs WHERE s.uid = o.uid AND s.stub = 1) FROM objects o INDEXED BY objects_state WHERE o.uid IN (?,?)`, "a", "b")
-	explain("slot origins", `SELECT slot, origin, program FROM objects WHERE slot IN (?,?)`, 1, 2)
+	explain("slot origins", `SELECT slot, origin, program, updated_at FROM objects WHERE slot IN (?,?)`, 1, 2)
 	explain("enrolled, owned", sqlEnrolledOwned, "p", "o", store.SyncSynced)
 	explain("enrolled, owned elsewhere", sqlEnrolledElsewhere, "p", "o", store.SyncSynced)
 	for _, cond := range []string{"a.value_lc LIKE ? ESCAPE '\\'", "a.value_lc = ?"} {
