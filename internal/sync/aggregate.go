@@ -336,6 +336,14 @@ func (w *Worker) pushAggregate(ctx context.Context, e *store.OutboxEntry) (pushR
 		h.Store.SetNeedsLogin(e.UserID, true)
 		h.Store.NoteAttempt(e.Seq, "401 from central: needs online login")
 		return pushResult{userBlocked: true}, nil
+	case resp.StatusCode == http.StatusInternalServerError:
+		// As for tracker (push.go): central failing on this edit, not down. The
+		// entries after it go on (later edits of the cell wait: EarlierPendingFor),
+		// and after a day it is refused below, with an issue (review R-21).
+		if time.Since(h.Store.FailingSince(e.Seq)) < failingRefusedAfter {
+			h.Store.NoteAttempt(e.Seq, "central returned 500")
+			return pushResult{}, nil
+		}
 	case resp.StatusCode >= 500 || onTheWay(resp.StatusCode):
 		h.Store.NoteAttempt(e.Seq, fmt.Sprintf("central returned %d", resp.StatusCode))
 		return pushResult{stop: true}, nil

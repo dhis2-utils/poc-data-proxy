@@ -214,7 +214,7 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 		// Not an import report (a proxy's page, say): it says nothing about the saves,
 		// so they are tried again. After a day of such answers the entry is refused, so
 		// it does not hold up the saves after it for ever, and a manager sees why.
-		if time.Since(h.Store.FailingSince(e.Seq)) < 24*time.Hour {
+		if time.Since(h.Store.FailingSince(e.Seq)) < failingRefusedAfter {
 			h.Store.NoteAttempt(e.Seq, perr.Error())
 			return pushResult{stop: !failed}, nil
 		}
@@ -262,6 +262,10 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 // user to log in online again. After that they are refused: a user disabled or deleted
 // on central never logs in again, and a hub manager can resend them as another user.
 const loginWait = 7 * 24 * time.Hour
+
+// failingRefusedAfter is how long an entry central fails on (a plain 500, an answer
+// that is no import report) is tried again before it is refused.
+const failingRefusedAfter = 24 * time.Hour
 
 // authorGone reports whether the user has needed an online login for loginWait.
 func (w *Worker) authorGone(userID int64) bool {

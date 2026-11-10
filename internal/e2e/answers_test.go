@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -318,5 +319,43 @@ func TestPushReshapedReportIsNoReport(t *testing.T) {
 	}
 	if o := h.Index.Get("ShpTe000001"); o == nil || o.SyncState != store.SyncSynced {
 		t.Fatalf("not synced: %+v", o)
+	}
+}
+
+// An aggregate edit central answers 500 to follows the tracker rule (review R-21): the
+// saves after it go on, and it is refused after a day of 500s, with an issue.
+func TestAggregatePushGoesOnPastAFailingEdit(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	h := e.app.Hub
+	a := e.web("nurse_a")
+	a.login()
+	e.sync()
+	e.offline()
+	q := url.Values{"de": {fc.AggDeNum}, "co": {fc.AggCOC}, "ds": {fc.AggDataSet}, "ou": {fc.Facility},
+		"pe": {time.Now().Format("200601")}, "value": {"7"}}
+	if st, b := a.do("POST", "/api/dataValues?"+q.Encode(), nil); st/100 != 2 {
+		t.Fatalf("offline value: %d %s", st, b)
+	}
+	a.json("POST", postSync, newPatient("AggTe000001", "AggEn000001", "After", "", nil), 200)
+	e.central.FailPaths = map[string]int{"/api/dataValues": 500}
+	e.online()
+	e.sync()
+	if e.central.Object("AggTe000001") == nil {
+		t.Fatal("the save after the failing aggregate edit did not reach central")
+	}
+	if n := h.Store.CountAggregatePending(); n != 1 {
+		t.Fatalf("aggregate edits pending after the 500: %d", n)
+	}
+	day := time.Now().Add(-25 * time.Hour).UTC().Format(time.RFC3339)
+	if _, err := h.Store.DB().Exec(`UPDATE outbox SET failing_since = ? WHERE failing_since <> ''`, day); err != nil {
+		t.Fatal(err)
+	}
+	e.sync()
+	if n := h.Store.CountAggregatePending(); n != 0 {
+		t.Fatalf("still pending after a day of 500s: %d", n)
+	}
+	if n := h.Store.CountIssues(); n == 0 {
+		t.Fatal("no refusal recorded after a day of 500s")
 	}
 }
