@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/dhis2/facility-hub/internal/auth"
 	"github.com/dhis2/facility-hub/internal/core"
 	"github.com/dhis2/facility-hub/internal/netsetup"
 )
@@ -15,6 +16,7 @@ type netView struct {
 	ModeText string
 	OnSetup  bool // the setup Wi-Fi is on: joining and case C are offered
 	Admin    bool // the admin page: the facility Wi-Fi's password and "New password"
+	NeedCode bool // before set-up: the forms ask for the setup code, as set-up does
 }
 
 // netView is the network section; the setup page, open before set-up to anyone on the
@@ -27,7 +29,7 @@ func (u *UI) netView(admin bool) *netView {
 	if !admin {
 		st.FacilityPassword = ""
 	}
-	v := &netView{Status: st, OnSetup: st.Mode == "setup", Admin: admin}
+	v := &netView{Status: st, OnSetup: st.Mode == "setup", Admin: admin, NeedCode: !admin && needToken(u.H)}
 	switch st.Mode {
 	case "cable":
 		v.ModeText = "Cable"
@@ -46,8 +48,9 @@ func (u *UI) netView(admin bool) *netView {
 }
 
 // handleNetwork joins a Wi-Fi or makes the hub the facility's Wi-Fi. Before set-up
-// anyone on the setup Wi-Fi may (its password is the gate), but not anyone on the
-// facility's cable LAN; afterwards staff of the facility only.
+// anyone on the setup Wi-Fi may, with the setup code where set-up needs one (the Wi-Fi's
+// 8-digit password alone is found offline from one captured handshake, review R-29),
+// but not anyone on the facility's cable LAN; afterwards staff of the facility only.
 func (u *UI) handleNetwork(facility bool) http.HandlerFunc {
 	do := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || u.Net == nil {
@@ -77,6 +80,12 @@ func (u *UI) handleNetwork(facility bool) http.HandlerFunc {
 		if u.Net == nil || !u.Net.Captive() || !fromSetupWifi(r.RemoteAddr) {
 			http.Error(w, "connect to the hub's setup Wi-Fi to change its network", http.StatusForbidden)
 			return
+		}
+		if r.Method == http.MethodPost {
+			if err := u.checkCode(auth.Source(r), r.FormValue("setup_token")); err != nil {
+				http.Error(w, err.Error(), http.StatusForbidden)
+				return
+			}
 		}
 		do(w, r)
 	}

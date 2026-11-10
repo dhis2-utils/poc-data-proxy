@@ -19,7 +19,12 @@ import (
 // netEnv is a Pi hub with no network: NetworkManager is the fake, and the setup Wi-Fi
 // is on (the hub has been up 61 seconds).
 func netEnv(t *testing.T) (*env, string, *nmfake.NM, *netsetup.Manager) {
-	e, usb := stickEnv(t, false)
+	return netEnvCode(t, false)
+}
+
+// netEnvCode is netEnv, with a setup code (codeMode: no central pinned in the image).
+func netEnvCode(t *testing.T, codeMode bool) (*env, string, *nmfake.NM, *netsetup.Manager) {
+	e, usb := stickEnv(t, codeMode)
 	nm := nmfake.New(nmfake.Net{SSID: "Clinic", Signal: 70, Secure: true})
 	now := time.Now()
 	m := &netsetup.Manager{R: nm, DataDir: e.dir, HubID: e.app.Hub.HubID(), DnsmasqDir: t.TempDir(),
@@ -175,5 +180,36 @@ func TestNetworkChangeOnlyFromSetupWifi(t *testing.T) {
 	}
 	if code := post("10.42.0.23:40000"); code != http.StatusOK || !nm.Up[netsetup.FacilityConn] {
 		t.Fatalf("from the setup Wi-Fi: %d, up %v", code, nm.Up)
+	}
+}
+
+// Before set-up, where set-up needs the setup code, so does a network change: the
+// setup Wi-Fi's password alone is not enough (review R-29).
+func TestNetworkChangeNeedsSetupCode(t *testing.T) {
+	e, _, nm, _ := netEnvCode(t, true)
+	_, page := e.web("nobody").do("GET", "/hub/setup", nil)
+	_, forms, _ := strings.Cut(string(page), `action="/hub/network/join"`)
+	forms, _, _ = strings.Cut(forms, `action="/hub/setup"`)
+	if strings.Count(forms, `name="setup_token"`) != 2 {
+		t.Fatalf("the network forms do not ask for the setup code: %s", forms)
+	}
+	code, err := os.ReadFile(filepath.Join(e.dir, "setup-token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(token string) int {
+		form := url.Values{"ssid": {"Clinic"}, "password": {"secret123"}, "setup_token": {token}}
+		resp, err := e.web("nobody").postForm("/hub/network/join", form)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if st := post("00000000"); st != http.StatusForbidden || nm.Up[netsetup.WifiConn] {
+		t.Fatalf("wrong code: %d, up %v", st, nm.Up)
+	}
+	if st := post(string(code)); st != http.StatusOK || !nm.Up[netsetup.WifiConn] {
+		t.Fatalf("right code: %d, up %v", st, nm.Up)
 	}
 }

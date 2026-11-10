@@ -8,9 +8,11 @@
 <form method="post" action="/hub/network/join"><h3>Join this Wi-Fi</h3>
 <label for="ns">Network</label><select id="ns" name="ssid">{{range .Networks}}<option value="{{.SSID}}">{{.SSID}}{{if not .Secure}} (open){{end}} · {{.Signal}} %</option>{{end}}</select>
 <label for="np">Password</label><input id="np" type="password" name="password" autocomplete="off">
+{{if .NeedCode}}<label>Setup code <input type="text" name="setup_token" inputmode="numeric" autocomplete="off" placeholder="in hub.txt on this box's USB stick" required></label>{{end}}
 <p><button>Join this Wi-Fi</button></p></form>
 <form method="post" action="/hub/network/facility"><h3>Make this hub the facility's Wi-Fi</h3>
 <p class="muted">For facilities with no Wi-Fi of their own. Connect a network cable or the USB modem for internet; without one, the hub's Wi-Fi works inside the facility only.</p>
 <p class="muted">The Wi-Fi keeps the name <strong>{{.SetupSSID}}</strong>, with a password the hub makes. The next page shows it; afterwards the hub's admin page and <span class="mono">facility-hub/hub.txt</span> on the USB stick do.</p>
+{{if .NeedCode}}<label>Setup code <input type="text" name="setup_token" inputmode="numeric" autocomplete="off" placeholder="in hub.txt on this box's USB stick" required></label>{{end}}
 <p><button>Make this hub the facility's Wi-Fi</button></p></form>{{end}}
 </div>{{end}}
