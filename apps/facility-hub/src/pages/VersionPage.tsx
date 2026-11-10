@@ -11,6 +11,10 @@ import {
     DataTableRow,
     InputField,
     MultiSelectField,
+    Modal,
+    ModalActions,
+    ModalContent,
+    ModalTitle,
     MultiSelectOption,
     NoticeBox,
     SingleSelectField,
@@ -63,6 +67,8 @@ const Version = () => {
     const github = useGitHubVersions()
     const [version, setVersion] = useState('')
     const [pilots, setPilots] = useState<string[]>([])
+    // Next stage moves many hubs at once: asked again first.
+    const [confirming, setConfirming] = useState(false)
     useEffect(() => {
         if (choice) {
             setVersion(choice.version)
@@ -87,8 +93,27 @@ const Version = () => {
     }
     const current = choice?.version ? choice : null
     const p = current ? progress(hubs ?? [], current) : null
-    const write = (change: (latest: ReleaseChoice | null) => ReleaseChoice) =>
-        save.mutate(change)
+    const write = (
+        change: (latest: ReleaseChoice | null) => ReleaseChoice,
+        onSettled?: () => void
+    ) => save.mutate(change, { onSettled })
+    // Next stage, unless the choice changed since the page read it (another manager's
+    // Stop).
+    const advance = () =>
+        current &&
+        write(
+            (latest) => {
+                if (!sameChoice(latest, current)) {
+                    throw new Error(
+                        i18n.t(
+                            'The choice was changed meanwhile. Check it and try again.'
+                        )
+                    )
+                }
+                return nextStage(current)
+            },
+            () => setConfirming(false)
+        )
     const versionOk = versionPattern.test(version.trim())
     const listed = github.data ?? []
 
@@ -140,20 +165,7 @@ const Version = () => {
                                 disabled={
                                     current.percent >= 100 || save.isLoading
                                 }
-                                onClick={() =>
-                                    write((latest) => {
-                                        // Not over a change made since the page read it
-                                        // (another manager's Stop).
-                                        if (!sameChoice(latest, current)) {
-                                            throw new Error(
-                                                i18n.t(
-                                                    'The choice was changed meanwhile. Check it and try again.'
-                                                )
-                                            )
-                                        }
-                                        return nextStage(current)
-                                    })
-                                }
+                                onClick={() => setConfirming(true)}
                             >
                                 {i18n.t('Next stage')}
                             </Button>
@@ -175,6 +187,38 @@ const Version = () => {
                                 {i18n.t('Stop')}
                             </Button>
                         </ButtonStrip>
+                        {confirming && (
+                            <Modal small onClose={() => setConfirming(false)}>
+                                <ModalTitle>{i18n.t('Next stage')}</ModalTitle>
+                                <ModalContent>
+                                    {i18n.t(
+                                        '{{- stage}} take version {{- v}} at their next check. Hubs never move back to an older version.',
+                                        {
+                                            stage: stageLabel(
+                                                nextStage(current)
+                                            ),
+                                            v: current.version,
+                                        }
+                                    )}
+                                </ModalContent>
+                                <ModalActions>
+                                    <ButtonStrip end>
+                                        <Button
+                                            onClick={() => setConfirming(false)}
+                                        >
+                                            {i18n.t('Cancel')}
+                                        </Button>
+                                        <Button
+                                            primary
+                                            loading={save.isLoading}
+                                            onClick={advance}
+                                        >
+                                            {i18n.t('Next stage')}
+                                        </Button>
+                                    </ButtonStrip>
+                                </ModalActions>
+                            </Modal>
+                        )}
                         {p.failed.length > 0 && (
                             <DataTable>
                                 <DataTableHead>

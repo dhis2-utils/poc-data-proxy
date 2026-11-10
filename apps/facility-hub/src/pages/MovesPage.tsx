@@ -11,6 +11,10 @@ import {
     DataTableHead,
     DataTableRow,
     InputField,
+    Modal,
+    ModalActions,
+    ModalContent,
+    ModalTitle,
     NoticeBox,
 } from '@dhis2/ui'
 import React, { useMemo, useState } from 'react'
@@ -45,6 +49,8 @@ const PlannedMove = () => {
     const announcing = !!save.variables?.url
     const [url, setUrl] = useState('')
     const [from, setFrom] = useState('')
+    // A move announced moves every hub: asked again first.
+    const [confirming, setConfirming] = useState(false)
     if (isLoading) {
         return <CircularLoader small />
     }
@@ -115,16 +121,51 @@ const PlannedMove = () => {
                     primary
                     disabled={!url.trim() || !!problem}
                     loading={save.isLoading && announcing}
-                    onClick={() =>
-                        save.mutate({
-                            url: normalizeAddress(url),
-                            ...(from && { from: new Date(from).toISOString() }),
-                        })
-                    }
+                    onClick={() => setConfirming(true)}
                 >
                     {i18n.t('Announce')}
                 </Button>
             </div>
+            {confirming && (
+                <Modal small onClose={() => setConfirming(false)}>
+                    <ModalTitle>{i18n.t('Announce a move')}</ModalTitle>
+                    <ModalContent>
+                        {i18n.t(
+                            'Every hub switches to {{- url}} once this address has stopped answering for an hour, and only if the new one is the same DHIS2.',
+                            { url: normalizeAddress(url) }
+                        )}
+                    </ModalContent>
+                    <ModalActions>
+                        <ButtonStrip end>
+                            <Button onClick={() => setConfirming(false)}>
+                                {i18n.t('Cancel')}
+                            </Button>
+                            <Button
+                                primary
+                                loading={save.isLoading}
+                                onClick={() =>
+                                    save.mutate(
+                                        {
+                                            url: normalizeAddress(url),
+                                            ...(from && {
+                                                from: new Date(
+                                                    from
+                                                ).toISOString(),
+                                            }),
+                                        },
+                                        {
+                                            onSettled: () =>
+                                                setConfirming(false),
+                                        }
+                                    )
+                                }
+                            >
+                                {i18n.t('Announce')}
+                            </Button>
+                        </ButtonStrip>
+                    </ModalActions>
+                </Modal>
+            )}
             {save.error && (
                 <NoticeBox error title={i18n.t('Not saved')}>
                     {(save.error as Error).message}

@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-11-10T15:06:02.049Z\n"
-"PO-Revision-Date: 2026-11-10T15:06:02.050Z\n"
+"POT-Creation-Date: 2026-11-10T15:06:57.071Z\n"
+"PO-Revision-Date: 2026-11-10T15:06:57.072Z\n"
 
 msgid "Your session has expired. Reload the page and log in again."
 msgstr "Your session has expired. Reload the page and log in again."
@@ -725,6 +725,16 @@ msgstr "Not before, your time (optional)"
 msgid "Announce"
 msgstr "Announce"
 
+msgid "Announce a move"
+msgstr "Announce a move"
+
+msgid ""
+"Every hub switches to {{- url}} once this address has stopped answering for "
+"an hour, and only if the new one is the same DHIS2."
+msgstr ""
+"Every hub switches to {{- url}} once this address has stopped answering for "
+"an hour, and only if the new one is the same DHIS2."
+
 msgid "Move codes"
 msgstr "Move codes"
 
@@ -1046,6 +1056,9 @@ msgstr ""
 "These settings apply to every hub. Anyone can read them; only hub managers "
 "and superusers change them."
 
+msgid "The choice was changed meanwhile. Check it and try again."
+msgstr "The choice was changed meanwhile. Check it and try again."
+
 msgid "Could not read the choice"
 msgstr "Could not read the choice"
 
@@ -1065,14 +1078,18 @@ msgstr ""
 "{{- n}} hubs in this stage, {{- on}} of them on {{- v}}, {{- waiting}} not "
 "yet, {{- failed}} failed."
 
-msgid "The choice was changed meanwhile. Check it and try again."
-msgstr "The choice was changed meanwhile. Check it and try again."
-
 msgid "Next stage"
 msgstr "Next stage"
 
 msgid "Stop"
 msgstr "Stop"
+
+msgid ""
+"{{- stage}} take version {{- v}} at their next check. Hubs never move back "
+"to an older version."
+msgstr ""
+"{{- stage}} take version {{- v}} at their next check. Hubs never move back "
+"to an older version."
 
 msgid "Why the upgrade failed"
 msgstr "Why the upgrade failed"
