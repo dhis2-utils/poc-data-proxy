@@ -1,12 +1,14 @@
 package e2e
 
 import (
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // The admin page tells whether devices reach the hub by dhis2.local or only by its IP
@@ -27,6 +29,18 @@ func TestReach(t *testing.T) {
 	h.NoteReach("dhis2.local:443", "192.168.1.30:5555")
 	if n, _ := h.Reach(); n.IsZero() {
 		t.Fatal("by name not counted")
+	}
+	// Each way is saved when first seen, and not again: the key file it is in is
+	// copied to the USB stick whenever it changes (review R-50).
+	saved := h.Store.Meta("reach")
+	var r struct{ ByName, ByIP time.Time }
+	if json.Unmarshal([]byte(saved), &r); r.ByName.IsZero() || r.ByIP.IsZero() {
+		t.Fatalf("saved %s, want both ways", saved)
+	}
+	h.NoteReach("dhis2.local:443", "192.168.1.31:5555")
+	h.NoteReach("192.168.1.20", "192.168.1.31:5555")
+	if now := h.Store.Meta("reach"); now != saved {
+		t.Errorf("saved again: %s, was %s", now, saved)
 	}
 	a := e.web("hub_admin")
 	a.login()

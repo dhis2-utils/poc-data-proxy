@@ -21,16 +21,15 @@ const metaReach = "reach"
 // reach is when another device on the LAN last opened the hub by name and by IP
 // address (DEPLOYMENT.md, "Reaching the hub securely": where .local fails): the admin page's set-up check.
 type reach struct {
-	mu      sync.Mutex
-	loaded  bool
-	ByName  time.Time `json:"byName"`
-	ByIP    time.Time `json:"byIp"`
-	savedAt time.Time
+	mu     sync.Mutex
+	loaded bool
+	ByName time.Time `json:"byName"`
+	ByIP   time.Time `json:"byIp"`
 }
 
 // NoteReach records a request for host from remoteAddr. Loopback and the hub's own
 // addresses are not other devices; a name counts as by name, an address as by IP.
-// Saved at most once a minute.
+// Saved when a way is first seen.
 func (h *Hub) NoteReach(host, remoteAddr string) {
 	rip := remoteIP(remoteAddr)
 	if rip == nil || rip.IsLoopback() || h.ownAddress(rip.String()) {
@@ -48,15 +47,18 @@ func (h *Hub) NoteReach(host, remoteAddr string) {
 	defer r.mu.Unlock()
 	h.loadReach()
 	now := time.Now()
+	seen := &r.ByName
 	if net.ParseIP(host) != nil {
-		r.ByIP = now
-	} else {
-		r.ByName = now
+		seen = &r.ByIP
 	}
-	if now.Sub(r.savedAt) > time.Minute {
+	first := seen.IsZero()
+	*seen = now
+	if first {
+		// Saved only the first time: it is in the key file, which the USB stick
+		// copies whenever it changes (docs/RECOVERY.md, C2). The later times are
+		// kept in memory.
 		b, _ := json.Marshal(r)
 		h.Store.SetMeta(metaReach, string(b))
-		r.savedAt = now
 	}
 }
 
