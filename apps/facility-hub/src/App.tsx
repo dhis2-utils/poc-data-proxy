@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import React from 'react'
 import { createHashRouter, Outlet, RouterProvider } from 'react-router-dom'
 import { Layout } from '@/components/layout/Layout'
+import { PageError } from '@/components/layout/PageError'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { ApprovalsPage } from '@/pages/ApprovalsPage'
 import { HubPage } from '@/pages/HubPage'
@@ -29,6 +30,9 @@ const router = createHashRouter([
                                 <Outlet />
                             </PageWrapper>
                         ),
+                        // A page that fails to render (a malformed dataStore entry)
+                        // leaves the sidebar and the other pages working.
+                        errorElement: <PageError />,
                         children: [
                             { path: '/', element: <HubsPage /> },
                             { path: '/hubs/:id', element: <HubPage /> },
