@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
+	"github.com/dhis2/facility-hub/internal/store"
 	"github.com/dhis2/facility-hub/internal/tracker"
 )
 
@@ -129,6 +130,49 @@ func TestConcurrentCreatesOneWins(t *testing.T) {
 		wg.Wait()
 		if ok := (codes[0] == 200) != (codes[1] == 200); !ok {
 			t.Fatalf("round %d: answers %v, want one 200", i, codes)
+		}
+	}
+}
+
+// A local save stored while a pull writes central's version of the same event wins:
+// the pull read the event as synced, and wrote over the save, marked synced, so the
+// edit could be finished as sent without having been sent (review R-33).
+func TestPullDoesNotOverwriteSaveInBetween(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.android("nurse_a")
+	a.json("GET", "/api/me", nil, 200)
+	e.sync()
+	h := e.app.Hub
+	u, err := h.Store.UserByName("nurse_a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.offline()
+	for i := range 30 {
+		if err := h.Store.SetSyncState(h.Store.DB(), "SeedEv00001", store.SyncSynced); err != nil {
+			t.Fatal(err)
+		}
+		central := tracker.M{"events": []any{tracker.M{"event": "SeedEv00001", "enrollment": "SeedEn00001", "trackedEntity": "SeedTe00001",
+			"program": fc.Program, "programStage": fc.Stage1, "orgUnit": fc.Facility, "status": "ACTIVE",
+			"occurredAt": "2026-10-07T00:00:00.000", "createdAt": "2026-10-07T00:00:00.000",
+			"updatedAt": fmt.Sprintf("2026-11-01T00:00:%02d.000", i), "dataValues": []any{}}}}
+		var wg sync.WaitGroup
+		var code int
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			code, _ = a.do("POST", postSync, event("SeedEv00001", "SeedEn00001", fc.Stage1))
+		}()
+		go func() {
+			defer wg.Done()
+			if _, err := h.UpsertCentral(u.ID, central, true); err != nil {
+				t.Error(err)
+			}
+		}()
+		wg.Wait()
+		if o := h.Index.Get("SeedEv00001"); code == 200 && (o == nil || o.SyncState != store.SyncPending) {
+			t.Fatalf("round %d: saved offline, then the event is %+v, want pending", i, o)
 		}
 	}
 }

@@ -248,10 +248,18 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 	vc := h.Index.PrepareVisibility(userID, changes)
 	err := h.Store.Tx(context.Background(), func(tx *sql.Tx) error {
 		for _, o := range objs {
-			if o.Kind != "visibility-only" {
-				if err := h.Store.PutObject(tx, o.ToStore()); err != nil {
-					return err
-				}
+			if o.Kind == "visibility-only" {
+				continue
+			}
+			// A local save stored since the read above wins until pushed (review R-33).
+			if pending, err := h.Store.Pending(tx, o.UID); err != nil {
+				return err
+			} else if pending {
+				o.Kind = "visibility-only"
+				continue
+			}
+			if err := h.Store.PutObject(tx, o.ToStore()); err != nil {
+				return err
 			}
 		}
 		return vc.Write(h.Store, tx)

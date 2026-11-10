@@ -2,6 +2,7 @@ package core
 
 import (
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/dhis2/facility-hub/internal/config"
@@ -39,5 +40,35 @@ func TestConfigSettingsClamped(t *testing.T) {
 	}
 	if r := h.AggRetention(); r.Default != maxPeriods || r.For("d") != maxPeriods {
 		t.Errorf("aggregate retention %+v", r)
+	}
+}
+
+// Concurrent runtime updates each see the others' changes (review R-33): an
+// unserialised read-modify-write could drop a new hub token.
+func TestUpdateRuntimeSerialised(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	dk, _ := hubcrypto.NewKey()
+	if err := st.SetDK(dk); err != nil {
+		t.Fatal(err)
+	}
+	h := New(config.Default(), "test", st)
+	if err := h.SaveRuntime(&Runtime{}); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for range 40 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h.UpdateRuntime(func(rt *Runtime) { rt.HubPassword += "x" })
+		}()
+	}
+	wg.Wait()
+	if n := len(h.Runtime().HubPassword); n != 40 {
+		t.Errorf("%d of 40 updates kept", n)
 	}
 }

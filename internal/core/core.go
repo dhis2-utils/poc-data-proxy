@@ -110,6 +110,7 @@ type Hub struct {
 
 	mu     sync.RWMutex
 	rt     *Runtime
+	rtMu   sync.Mutex // one UpdateRuntime at a time: each reads, changes and saves rt
 	access map[int64]*access.List
 	// aggAccess: each user's aggregate access (AggAccess), as access is theirs.
 	aggAccess map[int64]*aggregate.Access
@@ -387,6 +388,10 @@ func (h *Hub) SaveRuntime(rt *Runtime) error {
 
 // UpdateRuntime applies fn to a copy of the runtime state and saves it.
 func (h *Hub) UpdateRuntime(fn func(*Runtime)) error {
+	// Login handlers and the worker update it at once; unserialised, one update
+	// could drop another's, such as a new hub token (review R-33).
+	h.rtMu.Lock()
+	defer h.rtMu.Unlock()
 	cur := h.Runtime()
 	if cur == nil {
 		return store.ErrLocked

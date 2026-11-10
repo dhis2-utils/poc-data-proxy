@@ -140,6 +140,17 @@ func (s *Store) SetSyncState(q Execer, uid, state string) error {
 	return err
 }
 
+// Pending reports, inside a write, whether the object has a local change waiting
+// to be pushed.
+func (s *Store) Pending(tx *sql.Tx, uid string) (bool, error) {
+	var st string
+	err := tx.QueryRow(`SELECT sync_state FROM objects WHERE uid=?`, uid).Scan(&st)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return st == SyncPending, err
+}
+
 // GetObject returns the object or nil.
 func (s *Store) GetObject(uid string) (*Object, error) {
 	o := &Object{}
