@@ -13,7 +13,7 @@ import (
 )
 
 // Hostile or careless tracker input from a client on the LAN (review R-01, R-02,
-// R-10).
+// R-03, R-10, R-51).
 
 const (
 	inOU, inTET              = "OuAaaaaaaa1", "TetAaaaaaa1"
@@ -265,5 +265,83 @@ func TestUpdateKeepsWhereObjectIs(t *testing.T) {
 	}
 	if o := f.ix.Get("EvInput0001"); o.Enrollment != "EnInput0001" || o.Stage != inStA1 || o.TE != "TeInput0001" {
 		t.Errorf("the event moved: %+v", o)
+	}
+}
+
+// R-03: event lists filter, and person lists sort, only on attributes the user may
+// read: program B's attribute is not the nurse's to see.
+func TestSearchesUseOnlyReadableAttributes(t *testing.T) {
+	f := newInputFixture(t)
+	nurse := f.viewer()
+	both := f.viewer(func(l *access.List) { l.Programs[inProgB] = access.Perm{Read: true} })
+	events := func(v *Viewer, filter string) int {
+		res, apiErr := f.ix.Search(v, "events", url.Values{"program": {inProgA}, "orgUnit": {inOU}, "filterAttributes": {filter}})
+		if apiErr != nil {
+			t.Fatal(apiErr)
+		}
+		return len(res.Items)
+	}
+	if n := events(both, inAttrB+":eq:z"); n != 1 {
+		t.Errorf("with program B: %d events, want 1", n)
+	}
+	if n := events(nurse, inAttrB+":eq:z"); n != 0 {
+		t.Errorf("without program B: %d events match program B's attribute, want 0", n)
+	}
+	if n := events(nurse, inAttrA+":eq:x"); n != 2 {
+		t.Errorf("a readable attribute: %d events, want 2", n)
+	}
+	people := func(v *Viewer) []string {
+		res, apiErr := f.ix.Search(v, "trackedEntities", url.Values{"program": {inProgA}, "orgUnits": {inOU},
+			"order": {inAttrB + ":desc"}, "fields": {"trackedEntity"}})
+		if apiErr != nil {
+			t.Fatal(apiErr)
+		}
+		var out []string
+		for _, it := range res.Items {
+			out = append(out, Str(it, "trackedEntity"))
+		}
+		return out
+	}
+	if got := people(both); !slices.Equal(got, []string{"TeInput0001", "TeInput0002"}) {
+		t.Errorf("with program B, by its attribute descending: %v", got)
+	}
+	// Without access the attribute orders as empty: newest first, as on a tie.
+	if got := people(nurse); !slices.Equal(got, []string{"TeInput0002", "TeInput0001"}) {
+		t.Errorf("without program B: %v, want the order of a tie", got)
+	}
+}
+
+// R-51: an order central refuses is refused (400), not ignored.
+func TestInvalidOrderRefused(t *testing.T) {
+	f := newInputFixture(t)
+	v := f.viewer()
+	for _, c := range []struct {
+		coll, order string
+		status      int
+	}{
+		{"trackedEntities", "nosuchfld", 400},
+		{"trackedEntities", "createdAt:sideways", 400},
+		{"trackedEntities", "createdAt,createdAt:desc", 400},
+		{"trackedEntities", "occurredAt", 400},
+		{"trackedEntities", inAttrA + ":desc,createdAt", 0},
+		{"enrollments", inAttrA, 400},
+		{"enrollments", "enrolledAt:DESC", 0},
+		{"events", "occurredAt:desc", 0},
+		{"events", "eventDate", 400},
+	} {
+		q := url.Values{"program": {inProgA}, "orgUnits": {inOU}, "orgUnit": {inOU}, "order": {c.order}}
+		if c.coll == "events" {
+			delete(q, "orgUnits")
+		} else {
+			delete(q, "orgUnit")
+		}
+		_, apiErr := f.ix.Search(v, c.coll, q)
+		got := 0
+		if apiErr != nil {
+			got = apiErr.Status
+		}
+		if got != c.status {
+			t.Errorf("%s order=%s: %v, want status %d", c.coll, c.order, apiErr, c.status)
+		}
 	}
 }

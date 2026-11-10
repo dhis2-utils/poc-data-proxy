@@ -63,11 +63,60 @@ var allowed = map[string][]string{
 	"single": {"fields", "program", "includeDeleted", "orgUnitMode", "ouMode"},
 }
 
+// orderable is what each collection can be ordered by, as central (2.42 and 2.43, the
+// export mappers' ORDERABLE_FIELDS): these fields, and on people and events UIDs (of
+// attributes and data elements).
+var orderable = map[string]struct {
+	fields []string
+	uids   string
+}{
+	"trackedEntities": {[]string{"createdAt", "createdAtClient", "enrolledAt", "inactive", "trackedEntity", "updatedAt",
+		"updatedAtClient"}, "attribute"},
+	"enrollments": {[]string{"completedAt", "createdAt", "createdAtClient", "enrolledAt", "updatedAt", "updatedAtClient"}, ""},
+	"events": {[]string{"assignedUser", "assignedUserDisplayName", "attributeOptionCombo", "completedAt", "completedBy",
+		"createdAt", "createdAtClient", "createdBy", "deleted", "enrolledAt", "enrollment", "enrollmentStatus", "event",
+		"followUp", "occurredAt", "orgUnit", "program", "programStage", "scheduledAt", "status", "storedBy",
+		"trackedEntity", "updatedAt", "updatedAtClient", "updatedBy"}, "data element and attribute"},
+	"relationships": {[]string{"createdAt", "createdAtClient"}, ""},
+}
+
+// checkOrder refuses an order central refuses (400, its texts), rather than ignoring
+// it (review R-51).
+func checkOrder(collection, order string) *APIError {
+	o, ok := orderable[collection]
+	if !ok {
+		return nil
+	}
+	suffix := fmt.Sprintf("Supported fields are '%s'. All of which can at most be specified once.", strings.Join(o.fields, ", "))
+	if o.uids != "" {
+		suffix = fmt.Sprintf("Supported are %s UIDs and fields '%s'. All of which can at most be specified once.", o.uids, strings.Join(o.fields, ", "))
+	}
+	seen := map[string]bool{}
+	for _, p := range splitList(order) {
+		f, dir, hasDir := strings.Cut(p, ":")
+		f, dir = strings.TrimSpace(f), strings.TrimSpace(dir)
+		if hasDir && !strings.EqualFold(dir, "asc") && !strings.EqualFold(dir, "desc") {
+			return badRequest("'%s' is not a valid sort direction. Valid values are: [ASC, DESC].", dir)
+		}
+		if !slices.Contains(o.fields, f) && (o.uids == "" || !ValidUID(f)) {
+			return badRequest("order parameter is invalid. Cannot order by '%s'. %s", f, suffix)
+		}
+		if seen[f] {
+			return badRequest("order parameter is invalid. '%s' are repeated. %s", f, suffix)
+		}
+		seen[f] = true
+	}
+	return nil
+}
+
 func checkParams(collection string, q url.Values) *APIError {
 	for k := range q {
 		if !slices.Contains(allowed[collection], k) {
 			return unsupported(k)
 		}
+	}
+	if err := checkOrder(collection, q.Get("order")); err != nil {
+		return err
 	}
 	// includeDeleted=true (Android's download) also returns tombstones, what central
 	// deleted, marked deleted (Viewer.IncludeDeleted).

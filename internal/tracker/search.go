@@ -639,6 +639,10 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *API
 	}
 	p.finish = func(out []*Obj) ([]*Obj, *APIError) {
 		sortObjs(out, q.Get("order"), func(o *Obj, attr string) string {
+			// An attribute this user may not read orders as if empty (review R-03).
+			if v.Catalog == nil || !v.Catalog.ReadableAttribute(v.Access, o.TET, attr) {
+				return ""
+			}
 			return attrValues(o.Data, "attributes", "attribute")[attr]
 		})
 		return out, nil
@@ -932,7 +936,24 @@ func (ix *Index) searchEvents(v *Viewer, q url.Values, program string) (*plan, *
 			return out, nil
 		}
 	}
-	return ix.simplePlan(v, w, q, "ev", tfs, upd, finish), nil
+	p := ix.simplePlan(v, w, q, "ev", tfs, upd, finish)
+	if len(attrFilters) > 0 {
+		// The person's values matched in SQL; what this user may read of them is
+		// checked here, as on person searches (review R-03).
+		keep := p.keep
+		p.keep = func(o, enr *Obj) (bool, *APIError) {
+			if v.Catalog == nil || v.Catalog.Programs[o.Program] == nil {
+				return false, nil
+			}
+			for _, f := range attrFilters {
+				if !v.Catalog.ReadableAttribute(v.Access, v.Catalog.Programs[o.Program].TET, f.uid) {
+					return false, nil
+				}
+			}
+			return keep(o, enr)
+		}
+	}
+	return p, nil
 }
 
 func (ix *Index) searchRelationships(v *Viewer, q url.Values) ([]*Obj, *APIError) {
