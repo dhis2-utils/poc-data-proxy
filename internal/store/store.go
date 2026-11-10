@@ -494,6 +494,13 @@ func (s *Store) vacuumKeys() error {
 	if _, err := s.Keys.Exec(`VACUUM`); err != nil {
 		return err
 	}
+	return s.checkpointKeys()
+}
+
+// checkpointKeys moves the key file's log into it and empties the log: after a slot
+// is replaced or pruned, its old copy stays in the log until then (secure_delete
+// clears it from the file's pages only) (review R-39).
+func (s *Store) checkpointKeys() error {
 	_, err := s.Keys.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
 	return err
 }

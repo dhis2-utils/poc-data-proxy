@@ -122,6 +122,9 @@ ON CONFLICT(username) DO UPDATE SET kek_salt=excluded.kek_salt, wrapped_dk=exclu
 	if err != nil {
 		return 0, err
 	}
+	if err := s.checkpointKeys(); err != nil {
+		return 0, err
+	}
 	var id int64
 	if err := s.Keys.QueryRow(`SELECT id FROM key_slots WHERE username=?`, username).Scan(&id); err != nil {
 		return 0, err
@@ -164,6 +167,9 @@ func (s *Store) PruneKeySlots(maxAge time.Duration, keep int) ([]string, error) 
 			return pruned, err
 		}
 		pruned = append(pruned, u.Username)
+	}
+	if len(pruned) > 0 {
+		return pruned, s.checkpointKeys()
 	}
 	return pruned, nil
 }

@@ -137,14 +137,18 @@ func TestPruneKeySlots(t *testing.T) {
 	if err := s.SetDK(dk); err != nil {
 		t.Fatal(err)
 	}
-	for i, name := range []string{"a", "b", "c", "d"} {
+	var gone [][]byte // slots replaced or pruned: in neither the key file nor its log (review R-39)
+	for i, name := range []string{"a", "b", "c", "d", "d"} {
 		salt, _ := hubcrypto.RandomBytes(16)
 		wrapped, _, _ := hubcrypto.WrapSlot(dk, name, salt, nil)
 		id, err := s.UpsertCredentials(name, "", salt, wrapped)
 		if err != nil {
 			t.Fatal(err)
 		}
-		when := []string{"2020-01-01T00:00:00Z", Now(), "2020-01-02T00:00:00Z", "2020-01-03T00:00:00Z"}[i]
+		if i == 0 || i == 2 || i == 3 {
+			gone = append(gone, wrapped)
+		}
+		when := []string{"2020-01-01T00:00:00Z", Now(), "2020-01-02T00:00:00Z", "2020-01-03T00:00:00Z", "2020-01-03T00:00:00Z"}[i]
 		s.DB().Exec(`UPDATE users SET last_login_at=? WHERE id=?`, when, id)
 	}
 	pruned, err := s.PruneKeySlots(24*time.Hour, 2)
@@ -153,6 +157,14 @@ func TestPruneKeySlots(t *testing.T) {
 	}
 	if u, _ := s.UserByName("d"); len(u.WrappedDK) == 0 {
 		t.Fatal("kept slot removed")
+	}
+	for _, f := range []string{s.Path, s.Path + "-wal"} {
+		b, _ := os.ReadFile(f)
+		for i, w := range gone {
+			if bytes.Contains(b, w) {
+				t.Errorf("%s still holds old slot %d", filepath.Base(f), i)
+			}
+		}
 	}
 }
 
