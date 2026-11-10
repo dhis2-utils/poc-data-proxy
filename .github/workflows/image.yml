@@ -19,16 +19,19 @@ on:
   # (0.1.5-ci.42), so there is nothing to type.
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   image:
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Version
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: echo "VERSION=${INPUT_VERSION:-$(cat VERSION)-ci.$GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         if: inputs.binaries == ''
         with:
           go-version-file: go.mod
@@ -36,7 +39,7 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q e2fsprogs mtools fdisk xz-utils
       - name: The release's hub binary
         if: inputs.binaries != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ inputs.binaries }}
           path: bin
@@ -55,7 +58,7 @@ jobs:
       # Named after the image, with its version: GitHub offers it as a zip of that
       # name (the release fetches it by the same name, in the same run, and publishes
       # it with the release). Kept 3 days: test images filled the artifact storage.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dhis2-hub-${{ env.VERSION }}-arm64.img
           path: out/dhis2-hub-${{ env.VERSION }}-arm64.img.xz
