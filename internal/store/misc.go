@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -171,31 +172,28 @@ func (s *Store) AddIssue(seq int64, uid, kind string, userID int64, errJSON []by
 	if at == "" {
 		at = Now()
 	}
-	tx, err := s.DB().Begin()
-	if err != nil {
+	// Through Tx: a write outside the store's write lock waits in SQLite's busy
+	// handler, which gave up with "database is locked" on a busy Pi (review R-46).
+	return s.Tx(context.Background(), func(tx *sql.Tx) error {
+		// Refused again after a resend: the issue it already has stands, once.
+		var n int
+		tx.QueryRow(`SELECT count(*) FROM issues WHERE outbox_seq=? AND object_uid=?`, seq, uid).Scan(&n)
+		if n > 0 {
+			return nil
+		}
+		res, err := tx.Exec(`INSERT INTO issues(outbox_seq, object_uid, kind, user_id, error_enc, created_at) VALUES(?,?,?,?,?,?)`,
+			seq, uid, kind, userID, []byte{}, at)
+		if err != nil {
+			return err
+		}
+		id, _ := res.LastInsertId()
+		ct, err := s.Seal(fmt.Sprintf("issue:%d", id), errJSON)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(`UPDATE issues SET error_enc=? WHERE id=?`, ct, id)
 		return err
-	}
-	defer tx.Rollback()
-	// Refused again after a resend: the issue it already has stands, once.
-	var n int
-	tx.QueryRow(`SELECT count(*) FROM issues WHERE outbox_seq=? AND object_uid=?`, seq, uid).Scan(&n)
-	if n > 0 {
-		return nil
-	}
-	res, err := tx.Exec(`INSERT INTO issues(outbox_seq, object_uid, kind, user_id, error_enc, created_at) VALUES(?,?,?,?,?,?)`,
-		seq, uid, kind, userID, []byte{}, at)
-	if err != nil {
-		return err
-	}
-	id, _ := res.LastInsertId()
-	ct, err := s.Seal(fmt.Sprintf("issue:%d", id), errJSON)
-	if err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`UPDATE issues SET error_enc=? WHERE id=?`, ct, id); err != nil {
-		return err
-	}
-	return tx.Commit()
+	})
 }
 
 func (s *Store) Issues(onlyUnreported bool, limit int) ([]*Issue, error) {
@@ -350,64 +348,63 @@ type ReservedValue struct {
 }
 
 func (s *Store) AddReservedValues(attr string, values []ReservedValue) error {
-	tx, err := s.DB().Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for _, v := range values {
-		ct, err := s.Seal("rv:"+attr, v.Value)
-		if err != nil {
-			return err
+	return s.Tx(context.Background(), func(tx *sql.Tx) error { // in the write lock (review R-46)
+		for _, v := range values {
+			ct, err := s.Seal("rv:"+attr, v.Value)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`INSERT INTO reserved_values(attribute, value_enc, expires_at) VALUES(?,?,?)`,
+				attr, ct, v.ExpiresAt); err != nil {
+				return err
+			}
 		}
-		if _, err := tx.Exec(`INSERT INTO reserved_values(attribute, value_enc, expires_at) VALUES(?,?,?)`,
-			attr, ct, v.ExpiresAt); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
+		return nil
+	})
 }
 
 // TakeReservedValues removes and returns up to n unexpired values. A value is
 // deleted in the same transaction it is read in, so it is never handed out twice.
 func (s *Store) TakeReservedValues(attr string, n int, now string) ([]ReservedValue, error) {
-	tx, err := s.DB().Begin()
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM reserved_values WHERE attribute=? AND expires_at<>'' AND expires_at<?`, attr, now); err != nil {
-		return nil, err
-	}
-	rows, err := tx.Query(`SELECT id, value_enc, expires_at FROM reserved_values WHERE attribute=? ORDER BY id LIMIT ?`, attr, n)
-	if err != nil {
-		return nil, err
-	}
-	var ids []int64
 	var out []ReservedValue
-	for rows.Next() {
-		var id int64
-		var ct []byte
-		var exp string
-		if err := rows.Scan(&id, &ct, &exp); err != nil {
-			rows.Close()
-			return nil, err
+	err := s.Tx(context.Background(), func(tx *sql.Tx) error { // in the write lock (review R-46)
+		out = nil
+		if _, err := tx.Exec(`DELETE FROM reserved_values WHERE attribute=? AND expires_at<>'' AND expires_at<?`, attr, now); err != nil {
+			return err
 		}
-		b, err := s.OpenBlob("rv:"+attr, ct)
+		rows, err := tx.Query(`SELECT id, value_enc, expires_at FROM reserved_values WHERE attribute=? ORDER BY id LIMIT ?`, attr, n)
 		if err != nil {
-			rows.Close()
-			return nil, err
+			return err
 		}
-		ids = append(ids, id)
-		out = append(out, ReservedValue{Attribute: attr, Value: b, ExpiresAt: exp})
-	}
-	rows.Close()
-	for _, id := range ids {
-		if _, err := tx.Exec(`DELETE FROM reserved_values WHERE id=?`, id); err != nil {
-			return nil, err
+		var ids []int64
+		for rows.Next() {
+			var id int64
+			var ct []byte
+			var exp string
+			if err := rows.Scan(&id, &ct, &exp); err != nil {
+				rows.Close()
+				return err
+			}
+			b, err := s.OpenBlob("rv:"+attr, ct)
+			if err != nil {
+				rows.Close()
+				return err
+			}
+			ids = append(ids, id)
+			out = append(out, ReservedValue{Attribute: attr, Value: b, ExpiresAt: exp})
 		}
+		rows.Close()
+		for _, id := range ids {
+			if _, err := tx.Exec(`DELETE FROM reserved_values WHERE id=?`, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, tx.Commit()
+	return out, nil
 }
 
 // DropReservedValues removes all of an attribute's values (its pattern changed).
