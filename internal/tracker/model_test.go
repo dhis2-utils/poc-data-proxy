@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -21,6 +22,36 @@ func TestParseFields(t *testing.T) {
 	if d.Has("enrollments") || !d.Has("attributes") {
 		t.Fatal("default fields")
 	}
+}
+
+// A long or deeply nested fields value is refused before it is parsed (review R-20);
+// what clients send passes.
+func TestFieldsLimits(t *testing.T) {
+	for _, s := range []string{defaultFields["relationships"], ":all,enrollments[*,events[*,dataValues[*]]]"} {
+		if err := checkParams("trackedEntities", url.Values{"fields": {s}}); err != nil {
+			t.Fatalf("%s: %v", s, err)
+		}
+	}
+	for _, s := range []string{strings.Repeat("a[", 11), strings.Repeat("a,", 5000)} {
+		if err := checkParams("trackedEntities", url.Values{"fields": {s}}); err == nil || err.Status != 400 {
+			t.Fatalf("%.20s…: %v", s, err)
+		}
+	}
+}
+
+func FuzzParseFields(f *testing.F) {
+	for _, s := range []string{"*", ":all,!relationships,programOwners[orgUnit,program],enrollments[*,events[*]]",
+		defaultFields["relationships"], "a[b(c]d)", "]]][[[", "name~rename(x),b::size"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if checkFields(s) != nil {
+			return
+		}
+		fs := ParseFields(s)
+		fs.Has("events")
+		fs.Sub("enrollments").Has("events")
+	})
 }
 
 func TestFlattenNested(t *testing.T) {

@@ -11,6 +11,34 @@ type Fields struct {
 	exclude map[string]bool
 }
 
+// Limits on a client's fields parameter. The parser recurses per bracket, so a long,
+// deeply nested value costs memory far beyond its size (review R-20). Web apps and
+// Android send a few hundred bytes, nested three or four levels.
+const (
+	maxFieldsLen   = 8 << 10
+	maxFieldsDepth = 10
+)
+
+func checkFields(s string) *APIError {
+	if len(s) > maxFieldsLen {
+		return badRequest("fields is longer than %d characters", maxFieldsLen)
+	}
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '[', '(':
+			if depth++; depth > maxFieldsDepth {
+				return badRequest("fields is nested deeper than %d levels", maxFieldsDepth)
+			}
+		case ']', ')':
+			if depth > 0 {
+				depth--
+			}
+		}
+	}
+	return nil
+}
+
 // ParseFields parses a fields expression such as "*,enrollments[*,events[*]],!relationships".
 func ParseFields(s string) *Fields {
 	f, _ := parseFields(s, 0)

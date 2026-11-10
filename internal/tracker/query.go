@@ -118,6 +118,9 @@ func checkParams(collection string, q url.Values) *APIError {
 	if err := checkOrder(collection, q.Get("order")); err != nil {
 		return err
 	}
+	if err := checkFields(q.Get("fields")); err != nil {
+		return err
+	}
 	// includeDeleted=true (Android's download) also returns tombstones, what central
 	// deleted, marked deleted (Viewer.IncludeDeleted).
 	return nil
