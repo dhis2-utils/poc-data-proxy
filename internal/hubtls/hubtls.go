@@ -207,8 +207,14 @@ func (c *Certs) wanted() ([]string, []net.IP) {
 func ownNames(host string, extra []string) []string {
 	out := []string{Name, "localhost"}
 	var more []string
-	if host != "" {
-		more = append(more, host, host+".local")
+	if host = strings.ToLower(strings.TrimSuffix(host, ".")); host != "" {
+		// A bare machine name ("CLINIC") in the constraints would let the authority
+		// sign for a top-level domain of that name (review R-41); host.local stays.
+		for _, n := range []string{host, host + ".local"} {
+			if ValidHostName(n) {
+				more = append(more, n)
+			}
+		}
 	}
 	for _, x := range extra {
 		x = strings.ToLower(strings.TrimSuffix(x, "."))

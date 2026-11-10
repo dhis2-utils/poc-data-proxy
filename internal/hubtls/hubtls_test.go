@@ -381,3 +381,15 @@ func TestSharedAddressSpace(t *testing.T) {
 		t.Error("an address the older authority does not permit")
 	}
 }
+
+// The machine's bare name is not in the authority's constraints, which would let it
+// sign for a top-level domain of that name; name.local is (review R-41).
+func TestBareHostNameLeftOut(t *testing.T) {
+	got := ownNames("CLINIC", nil)
+	if slices.Contains(got, "clinic") || slices.Contains(got, "CLINIC") || !slices.Contains(got, "clinic.local") {
+		t.Fatalf("names %v", got)
+	}
+	if got := ownNames("pi.clinic.example.org", nil); !slices.Contains(got, "pi.clinic.example.org") {
+		t.Fatalf("names %v", got)
+	}
+}
