@@ -193,6 +193,8 @@ func params(r *http.Request, body []byte) url.Values {
 	switch ct {
 	case "multipart/form-data":
 		if f, err := multipart.NewReader(bytes.NewReader(body), ps["boundary"]).ReadForm(1 << 20); err == nil {
+			// Parts above 1 MB go to temporary files, unencrypted (review R-18).
+			defer f.RemoveAll()
 			for k, v := range f.Value {
 				q[k] = v
 			}
