@@ -5,8 +5,11 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-11-10T15:03:47.838Z\n"
-"PO-Revision-Date: 2026-11-10T15:03:47.839Z\n"
+"POT-Creation-Date: 2026-11-10T15:04:47.310Z\n"
+"PO-Revision-Date: 2026-11-10T15:04:47.310Z\n"
+
+msgid "Your session has expired. Reload the page and log in again."
+msgstr "Your session has expired. Reload the page and log in again."
 
 msgid "Approve the hub of {{- facility}}"
 msgstr "Approve the hub of {{- facility}}"

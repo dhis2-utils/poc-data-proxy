@@ -1,6 +1,58 @@
 import { useConfig } from '@dhis2/app-runtime'
+import i18n from '@dhis2/d2-i18n'
 import { useMemo } from 'react'
 import { Api, ApiError, getOrNull } from '@/hubaccount/api'
+
+// Once the session has expired, central answers with its login page: a redirect to it,
+// or with X-Requested-With (which 2.42 honours) a 401.
+const sessionExpired = () =>
+    new ApiError(
+        401,
+        i18n.t('Your session has expired. Reload the page and log in again.')
+    )
+
+/** Central's API at baseUrl, with the browser's session. */
+export const apiFor = (baseUrl: string): Api => ({
+    // The Api interface's shape, shared with the approval code and its tests.
+    // eslint-disable-next-line max-params
+    async request(method, path, body, contentType = 'application/json') {
+        const res = await fetch(`${baseUrl}/api${path}`, {
+            method,
+            credentials: 'include',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                ...(body !== undefined && {
+                    'Content-Type': contentType,
+                }),
+            },
+            body: body !== undefined ? JSON.stringify(body) : undefined,
+        })
+        const html = (res.headers.get('Content-Type') ?? '').includes(
+            'text/html'
+        )
+        if (
+            res.status === 401 ||
+            (res.ok && (html || (res.redirected && /login/i.test(res.url))))
+        ) {
+            throw sessionExpired()
+        }
+        const text = await res.text()
+        let json: unknown = undefined
+        try {
+            json = text ? JSON.parse(text) : undefined
+        } catch {
+            json = undefined
+        }
+        if (!res.ok) {
+            const message =
+                (json as { message?: string } | undefined)?.message ??
+                res.statusText
+            throw new ApiError(res.status, `${res.status} ${message}`)
+        }
+        return json
+    },
+})
 
 /**
  * Central's API for the user logged in to the app: fetch with their session. Used for
@@ -9,45 +61,7 @@ import { Api, ApiError, getOrNull } from '@/hubaccount/api'
  */
 export const useApi = (): Api => {
     const { baseUrl } = useConfig()
-    return useMemo(
-        () => ({
-            // The Api interface's shape, shared with the approval code and its tests.
-            // eslint-disable-next-line max-params
-            async request(
-                method,
-                path,
-                body,
-                contentType = 'application/json'
-            ) {
-                const res = await fetch(`${baseUrl}/api${path}`, {
-                    method,
-                    credentials: 'include',
-                    headers: {
-                        Accept: 'application/json',
-                        ...(body !== undefined && {
-                            'Content-Type': contentType,
-                        }),
-                    },
-                    body: body !== undefined ? JSON.stringify(body) : undefined,
-                })
-                const text = await res.text()
-                let json: unknown = undefined
-                try {
-                    json = text ? JSON.parse(text) : undefined
-                } catch {
-                    json = undefined
-                }
-                if (!res.ok) {
-                    const message =
-                        (json as { message?: string } | undefined)?.message ??
-                        res.statusText
-                    throw new ApiError(res.status, `${res.status} ${message}`)
-                }
-                return json
-            },
-        }),
-        [baseUrl]
-    )
+    return useMemo(() => apiFor(baseUrl), [baseUrl])
 }
 
 /** A namespace listing, or nothing if the namespace does not exist yet. */
