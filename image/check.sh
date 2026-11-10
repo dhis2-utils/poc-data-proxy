@@ -67,6 +67,7 @@ check "the hub's binary folder is the hub's (self-upgrade)" sh -c "test -n '$HUB
 check "hub.service runs the binary in that folder" sh -c "debugfs -R 'cat /etc/systemd/system/hub.service' '$R' 2>/dev/null | grep -q '^ExecStart=/usr/local/lib/hub/hub '"
 check "rfkill does not block the Wi-Fi (setup Wi-Fi)" exists /etc/systemd/system/multi-user.target.wants/hub-wifi-unblock.service
 check "hub.service is enabled" exists /etc/systemd/system/multi-user.target.wants/hub.service
+check "the journal is kept on the disk (hub-diag.txt shows the previous start)" sh -c "debugfs -R 'cat /etc/systemd/journald.conf.d/40-rpi-volatile-storage.conf' '$R' 2>/dev/null | grep -q '^Storage=persistent'"
 check "diagnostics for support are written to the boot partition" exists /etc/systemd/system/timers.target.wants/hub-diag.timer
 check "no first-boot prompt waits for a console nobody has" masked systemd-firstboot.service
 check "the disk is grown at the first start" exists /etc/systemd/system/multi-user.target.wants/hub-growdisk.service

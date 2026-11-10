@@ -11,6 +11,9 @@ out=/boot/firmware/hub-diag.txt
   [ -f /boot/firmware/hub-loadtest.txt ] && { echo; echo "== load-test mode"; systemctl status hub-loadtest.service --no-pager -l 2>&1 | head -12; }
   echo; echo "== failed units"; systemctl --failed --no-pager 2>&1
   echo; echo "== hub log, this start"; journalctl -b -u hub.service --no-pager -n 150 2>&1
+  echo; echo "== memory"; free -m 2>&1; cat /proc/swaps 2>&1; echo "pressure:"; cat /proc/pressure/memory 2>&1
+  echo; echo "== hub log, previous start (last lines)"; journalctl -b -1 -u hub.service --no-pager -n 60 2>&1
+  echo; echo "== kernel, previous start: memory and hangs"; journalctl -b -1 -k --no-pager 2>&1 | grep -iE "out of memory|oom|killed process|hung task|watchdog" | tail -20
   echo; echo "== network"; nmcli -t device 2>&1; nmcli -t radio 2>&1; rfkill list 2>&1; ip -br addr 2>&1
   echo; echo "== USB stick"; lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINTS 2>&1
   findmnt /media/hub-usb 2>&1 || echo "/media/hub-usb: not mounted"
