@@ -7,6 +7,7 @@
 <form method="post" action="/hub/setup"><input type="hidden" name="step" value="restore"><input type="hidden" name="hub" value="{{.HubID}}">
 <label>Username <input type="text" name="username" autocomplete="username" required></label>
 <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+{{if $.NeedToken}}<label>Setup code <input type="text" name="setup_token" inputmode="numeric" autocomplete="off" placeholder="in hub.txt on this box's USB stick" required></label>{{end}}
 <p><button type="submit">Restore hub {{.HubID}}</button></p></form></div>{{end}}{{end}}
 {{if eq .Step "facility"}}
 <h2>Pick the facility this hub serves</h2>

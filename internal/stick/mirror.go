@@ -220,8 +220,9 @@ func Candidates(usbDir string) []Candidate {
 // Stage prepares restoring hub id from the stick: the password must open a key slot of
 // that copy (someone of that hub is there), and everything the restore needs is
 // copied to the disk, so pulling the stick out afterwards loses nothing. Finish puts it
-// in place at the next start.
-func Stage(usbDir, dataDir, id, username, password string) error {
+// in place at the next start. The copy's central address must pass centralOK, as a
+// set-up's must: the hub would take it in preference to its own configuration.
+func Stage(usbDir, dataDir, id, username, password string, centralOK func(string) bool) error {
 	cands := Candidates(usbDir)
 	i := slices.IndexFunc(cands, func(c Candidate) bool { return c.HubID == id })
 	if i < 0 {
@@ -232,6 +233,9 @@ func Stage(usbDir, dataDir, id, username, password string) error {
 	dk, err := store.UnwrapFromKeyFile(keys, username, password)
 	if err != nil {
 		return err
+	}
+	if u := store.MetaFromKeyFile(keys, "central_url"); u != "" && !centralOK(u) {
+		return fmt.Errorf("the copy on the stick uses central at %s, which this hub does not allow", u)
 	}
 	staging := filepath.Join(dataDir, "restore")
 	os.RemoveAll(staging)

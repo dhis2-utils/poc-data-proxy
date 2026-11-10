@@ -160,6 +160,19 @@ func UnwrapFromKeyFile(path, username, password string) (hubcrypto.Key, error) {
 	return dk, nil
 }
 
+// MetaFromKeyFile reads a meta value from a key file that is not open, such as a copy
+// on the USB stick. Empty if it cannot be read.
+func MetaFromKeyFile(path, key string) string {
+	db, err := sql.Open("sqlite3", "file:"+(&url.URL{Path: path}).EscapedPath()+"?mode=ro")
+	if err != nil {
+		return ""
+	}
+	defer db.Close()
+	var v string
+	db.QueryRow(`SELECT value FROM meta WHERE key=?`, key).Scan(&v)
+	return v
+}
+
 // Size is the store's size on disk (key file and data file), for checking a snapshot
 // fits.
 func (s *Store) Size() int64 {

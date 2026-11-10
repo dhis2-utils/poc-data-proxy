@@ -143,6 +143,61 @@ func stickWithSaves(t *testing.T) (*env, string, string) {
 	return e, usb, e.app.Hub.HubID()
 }
 
+// R-15: the copy on the stick is a file whoever brings the stick wrote. A restore asks
+// for the box's setup code, as a set-up does, and refuses a copy whose central this hub
+// would not allow; it used to take the copy's address in preference to its own.
+func TestStickRestoreChecksCodeAndCentral(t *testing.T) {
+	e, usb, id := stickWithSaves(t)
+	keys := filepath.Join(usb, "facility-hub", id, "keys.db")
+	setCentral := func(u string) {
+		t.Helper()
+		db, err := sql.Open("sqlite3", "file:"+keys)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		if r, err := db.Exec(`UPDATE meta SET value=? WHERE key='central_url'`, u); err != nil {
+			t.Fatal(err)
+		} else if n, _ := r.RowsAffected(); n != 1 {
+			t.Fatal("no central address in the copy's key file")
+		}
+	}
+	restore := func(code string) string {
+		t.Helper()
+		resp, err := e.web("nurse_a").postForm("/hub/setup", url.Values{"step": {"restore"}, "hub": {id},
+			"username": {"nurse_a"}, "password": {fc.Password}, "setup_token": {code}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return string(b)
+	}
+
+	// A hub pinned to its central allows no other.
+	setCentral("https://attacker.example")
+	e.diskDies()
+	if b := restore(""); !strings.Contains(b, "does not allow") {
+		t.Fatalf("a copy pointing at another central was restored: %.300s", b)
+	}
+
+	// A hub that takes central's address at set-up asks for its setup code first, and
+	// takes only an https central.
+	setCentral(e.cSrv.URL) // plain http in this test
+	e.cfgHook = func(c *config.Config) { c.USBDir, c.USBRequireMount, c.CentralURL = usb, false, "" }
+	e.diskDies()
+	if b := restore("12345678"); !strings.Contains(b, "wrong setup code") {
+		t.Fatalf("a restore without the setup code: %.300s", b)
+	}
+	code, _ := os.ReadFile(filepath.Join(e.dir, "setup-token"))
+	if b := restore(strings.TrimSpace(string(code))); !strings.Contains(b, "does not allow") {
+		t.Fatalf("a copy with a plain-http central was restored: %.300s", b)
+	}
+	if e.app.Hub.Mode() != "setup" {
+		t.Fatal("the hub left set-up")
+	}
+}
+
 // RECOVERY.md C2: the stick keeps the hub's key file, its state (users, settings) and
 // every pending save; the cached data is not copied, since central has it. A disk that
 // dies is replaced by an empty one, which starts as a new hub; on its setup page a

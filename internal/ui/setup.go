@@ -126,13 +126,18 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 	switch r.FormValue("step") {
 	case "restore":
 		// A new disk restored from the USB stick (docs/RECOVERY.md, C2): only with the
-		// password of a staff member of that hub, checked against the copy's key slots.
+		// password of a staff member of that hub, checked against the copy's key slots,
+		// and, as a set-up, with this box's setup code and a central it allows. The copy
+		// is a file whoever brings the stick wrote (review R-15).
 		src, user, id := auth.Source(r), r.FormValue("username"), r.FormValue("hub")
+		if err = u.checkCode(src, r.FormValue("setup_token")); err != nil {
+			break
+		}
 		if f := u.Auth.Begin(src, user); f != nil {
 			err = errors.New("too many failed logins; try again later")
 			break
 		}
-		err = stick.Stage(h.Cfg.USBDir, h.Cfg.DataDir, id, user, r.FormValue("password"))
+		err = stick.Stage(h.Cfg.USBDir, h.Cfg.DataDir, id, user, r.FormValue("password"), h.CentralAllowed)
 		u.Auth.End(src, user, err != nil)
 		if err != nil {
 			break
@@ -145,15 +150,7 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	case "server":
 		// Central's address and the setup code, checked before anyone logs in.
-		src := auth.Source(r)
-		if needToken(h) {
-			if f := u.Auth.Begin(src, "setup-code"); f != nil {
-				err = errors.New("too many wrong setup codes; try again later")
-			} else {
-				err = checkSetupToken(h, r.FormValue("setup_token"))
-				u.Auth.End(src, "setup-code", err != nil)
-			}
-		}
+		err = u.checkCode(auth.Source(r), r.FormValue("setup_token"))
 		var sv *checkedServer
 		if err == nil {
 			sv, err = u.checkServer(ctx, r.FormValue("central_url"))
@@ -280,6 +277,19 @@ func (u *UI) checkServer(ctx context.Context, raw string) (*checkedServer, error
 
 // setupForm is the data for the first setup page. The URL shown comes only from the
 // image, never from an earlier submission, which a cross-site post could have made.
+// checkCode checks the setup code from src where set-up needs one, throttled.
+func (u *UI) checkCode(src, code string) error {
+	if !needToken(u.H) {
+		return nil
+	}
+	if f := u.Auth.Begin(src, "setup-code"); f != nil {
+		return errors.New("too many wrong setup codes; try again later")
+	}
+	err := checkSetupToken(u.H, code)
+	u.Auth.End(src, "setup-code", err != nil)
+	return err
+}
+
 func (u *UI) setupForm(p *pendingSetup) map[string]any {
 	h := u.H
 	var restores []stick.Candidate
