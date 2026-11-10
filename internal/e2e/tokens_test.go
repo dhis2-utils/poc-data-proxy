@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dhis2/facility-hub/internal/app"
 	"github.com/dhis2/facility-hub/internal/config"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 )
@@ -289,10 +288,10 @@ func TestRevokedHubResets(t *testing.T) {
 	e.online()
 	e.app.Hub.SetRevoked()
 	e.app.Hub.DropTokens(context.Background())
-	if err := app.Reset(e.app.Hub, e.app.Worker, "nurse_a", false); err == nil || !strings.Contains(err.Error(), "RESET AND DISCARD") {
+	if err := e.app.Reset("nurse_a", false); err == nil || !strings.Contains(err.Error(), "RESET AND DISCARD") {
 		t.Fatalf("reset of a revoked hub with unsent saves: %v", err)
 	}
-	if err := app.Reset(e.app.Hub, e.app.Worker, "nurse_a", true); err != nil {
+	if err := e.app.Reset("nurse_a", true); err != nil {
 		t.Fatalf("reset and discard of a revoked hub: %v", err)
 	}
 	if e.app.Hub.Mode() != "setup" || e.app.Hub.Revoked() {

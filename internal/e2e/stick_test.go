@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -690,5 +691,33 @@ func TestStickOldMarkName(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "stick-id")); err == nil {
 		t.Fatal("the old mark is still there")
+	}
+}
+
+// A reset deletes the tokens the hub holds on central, its users' as well as its own,
+// and its folder on the USB stick, with the key slots, sealed tokens and authority's
+// key of a hub that is no more (review R-25).
+func TestResetDropsTokensAndStickFolder(t *testing.T) {
+	e, usb := stickEnv(t, false)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.app.Stick.Tick(context.Background())
+	id := e.app.Hub.HubID()
+	u, _ := e.app.Hub.Store.UserByName("nurse_a")
+	userKey, _ := e.app.Hub.Store.PAT(u)
+	hubKey := e.app.Hub.Runtime().HubToken
+	old := filepath.Join(usb, "facility-hub", id)
+	if _, err := os.Stat(filepath.Join(old, "state.rec")); err != nil {
+		t.Fatalf("no copy on the stick before the reset: %v", err)
+	}
+	if err := e.app.Reset("nurse_a", false); err != nil {
+		t.Fatal(err)
+	}
+	if e.central.TokenValid(userKey) || e.central.TokenValid(hubKey) {
+		t.Fatal("tokens of the reset hub still work on central")
+	}
+	if _, err := os.Stat(old); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the old hub's folder stays on the stick: %v", err)
 	}
 }

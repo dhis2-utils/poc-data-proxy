@@ -117,7 +117,6 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 	if err := ui.EnsureSetupToken(h); err != nil {
 		return nil, fmt.Errorf("setup token: %w", err)
 	}
-	u.Reset = func(by string, discard bool) error { return Reset(h, worker, by, discard) }
 	u.Restart = shutdown
 
 	// The hub's own pages use a ServeMux. Everything else is dispatched by hand: a
@@ -176,6 +175,7 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 	a2 := &App{Hub: h, Proxy: px, Handler: logRequests(cfg, recoverer(countMisses(h, root))), Worker: worker, Upgrader: up, Stick: stick.New(h),
 		StorePath: storePath, ui: u}
 	u.ChooseUSB = a2.Stick.Choose
+	u.Reset = a2.Reset
 	if cfg.MDNS {
 		a2.MDNS = &mdns.Responder{Name: hubtls.Name, Nets: mdns.InterfaceNets}
 	}
@@ -243,17 +243,20 @@ func (a *App) Close() error {
 // sealed under the old data key. Any staff member may reset (no setup group), so
 // changes central refused are reported first and wiped only with discard: the
 // clients were told they were saved, and central holds them only masked.
-func Reset(h *core.Hub, w *hubsync.Worker, by string, discard bool) error {
-	return w.Exclusive(func() error { return reset(h, w, by, discard) })
+// The hub's tokens on central, its users' included, and its folder on the USB stick
+// go with it (review R-25).
+func (a *App) Reset(by string, discard bool) error {
+	return a.Worker.Exclusive(func() error { return reset(a.Hub, a.Worker, a.Stick, by, discard) })
 }
 
-func reset(h *core.Hub, w *hubsync.Worker, by string, discard bool) error {
+func reset(h *core.Hub, w *hubsync.Worker, stk *stick.Stick, by string, discard bool) error {
 	if h.Revoked() {
 		// Its tokens are gone: nothing it holds can reach central any more.
 		if n := h.Store.CountOutbox(store.OutboxPending) + h.Store.CountOutbox(store.OutboxRejected) +
 			h.Store.CountOutbox(store.OutboxPartial); n > 0 && !discard {
 			return fmt.Errorf("this hub's tokens were revoked: its %d unsent changes cannot be sent unless its registry entry on central is set back to active; type RESET AND DISCARD to reset it", n)
 		}
+		stk.Forget()
 		return wipe(h)
 	}
 	if !h.Online() {
@@ -290,10 +293,9 @@ func reset(h *core.Hub, w *hubsync.Worker, by string, discard bool) error {
 		}); err != nil {
 			slog.Warn("reset: registry update", "err", err)
 		}
-		if rt.HubTokenUID != "" {
-			h.Central.JSON(ctx, "DELETE", "/api/apiToken/"+rt.HubTokenUID, nil, h.HubAuth(), nil)
-		}
 	}
+	h.DropTokens(ctx)
+	stk.Forget()
 	return wipe(h)
 }
 

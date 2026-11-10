@@ -76,7 +76,8 @@ func (h *Hub) TokenUIDs() []string {
 func (h *Hub) Revoked() bool { return h.Store.Meta(MetaRetired) == retiredRevoked }
 
 // DropTokens deletes on central every token the hub still holds, each as its owner,
-// and forgets them. A revoked hub makes no new ones.
+// and forgets them: when its tokens were revoked (a revoked hub makes no new ones),
+// and at a reset.
 func (h *Hub) DropTokens(ctx context.Context) {
 	users, _ := h.Store.Users()
 	for _, u := range users {
@@ -96,5 +97,5 @@ func (h *Hub) DropTokens(ctx context.Context) {
 			rt.HubPassword, rt.HubPasswordNext = "", ""
 		})
 	}
-	slog.Warn("tokens revoked on central: this hub dropped the tokens it held")
+	slog.Warn("this hub deleted the tokens it held on central")
 }

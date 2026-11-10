@@ -217,6 +217,26 @@ func (s *Stick) Status() *Status {
 	return &st
 }
 
+// Forget deletes this hub's folder from its own stick, at a reset: it holds the key
+// slots, the sealed tokens and the authority's key of a hub that is no more (review
+// R-25). Someone else's stick, or none, is left alone.
+func (s *Stick) Forget() {
+	if s == nil || !s.configured() {
+		return
+	}
+	s.tickMu.Lock()
+	defer s.tickMu.Unlock()
+	if s.auto() && !s.locate() {
+		return
+	}
+	if s.dir() == "" || s.H.HubID() == "" || !s.plugged(s.dir()) || !s.own() {
+		return
+	}
+	if err := os.RemoveAll(s.hubDir()); err != nil {
+		slog.Warn("reset: the hub's folder on the USB stick", "err", err)
+	}
+}
+
 // root is the hub's folder on the stick.
 func (s *Stick) root() string { return filepath.Join(s.dir(), "facility-hub") }
 
