@@ -40,6 +40,7 @@ const (
 	AttrLastName  = "zDhUuAYrxNC"
 	AttrNationalI = "AuPLng5hLbE" // unique
 	AttrTBID      = "xs8A6tQJY0s" // generated, unique
+	RelType       = "RelTypTE001" // person to person, of TET; everyone reads and writes
 	DefaultAOC    = "HllvX50cXC0"
 	SetupGroup    = "HubGrpSetup"
 	Password      = "Hub-Test-2026!"
@@ -668,7 +669,9 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 	case p == "/api/programs":
 		c.programs(w, r, u)
 	case p == "/api/relationshipTypes":
-		writeJSON(w, 200, map[string]any{"relationshipTypes": []any{}})
+		end := map[string]any{"relationshipEntity": "TRACKED_ENTITY_INSTANCE", "trackedEntityType": map[string]any{"id": TET}}
+		writeJSON(w, 200, map[string]any{"relationshipTypes": []any{map[string]any{"id": RelType, "name": "Contact of",
+			"fromConstraint": end, "toConstraint": end, "access": dataPerm(true, true)}}})
 	case p == "/api/programs/"+Program:
 		writeJSON(w, 200, map[string]any{"id": Program, "name": "TB program"})
 	case p == "/api/categoryOptionCombos":
