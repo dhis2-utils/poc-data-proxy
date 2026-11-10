@@ -194,11 +194,20 @@ func TestOpenRefusalInCapture(t *testing.T) {
 	if e.central.Object("CapEv000093") == nil || strings.Contains(ownSection(page(a)), "CapEv000093") {
 		t.Error("the author's refused new event, saved as an update: not on central, or still listed")
 	}
-	// The refused registration: its person reaches central, and the enrollment and
-	// event that waited for it are sent again at the next push.
-	a.json("POST", "/api/tracker?async=false", person("CapTe000091", "Amina", "NAT-9199"), 200)
-	if e.central.Object("CapTe000091") == nil {
+	// The refused registration, corrected as Android saves it: only the changed
+	// attribute. The hub completes it from its copy, so the person reaches central
+	// with the name too; the enrollment and event that waited for it are sent again at
+	// the next push.
+	fix := person("CapTe000091", "", "NAT-9199")
+	te := fix["trackedEntities"].([]any)[0].(map[string]any)
+	te["attributes"] = te["attributes"].([]any)[1:]
+	a.json("POST", "/api/tracker?async=false&importStrategy=CREATE_AND_UPDATE", fix, 200)
+	got := e.central.Object("CapTe000091")
+	if got == nil {
 		t.Fatal("the corrected registration did not reach central")
+	}
+	if b, _ := json.Marshal(got["attributes"]); !strings.Contains(string(b), "Amina") || !strings.Contains(string(b), "NAT-9199") {
+		t.Errorf("the registration fixed with its changed attribute only reached central as %s", b)
 	}
 	e.sync()
 	if e.central.Object("CapEn000091") == nil || e.central.Object("CapEv000091") == nil {

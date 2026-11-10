@@ -161,6 +161,50 @@ func (a *API) record(uid string) string {
 	return o.UID
 }
 
+// fillRefused completes a save of the user's own refused objects with the hub's copy:
+// Android Capture sends only the fields changed since its last sync, and the hub took
+// the refused version, so a fix of one field would reach central without the others,
+// and a new record would be created from that field alone (FINDINGS.md, "Fixed from
+// Android"). Others' saves go as sent: the hub's copy holds what the author entered.
+func (a *API) fillRefused(sess *core.Session, r *http.Request, body []byte) []byte {
+	var p tracker.M
+	if r.Method != http.MethodPost || strings.TrimSuffix(r.URL.Path, "/") != "/api/tracker" ||
+		r.URL.Query().Get("importStrategy") == "DELETE" || sess.UserID == 0 || json.Unmarshal(body, &p) != nil {
+		return body
+	}
+	items := tracker.Flatten(p)
+	var own []string
+	asked, filled := false, false
+	for _, it := range items {
+		o := a.H.Index.Get(it.UID)
+		if o == nil || o.SyncState != store.SyncRejected || o.Stub {
+			continue
+		}
+		if !asked {
+			own, _ = a.H.Store.OpenIssueObjectsOf(sess.UserID)
+			asked = true
+		}
+		if slices.Contains(own, it.UID) {
+			it.Data, filled = tracker.Merge(a.H.Index.Full(o), it.Data), true
+		}
+	}
+	if !filled {
+		return body
+	}
+	flat := tracker.M{}
+	for _, it := range items {
+		key := map[string]string{store.KindTrackedEntity: "trackedEntities", store.KindEnrollment: "enrollments",
+			store.KindEvent: "events", store.KindRelationship: "relationships"}[it.Kind]
+		l, _ := flat[key].([]any)
+		flat[key] = append(l, it.Data)
+	}
+	out, err := json.Marshal(flat)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
 // createRefused sends an update (Capture's save of an edit) as CREATE_AND_UPDATE when
 // it holds only the user's own open refusals: central may never have had them (a new
 // event or enrollment it refused), and an update of what it lacks fails (E1032, E1081).

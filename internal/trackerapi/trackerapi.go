@@ -93,6 +93,7 @@ func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer func() { <-largeImport }()
 	}
 
+	body = a.fillRefused(sess, r, body)
 	// Online writes go to central even during an upgrade: central holds them, and
 	// what the hub learns from them comes back with the next pull. After an outage the
 	// hub keeps answering until its outbox is pushed (core.PassThrough).
