@@ -203,7 +203,7 @@ func (im *Importer) author() M {
 
 func (im *Importer) newObj(it *Item, old *Obj) *Obj {
 	now := DHIS2Time(im.Now)
-	data := it.Data
+	var data M
 	if old != nil {
 		full := im.Ix.Full(old)
 		data = Merge(clone(full), it.Data)

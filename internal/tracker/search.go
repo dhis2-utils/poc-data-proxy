@@ -31,7 +31,7 @@ type plan struct {
 	// a pair carries them. A page reads on from a row's key (pagePositions).
 	keys   []keyCol
 	keyRow int
-	pairs   bool // rows are a tracked entity and one of its enrollments in the program
+	pairs  bool // rows are a tracked entity and one of its enrollments in the program
 	// needData: keep or sort read the objects' slim data, so each row is decoded.
 	needData bool
 	keep     func(o, enr *Obj) (bool, *APIError)
