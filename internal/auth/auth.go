@@ -58,17 +58,18 @@ type LoginRequest struct {
 // LoginWeb handles the login app's JSON login from src (the client address). It
 // returns the session and central's (or the hub's) answer body for the client.
 func (a *Auth) LoginWeb(ctx context.Context, src string, req LoginRequest, rawBody []byte) (*core.Session, any, *Failure) {
-	if f := a.throttled(src, req.Username); f != nil {
+	if f := a.Begin(src, req.Username); f != nil {
 		return nil, nil, f
 	}
 	sess, body, f := a.loginWeb(ctx, req, rawBody)
-	a.count(src, req.Username, f)
+	a.end(src, req.Username, f)
 	return sess, body, f
 }
 
-// throttled refuses a login attempt while src is locked out for user.
-func (a *Auth) throttled(src, user string) *Failure {
-	d := a.thr.wait(src, user)
+// Begin reserves a login attempt for src as user, or refuses it while src is locked
+// out for user. Each attempt it lets through must be closed with End.
+func (a *Auth) Begin(src, user string) *Failure {
+	d := a.thr.begin(src, user)
 	if d <= 0 {
 		return nil
 	}
@@ -76,25 +77,14 @@ func (a *Auth) throttled(src, user string) *Failure {
 		Body: a.api().WebMessage(http.StatusTooManyRequests, "too many failed logins; try again later", "")}
 }
 
-// Throttled and Count apply the login throttle to logins the hub checks elsewhere
-// (the setup page).
-func (a *Auth) Throttled(src, user string) *Failure { return a.throttled(src, user) }
+// End closes an attempt Begin let through, for logins the hub checks elsewhere (the
+// setup page): failed counts it, otherwise it clears this user's counter from src.
+func (a *Auth) End(src, user string, failed bool) { a.thr.end(src, user, failed, !failed) }
 
-func (a *Auth) Count(src, user string, failed bool) {
-	if failed {
-		a.thr.fail(src, user)
-	} else {
-		a.thr.ok(src, user)
-	}
-}
-
-func (a *Auth) count(src, user string, f *Failure) {
-	switch {
-	case f == nil:
-		a.thr.ok(src, user)
-	case f.Status == http.StatusUnauthorized:
-		a.thr.fail(src, user)
-	}
+// end closes a login attempt: 401 counts as a wrong password, success clears, other
+// failures (central unreachable, 5xx) give no verdict on the password.
+func (a *Auth) end(src, user string, f *Failure) {
+	a.thr.end(src, user, f != nil && f.Status == http.StatusUnauthorized, f == nil)
 }
 
 func (a *Auth) loginWeb(ctx context.Context, req LoginRequest, rawBody []byte) (*core.Session, any, *Failure) {
@@ -145,12 +135,15 @@ func (a *Auth) loginWeb(ctx context.Context, req LoginRequest, rawBody []byte) (
 // gets 429 as a wrong one does (L2).
 func (a *Auth) LoginBasic(ctx context.Context, src, username, password string) (*core.Session, *Failure) {
 	if cached, _ := a.H.Sessions.Basic(username, password); cached == nil || cached.BasicFrom != src {
-		if f := a.throttled(src, username); f != nil {
+		if f := a.Begin(src, username); f != nil {
 			return nil, f
 		}
+	} else {
+		// Not throttled, but counted as before; end releases a reservation, so make one.
+		a.thr.reserve(src, username)
 	}
 	sess, f := a.loginBasic(ctx, src, username, password)
-	a.count(src, username, f)
+	a.end(src, username, f)
 	return sess, f
 }
 

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -173,6 +174,34 @@ func TestLoginThrottle(t *testing.T) {
 		t.Fatalf("locked-out Basic login: got %d, want 429", st)
 	}
 	e.web("nurse_a").login()
+}
+
+// R-04: parallel wrong passwords get no more checks than the limit; the attempt is
+// counted before the password is checked, not after.
+func TestLoginThrottleParallel(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.web("nurse_b").login()
+	e.offline()
+	codes := make(chan int, 40)
+	var wg sync.WaitGroup
+	for range 40 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			st, _ := e.web("nurse_b").do("POST", "/api/auth/login", map[string]string{"username": "nurse_b", "password": "guess"})
+			codes <- st
+		}()
+	}
+	wg.Wait()
+	close(codes)
+	n := map[int]int{}
+	for st := range codes {
+		n[st]++
+	}
+	if n[401] > 5 || n[401]+n[429] != 40 {
+		t.Fatalf("40 parallel wrong passwords: %v, want at most 5 checked (401), the rest 429", n)
+	}
 }
 
 // L2: during a lockout, Basic auth answers a right and a wrong password alike (429),

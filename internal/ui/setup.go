@@ -128,12 +128,12 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 		// A new disk restored from the USB stick (docs/RECOVERY.md, C2): only with the
 		// password of a staff member of that hub, checked against the copy's key slots.
 		src, user, id := auth.Source(r), r.FormValue("username"), r.FormValue("hub")
-		if f := u.Auth.Throttled(src, user); f != nil {
+		if f := u.Auth.Begin(src, user); f != nil {
 			err = errors.New("too many failed logins; try again later")
 			break
 		}
 		err = stick.Stage(h.Cfg.USBDir, h.Cfg.DataDir, id, user, r.FormValue("password"))
-		u.Auth.Count(src, user, err != nil)
+		u.Auth.End(src, user, err != nil)
 		if err != nil {
 			break
 		}
@@ -146,11 +146,13 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 	case "server":
 		// Central's address and the setup code, checked before anyone logs in.
 		src := auth.Source(r)
-		if f := u.Auth.Throttled(src, "setup-code"); f != nil {
-			err = errors.New("too many wrong setup codes; try again later")
-		} else if needToken(h) {
-			err = checkSetupToken(h, r.FormValue("setup_token"))
-			u.Auth.Count(src, "setup-code", err != nil)
+		if needToken(h) {
+			if f := u.Auth.Begin(src, "setup-code"); f != nil {
+				err = errors.New("too many wrong setup codes; try again later")
+			} else {
+				err = checkSetupToken(h, r.FormValue("setup_token"))
+				u.Auth.End(src, "setup-code", err != nil)
+			}
 		}
 		var sv *checkedServer
 		if err == nil {
@@ -166,10 +168,6 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	case "login":
 		src, user := auth.Source(r), r.FormValue("username")
-		if f := u.Auth.Throttled(src, user); f != nil {
-			err = errors.New("too many failed logins; try again later")
-			break
-		}
 		centralURL := r.FormValue("central_url")
 		if h.SetupMode() != core.SetupPinned {
 			// Only an address the server step checked, with its setup code.
@@ -180,8 +178,12 @@ func (u *UI) handleSetup(w http.ResponseWriter, r *http.Request) {
 			}
 			centralURL = sv.URL
 		}
+		if f := u.Auth.Begin(src, user); f != nil {
+			err = errors.New("too many failed logins; try again later")
+			break
+		}
 		p, err = u.setupLogin(ctx, centralURL, user, r.FormValue("password"))
-		u.Auth.Count(src, user, err != nil)
+		u.Auth.End(src, user, err != nil)
 	case "facility":
 		if p = u.setup.get(r.FormValue("nonce")); p == nil {
 			err = errors.New("setup session expired, start again")

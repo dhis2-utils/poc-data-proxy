@@ -474,11 +474,11 @@ func (u *UI) handleTakeOver(w http.ResponseWriter, r *http.Request) {
 	// guess its user's central password here.
 	// Counted apart from logins: wrong take-over passwords do not lock the user out.
 	src, key := auth.Source(r), "takeover:"+sess.Username
-	if f := u.Auth.Throttled(src, key); f != nil {
+	if f := u.Auth.Begin(src, key); f != nil {
 		msg = "Not taken over: too many wrong passwords; try again later"
 	} else {
 		err := u.H.TakeOverHubToken(r.Context(), sess.Username, r.FormValue("password"))
-		u.Auth.Count(src, key, errors.Is(err, core.ErrWrongPassword))
+		u.Auth.End(src, key, errors.Is(err, core.ErrWrongPassword))
 		if err != nil {
 			msg = "Not taken over: " + err.Error()
 		}
@@ -497,11 +497,11 @@ func (u *UI) handleMove(w http.ResponseWriter, r *http.Request) {
 	msg := "The hub now uses central at its new address"
 	// Wrong codes are throttled like logins, and counted apart from them.
 	src, key := auth.Source(r), "move:"+sess.Username
-	if f := u.Auth.Throttled(src, key); f != nil {
+	if f := u.Auth.Begin(src, key); f != nil {
 		msg = "Not moved: too many wrong codes; try again later"
 	} else {
 		err := u.H.TypedMove(r.Context(), r.FormValue("central_url"), r.FormValue("code"))
-		u.Auth.Count(src, key, errors.Is(err, core.ErrWrongCode))
+		u.Auth.End(src, key, errors.Is(err, core.ErrWrongCode))
 		if err != nil {
 			msg = "Not moved: " + err.Error()
 		}
