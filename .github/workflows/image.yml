@@ -34,7 +34,8 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         if: inputs.binaries == ''
         with:
-          go-version-file: go.mod
+          go-version: '1.26'  # the newest 1.26 patch, not go.mod's 1.26.0 (review R-48)
+          check-latest: true
       - name: Tools
         run: sudo apt-get update -q && sudo apt-get install -y -q e2fsprogs mtools fdisk xz-utils
       - name: The release's hub binary
