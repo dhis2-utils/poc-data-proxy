@@ -207,9 +207,6 @@ func (h *Hub) EnsurePAT(ctx context.Context, u *store.User, with central.Auth, p
 	if fresh, err := h.Store.UserByID(u.ID); err == nil && fresh != nil {
 		u = fresh // another login of this user may have stored a PAT meanwhile
 	}
-	if h.Revoked() {
-		return errors.New("this hub's tokens were revoked on central; reset it before use")
-	}
 	if u.HasPAT && !u.NeedsLogin {
 		if exp, err := time.Parse(time.RFC3339, u.PATExpires); err == nil && !h.renewToken(exp) {
 			return nil
@@ -222,6 +219,9 @@ func (h *Hub) EnsurePAT(ctx context.Context, u *store.User, with central.Auth, p
 	exp := time.Now().Add(h.TokenLife())
 	uid, key, err := h.CreatePAT(ctx, with, exp)
 	if err != nil {
+		if h.Revoked() {
+			return err // a revoked hub keeps no password either
+		}
 		if !h.Cfg.PasswordFallback {
 			return fmt.Errorf("PAT creation failed; this user's offline changes cannot be sent: %w", err)
 		}
@@ -295,19 +295,31 @@ func (h *Hub) renewHubToken(ctx context.Context, now bool) error {
 // CreatePAT creates a personal access token on central.
 // A revoked hub makes none: the registry entry is read first, with the creating
 // credentials, since the hub's own token may be gone with the revocation (bug review
-// 2026-10-20).
+// 2026-10-20). A revoked hub whose entry no longer says so is revoked no more, as a
+// retired one is active again: a token refused for another reason (expired in an
+// outage, its owner disabled) can make a forged "revoked" pass (review R-23).
 func (h *Hub) CreatePAT(ctx context.Context, with central.Auth, exp time.Time) (uid, key string, err error) {
-	if h.HubID() != "" && !h.Revoked() {
+	if h.HubID() != "" {
 		var reg struct {
 			Status string `json:"status"`
 		}
-		if h.Central.JSON(ctx, "GET", RegistryPath(h.HubID()), nil, with, &reg) == nil && reg.Status == "revoked" && h.revokedForReal(ctx) {
-			h.SetRevoked()
-			h.DropTokens(ctx)
+		if h.Central.JSON(ctx, "GET", RegistryPath(h.HubID()), nil, with, &reg) == nil {
+			switch {
+			case reg.Status == "revoked" && !h.Revoked() && h.revokedForReal(ctx):
+				h.SetRevoked()
+				h.DropTokens(ctx)
+			case reg.Status != "revoked" && h.Revoked():
+				slog.Info("the registry no longer marks this hub's tokens as revoked: making tokens again", "status", reg.Status)
+				retired := ""
+				if reg.Status == "retired" {
+					retired = "1"
+				}
+				h.Store.SetMeta(MetaRetired, retired)
+			}
 		}
 	}
 	if h.Revoked() {
-		return "", "", errors.New("this hub's tokens were revoked on central; reset it before use")
+		return "", "", errors.New("this hub's tokens were revoked on central; reset it, or set its registry entry back to active")
 	}
 	api := h.API()
 	if api == nil {

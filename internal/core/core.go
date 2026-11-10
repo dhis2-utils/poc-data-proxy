@@ -47,8 +47,9 @@ func (h *Hub) Retired() bool { return h.Store.Meta(MetaRetired) != "" }
 
 const retiredRevoked = "revoked"
 
-// SetRevoked records that the Facility Hub app revoked this hub's tokens. It is final:
-// only a reset makes the hub usable again.
+// SetRevoked records that the Facility Hub app revoked this hub's tokens. It lasts
+// until a reset, or until a token is made while the registry entry says otherwise
+// (CreatePAT).
 func (h *Hub) SetRevoked() { h.Store.SetMeta(MetaRetired, retiredRevoked) }
 
 const (

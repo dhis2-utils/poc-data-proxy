@@ -252,7 +252,7 @@ func reset(h *core.Hub, w *hubsync.Worker, by string, discard bool) error {
 		// Its tokens are gone: nothing it holds can reach central any more.
 		if n := h.Store.CountOutbox(store.OutboxPending) + h.Store.CountOutbox(store.OutboxRejected) +
 			h.Store.CountOutbox(store.OutboxPartial); n > 0 && !discard {
-			return fmt.Errorf("this hub's tokens were revoked: its %d unsent changes can no longer be sent; type RESET AND DISCARD to reset it", n)
+			return fmt.Errorf("this hub's tokens were revoked: its %d unsent changes cannot be sent unless its registry entry on central is set back to active; type RESET AND DISCARD to reset it", n)
 		}
 		return wipe(h)
 	}

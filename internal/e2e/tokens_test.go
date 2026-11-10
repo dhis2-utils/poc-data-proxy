@@ -153,6 +153,43 @@ func TestForgedRevokedIgnored(t *testing.T) {
 	}
 }
 
+// A forged "revoked" passes when the hub's token is refused for another reason (here
+// deleted, as when it expired during an outage). Revocation is then undone as
+// retirement is: once the entry says "active" again, a staff login makes tokens again,
+// and a take-over gives the hub a token of its own (review R-23).
+func TestForgedRevokedUndoneWhenEntryIsActive(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.web("nurse_a").login()
+	e.sync()
+	if st := deleteTokenAs(e, "hub_admin", e.app.Hub.Runtime().HubTokenUID); st != 200 {
+		t.Fatalf("deleting the hub's token: %d", st)
+	}
+	reg := registryEntry(e)
+	reg["status"] = "revoked"
+	setRegistry(e, reg)
+	e.web("nurse_b").do("POST", "/api/auth/login", map[string]string{"username": "nurse_b", "password": fc.Password})
+	if !e.app.Hub.Revoked() {
+		t.Fatal("the hub did not take up the 'revoked' while central refuses its token")
+	}
+	reg = registryEntry(e)
+	reg["status"] = "active"
+	setRegistry(e, reg)
+	e.web("nurse_b").login()
+	if e.app.Hub.Revoked() {
+		t.Fatal("the hub stays revoked while its entry says active")
+	}
+	if u, _ := e.app.Hub.Store.UserByName("nurse_b"); u == nil || !u.HasPAT {
+		t.Fatal("no token for nurse_b once the entry is active again")
+	}
+	if err := e.app.Hub.TakeOverHubToken(context.Background(), "nurse_b", fc.Password); err != nil {
+		t.Fatalf("take-over: %v", err)
+	}
+	if !e.central.TokenValid(e.app.Hub.Runtime().HubToken) {
+		t.Fatal("no working hub token after the take-over")
+	}
+}
+
 // The country sets how long tokens live, in the Facility Hub app's settings: new tokens
 // take it, and one with more life left than the setting allows is replaced early.
 func TestTokenLifeFromCentral(t *testing.T) {
