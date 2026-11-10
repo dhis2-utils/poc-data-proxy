@@ -54,6 +54,7 @@ func retryAs(e *env, id string, g map[string]any, user string) {
 		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{}
 	}
 	e.central.DataStore["facility-hub-admin"]["retries"] = b
+	e.central.SetPublicAccess("facility-hub-admin", "retries", "r-------")
 }
 
 // A user disabled (or deleted) on central never logs in online again: after 7 days

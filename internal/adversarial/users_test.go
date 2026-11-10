@@ -166,6 +166,7 @@ func (s *scene) resentAfterAWeek(gone, other tk.User) {
 			s.t.Fatal(err)
 		}
 	}
+	protectEntry(s.t, s.Central, "facility-hub-admin", "retries")
 	s.reconnect(2)
 	// Live, the ledger compares central's createdBy with the author: the resent saves
 	// differ in that alone, and name other.

@@ -136,6 +136,18 @@ func entryID(ns, key string) string {
 	return "Ds" + hex.EncodeToString(sum[:])[:9]
 }
 
+// SetPublicAccess sets the public access of the dataStore entry ns/key, as sharing it
+// does ("r-------": readable by all, writable by administrators, as the Facility Hub
+// app shares it).
+func (c *Central) SetPublicAccess(ns, key, access string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.public == nil {
+		c.public = map[string]string{}
+	}
+	c.public[entryID(ns, key)] = access
+}
+
 // createUser creates a user as POST /api/users does (the fields hub accounts use).
 func (c *Central) createUser(w http.ResponseWriter, r *http.Request) {
 	var in struct {

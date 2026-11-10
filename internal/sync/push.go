@@ -513,21 +513,39 @@ func (w *Worker) applyRetries(ctx context.Context) error {
 	var v struct {
 		Retries []retry `json:"retries"`
 	}
-	err := h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-admin/retries", nil, h.HubAuth(), &v)
+	const path = "/api/dataStore/facility-hub-admin/retries"
+	err := h.Central.JSON(ctx, "GET", path, nil, h.HubAuth(), &v)
 	if central.Status(err) == http.StatusNotFound {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	applied := strings.Split(h.Store.Meta(metaRetriesApplied), ",")
+	if len(v.Retries) > 0 {
+		// An entry any user may write could discard refused saves or resend them as
+		// someone else: it is not used, as an open central-move is not (review R-07).
+		// The heartbeat lists it as unprotected (CheckProtection).
+		open, err := h.WritableByAll(ctx, path)
+		if err != nil {
+			return err
+		}
+		if open {
+			slog.Warn("retries is writable by any user: its instructions are not applied; protect facility-hub-admin (docs/DEPLOYMENT.md)")
+			return nil
+		}
+	}
+	applied := slices.DeleteFunc(strings.Split(h.Store.Meta(metaRetriesApplied), ","), func(id string) bool { return id == "" })
 	var notApplied map[string]string
 	json.Unmarshal([]byte(h.Store.Meta(metaRetriesNotApplied)), &notApplied)
 	kept := map[string]string{}
 	var todo []retry
-	var ids []string
+	// The applied set only grows: the app may briefly publish {} while it rewrites the
+	// entry, and forgetting what was applied then would run old discards again.
+	ids := slices.Clone(applied)
 	for _, r := range v.Retries {
-		ids = append(ids, r.ID)
+		if !slices.Contains(ids, r.ID) {
+			ids = append(ids, r.ID)
+		}
 		if why, ok := notApplied[r.ID]; ok {
 			kept[r.ID] = why
 		}

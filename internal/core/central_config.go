@@ -53,9 +53,9 @@ func (h *Hub) configState(stateKey string, v any) {
 	}
 }
 
-// writableByAll reports whether central lets any user write the dataStore entry at
+// WritableByAll reports whether central lets any user write the dataStore entry at
 // path: its sharing's public access, as 2.42 shows it in the entry's metaData.
-func (h *Hub) writableByAll(ctx context.Context, path string) (bool, error) {
+func (h *Hub) WritableByAll(ctx context.Context, path string) (bool, error) {
 	var meta struct {
 		Sharing struct {
 			Public string `json:"public"`
@@ -78,7 +78,7 @@ func (h *Hub) CheckProtection(ctx context.Context) {
 	var open []string
 	for _, path := range []string{"/api/dataStore/facility-hub-admin/accounts", "/api/dataStore/facility-hub-admin/central-move",
 		"/api/dataStore/facility-hub-admin/release", "/api/dataStore/facility-hub-admin/retries", RegistryPath(h.HubID())} {
-		o, err := h.writableByAll(ctx, path)
+		o, err := h.WritableByAll(ctx, path)
 		if central.IsNetwork(err) {
 			return
 		}

@@ -55,7 +55,7 @@ func (h *Hub) refreshCentralMove(ctx context.Context) {
 	next := strings.TrimRight(strings.TrimSpace(m.URL), "/")
 	if err == nil && next != "" {
 		var open bool
-		open, err = h.writableByAll(ctx, path)
+		open, err = h.WritableByAll(ctx, path)
 		if central.IsNetwork(err) {
 			return
 		}

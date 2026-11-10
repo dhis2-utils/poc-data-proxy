@@ -23,6 +23,7 @@ func retry(e *env, id string, g map[string]any) {
 		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{}
 	}
 	e.central.DataStore["facility-hub-admin"]["retries"] = b
+	e.central.SetPublicAccess("facility-hub-admin", "retries", "r-------")
 }
 
 // After central is fixed, a hub manager resends a whole group of refusals from the
@@ -59,7 +60,14 @@ func TestRetryResendsRefusedGroup(t *testing.T) {
 	}
 	// Central is fixed: the other person's national ID was a typo.
 	e.central.Seed("CentralTe79", "CentralEn79", "Other", "NAT-0000", nil)
+	// An instruction in an entry any user may write is not applied (review R-07).
 	retry(e, "r-dup", dup)
+	e.central.SetPublicAccess("facility-hub-admin", "retries", "rw------")
+	e.sync()
+	if e.central.Object("DupTe000079") != nil {
+		t.Fatal("a retry from an entry any user may write was applied")
+	}
+	e.central.SetPublicAccess("facility-hub-admin", "retries", "r-------")
 	e.sync()
 	if e.central.Object("DupTe000079") == nil {
 		t.Fatal("the retried person did not reach central")
@@ -102,6 +110,15 @@ func TestRetryAppliedOnce(t *testing.T) {
 	if n := e.central.RequestCount("POST /api/tracker") - before; n != 1 {
 		t.Fatalf("the refused save was sent %d times after one retry", n)
 	}
+	// The app publishes {} for a moment while it rewrites the entry: the hub does not
+	// forget what it applied, and the same instruction read again is not run again.
+	e.central.DataStore["facility-hub-admin"]["retries"] = json.RawMessage(`{}`)
+	e.sync()
+	retry(e, "r-1", dup)
+	e.sync()
+	if n := e.central.RequestCount("POST /api/tracker") - before; n != 1 {
+		t.Fatalf("the refused save was sent %d times after the retries entry was briefly empty", n)
+	}
 	if len(refusedGroups(e)) == 0 {
 		t.Fatal("the save refused again is not reported")
 	}
@@ -120,4 +137,5 @@ func retrySince(e *env, id string, since time.Time) {
 		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{}
 	}
 	e.central.DataStore["facility-hub-admin"]["retries"] = b
+	e.central.SetPublicAccess("facility-hub-admin", "retries", "r-------")
 }

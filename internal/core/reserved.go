@@ -23,13 +23,17 @@ func (h *Hub) ReservedPool() ReservedPool {
 // 0 or less is returned as is — it turns the attribute's offline pool off — while the
 // default keeps its > 0 check: with omitempty an explicit 0 and an absent default are
 // indistinguishable, and the app's default field never writes one.
+// Sizes from central are kept to at most maxPool, the app's limit (review R-07).
 func (h *Hub) PoolTarget(attr string) int {
 	r := h.ReservedPool()
 	if n, ok := r.Attributes[attr]; ok {
-		return n
+		return min(n, maxPool)
 	}
 	if r.Default > 0 {
-		return r.Default
+		return min(r.Default, maxPool)
 	}
 	return h.Cfg.ReservedPoolSize
 }
+
+// maxPool is the largest pool size the Facility Hub app lets a country set.
+const maxPool = 100000

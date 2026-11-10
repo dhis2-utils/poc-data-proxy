@@ -25,6 +25,7 @@ func discardInstruction(e *env, id string, g map[string]any, issue string) {
 		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{}
 	}
 	e.central.DataStore["facility-hub-admin"]["retries"] = b
+	e.central.SetPublicAccess("facility-hub-admin", "retries", "r-------")
 }
 
 func groupWith(e *env, code string) map[string]any {

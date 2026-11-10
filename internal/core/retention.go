@@ -6,11 +6,22 @@ import (
 
 const retentionKey = "retention"
 
+// maxMonths is the most months of retention the Facility Hub app lets a country set.
+const maxMonths = 1200
+
 // Retention is the retention table read from central (facility-hub-config/retention)
-// at the last catalog refresh; none keeps everything.
+// at the last catalog refresh; none keeps everything. Months are kept within the app's
+// limits (0–1200), whatever the entry holds (review R-07).
 func (h *Hub) Retention() access.Retention {
 	var r access.Retention
 	h.configState(retentionKey, &r)
+	clamp := func(m int) int { return min(max(m, 0), maxMonths) }
+	r.DefaultMonths = clamp(r.DefaultMonths)
+	for _, t := range []map[string]int{r.Programs, r.TrackedEntityTypes} {
+		for k, m := range t {
+			t[k] = clamp(m)
+		}
+	}
 	return r
 }
 

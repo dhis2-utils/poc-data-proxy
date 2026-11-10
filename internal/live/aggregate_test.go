@@ -786,6 +786,7 @@ func TestAggregateRetryAfterFix(t *testing.T) {
 	e.Fake.Unapprove(ag.DataSet, pe)
 	e.Fake.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"retries": json.RawMessage(
 		`{"retries":[{"id":"r1","kind":"aggregate","program":"","code":"E2017","at":"` + time.Now().UTC().Format(time.RFC3339) + `","by":"admin"}]}`)}
+	e.Fake.SetPublicAccess("facility-hub-admin", "retries", "r-------")
 	e.Sync()
 	if val, by, _ := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "5" || by != nurse.User {
 		t.Fatalf("after the retry central has %q by %q", val, by)
@@ -812,6 +813,7 @@ func TestAggregateRetrySkipsReplacedEdit(t *testing.T) {
 	}
 	e.Fake.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"retries": json.RawMessage(
 		`{"retries":[{"id":"r1","kind":"aggregate","program":"","code":"E2017","at":"` + time.Now().UTC().Format(time.RFC3339) + `","by":"admin"}]}`)}
+	e.Fake.SetPublicAccess("facility-hub-admin", "retries", "r-------")
 	e.Sync()
 	if val, _, _ := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "7" {
 		t.Fatalf("the resend put back the replaced value: central has %q", val)
@@ -839,6 +841,7 @@ func TestAggregateDiscard(t *testing.T) {
 	e.Fake.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"retries": json.RawMessage(
 		`{"retries":[{"id":"d1","action":"discard","kind":"aggregate","program":"","code":"E2017","at":"` +
 			time.Now().UTC().Format(time.RFC3339) + `","by":"admin"}]}`)}
+	e.Fake.SetPublicAccess("facility-hub-admin", "retries", "r-------")
 	e.Sync()
 	e.Sync()
 	if _, _, ok := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); ok {
@@ -905,6 +908,7 @@ func TestAggregateAuthorGoneResentAsAnother(t *testing.T) {
 	}
 	e.Fake.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"retries": json.RawMessage(
 		`{"retries":[{"id":"r1","kind":"aggregate","program":"","code":"NO_LOGIN","at":"` + time.Now().UTC().Format(time.RFC3339) + `","by":"admin","user":"` + clerk.User + `"}]}`)}
+	e.Fake.SetPublicAccess("facility-hub-admin", "retries", "r-------")
 	e.Sync()
 	if val, by, _ := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "5" || by != clerk.User {
 		t.Fatalf("after the resend central has %q by %q, want 5 by %s", val, by, clerk.User)

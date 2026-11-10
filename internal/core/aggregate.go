@@ -157,6 +157,9 @@ func AggPulledKey(dataSet string) string { return "agg_pulled:" + dataSet }
 
 const aggRetentionKey = "agg_retention"
 
+// maxPeriods is the most periods of a data set the Facility Hub app lets a country keep.
+const maxPeriods = 1000
+
 // AggRetention is the retention table read from central (facility-hub-config/
 // aggregate) at the last catalog refresh, with aggregate.DefaultRetention periods where
 // it names none.
@@ -165,6 +168,11 @@ func (h *Hub) AggRetention() aggregate.Retention {
 	h.configState(aggRetentionKey, &r)
 	if r.Default <= 0 {
 		r.Default = aggregate.DefaultRetention
+	}
+	// Within the app's limit, whatever the entry holds (review R-07).
+	r.Default = min(r.Default, maxPeriods)
+	for k, n := range r.DataSets {
+		r.DataSets[k] = min(n, maxPeriods)
 	}
 	return r
 }
