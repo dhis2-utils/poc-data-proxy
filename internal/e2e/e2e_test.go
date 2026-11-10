@@ -470,6 +470,12 @@ func TestAcceptance(t *testing.T) {
 		a.json("GET", "/api/tracker/trackedEntities?orgUnits="+fc.OtherFacility+"&program="+fc.Program, nil, 503)
 		a.json("GET", "/api/tracker/trackedEntities/NoSuchTe001", nil, 503)
 		a.json("POST", "/api/tracker?async=false&importStrategy=DELETE", map[string]any{}, 503)
+		// A dry run is central's to answer: nothing is stored or queued (review R-11).
+		queued := e.app.Hub.Store.CountOutbox(store.OutboxPending)
+		a.json("POST", "/api/tracker?async=false&importMode=VALIDATE", event("DryEv000001", "OffEn000001", fc.Stage1), 503)
+		if e.app.Hub.Index.Get("DryEv000001") != nil || e.app.Hub.Store.CountOutbox(store.OutboxPending) != queued {
+			t.Fatal("importMode=VALIDATE stored or queued offline")
+		}
 		a.json("GET", "/api/tracker/trackedEntities?orgUnits="+fc.Facility+"&program="+fc.Program+"&followUp=true", nil, 400)
 		a.json("POST", "/api/dataValueSets", map[string]any{}, 503)
 	})

@@ -421,14 +421,31 @@ func AssignUIDs(payload M) { AssignUIDsWith(payload, NewUID) }
 
 // AssignUIDsWith is AssignUIDs with the UIDs from next.
 func AssignUIDsWith(payload M, next func() string) {
-	var walk func(m M, key string)
-	set := func(m M, key string) {
+	eachObject(payload, func(m M, key string) {
 		if Str(m, key) == "" {
 			m[key] = next()
 		}
-	}
+	})
+}
+
+// StripHubOwned removes from every object of a client's payload the fields the hub
+// keeps itself: the deleted and stub marks, which decide what is listed, and the
+// times and authors central sets (review R-02). Without the times the save is
+// stored as one from a client that sent none (core.Hub.upsertCentral).
+func StripHubOwned(payload M) {
+	eachObject(payload, func(m M, _ string) {
+		for _, k := range []string{"deleted", "hubStub", "createdAt", "updatedAt", "createdBy", "updatedBy"} {
+			delete(m, k)
+		}
+	})
+}
+
+// eachObject calls f with every object of a nested or flat payload and the name of
+// its UID field.
+func eachObject(payload M, f func(m M, key string)) {
+	var walk func(m M, key string)
 	walk = func(m M, key string) {
-		set(m, key)
+		f(m, key)
 		for _, e := range list(m, "enrollments") {
 			walk(e, "enrollment")
 		}
@@ -436,7 +453,7 @@ func AssignUIDsWith(payload M, next func() string) {
 			walk(e, "event")
 		}
 		for _, r := range list(m, "relationships") {
-			set(r, "relationship")
+			f(r, "relationship")
 		}
 	}
 	for coll, key := range map[string]string{"trackedEntities": "trackedEntity", "enrollments": "enrollment", "events": "event"} {
@@ -445,7 +462,7 @@ func AssignUIDsWith(payload M, next func() string) {
 		}
 	}
 	for _, r := range list(payload, "relationships") {
-		set(r, "relationship")
+		f(r, "relationship")
 	}
 }
 

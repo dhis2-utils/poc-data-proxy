@@ -330,6 +330,15 @@ func (im *Importer) validateEnrollment(it *Item, old *Obj) (*Obj, bool, []ErrorR
 	if te == "" && old != nil {
 		te = old.TE
 	}
+	// An enrollment stays in its program and with its person, as central decides
+	// (enrollment UpdatableFieldsValidator, 2.42); access is then checked against
+	// what it is in (review R-10).
+	if old != nil && program != old.Program {
+		return nil, false, im.errf(it, "E1127", "Not allowed to update enrollment property: program.")
+	}
+	if old != nil && te != old.TE {
+		return nil, false, im.errf(it, "E1127", "Not allowed to update enrollment property: trackedEntity.")
+	}
 	pm := im.V.Catalog.Programs[program]
 	if pm == nil {
 		return nil, false, im.errf(it, "E1069", "needs connection: program `%s` is not cached on this hub", program)
@@ -421,6 +430,15 @@ func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport
 	stage := Str(it.Data, "programStage")
 	if stage == "" && old != nil {
 		stage = old.Stage
+	}
+	// An event stays in its stage and enrollment, as central decides (event
+	// UpdatableFieldsValidator, 2.42), so access is checked against what it is in, and
+	// its program follows from the stage (E1079 below) (review R-10).
+	if old != nil && stage != old.Stage {
+		return nil, false, im.errf(it, "E1128", "Not allowed to update event property: programStage.")
+	}
+	if old != nil && old.Enrollment != "" && it.Enrollment != "" && it.Enrollment != old.Enrollment {
+		return nil, false, im.errf(it, "E1128", "Not allowed to update event property: enrollment.")
 	}
 	program := im.V.Catalog.StageProgram[stage]
 	if program == "" {
@@ -606,8 +624,20 @@ func (im *Importer) stageTaken(uid, enr, program, stage string) bool {
 }
 
 func (im *Importer) validateRelationship(it *Item, old *Obj) (*Obj, bool, []ErrorReport) {
-	if Str(it.Data, "relationshipType") == "" {
+	rt := Str(it.Data, "relationshipType")
+	if rt == "" {
 		return nil, false, im.errf(it, "E1124", "Missing required relationship property: `relationshipType`.")
+	}
+	// The types the user's access list names are all central has (refresh.go reads
+	// every type with paging off); a list from before they were read decides nothing.
+	if types := im.V.Access.RelationshipTypes; types != nil {
+		perm, ok := types[rt]
+		if !ok {
+			return nil, false, im.errf(it, "E4006", "Could not find RelationshipType: `%s`.", rt)
+		}
+		if !perm.Write {
+			return nil, false, im.errf(it, "E4020", "User: `%s` has no write access to relationship: `%s`.", im.UserUID, it.UID)
+		}
 	}
 	for _, ref := range []Ref{it.From, it.To} {
 		p, rej := im.resolve(ref.UID)
@@ -617,6 +647,11 @@ func (im *Importer) validateRelationship(it *Item, old *Obj) (*Obj, bool, []Erro
 		}
 		if p == nil {
 			return nil, false, im.errf(it, "E4012", "needs connection: Could not find `%s`: `%s`, linked to Relationship.", ref.Kind, ref.UID)
+		}
+		// An end is of the kind its reference names, never a relationship (review
+		// R-01): central does not find it (E4012).
+		if p.Kind != ref.Kind {
+			return nil, false, im.errf(it, "E4012", "Could not find `%s`: `%s`, linked to relationship.", ref.Kind, ref.UID)
 		}
 	}
 	o := im.newObj(it, old)
@@ -631,7 +666,10 @@ func (im *Importer) normalise(kind string, d M) {
 			d[k] = v
 		}
 	}
-	def("deleted", false)
+	// Deletes are refused offline (a tombstone cannot be changed, see existing), so a
+	// client's "deleted" is never the hub's: true hid the record from everyone, and a
+	// value of another type broke every list with the row in it (review R-02).
+	d["deleted"] = false
 	delete(d, "hubStub") // the hub's own mark of a pruned enrollment, never a client's
 	for _, k := range []string{"occurredAt", "scheduledAt", "enrolledAt", "completedAt", "createdAtClient", "updatedAtClient"} {
 		if v, ok := d[k].(string); ok && v != "" {

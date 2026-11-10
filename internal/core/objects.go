@@ -36,6 +36,8 @@ func (h *Hub) ReplaceDiscarded(userID int64, payload tracker.M, discarded map[st
 // (an enrollment and events that waited for a refused person) are sent again, as a
 // retry from the Facility Hub app sends them.
 func (h *Hub) UpsertSaved(userID int64, payload tracker.M, persisted map[string]bool) ([]string, error) {
+	// The payload is the client's: what the hub owns stays the hub's (review R-02).
+	tracker.StripHubOwned(payload)
 	var kids []string
 	for uid, ok := range persisted {
 		if o := h.Index.Get(uid); ok && o != nil && o.SyncState == store.SyncRejected {

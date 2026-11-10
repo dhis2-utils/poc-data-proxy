@@ -389,6 +389,12 @@ func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Ses
 			return
 		}
 	}
+	// A dry run (importMode=VALIDATE) is central's to answer: the hub would store and
+	// queue it as a real write (review R-11).
+	if m := q.Get("importMode"); m != "" && !strings.EqualFold(m, "COMMIT") {
+		a.H.NeedsConnection(w, "importMode "+m+" is not available offline")
+		return
+	}
 	if s := q.Get("idScheme"); s != "" && s != "UID" {
 		a.H.WebError(w, 400, "not supported offline: idScheme="+s, "")
 		return

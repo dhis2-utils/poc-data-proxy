@@ -88,3 +88,31 @@ func TestFullPullKeepsSaveMadeDuringItVisible(t *testing.T) {
 		t.Error("nothing was removed: the check did not run")
 	}
 }
+
+// R-02: a save passed on to central online carries fields the hub owns. Its copy keeps
+// the hub's: a client's deleted or stub mark, times and authors are not stored.
+func TestOnlineSaveKeepsHubOwnedFields(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.sync()
+	p := newPatient("OwnTe000001", "OwnEn000001", "Own", "NAT-OWN01", nil)
+	te := p["trackedEntities"].([]any)[0].(map[string]any)
+	te["deleted"], te["updatedAt"] = "x", "2099-01-01T00:00:00.000"
+	te["createdBy"] = map[string]any{"username": "someone"}
+	enr := te["enrollments"].([]any)[0].(map[string]any)
+	enr["hubStub"], enr["deleted"] = true, true
+	a.json("POST", postSync, p, 200)
+	for _, uid := range []string{"OwnTe000001", "OwnEn000001"} {
+		o := e.app.Hub.Index.Get(uid)
+		if o == nil {
+			t.Fatalf("%s not stored", uid)
+		}
+		d := e.app.Hub.Index.Full(o)
+		if o.Deleted || o.Stub || d["deleted"] != nil || d["hubStub"] != nil || strings.HasPrefix(o.UpdatedAt, "2099") || d["createdBy"] != nil {
+			t.Errorf("%s: deleted=%v stub=%v updatedAt=%s data %v", uid, o.Deleted, o.Stub, o.UpdatedAt, d)
+		}
+	}
+	a.json("GET", "/api/tracker/trackedEntities/OwnTe000001?program="+fc.Program, nil, 200)
+}

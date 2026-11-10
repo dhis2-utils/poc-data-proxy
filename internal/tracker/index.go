@@ -402,8 +402,15 @@ func (ix *Index) CanRead(v *Viewer, o *Obj) bool {
 	case store.KindEvent:
 		return v.Access.Program(o.Program).Read && v.Access.Stage(o.Stage).Read
 	case store.KindRelationship:
-		from, to := RelRef(asM(o.Data["from"])), RelRef(asM(o.Data["to"]))
-		return ix.CanRead(v, ix.Get(from.UID)) && ix.CanRead(v, ix.Get(to.UID))
+		// Each end must be of the kind its reference names, so never a relationship:
+		// a stored relationship that pointed at itself recursed until the stack ran
+		// out (review R-01).
+		for _, ref := range []Ref{RelRef(asM(o.Data["from"])), RelRef(asM(o.Data["to"]))} {
+			if end := ix.Get(ref.UID); end == nil || end.Kind != ref.Kind || !ix.CanRead(v, end) {
+				return false
+			}
+		}
+		return true
 	}
 	return false
 }
