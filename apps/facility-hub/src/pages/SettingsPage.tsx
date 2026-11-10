@@ -279,7 +279,7 @@ const LocalReadsCard = ({ stored }: { stored: LocalReads | null }) => {
                     className={styles.picker}
                     label={i18n.t('Programmes')}
                     placeholder={i18n.t(
-                        'None: everything goes to central while online'
+                        'None, so everything goes to central while online'
                     )}
                     filterable
                     noMatchText={i18n.t('No match')}
@@ -321,12 +321,12 @@ const MetadataReloadCard = ({ stored }: { stored: MetadataReload | null }) => {
             </h2>
             <div className={styles.muted}>
                 {i18n.t(
-                    'Hubs that answer from their own copy while online notice most metadata changes within an hour. They do not notice deletions, changes to which org units a programme or data set is assigned to, or changes to settings. After such a change, or to roll out a fix at once, refresh here: every online hub fetches metadata and settings from central again within 15 minutes, and an offline hub when it reconnects.'
+                    'Hubs that answer from their own copy while online notice most metadata changes within an hour. They do not notice deletions, changes to which org units a programme or data set is assigned to, or changes to settings. After such a change, or to roll out a fix at once, refresh here. Every online hub then fetches metadata and settings from central again within 15 minutes, and an offline hub when it reconnects.'
                 )}
             </div>
             <div className={styles.muted}>
                 {stored?.at
-                    ? i18n.t('Last refresh asked for: {{- at}}', {
+                    ? i18n.t('Last refresh asked for {{- at}}', {
                           at: new Date(stored.at).toLocaleString(),
                       })
                     : i18n.t('Never asked for.')}

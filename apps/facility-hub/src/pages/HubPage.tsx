@@ -284,7 +284,7 @@ export const HubPage = () => {
                 </h2>
                 <div className={styles.muted}>
                     {i18n.t(
-                        'What staff asked for while the hub was offline that it could not answer ("needs connection"), since the hub last started: mostly screens nobody had opened online. Each staff member opens Capture, and each programme\'s working list, once online.'
+                        'What staff asked for while the hub was offline that it could not answer ("needs connection"), since the hub last started, mostly screens nobody had opened online. Each staff member opens Capture, and each programme\'s working list, once online.'
                     )}
                 </div>
                 {(hb?.offlineMissesTotal ?? 0) === 0 ? (
@@ -292,9 +292,12 @@ export const HubPage = () => {
                 ) : (
                     <>
                         <div className={styles.muted}>
-                            {i18n.t('{{- total}} in all; the most frequent:', {
-                                total: hb?.offlineMissesTotal,
-                            })}
+                            {i18n.t(
+                                '{{- total}} in all. The most frequent are listed.',
+                                {
+                                    total: hb?.offlineMissesTotal,
+                                }
+                            )}
                         </div>
                         <DataTable>
                             <DataTableHead>

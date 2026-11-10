@@ -100,7 +100,7 @@ const Version = () => {
                 <h2 className={styles.subtitle}>{i18n.t('Current choice')}</h2>
                 {current ? (
                     <div>
-                        {i18n.t('Version {{- v}}: {{- stage}}', {
+                        {i18n.t('Version {{- v}} – {{- stage}}', {
                             v: current.version,
                             stage: stageLabel(current),
                         })}
@@ -108,7 +108,7 @@ const Version = () => {
                 ) : (
                     <div className={styles.muted}>
                         {i18n.t(
-                            'No version chosen: hubs stay on the version they run.'
+                            'No version chosen. Hubs stay on the version they run.'
                         )}
                     </div>
                 )}
@@ -116,7 +116,7 @@ const Version = () => {
                     <>
                         <div className={styles.row}>
                             {i18n.t(
-                                '{{- n}} hubs in this stage: {{- on}} on {{- v}}, {{- waiting}} not yet, {{- failed}} failed.',
+                                '{{- n}} hubs in this stage, {{- on}} of them on {{- v}}, {{- waiting}} not yet, {{- failed}} failed.',
                                 {
                                     n: p.inStage,
                                     on: p.onVersion,
