@@ -1,6 +1,9 @@
 package proxy
 
-import "testing"
+import (
+	"net/url"
+	"testing"
+)
 
 func TestReplayable(t *testing.T) {
 	others := []string{"OtherUser01"}
@@ -30,6 +33,30 @@ func TestReplayable(t *testing.T) {
 	} {
 		if got := replayable(uri, others); got != want {
 			t.Errorf("replayable(%s) = %v, want %v", uri, got, want)
+		}
+	}
+}
+
+// Without a session only the login page's files and shared settings are cached, and
+// not under a query string of the client's choosing (review R-16, R-18).
+func TestAnonCacheable(t *testing.T) {
+	for uri, want := range map[string]bool{
+		"/dhis-web-login/":                       true,
+		"/dhis-web-login/assets/app-5xT9c-9H.js": true,
+		"/dhis-web-login/assets/app.js?x=1":      false,
+		"/api/loginConfig":                       true,
+		"/api/42/loginConfig?paging=false":       true,
+		"/api/42/locales/ui":                     true,
+		"/api/staticContent/logo_front":          true,
+		"/api/loginConfig?x=2":                   false,
+		"/dhis-web-capture/index.html":           false,
+		"/apps/capture":                          false,
+		"/api/apps/capture/index.html":           false,
+		"/api/me":                                false,
+	} {
+		u, _ := url.Parse(uri)
+		if got := anonCacheable(u); got != want {
+			t.Errorf("anonCacheable(%s) = %v, want %v", uri, got, want)
 		}
 	}
 }

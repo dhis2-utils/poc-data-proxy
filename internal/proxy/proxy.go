@@ -306,6 +306,21 @@ func cacheUser(sess *core.Session) int64 {
 	return sess.UserID
 }
 
+// anonCacheable reports whether an answer to a request without a session may be
+// cached: what the login page needs offline, its files and its shared settings, and
+// not with a query string of the client's choosing. Anything more lets one device
+// fill the disk with copies, and stores central's redirects to the login page under
+// app files (review R-16, R-18).
+func anonCacheable(u *url.URL) bool {
+	if u.RawQuery != "" && u.RawQuery != "paging=false" {
+		return false
+	}
+	if strings.HasPrefix(u.Path, "/dhis-web-login/") {
+		return true
+	}
+	return strings.HasPrefix(u.Path, "/api/") && !isStatic(u.Path) && shared(u.Path)
+}
+
 // isAppShell: /apps/<app>, the page 2.42+ opens an app at.
 func isAppShell(p string) bool {
 	rest, ok := strings.CutPrefix(p, "/apps/")
@@ -383,7 +398,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if err == nil {
 			if r.Method == http.MethodGet && cacheable(r, res.Status) && len(res.Body) <= maxCacheBody && !validationRe.MatchString(r.URL.Path) &&
-				p.H.Store.Unlocked() && (cacheUser(sess) > 0 || sess == nil) {
+				p.H.Store.Unlocked() && (cacheUser(sess) > 0 || sess == nil && anonCacheable(r.URL)) {
 				if err := p.H.Store.PutCache(cacheUser(sess), r.Method, r.URL.RequestURI(),
 					&store.CachedResponse{Status: res.Status, Header: res.Header, Body: res.Body}); err != nil {
 					slog.Warn("cache write", "err", err)

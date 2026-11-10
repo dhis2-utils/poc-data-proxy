@@ -168,6 +168,11 @@ func (c *client) doHost(host, method, path string, body any) (int, []byte) {
 	req, _ := http.NewRequest(method, c.e.srv.URL+path, rd)
 	if host != "" {
 		req.Host = host
+		// The client sends the jar's cookies only for a matching Host: add them so
+		// the request carries this user's session.
+		for _, ck := range c.http.Jar.Cookies(req.URL) {
+			req.AddCookie(ck)
+		}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.basic {
@@ -957,7 +962,20 @@ func TestOfflineStaticCache(t *testing.T) {
 	}
 	a.do("GET", "/api/programs/"+fc.Program+"?fields=id", nil) // metadata: nurse_a's own
 	a.do("GET", "/api/me?fields=id", nil)                      // user-specific, never shared
+	// A device without a session: the login page and its settings are kept for
+	// offline, copies under a query string of its choosing are not (review R-18).
+	anon := e.web("")
+	for _, p := range []string{"/dhis-web-login/", "/api/loginConfig", "/dhis-web-login/?x=1"} {
+		if st, _ := anon.do("GET", p, nil); st != 200 {
+			t.Fatalf("anonymous %s online: %d", p, st)
+		}
+	}
 	e.offline()
+	for p, want := range map[string]int{"/dhis-web-login/": 200, "/api/loginConfig": 200, "/dhis-web-login/?x=1": 503} {
+		if st, _ := anon.do("GET", p, nil); st != want {
+			t.Errorf("anonymous %s offline: %d, want %d", p, st, want)
+		}
+	}
 	b := e.web("nurse_b")
 	b.login() // offline login; nurse_b never loaded the app through the hub
 	st, body := b.do("GET", "/dhis-web-capture/index.html", nil)
