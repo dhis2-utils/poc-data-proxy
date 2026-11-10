@@ -120,10 +120,12 @@ func (s *Store) CountCacheBefore(userID int64, t time.Time) int {
 }
 
 // GetCacheAnyUser returns a cached response for url from any user. Only used for
-// static app files, which hold no user data.
+// static app files, which hold no user data. A logged-in user's 200 comes first:
+// a newer anonymous answer may be a redirect to the login page (review R-16).
 func (s *Store) GetCacheAnyUser(method, url string) (*CachedResponse, error) {
 	var id int64
-	err := s.DB().QueryRow(`SELECT user_id FROM http_cache WHERE method=? AND url=? ORDER BY fetched_at DESC LIMIT 1`,
+	err := s.DB().QueryRow(`SELECT user_id FROM http_cache WHERE method=? AND url=?
+ ORDER BY status=200 DESC, user_id>0 DESC, fetched_at DESC LIMIT 1`,
 		method, url).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

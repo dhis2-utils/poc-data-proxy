@@ -244,3 +244,28 @@ func TestReplaySources(t *testing.T) {
 		t.Fatalf("not seen since: %v", got)
 	}
 }
+
+// A newer anonymous redirect does not beat a logged-in user's 200 (review R-16).
+func TestGetCacheAnyUserPrefersUsersOK(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.SetDK(mustKey(t)); err != nil {
+		t.Fatal(err)
+	}
+	put := func(user int64, status int, body string) {
+		if err := s.PutCache(user, "GET", "/dhis-web-commons/x.js", &CachedResponse{Status: status, Body: []byte(body)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(0, 200, "anon")
+	put(4, 200, "staff")
+	put(0, 302, "login")
+	put(5, 302, "staff redirect")
+	c, err := s.GetCacheAnyUser("GET", "/dhis-web-commons/x.js")
+	if err != nil || c == nil || c.Status != 200 || string(c.Body) != "staff" {
+		t.Fatalf("%+v %v", c, err)
+	}
+}
