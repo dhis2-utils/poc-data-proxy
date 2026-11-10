@@ -154,6 +154,27 @@ func TestDisabledUserLosesAccess(t *testing.T) {
 	tablet.json("GET", search, nil, 200)
 }
 
+// R-05: a wrong Basic password from anyone gets central's 401 and nothing more; it
+// does not end the user's sessions or block their offline login. Only a password that
+// worked before (cached, or opening the key slot) means the account changed on central.
+func TestWrongBasicPasswordKeepsUserLoggedIn(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	search := "/api/tracker/trackedEntities?orgUnits=" + fc.Facility + "&program=" + fc.Program
+	web := e.web("nurse_a")
+	web.login()
+	if st, _ := e.androidPw("nurse_a", "x").do("GET", "/api/me", nil); st != 401 {
+		t.Fatalf("a wrong Basic password: %d, want 401", st)
+	}
+	if u, _ := e.app.Hub.Store.UserByName("nurse_a"); u.NeedsLogin {
+		t.Fatal("a wrong Basic password marked nurse_a as needing an online login")
+	}
+	web.json("GET", search, nil, 200)
+	e.offline()
+	web.json("GET", search, nil, 200)
+	e.web("nurse_a").login()
+}
+
 // M3: repeated failed logins lock out that user from that address, for the web login
 // and Basic auth alike; other users are unaffected.
 func TestLoginThrottle(t *testing.T) {

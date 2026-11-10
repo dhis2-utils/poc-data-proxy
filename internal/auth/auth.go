@@ -159,10 +159,13 @@ func (a *Auth) loginBasic(ctx context.Context, src, username, password string) (
 			b, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			if resp.StatusCode != http.StatusOK {
-				if resp.StatusCode == http.StatusUnauthorized {
-					// Disabled account or changed password: end the user's hub
-					// sessions, and keep them from logging in offline until an
-					// online login succeeds again.
+				if resp.StatusCode == http.StatusUnauthorized && a.wasGood(cached, username, password) {
+					// Central refused a password that worked before: the account was
+					// disabled or the password changed. End the user's hub sessions,
+					// and keep them from logging in offline until an online login
+					// succeeds again. Any other refused password is just a wrong one:
+					// usernames are not secret, so it must not log the user out
+					// (review R-05).
 					a.H.Sessions.DropUser(username)
 					if u, _ := a.H.Store.UserByName(username); u != nil {
 						a.H.Store.SetNeedsLogin(u.ID, true)
@@ -195,6 +198,21 @@ func (a *Auth) loginBasic(ctx context.Context, src, username, password string) (
 		a.H.Sessions.SetBasic(username, password, src, sess)
 	}
 	return sess, f
+}
+
+// wasGood reports whether central accepted this password for username before: it is
+// cached as a verified Basic credential, or it opens the user's key slot (written at an
+// online login).
+func (a *Auth) wasGood(cached *core.Session, username, password string) bool {
+	if cached != nil {
+		return true
+	}
+	u, _ := a.H.Store.UserByName(username)
+	if u == nil {
+		return false
+	}
+	_, _, err := hubcrypto.UnwrapSlot(u.WrappedDK, password, u.KEKSalt, devkey.Key())
+	return err == nil
 }
 
 // registerOnline runs steps 2-5 of online login after central accepted the password.
