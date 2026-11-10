@@ -83,7 +83,15 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main
 
 Each binary is a single static file of about 16 MB. `-X main.version` sets the version that self-upgrade compares against.
 
-`go.sum` was produced in an environment without access to `proxy.golang.org`, from the modules' GitHub mirrors. On a machine with normal access, run `go mod verify` once. If it reports a mismatch, delete `go.sum` and run `go mod tidy`.
+`go.sum` was produced in an environment without access to `proxy.golang.org`, from the modules' GitHub mirrors. `go mod verify` does not check it: it only compares the local module cache with `go.sum`. To check `go.sum` against the checksum database, regenerate it on a machine with normal access, with an empty module cache and the database on, and compare:
+
+```sh
+cp go.sum /tmp/go.sum.old && rm go.sum
+GOMODCACHE=$(mktemp -d) GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org GONOSUMDB= GOPRIVATE= GOFLAGS= go mod tidy
+diff /tmp/go.sum.old go.sum   # no output: go.sum holds what everyone else downloads
+```
+
+A difference means a module in the old `go.sum` is not what the checksum database records: find out why before building a release.
 
 ## Configure
 
@@ -192,7 +200,7 @@ Each country chooses the version on central, in the Facility Hub app's "Hub vers
 4. runs the new binary's migrations on a copy of the store;
 5. swaps binary and store;
 6. re-execs in place, handing the in-memory data key over a pipe so the store stays unlocked;
-7. health-checks: store, central and `/hub/status`.
+7. health-checks itself: the store and `/hub/status` (not central, so a slow or unreachable central does not roll a good release back).
 
 If the health check fails, it restores the previous binary and store and re-execs again. The result (`ok`, `failed` or `ignored`) goes into the heartbeat as `lastUpgrade`.
 

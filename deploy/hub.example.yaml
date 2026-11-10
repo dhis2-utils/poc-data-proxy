@@ -1,5 +1,6 @@
-# Image defaults (spec 6.1). The same file for every hub in a country; nothing
-# facility-specific. Baked into the image at /etc/hub/hub.yaml.
+# An example hub.yaml with every key (spec 6.1); nothing facility-specific. The Pi
+# image ships its own /etc/hub/hub.yaml (image/files/etc/hub/hub.yaml), without
+# central_url: one image for every country, central's address given at set-up.
 central_url: https://hmis.example.org      # the server hubs set up against
 # central_hosts: hmis.example.org, *.hmis.example.org  # optional: setup may pick any https URL on these
 # With neither central_url nor central_hosts, setup needs the token in data_dir/setup-token (print it on the label).
