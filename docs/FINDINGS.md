@@ -477,7 +477,7 @@ What the hub does with a change central refuses (tested in `internal/e2e`: `Test
   - The hub records when central refused, by central's clock (its answer's `Date` header, in whole seconds). Central's version wins when its `updatedAt` is more than a second after that.
   - Objects blocked by a refused parent were never sent; their time is the hub's own clock.
 - **Edge cases, accepted:**
-  - An unrelated change on central after the refusal also replaces the hub's copy. An example is another user editing a different field of the same event. The refused values then disappear from offline reads; they remain in the refused outbox entry, and in the issue on central with values masked.
+  - An unrelated change on central after the refusal also replaces the hub's copy. An example is another user editing a different field of the same event. The refused values then disappear from offline reads; they remain in the refused outbox entry on the hub. The issue is closed like any other: the hub deletes it from central at its next push, so central keeps no record of the refusal (review R-22).
   - A change on central within a second of the refusal does not count, so the hub keeps its copy until central's next change.
   - Wrong clocks on the hub do not matter: the comparison uses only central's times.
 - **Discarded by a hub manager:** a refused change that can never pass as it is, because central was changed on purpose (a new rule, a closed period, a user moved) or because it is a duplicate. The manager presses "Discard" in the Facility Hub app, on a group or on one change (docs/DEPLOYMENT.md, "Refused in bulk"). Tested in `TestDiscardGroup` and `TestDiscardRefusedRegistration`.
