@@ -210,6 +210,9 @@ func serveCtx(ctx context.Context, cfgPath string) error {
 		shutdown()
 	}()
 	go a.Upgrader.AfterBoot(ctx, fmt.Sprintf("%s://127.0.0.1:%s/hub/status", scheme, port))
+	// The Windows installer reads the running version from here rather than run the
+	// installed hub.exe elevated: the service's account can change that file (review R-27).
+	os.WriteFile(filepath.Join(cfg.DataDir, "version"), []byte(version+"\n"), 0o644)
 	slog.Info("hub listening", "addr", ln.Addr().String(), "tls", cfg.TLS, "version", version, "hubId", a.Hub.HubID(),
 		"mode", a.Hub.Mode(), "central", a.Hub.Central.BaseURL())
 	if cfg.TLS {

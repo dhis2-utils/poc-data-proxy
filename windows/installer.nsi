@@ -136,10 +136,12 @@ FunctionEnd
 
 Function StopHub
   ${If} $MultiUser.InstallMode == "AllUsers"
-    ${If} ${FileExists} "$HubExe"
-      nsExec::ExecToLog '"$HubExe" service stop' ; waits until it has stopped
-      Pop $0
-    ${EndIf}
+    ; This installer's hub.exe, not the installed one: the service's account may change
+    ; that, and this runs elevated (review R-27).
+    InitPluginsDir
+    File "/oname=$PLUGINSDIR\hub-new.exe" "${HUBEXE}"
+    nsExec::ExecToLog '"$PLUGINSDIR\hub-new.exe" service stop' ; waits until it has stopped
+    Pop $0
   ${Else}
     ReadEnvStr $R0 USERNAME
     nsExec::Exec 'taskkill /F /FI "USERNAME eq $R0" /IM hub.exe'
@@ -165,7 +167,8 @@ Section "!The hub" SecHub
   ; From a per-user hub to the whole PC: the installing user's hub moves along, so it
   ; keeps its ID, approval and certificate authority (devices notice nothing). Its bin
   ; folder stays behind: anything the user could change must not be run elevated or
-  ; become the service's program; the hub.exe of this installer goes in instead.
+  ; become the service's program; the hub.exe of this installer goes in instead. Nor
+  ; does the upgrade's state, whose paths the service would act on (review R-27).
   ${If} $MultiUser.InstallMode == "AllUsers"
   ${AndIf} ${FileExists} "$UserAppDataLocal\${NAME}\ca.key"
   ${AndIfNot} ${FileExists} "$DataDir\ca.key"
@@ -175,17 +178,29 @@ Section "!The hub" SecHub
       DeleteRegValue HKCU "${RUNKEY}" "${NAME}"
       CreateDirectory "$DataDir"
       Delete "$UserAppDataLocal\${NAME}\hub.yaml" ; written again for the new place
-      !insertmacro Run 'robocopy "$UserAppDataLocal\${NAME}" "$DataDir" /E /MOVE /XD bin /NFL /NDL /NJH /NJS'
+      !insertmacro Run 'robocopy "$UserAppDataLocal\${NAME}" "$DataDir" /E /MOVE /XD bin /XF upgrade.json upgrade-key version /NFL /NDL /NJH /NJS'
     nomove:
   ${EndIf}
 
   ; Never put an older hub over a newer one: it may have migrated the store already.
+  ; The installed version is read, never asked of the installed hub.exe, which would run
+  ; elevated (review R-27): the file the hub writes at each start, else what the last
+  ; installer recorded (a hub from before that file).
   StrCpy $1 "install"
+  StrCpy $2 ""
   ${If} ${FileExists} "$HubExe"
-    nsExec::ExecToStack '"$HubExe" version'
-    Pop $0
-    Pop $2
-    ${WordFind} "$2" "$\n" "+1" $2
+    ClearErrors
+    FileOpen $R1 "$DataDir\version" r
+    ${IfNot} ${Errors}
+      FileRead $R1 $2
+      FileClose $R1
+      ${WordFind} "$2" "$\n" "+1" $2
+    ${EndIf}
+    ${If} $2 == ""
+      ReadRegStr $2 SHCTX "${UNINSTKEY}" "DisplayVersion"
+    ${EndIf}
+  ${EndIf}
+  ${If} $2 != ""
     ; The new hub.exe compares, by release precedence: NSIS's VersionCompare reads
     ; dotted numbers only, and would take 0.2.0 for older than 0.2.0-ci.57.
     InitPluginsDir
@@ -233,7 +248,7 @@ Section "!The hub" SecHub
     ; The service, its account's rights on the data folder (and no one else's), then start.
     !insertmacro Run 'sc query ${SERVICE}'
     ${If} $0 != 0
-      !insertmacro Run '"$HubExe" service install -config "$DataDir\hub.yaml" -exe "$HubExe" -nostart'
+      !insertmacro Run '"$PLUGINSDIR\hub-new.exe" service install -config "$DataDir\hub.yaml" -exe "$HubExe" -nostart'
     ${EndIf}
     !insertmacro Run 'icacls "$DataDir" /inheritance:r /grant:r "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" "${ACCOUNT}:(OI)(CI)M" /Q'
     !insertmacro Run 'icacls "$DataDir\*" /reset /T /C /Q'
