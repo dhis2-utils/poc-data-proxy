@@ -1,10 +1,12 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"log/slog"
+	"maps"
 	"reflect"
 	"slices"
 	"time"
@@ -68,6 +70,16 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 		refs = append(refs, it.UID, it.TE, it.Enrollment, it.From.UID, it.To.UID)
 	}
 	known := h.Index.GetMany(slices.DeleteFunc(refs, func(u string) bool { return u == "" }))
+	// An online read with a narrow fields list leaves out the parents and program:
+	// they do not change, so the stored ones stay (review R-28).
+	var parents []string
+	for _, it := range items {
+		if old := known[it.UID]; old != nil && (it.TE == "" || it.Enrollment == "") {
+			it.TE, it.Enrollment = cmp.Or(it.TE, old.TE), cmp.Or(it.Enrollment, old.Enrollment)
+			parents = append(parents, it.TE, it.Enrollment)
+		}
+	}
+	maps.Copy(known, h.Index.GetMany(slices.DeleteFunc(parents, func(u string) bool { return u == "" })))
 	get := func(uid string) *tracker.Obj { return known[uid] }
 	var olds []*tracker.Obj
 	for _, it := range items {
@@ -112,8 +124,10 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 		old := get(it.UID)
 		o := &tracker.Obj{UID: it.UID, Kind: it.Kind, Origin: store.OriginCentral, SyncState: store.SyncSynced,
 			OwnerOrgUnit: facility}
+		program, stage := tracker.Str(it.Data, "program"), tracker.Str(it.Data, "programStage")
 		if old != nil {
 			o.Slot = old.Slot
+			program, stage = cmp.Or(program, old.Program), cmp.Or(stage, old.Stage)
 		}
 		ou := tracker.Str(it.Data, "orgUnit")
 		switch it.Kind {
@@ -129,7 +143,7 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 				continue
 			}
 		case store.KindEnrollment:
-			o.TE, o.Program = it.TE, tracker.Str(it.Data, "program")
+			o.TE, o.Program = it.TE, program
 			if forceFacility {
 				break
 			}
@@ -143,7 +157,7 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 				continue // under an enrollment kept as a stub (tracker retention)
 			}
 			o.TE, o.Enrollment = it.TE, it.Enrollment
-			o.Program, o.Stage = tracker.Str(it.Data, "program"), tracker.Str(it.Data, "programStage")
+			o.Program, o.Stage = program, stage
 			if o.TE == "" {
 				if e := batch[o.Enrollment]; e != nil {
 					o.TE = e.TE
@@ -187,6 +201,12 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 					full = h.Index.Full(old)
 				}
 				o.Data = tracker.Merge(full, it.Data)
+				if dv, ok := it.Data["dataValues"]; ok && forceFacility {
+					// A pull asks for whole events: their data values are all central
+					// holds, and a value cleared there goes here too (review R-28).
+					// Online reads may name fields, so they merge.
+					o.Data["dataValues"] = dv
+				}
 				if old.SyncState == store.SyncSynced && old.OwnerOrgUnit == o.OwnerOrgUnit && reflect.DeepEqual(o.Data, full) {
 					// Nothing new: only the user's visibility. Rewriting every object of
 					// every online read wrote about 250 MB a minute on the Pis
@@ -497,7 +517,9 @@ func (h *Hub) stubOld(items []*tracker.Item, get func(string) *tracker.Obj) map[
 			continue
 		}
 		cutoff, ok := ret.Cutoff(program, now)
-		if !ok || tracker.Str(it.Data, "updatedAt") >= cutoff || h.referenced(it.UID, get) {
+		// No time (a save sent online, or a narrow fields list) is no reason to stub.
+		upd := tracker.Str(it.Data, "updatedAt")
+		if !ok || upd == "" || upd >= cutoff || h.referenced(it.UID, get) {
 			continue
 		}
 		it.Data = tracker.StubOf(it.Data)
