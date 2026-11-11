@@ -20,6 +20,8 @@ const (
 	wDenied     = "DENIED"      // hub accepted offline what central refuses this user for access reasons
 	wLate       = "LATE"        // hub accepted offline, central rejected on push for another reason
 	wOverReject = "OVER-REJECT" // hub refused offline what central accepts: a coverage gap
+	wLost       = "LOST"        // hub accepted offline, central does not have it, and no issue says why
+	wAltered    = "ALTERED"     // central has it, but not as written: another author or other values
 )
 
 // accessCodes are central's error codes for "this user may not write this".
@@ -150,9 +152,12 @@ func TestWriteOracle(t *testing.T) {
 	for _, a := range attempts {
 		verdict, detail := wMatch, ""
 		if a.hub == 200 {
-			if e.CentralObject(a.kind, a.uid) == nil {
+			if c := e.CentralObject(a.kind, a.uid); c == nil {
 				codes := issueCodes(e, a.uid)
 				verdict, detail = wLate, strings.Join(codes, ",")
+				if detail == noIssue {
+					verdict = wLost // accepted, gone, and nobody told: silent loss
+				}
 				for _, c := range codes {
 					for _, ac := range accessCodes {
 						if c == ac {
@@ -160,6 +165,8 @@ func TestWriteOracle(t *testing.T) {
 						}
 					}
 				}
+			} else if d := savedAsWritten(e, a.user, a.body); d != "" {
+				verdict, detail = wAltered, d
 			}
 		} else {
 			// Would central have taken it from this user? Replay with fresh UIDs.
@@ -175,7 +182,7 @@ func TestWriteOracle(t *testing.T) {
 		counts[verdict]++
 		line := fmt.Sprintf("%s %s: %s %s", verdict, a.user, a.write, detail)
 		report = append(report, line)
-		if verdict == wDenied {
+		if verdict == wDenied || verdict == wLost || verdict == wAltered {
 			bad = append(bad, line)
 		}
 	}
@@ -265,7 +272,74 @@ func issueCodes(e *tk.Env, uid string) []string {
 		}
 	}
 	if len(out) == 0 {
-		out = append(out, "no issue recorded")
+		out = append(out, noIssue)
+	}
+	return out
+}
+
+const noIssue = "no issue recorded"
+
+// savedAsWritten compares what central holds with what the user wrote offline: each
+// tracked entity's and event's author, and the attribute and data values of the
+// payload, which central must hold with the same values. Central may hold more (values
+// a program rule assigned, for example). It returns "" when they agree, or what differs.
+func savedAsWritten(e *tk.Env, user string, body map[string]any) string {
+	var diffs []string
+	check := func(kind, uid, program string, written map[string]any, listKey, idKey string) {
+		// Asked with the program: without one, central leaves out the program's own
+		// attributes.
+		path := "/api/tracker/" + kind + "/" + uid + "?fields=*"
+		if program != "" {
+			path += "&program=" + program
+		}
+		var c map[string]any
+		if err := e.Central.JSON("GET", path, nil, &c); err != nil {
+			diffs = append(diffs, kind+" "+uid+" not readable on central: "+err.Error())
+			return
+		}
+		by, _ := c["createdBy"].(map[string]any)
+		if by["username"] != user {
+			diffs = append(diffs, fmt.Sprintf("%s %s createdBy %v", kind, uid, by["username"]))
+		}
+		held := map[string]any{}
+		for _, x := range objList(c[listKey]) {
+			held[fmt.Sprint(x[idKey])] = x["value"]
+		}
+		for _, x := range objList(written[listKey]) {
+			id := fmt.Sprint(x[idKey])
+			if v, ok := held[id]; !ok || fmt.Sprint(v) != fmt.Sprint(x["value"]) {
+				diffs = append(diffs, fmt.Sprintf("%s %s %s: wrote %v, central %v", kind, uid, id, x["value"], v))
+			}
+		}
+	}
+	event := func(ev map[string]any) {
+		check("events", fmt.Sprint(ev["event"]), "", ev, "dataValues", "dataElement")
+	}
+	for _, te := range objList(body["trackedEntities"]) {
+		program := ""
+		for _, en := range objList(te["enrollments"]) {
+			program = fmt.Sprint(en["program"])
+		}
+		check("trackedEntities", fmt.Sprint(te["trackedEntity"]), program, te, "attributes", "attribute")
+		for _, en := range objList(te["enrollments"]) {
+			for _, ev := range objList(en["events"]) {
+				event(ev)
+			}
+		}
+	}
+	for _, ev := range objList(body["events"]) {
+		event(ev)
+	}
+	return strings.Join(diffs, "; ")
+}
+
+func objList(v any) []map[string]any {
+	var out []map[string]any
+	l, _ := v.([]any)
+	for _, x := range l {
+		if m, ok := x.(map[string]any); ok {
+			out = append(out, m)
+		}
 	}
 	return out
 }
