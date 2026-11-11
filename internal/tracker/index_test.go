@@ -16,7 +16,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
-func testStore(t *testing.T) *store.Store {
+func testStore(t testing.TB) *store.Store {
 	t.Helper()
 	s, err := store.Open(filepath.Join(t.TempDir(), "hub.db"))
 	if err != nil {

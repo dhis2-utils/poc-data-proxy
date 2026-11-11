@@ -186,3 +186,61 @@ func TestOrgUnitsWithScopeModeRefused(t *testing.T) {
 		}
 	}
 }
+
+// Hostile filter and order parameters (review section 10): parsing never panics, gives
+// no more filters than the text has parts, and every filter the hub would run means
+// the same in SQL (person searches) as in Go (event searches), for any stored value.
+func FuzzFilters(f *testing.F) {
+	for _, c := range [][2]string{{"AttrAbcdefg:like:amin", "Amina"}, {"AttrAbcdefg:ge:1:le:5", "3"},
+		{"AttrAbcdefg:in:a;b,AttrAbcdefg:!null", "a,b"}, {"AttrAbcdefg:!eq:x/:y", "x:y"}, {"AttrAbcdefg:ew:%_\\", "a%_\\"},
+		{"AttrAbcdefg:eq:1e1", "10"}, {"AttrAbcdefg:null", ""}, {"AttrAbcdefg:sw:ÅS", "åsa"}} {
+		f.Add(c[0], c[1], "createdAt:desc")
+	}
+	s := testStore(f)
+	db := s.DB()
+	f.Fuzz(func(t *testing.T, filter, value, order string) {
+		for _, coll := range []string{"trackedEntities", "enrollments", "events", "relationships"} {
+			checkOrder(coll, order)
+		}
+		createdOrder(order)
+		keyOrder(order, true)
+		fs, err := parseFilters(url.Values{"filter": {filter}})
+		if err != nil {
+			return
+		}
+		if len(fs) > strings.Count(filter, ",")+strings.Count(filter, ":")+1 {
+			t.Fatalf("%d filters from %q", len(fs), filter)
+		}
+		if len(fs) > 3 {
+			fs = fs[:3]
+		}
+		db.Exec(`DELETE FROM te_attrs`)
+		if _, err := db.Exec(`INSERT INTO te_attrs(te_uid, attr, value, value_lc) VALUES('TeValue0001', 'AttrAbcdefg', ?, ?)`,
+			value, strings.ToLower(value)); err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range fs {
+			f.uid = "AttrAbcdefg"
+			for _, k := range []valueKind{kindText, kindNumber, kindInteger, kindOrdered, kindMulti} {
+				if f.check(k, "TYPE", "attribute") != nil {
+					continue
+				}
+				if k.numeric() && !isNumber(value, k) && value != "" {
+					continue // central keeps only numbers in these
+				}
+				cond, args, negate := f.sqlCond(k)
+				q := "SELECT COUNT(*) FROM te_attrs a WHERE a.te_uid = 'TeValue0001' AND a.attr = ? AND " + cond
+				if negate {
+					q = "SELECT COUNT(*) = 0 FROM te_attrs a WHERE a.te_uid = 'TeValue0001' AND a.attr = ? AND a.value_lc <> ''"
+				}
+				var n int
+				if err := db.QueryRow(q, append([]any{f.uid}, args...)...).Scan(&n); err != nil {
+					t.Fatalf("%v %s:%q: %v", k, f.op, f.value, err)
+				}
+				if bySQL, byGo := n > 0, f.match(map[string]string{f.uid: value}, k); bySQL != byGo {
+					t.Errorf("kind %v, %s:%q on %q: SQL %v, Go %v", k, f.op, f.value, value, bySQL, byGo)
+				}
+			}
+		}
+	})
+}
