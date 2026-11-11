@@ -75,10 +75,18 @@ const Refusals = () => {
                 user: g.code === noLoginCode ? sendAs[groupKey(g)] : undefined,
                 orgUnits: me ? scopeOf(me, hubs ?? []) : [],
             }),
-        { onSuccess: () => client.invalidateQueries(['retries']) }
+        {
+            onSuccess: () => {
+                setConfirming(null)
+                client.invalidateQueries(['retries'])
+            },
+        }
     )
-    // The group a manager is about to discard, until they confirm.
-    const [confirming, setConfirming] = useState<RefusalRow | null>(null)
+    // The group a manager is about to resend or discard, until they confirm.
+    const [confirming, setConfirming] = useState<{
+        group: RefusalRow
+        discard: boolean
+    } | null>(null)
     const discard = useMutation(
         (g: RefusalRow) =>
             discardGroup(api, g, {
@@ -97,7 +105,7 @@ const Refusals = () => {
     )
     const rows = useMemo(() => groupRefusals(hubs ?? []), [hubs])
     const reach = confirming
-        ? reachOf(confirming, hubs ?? [], me ? scopeOf(me, hubs ?? []) : [])
+        ? reachOf(confirming.group, hubs ?? [], me ? scopeOf(me, hubs ?? []) : [])
         : { saves: 0, hubs: 0, uncounted: 0 }
     const partly = useMemo(() => partlyReported(hubs ?? []), [hubs])
     const names = new Map(programs.list.map((p) => [p.id, p.displayName]))
@@ -234,7 +242,12 @@ const Refusals = () => {
                                             send.isLoading &&
                                             send.variables === g
                                         }
-                                        onClick={() => send.mutate(g)}
+                                        onClick={() =>
+                                            setConfirming({
+                                                group: g,
+                                                discard: false,
+                                            })
+                                        }
                                     >
                                         {i18n.t('Resend')}
                                     </Button>{' '}
@@ -242,7 +255,12 @@ const Refusals = () => {
                                         small
                                         destructive
                                         disabled={!me || discard.isLoading}
-                                        onClick={() => setConfirming(g)}
+                                        onClick={() =>
+                                            setConfirming({
+                                                group: g,
+                                                discard: true,
+                                            })
+                                        }
                                     >
                                         {i18n.t('Discard')}
                                     </Button>
@@ -337,17 +355,34 @@ const Refusals = () => {
             </div>
             {confirming && (
                 <Modal small onClose={() => setConfirming(null)}>
-                    <ModalTitle>{i18n.t('Discard refused saves')}</ModalTitle>
+                    <ModalTitle>
+                        {confirming.discard
+                            ? i18n.t('Discard refused saves')
+                            : i18n.t('Resend refused saves')}
+                    </ModalTitle>
                     <ModalContent>
                         <p>
-                            {i18n.t(
-                                "Each hub in your org units (for a superuser, every hub) throws away its {{- kind}} saves refused with {{- code}} in {{- program}}, and what they blocked. The values entered are not sent to central. Each hub keeps central's version of the record, or drops a record central never had. This cannot be undone from the app.",
-                                {
-                                    kind: confirming.kind,
-                                    code: confirming.code,
-                                    program: programName(confirming.program),
-                                }
-                            )}
+                            {confirming.discard
+                                ? i18n.t(
+                                      "Each hub in your org units (for a superuser, every hub) throws away its {{- kind}} saves refused with {{- code}} in {{- program}}, and what they blocked. The values entered are not sent to central. Each hub keeps central's version of the record, or drops a record central never had. This cannot be undone from the app.",
+                                      {
+                                          kind: confirming.group.kind,
+                                          code: confirming.group.code,
+                                          program: programName(
+                                              confirming.group.program
+                                          ),
+                                      }
+                                  )
+                                : i18n.t(
+                                      "Each hub in your org units (for a superuser, every hub) sends its {{- kind}} saves refused with {{- code}} in {{- program}} again at its next sync, and what they blocked, as their authors (or as the user given). Nothing is thrown away. Central's new answer stands; a save it refuses again shows up here as a fresh refusal.",
+                                      {
+                                          kind: confirming.group.kind,
+                                          code: confirming.group.code,
+                                          program: programName(
+                                              confirming.group.program
+                                          ),
+                                      }
+                                  )}
                         </p>
                         <p>
                             {i18n.t(
@@ -356,10 +391,15 @@ const Refusals = () => {
                             )}
                             {reach.uncounted > 0 &&
                                 ' ' +
-                                    i18n.t(
-                                        '{{- n}} more hubs in these org units have not reported all their refusals here (no report yet, or more groups than their report lists). Their saves of this group are thrown away too.',
-                                        { n: reach.uncounted }
-                                    )}
+                                    (confirming.discard
+                                        ? i18n.t(
+                                              '{{- n}} more hubs in these org units have not reported all their refusals here (no report yet, or more groups than their report lists). Their saves of this group are thrown away too.',
+                                              { n: reach.uncounted }
+                                          )
+                                        : i18n.t(
+                                              '{{- n}} more hubs in these org units have not reported all their refusals here (no report yet, or more groups than their report lists). Their saves of this group are sent again too.',
+                                              { n: reach.uncounted }
+                                          ))}
                         </p>
                     </ModalContent>
                     <ModalActions>
@@ -367,13 +407,27 @@ const Refusals = () => {
                             <Button onClick={() => setConfirming(null)}>
                                 {i18n.t('Cancel')}
                             </Button>
-                            <Button
-                                destructive
-                                loading={discard.isLoading}
-                                onClick={() => discard.mutate(confirming)}
-                            >
-                                {i18n.t('Discard')}
-                            </Button>
+                            {confirming.discard ? (
+                                <Button
+                                    destructive
+                                    loading={discard.isLoading}
+                                    onClick={() =>
+                                        discard.mutate(confirming.group)
+                                    }
+                                >
+                                    {i18n.t('Discard')}
+                                </Button>
+                            ) : (
+                                <Button
+                                    primary
+                                    loading={send.isLoading}
+                                    onClick={() =>
+                                        send.mutate(confirming.group)
+                                    }
+                                >
+                                    {i18n.t('Resend')}
+                                </Button>
+                            )}
                         </ButtonStrip>
                     </ModalActions>
                 </Modal>
