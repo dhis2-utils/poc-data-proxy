@@ -44,7 +44,7 @@ func Status(h *core.Hub) map[string]any {
 		"uptimeSeconds": int(time.Since(h.Started).Seconds()), "lastPush": lastPush, "lastPull": lastPull,
 		"lastSync": lastSync, "lastError": lastErr, "pending": h.Store.CountObjects(store.SyncPending),
 		"rejected": h.Store.CountObjects(store.SyncRejected), "pendingOutbox": h.Store.CountOutbox(store.OutboxPending),
-		"stuckOutbox": h.StuckOutbox(), "retired": h.Retired(),
+		"stuckOutbox": h.StuckOutbox(), "retired": h.Retired(), "superseded": h.Store.CountObjects(store.SyncSuperseded),
 		"issues": h.Store.CountIssues(), "diskFreeBytes": diskfree.Free(h.Cfg.DataDir), "lastUpgrade": upgrade,
 		"needsUpgrade": h.API() == nil && h.ServerVersion() != "", "time": time.Now().UTC().Format(time.RFC3339),
 		// Whose token the hub's housekeeping uses, so the Facility Hub app can list the
@@ -95,11 +95,14 @@ func refusedCounts(h *core.Hub) ([]map[string]any, int) {
 	if err != nil || len(issues) == 0 {
 		return nil, 0
 	}
-	counts := map[[3]string]int{}
+	counts, superseded := map[[3]string]int{}, map[[3]string]int{}
 	for _, is := range issues {
-		program, codes, _ := issueGroup(h, is)
+		program, codes, _, sup := issueGroup(h, is)
 		for c := range codes {
 			counts[[3]string{is.Kind, program, c}]++
+			if sup {
+				superseded[[3]string{is.Kind, program, c}]++
+			}
 		}
 	}
 	keys := slices.SortedFunc(maps.Keys(counts), func(a, b [3]string) int {
@@ -107,7 +110,13 @@ func refusedCounts(h *core.Hub) ([]map[string]any, int) {
 	})
 	var out []map[string]any
 	for _, k := range keys[:min(len(keys), 100)] {
-		out = append(out, map[string]any{"kind": k[0], "program": k[1], "code": k[2], "count": counts[k]})
+		g := map[string]any{"kind": k[0], "program": k[1], "code": k[2], "count": counts[k]}
+		if superseded[k] > 0 {
+			// Of count, those whose record central changed after the refusal: the hub
+			// shows central's version, and the refused change waits for Resend or Discard.
+			g["superseded"] = superseded[k]
+		}
+		out = append(out, g)
 	}
 	return out, len(keys)
 }

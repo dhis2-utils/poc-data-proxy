@@ -421,12 +421,16 @@ export const HubPage = () => {
                                         ].join(', ')}
                                     </DataTableCell>
                                     <DataTableCell>
-                                        {closersOf(
-                                            issueCodes(is),
-                                            is.error?.message
-                                        )
-                                            .map(closerText)
-                                            .join('; ')}
+                                        {is.superseded
+                                            ? i18n.t(
+                                                  "Superseded. Central changed the record since, and the hub shows central's version. Resend its group on the Refusals page, or discard it."
+                                              )
+                                            : closersOf(
+                                                  issueCodes(is),
+                                                  is.error?.message
+                                              )
+                                                  .map(closerText)
+                                                  .join('; ')}
                                     </DataTableCell>
                                     <DataTableCell>
                                         {is.error?.message}

@@ -9,6 +9,11 @@ export type RefusedGroup = {
     program: string
     code: string
     count: number
+    /**
+     * Of count, the saves whose record central changed after the refusal: the hub shows
+     * central's version, and the save waits for Resend or Discard (review R-22).
+     */
+    superseded?: number
 }
 
 /** A group added up across hubs: its refused saves, and the hubs that have some. */
@@ -49,6 +54,9 @@ export const groupRefusals = (hubs: HubRow[]): RefusalRow[] => {
                 hubs: [],
             }
             row.count += g.count ?? 0
+            if (g.superseded) {
+                row.superseded = (row.superseded ?? 0) + g.superseded
+            }
             if (!row.hubs.includes(h.id)) {
                 row.hubs.push(h.id)
             }

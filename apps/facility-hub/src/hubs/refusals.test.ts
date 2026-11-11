@@ -128,6 +128,36 @@ describe('groupRefusals', () => {
     })
 })
 
+describe('groupRefusals, superseded', () => {
+    it('adds up the superseded saves of a group, and leaves the field out without any', () => {
+        const rows = groupRefusals([
+            hub('hub-a', {
+                heartbeat: {
+                    refused: [
+                        {
+                            ...g('trackedEntity', '', 'E1064', 3),
+                            superseded: 1,
+                        },
+                    ],
+                },
+            }),
+            hub('hub-b', {
+                heartbeat: {
+                    refused: [
+                        {
+                            ...g('trackedEntity', '', 'E1064', 2),
+                            superseded: 2,
+                        },
+                        g('event', 'P1', 'E1300', 1),
+                    ],
+                },
+            }),
+        ])
+        expect(rows[0]).toMatchObject({ count: 5, superseded: 3 })
+        expect(rows[1]).not.toHaveProperty('superseded')
+    })
+})
+
 const retry = (n: number): Retry => ({
     id: `r${n}`,
     kind: 'event',

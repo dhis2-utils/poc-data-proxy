@@ -887,9 +887,10 @@ func TestSetupNeedsHubOwnersGroup(t *testing.T) {
 }
 
 // A refused object that changes on central afterwards takes central's version, and
-// the issue is then resolved; one central has not changed since keeps the hub's
-// refused copy (docs/FINDINGS.md, "Refused changes").
-func TestCentralNewerReplacesRefused(t *testing.T) {
+// the refusal stays open as superseded until a hub manager resends or discards it
+// (review R-22); one central has not changed since keeps the hub's refused copy
+// (docs/FINDINGS.md, "Refused changes").
+func TestCentralNewerSupersedesRefused(t *testing.T) {
 	e := newEnv(t)
 	e.setup()
 	a := e.web("nurse_a")
@@ -903,14 +904,14 @@ func TestCentralNewerReplacesRefused(t *testing.T) {
 		t.Fatal("not refused")
 	}
 	time.Sleep(1100 * time.Millisecond)                                    // a change after the refusal, in central's whole seconds
-	e.central.Seed("DupTe000081", "DupEn000081", "Fixed", "NAT-8282", nil) // fixed on central
+	e.central.Seed("DupTe000081", "DupEn000081", "Fixed", "NAT-8282", nil) // changed on central
 	e.sync()
 	o := e.app.Hub.Index.Get("DupTe000081")
-	if o == nil || o.SyncState != store.SyncSynced || !strings.Contains(fmt.Sprint(e.app.Hub.Index.Full(o)), "Fixed") {
+	if o == nil || o.SyncState != store.SyncSuperseded || !strings.Contains(fmt.Sprint(e.app.Hub.Index.Full(o)), "Fixed") {
 		t.Fatalf("central's newer version did not replace the refused copy: %+v", o)
 	}
-	if r, _ := json.Marshal(e.central.DataStoreValue("facility-hub-status", e.app.Hub.HubID())["refused"]); string(r) != "null" {
-		t.Errorf("still counted as refused: %s", r)
+	if r, _ := json.Marshal(e.central.DataStoreValue("facility-hub-status", e.app.Hub.HubID())["refused"]); !strings.Contains(string(r), `"superseded":1`) {
+		t.Errorf("not counted as superseded: %s", r)
 	}
 }
 

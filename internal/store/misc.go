@@ -249,9 +249,10 @@ func (s *Store) RecordHasRejected(record string) bool {
 }
 
 // sqlIssueOpen is the condition that the issue aliased i is still open; its arguments
-// are OutboxAggregate, OutboxRejected, OutboxPartial, SyncRejected.
+// are OutboxAggregate, OutboxRejected, OutboxPartial, SyncRejected. A superseded object's
+// refusal is open too: it waits for a hub manager.
 const sqlIssueOpen = `((i.kind = ? AND EXISTS (SELECT 1 FROM outbox o WHERE o.seq = i.outbox_seq AND o.state IN (?, ?)))
- OR EXISTS (SELECT 1 FROM objects ob WHERE ob.uid = i.object_uid AND ob.sync_state = ?))`
+ OR EXISTS (SELECT 1 FROM objects ob WHERE ob.uid = i.object_uid AND ob.sync_state IN (?, '` + SyncSuperseded + `')))`
 
 // ResolvedIssues lists the issues no longer open, and whether each was reported to
 // central: they are removed there and here, so both hold what is stuck now.
@@ -302,6 +303,13 @@ func (s *Store) RefusedAt(uid string) string {
 	var at sql.NullString
 	s.DB().QueryRow(`SELECT max(created_at) FROM issues WHERE object_uid = ?`, uid).Scan(&at)
 	return at.String
+}
+
+// ReportIssuesAgain has the object's issues reported to central again: its refusal was
+// superseded, and the issue on central says so.
+func (s *Store) ReportIssuesAgain(tx *sql.Tx, uid string) error {
+	_, err := tx.Exec(`UPDATE issues SET reported_central_at='' WHERE object_uid=?`, uid)
+	return err
 }
 
 func (s *Store) MarkIssueReported(id int64) error {

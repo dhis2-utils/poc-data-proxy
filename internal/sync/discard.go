@@ -31,7 +31,9 @@ const discardAction = "discard"
 // now, in central's time, so that download includes it. The refused outbox entries
 // are marked discarded, and their issues close at the next report. An aggregate edit's
 // entry is marked discarded only: the stored form left the edit out at the refusal.
-// It returns why some saves were not discarded ("" when all were).
+// A superseded save (central's version changed after the refusal) keeps the copy it
+// has, which is central's. It returns why some saves were not discarded ("" when all
+// were).
 func (w *Worker) discard(ctx context.Context, issues []*store.Issue) (string, error) {
 	h := w.H
 	var seqs []int64
@@ -47,8 +49,18 @@ func (w *Worker) discard(ctx context.Context, issues []*store.Issue) (string, er
 	var done []string
 	byAuthor := map[int64][]*tracker.Obj{}
 	for uid, a := range author {
-		if o := h.Index.Get(uid); o != nil && o.SyncState == store.SyncRejected {
+		o := h.Index.Get(uid)
+		switch {
+		case o == nil:
+		case o.SyncState == store.SyncRejected:
 			byAuthor[a] = append(byAuthor[a], o)
+		case o.SyncState == store.SyncSuperseded:
+			// The hub's copy is central's version already: only the refusal closes.
+			if err := h.Store.SetSyncState(h.Store.DB(), uid, store.SyncSynced); err != nil {
+				return "", err
+			}
+			done = append(done, uid)
+			slog.Info("refused save discarded", "uid", uid, "kind", o.Kind, "superseded", true)
 		}
 	}
 	for _, a := range slices.Sorted(maps.Keys(byAuthor)) {
@@ -143,7 +155,7 @@ func (w *Worker) closeMoot(ctx context.Context) error {
 	byAuthor := map[int64][]*tracker.Obj{}
 	seen := map[string]bool{}
 	for _, is := range moot { // newest first: an object goes with its newest refusal's author
-		if o := h.Index.Get(is.ObjectUID); o != nil && o.SyncState == store.SyncRejected && !seen[o.UID] {
+		if o := h.Index.Get(is.ObjectUID); o != nil && (o.SyncState == store.SyncRejected || o.SyncState == store.SyncSuperseded) && !seen[o.UID] {
 			seen[o.UID] = true
 			byAuthor[is.UserID] = append(byAuthor[is.UserID], o)
 		}

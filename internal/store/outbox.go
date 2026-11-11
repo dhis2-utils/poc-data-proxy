@@ -287,7 +287,8 @@ func (s *Store) Requeue(uids []string, seqs []int64, userID int64) (int, error) 
 	var n int
 	err := s.Tx(context.Background(), func(tx *sql.Tx) error {
 		for _, uid := range uids {
-			if _, err := tx.Exec(`UPDATE objects SET sync_state=? WHERE uid=? AND sync_state=?`, SyncPending, uid, SyncRejected); err != nil {
+			if _, err := tx.Exec(`UPDATE objects SET sync_state=? WHERE uid=? AND sync_state IN (?,?)`, SyncPending, uid, SyncRejected,
+				SyncSuperseded); err != nil {
 				return err
 			}
 			res, err := tx.Exec(`UPDATE outbox SET state=?, failing_since='', user_id=coalesce(?, user_id) WHERE state IN (?,?) AND seq IN (SELECT seq FROM outbox_objects WHERE uid=?)`,
@@ -321,7 +322,7 @@ func (s *Store) DiscardOutbox(uids []string, seqs []int64) (int, error) {
 		mark := func(which string, arg any) error {
 			res, err := tx.Exec(`UPDATE outbox SET state=?, sent_at=? WHERE state IN (?,?) AND `+which+`
  AND NOT EXISTS (SELECT 1 FROM outbox_objects oo JOIN objects ob ON ob.uid = oo.uid
- WHERE oo.seq = outbox.seq AND ob.sync_state = ?)`, OutboxDiscarded, Now(), OutboxRejected, OutboxPartial, arg, SyncRejected)
+ WHERE oo.seq = outbox.seq AND ob.sync_state IN (?, '`+SyncSuperseded+`'))`, OutboxDiscarded, Now(), OutboxRejected, OutboxPartial, arg, SyncRejected)
 			if err != nil {
 				return err
 			}

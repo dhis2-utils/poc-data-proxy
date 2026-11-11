@@ -321,14 +321,22 @@ func (w *Worker) ReportIssues(ctx context.Context) error {
 			"kind": is.Kind, "outboxSeq": is.OutboxSeq, "error": errBody, "createdAt": is.CreatedAt}
 		// An enrollment's or event's person ("" for an event programme's event): the app's
 		// link to the record in Capture needs it to tell the two kinds of event apart.
-		if is.Kind == store.KindEnrollment || is.Kind == store.KindEvent {
-			if o, _ := h.Store.GetObject(is.ObjectUID); o != nil {
-				payload["trackedEntity"] = o.TE
-			}
+		o, _ := h.Store.GetObject(is.ObjectUID)
+		if o != nil && (is.Kind == store.KindEnrollment || is.Kind == store.KindEvent) {
+			payload["trackedEntity"] = o.TE
+		}
+		if o != nil && o.SyncState == store.SyncSuperseded {
+			// Central's version changed after the refusal: the hub shows central's, and
+			// the refused change waits for a hub manager to resend or discard it.
+			payload["superseded"] = true
 		}
 		key := fmt.Sprintf("%s-%d", h.HubID(), is.ID)
 		err := h.Central.JSON(ctx, "POST", "/api/dataStore/facility-hub-issues/"+key, payload, h.HubAuth(), nil)
-		if err != nil && central.Status(err) != http.StatusConflict {
+		if central.Status(err) == http.StatusConflict {
+			// Reported before: reported again because it was superseded since.
+			err = h.Central.JSON(ctx, "PUT", "/api/dataStore/facility-hub-issues/"+key, payload, h.HubAuth(), nil)
+		}
+		if err != nil {
 			return fmt.Errorf("report issue %d: %w", is.ID, err)
 		}
 		h.Store.MarkIssueReported(is.ID)
@@ -337,7 +345,7 @@ func (w *Worker) ReportIssues(ctx context.Context) error {
 }
 
 // clearResolvedIssues removes issues that are no longer open (sent again and accepted,
-// or replaced by central's newer version) from central's dataStore and from the hub:
+// or discarded) from central's dataStore and from the hub:
 // facility-hub-issues then holds what is stuck now, not every refusal ever, and stays
 // usable (docs/FINDINGS.md, dataStore measured).
 func (w *Worker) clearResolvedIssues(ctx context.Context) error {
@@ -409,7 +417,7 @@ func (w *Worker) sentValues(is *store.Issue) []string {
 // issueGroup returns what a refusal is grouped by, in the heartbeat and for retries:
 // the object's programme and central's error codes ("none" when it was blocked by an
 // earlier refusal, or central gave no report), and the object that blocked it.
-func issueGroup(h *core.Hub, is *store.Issue) (program string, codes map[string]bool, blockedBy string) {
+func issueGroup(h *core.Hub, is *store.Issue) (program string, codes map[string]bool, blockedBy string, superseded bool) {
 	var e struct {
 		Message string `json:"message"`
 		Reports []struct {
@@ -418,7 +426,7 @@ func issueGroup(h *core.Hub, is *store.Issue) (program string, codes map[string]
 	}
 	json.Unmarshal(is.Error, &e)
 	if o := h.Index.Get(is.ObjectUID); o != nil {
-		program = o.Program
+		program, superseded = o.Program, o.SyncState == store.SyncSuperseded
 	}
 	codes = map[string]bool{}
 	for _, r := range e.Reports {
@@ -431,7 +439,7 @@ func issueGroup(h *core.Hub, is *store.Issue) (program string, codes map[string]
 	if blockedBy == e.Message {
 		blockedBy = ""
 	}
-	return program, codes, blockedBy
+	return program, codes, blockedBy, superseded
 }
 
 // refusalGroup is what an open issue is grouped by (issueGroup).
@@ -456,7 +464,7 @@ func (w *Worker) openRefusals() (*refusals, error) {
 	}
 	r := &refusals{issues: issues, groups: map[int64]refusalGroup{}, blocked: map[string][]*store.Issue{}}
 	for _, is := range issues {
-		program, codes, by := issueGroup(h, is)
+		program, codes, by, _ := issueGroup(h, is)
 		if by != "" {
 			r.blocked[by] = append(r.blocked[by], is)
 		} else if o := h.Index.Get(is.ObjectUID); codes["E5000"] && o != nil {

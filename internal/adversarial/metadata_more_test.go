@@ -602,7 +602,7 @@ func (s *scene) refusal(uid string) (bool, string) {
 	obj := s.App.Hub.Index.Get(uid)
 	for _, is := range issues {
 		if is.ObjectUID == uid {
-			return obj != nil && obj.SyncState == store.SyncRejected, string(is.Error)
+			return obj != nil && (obj.SyncState == store.SyncRejected || obj.SyncState == store.SyncSuperseded), string(is.Error)
 		}
 	}
 	return false, ""

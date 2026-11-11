@@ -17,6 +17,8 @@ const (
 	ClosedByAuthor  = "Fixed by the author"
 	ClosedOnCentral = "Fixed on central"
 	ClosedByNobody  = "Fixed by nobody"
+	// A refusal superseded by a later change on central (store.SyncSuperseded).
+	ClosedByManager = "Central has changed this record since; the hub shows central's version. A hub manager resends or discards this change"
 )
 
 var (
@@ -161,6 +163,9 @@ func (u *UI) ownRefusals(userID int64) []*ownRefusal {
 			r.ValuesGone = true
 		}
 		r.Closes = closedBy(r.Codes)
+		if o := h.Index.Get(is.ObjectUID); o != nil && o.SyncState == store.SyncSuperseded {
+			r.Closes = ClosedByManager
+		}
 		if r.Closes != ClosedByAuthor || r.WaitsFor != "" {
 			r.Capture = ""
 		}

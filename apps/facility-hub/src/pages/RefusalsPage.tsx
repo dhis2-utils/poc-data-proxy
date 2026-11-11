@@ -126,6 +126,9 @@ const Refusals = () => {
                 )}{' '}
                 {i18n.t(
                     "When central was changed on purpose and the waiting saves do not fit (a new rule, a closed period, a duplicate), Discard asks every hub to throw that group away, with what it blocked. Each hub then keeps central's version of the record, or drops a record central never had. Hubs keep a discarded save for 30 days."
+                )}{' '}
+                {i18n.t(
+                    "A superseded save is one whose record central changed after the refusal. The hub shows central's version, and the refused save waits until it is resent (on top of central's version) or discarded."
                 )}
             </div>
             {partly.length > 0 && (
@@ -187,7 +190,17 @@ const Refusals = () => {
                                     {programName(g.program)}
                                 </DataTableCell>
                                 <DataTableCell>{g.code}</DataTableCell>
-                                <DataTableCell>{g.count}</DataTableCell>
+                                <DataTableCell>
+                                    {g.count}
+                                    {g.superseded ? (
+                                        <div className={styles.muted}>
+                                            {i18n.t(
+                                                '{{- n}} superseded (central changed the record since)',
+                                                { n: g.superseded }
+                                            )}
+                                        </div>
+                                    ) : null}
+                                </DataTableCell>
                                 <DataTableCell>{g.hubs.length}</DataTableCell>
                                 <DataTableCell>
                                     {lastFor(g) ? when(lastFor(g)) : '—'}

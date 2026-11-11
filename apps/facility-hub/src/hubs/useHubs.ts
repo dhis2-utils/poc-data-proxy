@@ -122,6 +122,11 @@ export type Issue = {
     /** An enrollment's or event's person; "" for an event programme's event. */
     trackedEntity?: string
     createdAt?: string
+    /**
+     * Central changed the record after the refusal: the hub shows central's version,
+     * and the change waits for a manager to resend or discard it.
+     */
+    superseded?: boolean
     error?: {
         message?: string
         errorReports?: { errorCode?: string; message?: string }[]

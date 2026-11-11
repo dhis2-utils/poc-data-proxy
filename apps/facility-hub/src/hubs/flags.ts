@@ -34,7 +34,14 @@ export type Heartbeat = {
     needsUpgrade?: boolean
     /** Refused saves by kind, programme ("" for none) and error code: at most 100 groups. */
     refused?:
-        | { kind: string; program: string; code: string; count: number }[]
+        | {
+              kind: string
+              program: string
+              code: string
+              count: number
+              /** Of count, those whose record central changed after the refusal. */
+              superseded?: number
+          }[]
         | null
     /** How many such groups there are in all. */
     refusedGroups?: number

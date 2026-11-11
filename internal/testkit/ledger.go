@@ -154,14 +154,14 @@ func (l *Ledger) Check() []Line {
 				ln.Outcome = Closed
 			} else if l.central(s) != nil {
 				ln.Outcome = OnCentral
-			} else if obj != nil && obj.SyncState == store.SyncRejected && open[s.UID] != "" {
+			} else if obj != nil && (obj.SyncState == store.SyncRejected || obj.SyncState == store.SyncSuperseded) && open[s.UID] != "" {
 				ln.Outcome = RefusedKept
 			} else if obj != nil && obj.SyncState != store.SyncSynced {
 				ln.Outcome = Waiting
 			} else {
 				ln.Outcome = Lost
 			}
-		} else if obj != nil && obj.SyncState == store.SyncRejected && open[s.UID] != "" {
+		} else if obj != nil && (obj.SyncState == store.SyncRejected || obj.SyncState == store.SyncSuperseded) && open[s.UID] != "" {
 			// Central may hold an earlier version: this save is the one refused.
 			ln.Outcome, ln.Detail = RefusedKept, open[s.UID]
 		} else if l.closed(s, obj, open) {

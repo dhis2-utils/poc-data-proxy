@@ -23,6 +23,10 @@ const (
 	SyncSynced   = "synced"
 	SyncPending  = "pending"
 	SyncRejected = "rejected"
+	// SyncSuperseded: a refused object whose version on central changed after the
+	// refusal. The hub's copy follows central's, and the refusal stays open, with its
+	// values in the outbox entry, until a hub manager resends or discards it (review R-22).
+	SyncSuperseded = "superseded"
 )
 
 // Object is one stored tracker object. Payload is the decrypted JSON of the object

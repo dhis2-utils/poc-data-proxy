@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-11-11T11:23:18.874Z\n"
-"PO-Revision-Date: 2026-11-11T11:23:18.874Z\n"
+"POT-Creation-Date: 2026-11-11T12:30:06.042Z\n"
+"PO-Revision-Date: 2026-11-11T12:30:06.043Z\n"
 
 msgid "Your session has expired. Reload the page and log in again."
 msgstr "Your session has expired. Reload the page and log in again."
@@ -643,6 +643,13 @@ msgstr "Message"
 msgid "Open in Capture"
 msgstr "Open in Capture"
 
+msgid ""
+"Superseded. Central changed the record since, and the hub shows central's "
+"version. Resend its group on the Refusals page, or discard it."
+msgstr ""
+"Superseded. Central changed the record since, and the hub shows central's "
+"version. Resend its group on the Refusals page, or discard it."
+
 msgid "working"
 msgstr "working"
 
@@ -817,6 +824,15 @@ msgstr ""
 "the record, or drops a record central never had. Hubs keep a discarded save "
 "for 30 days."
 
+msgid ""
+"A superseded save is one whose record central changed after the refusal. "
+"The hub shows central's version, and the refused save waits until it is "
+"resent (on top of central's version) or discarded."
+msgstr ""
+"A superseded save is one whose record central changed after the refusal. "
+"The hub shows central's version, and the refused save waits until it is "
+"resent (on top of central's version) or discarded."
+
 msgid "Not every group is counted"
 msgstr "Not every group is counted"
 
@@ -854,6 +870,9 @@ msgstr "Error code"
 
 msgid "Last resent"
 msgstr "Last resent"
+
+msgid "{{- n}} superseded (central changed the record since)"
+msgstr "{{- n}} superseded (central changed the record since)"
 
 msgid "Send as user"
 msgstr "Send as user"

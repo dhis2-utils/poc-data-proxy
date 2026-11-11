@@ -33,8 +33,9 @@ func (h *Hub) ReplaceDiscarded(userID int64, payload tracker.M, discarded map[st
 }
 
 // UpsertSaved stores what central persisted of a save sent through the hub online. It
-// replaces the hub's refused copies of those objects: central took a newer version,
-// as at a pull (changedSinceRefused), and the refusal closes. Their refused children
+// replaces the hub's refused copies of those objects: central took a newer version
+// from this save, and the refusal closes. A superseded refusal stays open: it waits
+// for a hub manager (changedSinceRefused). Their refused children
 // (an enrollment and events that waited for a refused person) are sent again, as a
 // retry from the Facility Hub app sends them.
 func (h *Hub) UpsertSaved(userID int64, payload tracker.M, persisted map[string]bool) ([]string, error) {
@@ -116,6 +117,7 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 	}
 	stubbed := h.stubOld(items, get)
 	skipped := map[string]bool{}
+	var supersede []string // refused objects whose refusal central's version supersedes now
 	var objs []*tracker.Obj
 	for _, it := range items {
 		if !tracker.ValidUID(it.UID) {
@@ -190,6 +192,15 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 				batch[it.UID] = old
 				continue
 			}
+			if old.SyncState == store.SyncSuperseded || (old.SyncState == store.SyncRejected && !discarded[old.UID]) {
+				// Central's version changed after the refusal: the hub's copy follows it,
+				// and the refusal stays open, superseded, until a hub manager resends or
+				// discards it (review R-22).
+				o.SyncState = store.SyncSuperseded
+				if old.SyncState == store.SyncRejected {
+					supersede = append(supersede, old.UID)
+				}
+			}
 			if old.Stub || it.Data["hubStub"] == true || old.SyncState == store.SyncRejected {
 				// A stub never merges: merging would keep the old fields or the stub mark.
 				// Nor does central's version of a refused object: the local data is what
@@ -207,7 +218,7 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 					// Online reads may name fields, so they merge.
 					o.Data["dataValues"] = dv
 				}
-				if old.SyncState == store.SyncSynced && old.OwnerOrgUnit == o.OwnerOrgUnit && reflect.DeepEqual(o.Data, full) {
+				if old.SyncState == o.SyncState && old.OwnerOrgUnit == o.OwnerOrgUnit && reflect.DeepEqual(o.Data, full) {
 					// Nothing new: only the user's visibility. Rewriting every object of
 					// every online read wrote about 250 MB a minute on the Pis
 					// (docs/PERFORMANCE.md, History, 2026-10-27).
@@ -262,6 +273,13 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 			}
 			if err := h.Store.PutObject(tx, o.ToStore()); err != nil {
 				return err
+			}
+		}
+		for _, uid := range supersede {
+			if batch[uid].Kind != "visibility-only" {
+				if err := h.Store.ReportIssuesAgain(tx, uid); err != nil {
+					return err
+				}
 			}
 		}
 		return vc.Write(h.Store, tx)
@@ -554,11 +572,11 @@ func (h *Hub) referenced(uid string, get func(string) *tracker.Obj) bool {
 
 // changedSinceRefused reports whether central's version of an object the hub holds as
 // refused changed after central refused the hub's: someone fixed or changed it on
-// central, and central's version wins, which resolves the issue. One second of margin:
-// the refusal time comes from central's Date header, in whole seconds. If an
-// unrelated change on central comes after the refusal, the refused values disappear
-// from offline reads too; they stay in the refused outbox entry and the issue
-// (docs/FINDINGS.md, "Refused changes").
+// central, and the hub's copy takes central's version. The refusal stays open as
+// superseded: the change may be unrelated, and the refused values, kept in the outbox
+// entry, wait for a hub manager to resend or discard them (docs/FINDINGS.md, "Refused
+// changes"). One second of margin: the refusal time comes from central's Date header,
+// in whole seconds.
 func (h *Hub) changedSinceRefused(uid string, data tracker.M) bool {
 	at, err := time.Parse(time.RFC3339Nano, h.Store.RefusedAt(uid))
 	if err != nil {
