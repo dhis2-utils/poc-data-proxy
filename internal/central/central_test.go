@@ -103,8 +103,11 @@ func TestProbeCadenceFollowsTheState(t *testing.T) {
 	down = true
 	mu.Unlock()
 	m.Probe(context.Background(), srv.URL) // failure 1: still online
-	if d := m.nextDelay(); d != 2*time.Second*probeOnlineEvery {
-		t.Errorf("after one failure (still online): nextDelay %s, want 8s", d)
+	if !m.Online() {
+		t.Fatal("offline after one failure")
+	}
+	if d := m.nextDelay(); d != 2*time.Second {
+		t.Errorf("after one failure (still online): nextDelay %s, want the interval 2s", d)
 	}
 	m.Probe(context.Background(), srv.URL) // failure 2: flips offline
 	if m.Online() {
@@ -159,5 +162,62 @@ func TestTransportErrorOmitsQuery(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "Amina") || !strings.Contains(err.Error(), "/api/dataEntry/dataValues") {
 		t.Errorf("error text: %v", err)
+	}
+}
+
+// Review R-21: a request to central that times out asks for a probe now, and the
+// probes decide. A slow request while central answers its pings leaves the hub online;
+// a real outage still takes it offline, by the probes' rule (two failures), within
+// about one interval of the failed request rather than the online cadence.
+func TestFailedRequestAsksForAProbe(t *testing.T) {
+	var mu sync.Mutex
+	pings := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/system/ping" {
+			mu.Lock()
+			pings++
+			mu.Unlock()
+			w.Write([]byte("pong"))
+			return
+		}
+		time.Sleep(500 * time.Millisecond) // a heavy analytics query
+	}))
+	defer srv.Close()
+	pingCount := func() int { mu.Lock(); defer mu.Unlock(); return pings }
+	const interval = time.Second // online cadence 4 s
+	m := NewMonitor(interval, time.Second)
+	c := NewClient(srv.URL, m)
+	c.HTTP.Timeout = 100 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.Run(ctx, c.BaseURL)
+	waitFor := func(what string, within time.Duration, ok func() bool) {
+		t.Helper()
+		for end := time.Now().Add(within); !ok(); time.Sleep(10 * time.Millisecond) {
+			if time.Now().After(end) {
+				t.Fatalf("not %s within %s", what, within)
+			}
+		}
+	}
+	waitFor("online", 2*time.Second, m.Online)
+	before := pingCount()
+
+	if _, err := c.Do(context.Background(), "GET", "/api/analytics", nil, Auth{}, nil); !IsNetwork(err) {
+		t.Fatalf("slow request: got %v, want a timeout", err)
+	}
+	waitFor("probed after the slow request", 2*time.Second, func() bool { return pingCount() > before })
+	time.Sleep(interval + 200*time.Millisecond) // past a second probe, had the first failed
+	if !m.Online() {
+		t.Fatal("a slow request took the hub offline while central answered its pings")
+	}
+
+	srv.Close() // the outage: nothing answers
+	start := time.Now()
+	if _, err := c.Do(context.Background(), "GET", "/api/x", nil, Auth{}, nil); !IsNetwork(err) {
+		t.Fatalf("during the outage: got %v, want a network error", err)
+	}
+	waitFor("offline after an outage", interval+time.Second, func() bool { return !m.Online() })
+	if d := time.Since(start); d < interval/2 {
+		t.Errorf("offline after %s: one failed probe switched it, not two", d)
 	}
 }

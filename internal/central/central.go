@@ -147,8 +147,8 @@ var ErrNetwork = errors.New("central unreachable")
 // IsNetwork reports whether err means central could not be reached.
 func IsNetwork(err error) bool { return errors.Is(err, ErrNetwork) }
 
-// Do sends a request. pathAndQuery starts with "/". A network error marks the hub
-// offline immediately (spec 5.2) and is returned wrapped in ErrNetwork.
+// Do sends a request. pathAndQuery starts with "/". A network error asks the monitor
+// for a probe now (spec 5.2) and is returned wrapped in ErrNetwork.
 func (c *Client) Do(ctx context.Context, method, pathAndQuery string, body []byte, auth Auth, hdr http.Header) (*http.Response, error) {
 	base := c.BaseURL()
 	if c.Monitor.ForcedOffline() {
@@ -323,10 +323,12 @@ type Monitor struct {
 	Timeout  time.Duration
 	// Forced, when set, pins the state (tests and the "cut the uplink" demo switch).
 	forced *bool
+	// probeNow wakes Run for a probe out of turn: a request to central failed.
+	probeNow chan struct{}
 }
 
 func NewMonitor(interval, timeout time.Duration) *Monitor {
-	return &Monitor{Interval: interval, Timeout: timeout}
+	return &Monitor{Interval: interval, Timeout: timeout, probeNow: make(chan struct{}, 1)}
 }
 
 func (m *Monitor) Online() bool {
@@ -363,9 +365,23 @@ func (m *Monitor) set(online bool) {
 	}
 }
 
-// ReportFailure switches to offline immediately (any failed upstream request).
+// ReportFailure asks for a probe now: a request to central failed (network error or
+// timeout). The probes decide, by their usual rule, whether central is down: one slow
+// request, such as a heavy analytics query, does not take the whole hub offline
+// (review R-21).
 func (m *Monitor) ReportFailure(err error) {
 	slog.Warn("upstream request failed", "err", err)
+	select {
+	case m.probeNow <- struct{}{}:
+	default: // a probe is already asked for
+	}
+}
+
+// ReportNotCentral switches to offline at once: something other than central answered
+// a request (a captive portal or a proxy's error page, FINDINGS 22). Its answers must
+// not be taken for central's until a probe reaches central again.
+func (m *Monitor) ReportNotCentral(err error) {
+	slog.Warn("upstream request answered by something other than central", "err", err)
 	m.mu.Lock()
 	m.failures = 2
 	m.mu.Unlock()
@@ -543,6 +559,9 @@ func (m *Monitor) Run(ctx context.Context, baseURL func() string) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-m.probeNow:
+			m.Probe(ctx, baseURL())
+			t.Reset(m.nextDelay()) // no stale tick to drain since Go 1.23
 		case <-t.C:
 			m.Probe(ctx, baseURL())
 			t.Reset(m.nextDelay())
@@ -552,11 +571,13 @@ func (m *Monitor) Run(ctx context.Context, baseURL func() string) {
 
 // nextDelay is the wait after a probe: Interval * probeOnlineEvery while online, else
 // Interval. A forced-offline hub (the admin switch) still probes at Interval: cheap,
-// and recovery detection stays quick.
+// and recovery detection stays quick. After a failed probe the second one also comes
+// at Interval: a failing probe costs central nothing, and an outage that a failed
+// request reported takes the hub offline within one Interval.
 func (m *Monitor) nextDelay() time.Duration {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.online && (m.forced == nil || *m.forced) {
+	if m.online && m.failures == 0 && (m.forced == nil || *m.forced) {
 		return m.Interval * probeOnlineEvery
 	}
 	return m.Interval

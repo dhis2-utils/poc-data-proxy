@@ -82,7 +82,7 @@ func (p *Proxy) Forward(ctx context.Context, r *http.Request, body []byte, a cen
 	}
 	if why := notCentral(r, hdr, resp, p.H.Central.BaseURLs()); why != "" {
 		err := fmt.Errorf("%w: %s %s answered by something other than central (%s)", central.ErrNetwork, r.Method, r.URL.Path, why)
-		p.H.Central.Monitor.ReportFailure(err)
+		p.H.Central.Monitor.ReportNotCentral(err)
 		return nil, err
 	}
 	h := resp.Header.Clone()

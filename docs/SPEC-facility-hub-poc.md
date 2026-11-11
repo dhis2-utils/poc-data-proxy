@@ -98,7 +98,8 @@ Android: the user enters the hub's address as the server URL at login. The Andro
 
 - Probe `GET {central}/api/system/ping` every 15 seconds (configurable), with a 5-second timeout.
 - State is `online` or `offline`. Switch to `offline` after 2 failed probes and to `online` after 1 success.
-- Any failed upstream request (network error or timeout) sets the state to `offline` immediately.
+- A failed upstream request (network error or timeout) starts a probe at once; the probes decide by the rule above. A failed probe is followed by the next one after the probe interval, also while online, so an outage takes the hub offline within one interval of a failed request. One slow request, such as a heavy analytics query, does not take the hub offline; the request itself is answered offline (decided 11 November 2026, review R-21).
+- An answer to an `/api/` request that cannot be central's (a captive portal's page or redirect) sets the state to `offline` at once (FINDINGS.md, "Found by adversarial testing" 22).
 
 ## 6. Configuration and setup
 
