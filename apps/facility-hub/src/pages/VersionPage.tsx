@@ -69,8 +69,10 @@ const Version = () => {
     const [pilots, setPilots] = useState<string[]>([])
     // Next stage moves many hubs at once: asked again first.
     const [confirming, setConfirming] = useState(false)
+    // The form starts from the current choice. An empty one (as the app creates it
+    // when a manager opens it) leaves what the user typed meanwhile.
     useEffect(() => {
-        if (choice) {
+        if (choice?.version) {
             setVersion(choice.version)
             setPilots(choice.pilotHubs)
         }
