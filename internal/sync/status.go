@@ -54,6 +54,10 @@ func Status(h *core.Hub) map[string]any {
 		// The dataStore entries the hub acts on that any user may write: until a country
 		// protects them, anyone could retire the hub or announce a move (not followed).
 		"unprotected": h.Unprotected(),
+		// The groups central left out of the registry entry's sharing: the set-up account
+		// cannot see them, and without the hub accounts group the hub's account cannot
+		// write its entry.
+		"registryDropped": h.RegistryDropped(),
 		// The instructions on central the hub ignored: not signed for it (review R-07).
 		"unsigned": h.Unsigned(),
 		// What staff asked for offline that the hub could not answer ("needs connection":

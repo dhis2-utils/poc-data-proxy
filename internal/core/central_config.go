@@ -93,8 +93,10 @@ func (h *Hub) CheckProtection(ctx context.Context) {
 		if central.IsNetwork(err) {
 			return
 		}
-		if err == nil && o && path == RegistryPath(h.HubID()) {
-			o = !h.ProtectRegistry(ctx, h.HubAuth())
+		// Shared again too while central has dropped a group from it: once a superuser
+		// gives the hub owners read access to the group, sharing it again clears this.
+		if err == nil && path == RegistryPath(h.HubID()) && (o || h.Store.Meta(MetaRegistryDropped) != "") {
+			o = !h.ProtectRegistry(ctx, h.HubAuth()) && o
 		}
 		if err == nil && o {
 			open = append(open, strings.TrimPrefix(path, "/api/dataStore/"))
@@ -134,7 +136,41 @@ func (h *Hub) ProtectRegistry(ctx context.Context, auth central.Auth) bool {
 		slog.Warn("the hub's registry entry is not protected", "err", err)
 		return false
 	}
+	h.noteDroppedGroups(ctx, auth, acc.Owners, acc.Group, acc.Managers)
 	return true
+}
+
+// MetaRegistryDropped lists the groups central left out of the registry entry's
+// sharing, as last shared.
+const MetaRegistryDropped = "registry_dropped"
+
+// noteDroppedGroups reads the registry entry's sharing back: DHIS2 (2.42, 2.43) answers
+// 200 to a sharing that names a group the sender cannot see, and drops the group. Without
+// the hub accounts group the hub's own account could not write its entry.
+func (h *Hub) noteDroppedGroups(ctx context.Context, auth central.Auth, groups ...string) {
+	var meta struct {
+		Sharing struct {
+			UserGroups map[string]any `json:"userGroups"`
+		} `json:"sharing"`
+	}
+	if err := h.Central.JSON(ctx, "GET", RegistryPath(h.HubID())+"/metaData", nil, auth, &meta); err != nil {
+		return
+	}
+	var dropped []string
+	for _, g := range groups {
+		if _, ok := meta.Sharing.UserGroups[g]; g != "" && !ok {
+			dropped = append(dropped, g)
+		}
+	}
+	if len(dropped) > 0 {
+		slog.Warn("central dropped groups from this hub's registry sharing: the account that set the hub up cannot see them. A superuser must save the groups in the Facility Hub app's Settings", "groups", dropped)
+	}
+	h.Store.SetMeta(MetaRegistryDropped, strings.Join(dropped, " "))
+}
+
+// RegistryDropped is what noteDroppedGroups last found.
+func (h *Hub) RegistryDropped() []string {
+	return strings.Fields(h.Store.Meta(MetaRegistryDropped))
 }
 
 // Unprotected is what CheckProtection last found.

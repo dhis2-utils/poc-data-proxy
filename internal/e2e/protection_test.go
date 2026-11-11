@@ -90,6 +90,33 @@ func TestHubProtectsItsRegistryEntry(t *testing.T) {
 		}
 	})
 
+	// DHIS2 (2.42, 2.43) drops, with a 200, a group the account that shares cannot see.
+	// The hub says so, and shares the entry again once the group is visible.
+	t.Run("hub accounts group dropped", func(t *testing.T) {
+		e := newEnv(t)
+		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"accounts": json.RawMessage(accounts)}
+		protect(e, "facility-hub-admin", "accounts")
+		e.central.UnseenGroups = map[string]bool{"HubGrpAccts": true}
+		e.setup()
+		dropped := func() string {
+			return fmt.Sprint(e.central.DataStoreValue("facility-hub-status", e.app.Hub.HubID())["registryDropped"])
+		}
+		if got := dropped(); got != "[HubGrpAccts]" {
+			t.Errorf("heartbeat registryDropped %s, want [HubGrpAccts]", got)
+		}
+		a := e.web("hub_admin")
+		a.login()
+		if _, page := a.do("GET", "/hub/ui", nil); !strings.Contains(string(page), "Central dropped groups from this hub") {
+			t.Error("the admin page does not say central dropped the group")
+		}
+		// A superuser saves the groups in the app's Settings: the group becomes visible.
+		e.central.UnseenGroups = nil
+		e.sync()
+		if got := dropped(); got != "[]" {
+			t.Errorf("heartbeat registryDropped %s once the group is visible", got)
+		}
+	})
+
 	t.Run("no hub owners group named", func(t *testing.T) {
 		e := newEnv(t)
 		e.central.DataStore["facility-hub-admin"]["accounts"] = json.RawMessage(`{"group":"HubGrpAccts"}`)

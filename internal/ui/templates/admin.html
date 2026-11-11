@@ -24,6 +24,7 @@
 <a href="/hub/ui/endpoints">Endpoint log</a>
 </div>
 
+{{with .Heartbeat.registryDropped}}<div class="card"><h2>Central dropped groups from this hub's registry sharing</h2><p>Central left out <span class="mono">{{range $i, $k := .}}{{if $i}}, {{end}}{{$k}}{{end}}</span> when the hub shared its registry entry: the account that set the hub up cannot see these groups, and without the hub accounts group the hub cannot take up its own account. A superuser must save the groups in the Facility Hub app's Settings; the hub shares the entry again at its next heartbeat.</p></div>{{end}}
 {{with .Heartbeat.unprotected}}<div class="card"><h2>Central's hub settings are not protected</h2><p>Any user on central may write <span class="mono">{{range $i, $k := .}}{{if $i}}, {{end}}{{$k}}{{end}}</span>. The hub acts only on instructions signed for it, but takes "retired" in its registry entry, and before its approval the accounts settings, as written. Ask them to protect the hub's data store entries (deployment guide, "Protect the data store namespaces").</p></div>{{end}}
 
 {{with .Heartbeat.unsigned}}<div class="card"><h2>Instructions on central not signed for this hub</h2><p>The hub ignores <span class="mono">{{range $i, $k := .}}{{if $i}}, {{end}}{{$k}}{{end}}</span>: written without a valid code for this hub, or older than one it took. Ask the national team to save them again in the Facility Hub app.</p></div>{{end}}

@@ -167,7 +167,7 @@ Not for facilities. `macos/install.sh` runs the same hub on a Mac, so the core t
 ### On central, before the first hub
 
 1. The national team installs the Facility Hub app on central.
-2. A superuser names, in the app's Settings, the hub owners group, the hub accounts group and its role, and the hub managers group (section 6, "Protect the data store namespaces" and "The hub's own account"). A hub refuses set-up, and take-over, until a hub owners group is named: "A superuser must name the hub owners group in the Facility Hub app (Settings) first." It is left as it was.
+2. A superuser names, in the app's Settings, the hub owners group, the hub accounts group and its role, and the hub managers group (section 6, "Protect the data store namespaces" and "The hub's own account"). A hub refuses set-up, and take-over, until a hub owners group is named: "A superuser must name the hub owners group in the Facility Hub app (Settings) first." It is left as it was. Saving the groups also gives the hub owners and hub managers groups read access to the hub accounts group: a hub shares its registry entry with that group as whoever set it up, and DHIS2 (2.42, 2.43) silently drops a group the sender cannot see. A hub whose sharing lost a group says so on its page and in its heartbeat (`registryDropped`), and shares the entry again at each heartbeat until the group is kept.
 3. The national team or the districts add the facility focal points, and whoever else may set a hub up or take one over, to the hub owners group.
 4. Then the facilities set their hubs up (below).
 

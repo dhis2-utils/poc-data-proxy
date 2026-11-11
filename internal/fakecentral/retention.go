@@ -208,7 +208,7 @@ func (c *Central) addToGroup(w http.ResponseWriter, p string) {
 // shareEntry handles POST /api/sharing?type=dataStore&id=...: the entry becomes
 // readable by the listed users (and the superuser), and by all if its public access
 // says so.
-func (c *Central) shareEntry(w http.ResponseWriter, r *http.Request) {
+func (c *Central) shareEntry(w http.ResponseWriter, r *http.Request, u *User) {
 	var in struct {
 		Object struct {
 			PublicAccess      string                        `json:"publicAccess"`
@@ -225,13 +225,22 @@ func (c *Central) shareEntry(w http.ResponseWriter, r *http.Request) {
 	}
 	// A group's access goes to its members at each request, as on DHIS2: a user added
 	// to the group later has it too (sharedWith).
+	gs := map[string]any{}
 	for _, a := range in.Object.UserGroupAccesses {
+		if c.UnseenGroups[a.ID] && !slices.Contains(u.Groups, a.ID) {
+			continue
+		}
+		gs[a.ID] = map[string]any{"access": a.Access}
 		rs[a.ID] = rs[a.ID] || strings.HasPrefix(a.Access, "r")
 		ws[a.ID] = ws[a.ID] || strings.HasPrefix(a.Access, "rw")
 	}
 	if c.readers == nil {
 		c.readers, c.writers = map[string]map[string]bool{}, map[string]map[string]bool{}
 	}
+	if c.groupShares == nil {
+		c.groupShares = map[string]map[string]any{}
+	}
+	c.groupShares[r.URL.Query().Get("id")] = gs
 	c.readers[r.URL.Query().Get("id")] = rs
 	c.writers[r.URL.Query().Get("id")] = ws
 	if c.public == nil {

@@ -108,9 +108,13 @@ type Central struct {
 	writers           map[string]map[string]bool // dataStore entry id -> user UIDs it is shared with (write)
 	creators          map[string]string          // dataStore entry id -> username who created it
 	public            map[string]string          // dataStore entry id -> public access its sharing sets
+	groupShares       map[string]map[string]any  // dataStore entry id -> group -> {access}, as metaData shows it
 	// HubWriters, when set, are the only users who may write the facility-hub-*
 	// dataStore namespaces (protected by sharing, as DEPLOYMENT.md advises).
-	HubWriters   map[string]bool
+	HubWriters map[string]bool
+	// UnseenGroups are user groups only their members can see: a dataStore sharing by
+	// anyone else drops them and answers 200, as 2.42 and 2.43 do.
+	UnseenGroups map[string]bool
 	facilityPath string // MoveFacility
 	// OnlyEnrollOnce: the TB program allows one enrollment ever (central's E1016).
 	OnlyEnrollOnce bool
@@ -754,7 +758,7 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 	case p == "/api/sharing" && r.URL.Query().Get("type") == "apiToken":
 		c.shareToken(w, r, u)
 	case p == "/api/sharing" && r.URL.Query().Get("type") == "dataStore":
-		c.shareEntry(w, r)
+		c.shareEntry(w, r, u)
 	case strings.HasPrefix(p, "/api/dataStore/"):
 		c.dataStore(w, r, u)
 	case strings.HasPrefix(p, "/api/validation/dataSet/") || strings.HasPrefix(p, "/api/42/validation/dataSet/"):
@@ -1258,7 +1262,7 @@ func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
 		}
 		writeJSON(w, 200, map[string]any{"id": id, "namespace": ns, "key": key,
 			"createdBy": map[string]any{"username": c.creators[id]},
-			"sharing":   map[string]any{"owner": ownerUID, "public": pub}})
+			"sharing":   map[string]any{"owner": ownerUID, "public": pub, "userGroups": c.groupShares[id]}})
 		return
 	}
 	// Shared with some users only; the superuser and the entry's owner (its creator)
