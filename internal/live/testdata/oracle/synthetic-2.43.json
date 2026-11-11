@@ -1,0 +1,150 @@
+{
+  "syn_admin": {
+    "match": 52,
+    "refused": 104
+  },
+  "syn_clerk": {
+    "match": 70,
+    "refused": 73
+  },
+  "syn_district": {
+    "match": 54,
+    "refused": 104
+  },
+  "syn_mx00": {
+    "match": 5,
+    "refused": 166
+  },
+  "syn_mx01": {
+    "match": 74,
+    "refused": 69
+  },
+  "syn_mx02": {
+    "match": 97,
+    "refused": 42
+  },
+  "syn_mx03": {
+    "match": 71,
+    "refused": 72
+  },
+  "syn_mx04": {
+    "match": 47,
+    "refused": 99
+  },
+  "syn_mx05": {
+    "match": 49,
+    "refused": 99
+  },
+  "syn_mx06": {
+    "match": 5,
+    "refused": 166
+  },
+  "syn_mx07": {
+    "match": 54,
+    "refused": 104
+  },
+  "syn_mx08": {
+    "match": 5,
+    "refused": 166
+  },
+  "syn_mx09": {
+    "match": 5,
+    "refused": 166
+  },
+  "syn_mx10": {
+    "match": 0,
+    "refused": 171
+  },
+  "syn_mx11": {
+    "match": 0,
+    "refused": 171
+  },
+  "syn_mx12": {
+    "match": 0,
+    "refused": 171
+  },
+  "syn_mx13": {
+    "match": 0,
+    "refused": 171
+  },
+  "syn_mx14": {
+    "match": 0,
+    "refused": 171
+  },
+  "syn_mx15": {
+    "match": 80,
+    "refused": 73
+  },
+  "syn_mx16": {
+    "match": 73,
+    "refused": 73
+  },
+  "syn_mx17": {
+    "match": 5,
+    "refused": 166
+  },
+  "syn_mx18": {
+    "match": 47,
+    "refused": 99
+  },
+  "syn_mx19": {
+    "match": 5,
+    "refused": 166
+  },
+  "syn_mx20": {
+    "match": 30,
+    "refused": 130
+  },
+  "syn_mx21": {
+    "match": 5,
+    "refused": 166
+  },
+  "syn_mx22": {
+    "match": 74,
+    "refused": 72
+  },
+  "syn_mx23": {
+    "match": 5,
+    "refused": 166
+  },
+  "syn_mx24": {
+    "match": 5,
+    "refused": 166
+  },
+  "syn_mx25": {
+    "match": 5,
+    "refused": 166
+  },
+  "syn_mx26": {
+    "match": 30,
+    "refused": 130
+  },
+  "syn_mx27": {
+    "match": 73,
+    "refused": 73
+  },
+  "syn_mx28": {
+    "match": 73,
+    "refused": 73
+  },
+  "syn_nurse": {
+    "match": 117,
+    "refused": 2
+  },
+  "syn_nurse_twin": {
+    "match": 117,
+    "refused": 2
+  },
+  "syn_outsider": {
+    "match": 0,
+    "refused": 171
+  },
+  "syn_restricted": {
+    "match": 116,
+    "refused": 3
+  },
+  "syn_searchless": {
+    "match": 116,
+    "refused": 3
+  }
+}

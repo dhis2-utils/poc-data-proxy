@@ -6,12 +6,14 @@ import (
 	"maps"
 	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/compat"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
 
@@ -100,6 +102,7 @@ func TestOracle(t *testing.T) {
 		dims[mu.Username] = mu.Dims
 	}
 	counts := map[string]int{}
+	perUser := map[string]tally{}
 	known := map[string]int{}
 	var bad []tk.Outcome
 	var report []tk.Outcome
@@ -126,6 +129,14 @@ func TestOracle(t *testing.T) {
 				o = tk.Judge(truth, q, u.name, cs, cb, hs, hb)
 			}
 			counts[o.Verdict]++
+			tl := perUser[u.name]
+			switch o.Verdict {
+			case tk.Match:
+				tl.Match++
+			case tk.Refused:
+				tl.Refused++
+			}
+			perUser[u.name] = tl
 			report = append(report, o)
 			if why := knownGap(o, q, dims[u.name], m); why != "" {
 				known[why]++
@@ -165,6 +176,7 @@ func TestOracle(t *testing.T) {
 		b, _ := json.MarshalIndent(report, "", "  ")
 		os.WriteFile(p, b, 0o644)
 	}
+	checkBaseline(t, m, perUser)
 	sort.SliceStable(bad, func(i, j int) bool { return rank(bad[i].Verdict) < rank(bad[j].Verdict) })
 	for i, o := range bad {
 		if i == 40 {
@@ -173,6 +185,66 @@ func TestOracle(t *testing.T) {
 		}
 		t.Errorf("%s %s %s (central %d, hub %d) %v %s", o.Verdict, o.User, o.Path, o.Central, o.Hub,
 			short(o.Objects), o.Detail)
+	}
+}
+
+// tally is one user's matches and refusals in a run of the oracle.
+type tally struct {
+	Match   int `json:"match"`
+	Refused int `json:"refused"`
+}
+
+// checkBaseline holds the oracle to a floor (review section 10): the verdicts above
+// fail on a wrong answer, but a hub that refused everything would pass them. Per user,
+// the matches may not drop below, and the refusals may not rise above, the baseline
+// checked in for the profile and DHIS2 version, taken from `hubtest run` on a fresh
+// instance (docs/TESTING.md). HUB_ORACLE_BASELINE=write rewrites it from this run;
+// review the diff before committing it.
+func checkBaseline(t *testing.T, m *tk.Manifest, got map[string]tally) {
+	t.Helper()
+	path := filepath.Join("testdata", "oracle", fmt.Sprintf("%s-2.%d.json", m.Profile, compat.ParseMajor(m.DHIS2Version)))
+	if os.Getenv("HUB_ORACLE_BASELINE") == "write" {
+		b, _ := json.MarshalIndent(got, "", "  ")
+		os.MkdirAll(filepath.Dir(path), 0o755)
+		if err := os.WriteFile(path, append(b, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("wrote the oracle baseline %s", path)
+		return
+	}
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		t.Logf("no oracle baseline %s: matches and refusals are not held to one (HUB_ORACLE_BASELINE=write makes it)", path)
+		return
+	}
+	var want map[string]tally
+	if err == nil {
+		err = json.Unmarshal(b, &want)
+	}
+	if err != nil {
+		t.Fatalf("oracle baseline %s: %v", path, err)
+	}
+	for _, user := range slices.Sorted(maps.Keys(want)) {
+		w, g := want[user], got[user]
+		if _, ok := got[user]; !ok {
+			t.Errorf("baseline %s: user %s was not asked", path, user)
+			continue
+		}
+		if g.Match < w.Match {
+			t.Errorf("baseline %s: %s has %d matches, the baseline %d", path, user, g.Match, w.Match)
+		}
+		if g.Refused > w.Refused {
+			t.Errorf("baseline %s: %s has %d refusals, the baseline %d", path, user, g.Refused, w.Refused)
+		}
+		if g.Match > w.Match || g.Refused < w.Refused {
+			t.Logf("baseline %s: %s did better (%d matches, %d refusals; baseline %d, %d): rewrite it", path, user,
+				g.Match, g.Refused, w.Match, w.Refused)
+		}
+	}
+	for user := range got {
+		if _, ok := want[user]; !ok {
+			t.Errorf("baseline %s: no entry for user %s; rewrite it", path, user)
+		}
 	}
 }
 
