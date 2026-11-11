@@ -208,12 +208,19 @@ func TestFacilityHubApp(t *testing.T) {
 	tk.NewCentral(e.M.CentralURL, nurse.Username, e.M.Password).Do("POST",
 		"/api/dataStore/facility-hub-admin/central-move", map[string]string{"url": "https://evil.example.org"})
 	runApp(t, e, manager, e.M.Password, "announce", "ADDRESS="+address)
+	var raw json.RawMessage
 	var move struct {
-		URL string `json:"url"`
+		URL   string            `json:"url"`
+		Codes map[string]string `json:"codes"`
 	}
-	e.Central.JSON("GET", "/api/dataStore/facility-hub-admin/central-move", nil, &move)
+	e.Central.JSON("GET", "/api/dataStore/facility-hub-admin/central-move", nil, &raw)
+	json.Unmarshal(raw, &move)
 	if move.URL != address {
 		t.Errorf("planned move %q", move.URL)
+	}
+	// Signed for the approved hub as the hub checks it (review R-07).
+	if c, err := hubaccount.InstructionCode(h.Runtime().MoveKey, h.HubID(), "facility-hub-admin/central-move", raw); err != nil || move.Codes[h.HubID()] != c {
+		t.Errorf("the planned move has no valid code for the hub: %q, want %q (%v)", move.Codes[h.HubID()], c, err)
 	}
 	if st, _, _ := tk.NewCentral(e.M.CentralURL, nurse.Username, e.M.Password).Do("PUT",
 		"/api/dataStore/facility-hub-admin/central-move", map[string]string{"url": "https://evil.example.org"}); st < 300 {
@@ -221,7 +228,7 @@ func TestFacilityHubApp(t *testing.T) {
 	}
 	runApp(t, e, manager, e.M.Password, "withdraw")
 	var withdrawn map[string]any
-	if err := e.Central.JSON("GET", "/api/dataStore/facility-hub-admin/central-move", nil, &withdrawn); err != nil || len(withdrawn) != 0 {
+	if err := e.Central.JSON("GET", "/api/dataStore/facility-hub-admin/central-move", nil, &withdrawn); err != nil || withdrawn["url"] != nil && withdrawn["url"] != "" {
 		t.Errorf("planned move not withdrawn: %v %v", withdrawn, err)
 	}
 
