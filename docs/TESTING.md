@@ -127,6 +127,20 @@ It runs after every image build, in `image.yml` too (image/README.md). The hub's
   9. uninstall, with and without removing the data;
   10. on a PC with a TPM: `device.key` appears in the data folder and `tls.key` starts with `HUBDEV1`; the service (a virtual account) still starts after a restart, and staff log in (Windows TPM Base Services, `internal/devkey`). A fresh install with `tpm: false` in hub.yaml makes no `device.key` and works as before.
 
+#### Windows versions
+
+The hub targets 64-bit Windows 10 and 11 (WINDOWS-INSTALL.md). Go 1.26 needs Windows 10 or later. All testing so far has been on Windows 11.
+
+Test Windows 10 22H2 too, on an x86-64 machine such as an old laptop. Apple Silicon cannot run Windows 10 usefully, and GitHub has no Windows 10 runners. On Windows 10, check:
+
+- both install modes: for the whole PC, and for one user;
+- the service starts at boot;
+- the firewall rules, the root certificate install and Defender's exclusion;
+- `dhis2.local` from tablets;
+- an upgrade, including the key handover;
+- a PC with TPM 1.2, or none;
+- Firefox, which keeps its own certificate store.
+
 ### macOS
 
 `.github/workflows/macos.yml`, run by hand:
