@@ -58,6 +58,7 @@ type User struct {
 	Disabled       bool
 	SearchOrgUnits []string // defaults to OrgUnits
 	NoProgramMeta  bool     // the program's metadata is not shared with this user
+	NoTETRead      bool     // no data access to the tracked entity type (tests)
 	NoPAT          bool     // this user may not create personal access tokens
 	// Authorities, when not nil, are the user's (default: Capture's).
 	Authorities      []string
@@ -855,7 +856,7 @@ func (c *Central) programs(w http.ResponseWriter, r *http.Request, u *User) {
 	prog := map[string]any{"id": Program, "name": "TB program", "programType": "WITH_REGISTRATION", "access": dataPerm(u.ProgramRead, u.ProgramWrite),
 		"onlyEnrollOnce": c.OnlyEnrollOnce, "selectEnrollmentDatesInFuture": c.FutureEnrollmentDates,
 		"selectIncidentDatesInFuture": c.FutureIncidentDates,
-		"trackedEntityType": map[string]any{"id": TET, "access": dataPerm(true, true),
+		"trackedEntityType": map[string]any{"id": TET, "access": dataPerm(!u.NoTETRead, !u.NoTETRead),
 			"trackedEntityTypeAttributes": []any{attr(AttrFirstName, false, false), attr(AttrLastName, false, false)}},
 		"programStages":                  stages,
 		"programTrackedEntityAttributes": []any{attr(AttrNationalI, false, true), attr(AttrTBID, true, true)}}
