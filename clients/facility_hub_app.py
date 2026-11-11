@@ -93,8 +93,13 @@ def run(page):
         app = open_page(page, "/moves")
         app.fill("input[name=planned]", os.environ["ADDRESS"])
         app.get_by_role("button", name="Announce").click(timeout=120_000)
-        # The new address shown (an earlier announcement may be on the page already).
-        shown = app.get_by_text(os.environ["ADDRESS"].strip().rstrip("/").lower(), exact=False).first
+        # Asked again first; the confirmation also names the address, so wait for it to
+        # close and for the announcement on the page.
+        dialog = app.get_by_role("dialog")
+        dialog.get_by_role("button", name="Announce").click(timeout=120_000)
+        dialog.wait_for(state="detached", timeout=120_000)
+        address = os.environ["ADDRESS"].strip().rstrip("/").lower()
+        shown = app.get_by_text(f"Announced – {address}", exact=False).first
         shown.wait_for(timeout=120_000)
         R["shown"] = shown.inner_text()
     elif ACTION == "withdraw":
@@ -111,8 +116,9 @@ def run(page):
         app.locator("[data-test=dhis2-uicore-select-menu-menuwrapper]").get_by_text(hub, exact=False).first.click()
         app.locator("[data-test=dhis2-uicore-layer]").last.click(position={"x": 5, "y": 5})  # close the menu
         app.get_by_role("button", name="Start with pilot hubs").click()
-        app.get_by_text(f"Version {version}: Pilot hubs only").wait_for(timeout=120_000)
-        R["shown"] = f"Version {version}: Pilot hubs only"
+        # The app writes "–", not ":", in shown strings (review R-53a).
+        app.get_by_text(f"Version {version} – Pilot hubs only").wait_for(timeout=120_000)
+        R["shown"] = f"Version {version} – Pilot hubs only"
     elif ACTION == "screens":
         for name, route in [("hubs", "/"), ("approvals", "/approvals"), ("moves", "/moves"), ("version", "/version")]:
             open_page(page, route)
