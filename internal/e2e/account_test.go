@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/config"
+	"github.com/dhis2/facility-hub/internal/core"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 	"github.com/dhis2/facility-hub/internal/hubaccount"
 )
@@ -182,6 +184,7 @@ func TestOnlyAHubAskingShowsACode(t *testing.T) {
 	if _, err := e.approveWith(first); err == nil {
 		t.Fatal("approved again with an old code")
 	}
+	e.central.SetDisabled(h.HubID(), true) // revoked: staff may take the hub over
 	if err := h.TakeOverHubToken(context.Background(), "nurse_a", fc.Password); err != nil {
 		t.Fatal(err)
 	}
@@ -441,12 +444,26 @@ func TestHubAccountRefusesWiderAccounts(t *testing.T) {
 
 // Review I4: a staff member who takes the hub's housekeeping over sets its own account
 // aside: the hub keeps no password it no longer uses, and asks for an account again.
-// Its move key stays: it is not tied to the account.
+// Its move key stays: it is not tied to the account. That is allowed only once central
+// refuses the account (a hub manager revoked it, which disables its user): an account
+// the national team approved is not set aside by staff while it works, nor when only
+// its token lapsed.
 func TestTakeOverSetsTheOwnAccountAside(t *testing.T) {
 	e := newEnv(t)
 	e.setup()
 	h := e.app.Hub
 	e.adopt()
+	if err := h.TakeOverHubToken(context.Background(), "nurse_a", fc.Password); !errors.Is(err, core.ErrOwnAccountWorks) {
+		t.Fatalf("take-over of a working own account: %v", err)
+	}
+	e.central.RevokeToken(h.Runtime().HubTokenUID)
+	if err := h.TakeOverHubToken(context.Background(), "nurse_a", fc.Password); !errors.Is(err, core.ErrOwnAccountWorks) {
+		t.Fatalf("take-over of an own account whose token lapsed: %v", err)
+	}
+	if rt := h.Runtime(); rt.TokenOwner() != h.HubID() || rt.HubPassword == "" {
+		t.Fatalf("a refused take-over changed the hub: owner %q", rt.TokenOwner())
+	}
+	e.central.SetDisabled(h.HubID(), true) // what Revoke in the Facility Hub app does
 	if err := h.TakeOverHubToken(context.Background(), "nurse_a", fc.Password); err != nil {
 		t.Fatal(err)
 	}

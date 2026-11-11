@@ -471,12 +471,39 @@ func (h *Hub) refreshFacilityPath(ctx context.Context) error {
 // says "revoked": any user can write the entry until its namespace is protected, but
 // only a real revocation deletes the hub's token, so central refuses it (L3).
 func (h *Hub) revokedForReal(ctx context.Context) bool {
-	err := h.Central.JSON(ctx, "GET", "/api/me?fields=id", nil, h.HubAuth(), nil)
-	if central.Status(err) == http.StatusUnauthorized {
+	refused, err := h.refusedByCentral(ctx, h.HubAuth())
+	if refused {
 		return true
 	}
 	slog.Warn("the registry marks this hub's tokens as revoked, but central still takes its token: ignored (protect facility-hub-registry, docs/DEPLOYMENT.md)", "err", err)
 	return false
+}
+
+// refusedByCentral reports whether central answers 401 to auth; err is any other
+// failure of the request.
+func (h *Hub) refusedByCentral(ctx context.Context, auth central.Auth) (bool, error) {
+	err := h.Central.JSON(ctx, "GET", "/api/me?fields=id", nil, auth, nil)
+	if central.Status(err) == http.StatusUnauthorized {
+		return true, nil
+	}
+	return false, err
+}
+
+// ownAccountRefused reports whether central refuses the hub's own account: its token
+// and every password the hub holds for it (a revoked hub's user is disabled, or given
+// a password the hub does not know). A token refused alone may have lapsed while
+// offline; the hub makes a new one with the password.
+func (h *Hub) ownAccountRefused(ctx context.Context, rt *Runtime) (bool, error) {
+	auths := []central.Auth{h.HubAuth(), {Username: h.HubID(), Password: rt.HubPassword}}
+	if rt.HubPasswordNext != "" {
+		auths = append(auths, central.Auth{Username: h.HubID(), Password: rt.HubPasswordNext})
+	}
+	for _, a := range auths {
+		if refused, err := h.refusedByCentral(ctx, a); !refused {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 // AddUserPrograms merges the programs one user can see into the catalog (at login,
@@ -691,6 +718,10 @@ func programFields(api compat.API, af string) string {
 // central, which countries share with a "hub owners" group (docs/DEPLOYMENT.md).
 var ErrNotHubOwner = errors.New("your account cannot write the hub's records on central: ask the national team or the district to add you to the hub owners group")
 
+// ErrOwnAccountWorks: a take-over of a hub whose own account central still accepts.
+// The national team approved that account; staff must not set it aside.
+var ErrOwnAccountWorks = errors.New("this hub has its own account on central, which still works. A hub manager must revoke it first")
+
 // ErrWrongPassword: central refused the password. An account with two-factor login
 // gets this too: central refuses its password alone.
 var ErrWrongPassword = errors.New("wrong password (an account with two-factor login cannot take the hub over)")
@@ -709,7 +740,8 @@ func (rt *Runtime) TokenOwner() string {
 // TakeOverHubToken moves the hub's housekeeping (heartbeat, issue reports, registry,
 // program list, generated IDs, upgrade checks) to a token of this user, who must be
 // assigned to the facility, and deletes the old token: for when the person who set
-// the hub up leaves (docs/DEPLOYMENT.md, "The hub's own account").
+// the hub up leaves (docs/DEPLOYMENT.md, "The hub's own account"). A hub with its own
+// account is taken over only once central refuses that account (ErrOwnAccountWorks).
 func (h *Hub) TakeOverHubToken(ctx context.Context, username, password string) error {
 	h.tokenMu.Lock()
 	defer h.tokenMu.Unlock()
@@ -730,6 +762,15 @@ func (h *Hub) TakeOverHubToken(ctx context.Context, username, password string) e
 	}
 	if me.ManagesUsers() {
 		return fmt.Errorf("%s can manage users on central: the hub keeps no token of such an account", username)
+	}
+	if rt.TokenOwner() == h.HubID() && rt.HubPassword != "" {
+		refused, err := h.ownAccountRefused(ctx, rt)
+		if err != nil {
+			return fmt.Errorf("checking the hub's own account on central: %w", err)
+		}
+		if !refused {
+			return ErrOwnAccountWorks
+		}
 	}
 	exp := time.Now().Add(h.TokenLife())
 	uid, key, err := h.CreatePAT(ctx, with, exp)
@@ -755,8 +796,8 @@ func (h *Hub) TakeOverHubToken(ctx context.Context, username, password string) e
 	if err := h.UpdateRuntime(func(rt *Runtime) {
 		rt.HubToken, rt.HubTokenUID, rt.HubTokenExp = key, uid, exp.UTC().Format(time.RFC3339)
 		rt.HubTokenOwner = me.Username
-		// The hub's own account, if it had one, is set aside: the hub asks for an
-		// account again at its next refresh.
+		// The hub's own account, if it had one, is refused by central (revoked):
+		// the hub asks for an account again at its next refresh.
 		rt.HubPassword, rt.HubPasswordNext = "", ""
 	}); err != nil {
 		return err
