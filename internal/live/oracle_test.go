@@ -3,6 +3,7 @@ package live
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"slices"
@@ -70,8 +71,11 @@ func TestOracle(t *testing.T) {
 		t.Fatal(err)
 	}
 	var queries []tk.Query
+	only := onlySamples(t, e)
 	for _, p := range m.Programs {
-		queries = append(queries, tk.Queries(m, p, samples(t, e, p, truth))...)
+		s := samples(t, e, p, truth)
+		maps.Copy(s, only)
+		queries = append(queries, tk.Queries(m, p, s)...)
 	}
 	for _, p := range m.EventPrograms {
 		sample := ""
@@ -131,6 +135,10 @@ func TestOracle(t *testing.T) {
 				known[why]++
 				continue
 			}
+			if why := acrossPrograms(direct, o, q, cb, hb, truth, m); why != "" {
+				known[why]++
+				continue
+			}
 			if why := createdTies(direct, o, q, cb, hb); why != "" {
 				known[why]++
 				continue
@@ -166,6 +174,34 @@ func TestOracle(t *testing.T) {
 		t.Errorf("%s %s %s (central %d, hub %d) %v %s", o.Verdict, o.User, o.Path, o.Central, o.Hub,
 			short(o.Objects), o.Detail)
 	}
+}
+
+// onlySamples finds a value of each program-only attribute (Program.OnlyAttrs) at the
+// facility, keyed "only:<attribute>", for the generator's filters across programs.
+func onlySamples(t *testing.T, e *tk.Env) map[string]string {
+	out := map[string]string{}
+	for _, p := range e.M.Programs {
+		for _, a := range p.OnlyAttrs {
+			var res struct {
+				TEs []struct {
+					Attributes []struct{ Attribute, Value string } `json:"attributes"`
+				} `json:"trackedEntities"`
+			}
+			q := url.Values{"program": {p.ID}, "orgUnits": {e.M.Facility.ID}, "filter": {a + ":!null"},
+				"order": {"createdAt:asc"}, "pageSize": {"1"}, "fields": {"attributes[attribute,value]"}}
+			if err := e.Central.JSON("GET", "/api/tracker/trackedEntities?"+q.Encode(), nil, &res); err != nil {
+				t.Fatalf("a value of %s: %v", a, err)
+			}
+			for _, te := range res.TEs {
+				for _, x := range te.Attributes {
+					if x.Attribute == a {
+						out["only:"+a] = x.Value
+					}
+				}
+			}
+		}
+	}
+	return out
 }
 
 // seedOrderTies writes the ties the oracle's sequence comparison judges: five events of
@@ -263,6 +299,116 @@ func shownWithoutProgram(direct *tk.Central, o tk.Outcome, q tk.Query, hubBody [
 		}
 	}
 	return "a person owned elsewhere opened with that program: the hub shows what central shows without the program, no enrollment (decided 2026-10-28)"
+}
+
+// acrossPrograms accepts two differences on lists filtered (events, filterAttributes)
+// or ordered (persons, order) on an attribute of another program only (review R-03),
+// each checked object by object:
+//
+//   - The user cannot read that program. Central still matches and orders on its values
+//     (seen on 2.42 and 2.43, 11 November 2026); the hub does not, as if the values were
+//     empty, so that a user learns nothing of a program they cannot read (R-03). For an
+//     order, the hub's sequence must then be central's newest first, its order for
+//     empty values: an order by the real values would be the disclosure.
+//   - The user reads that program, but the facility does not own the person in it. The
+//     hub holds a program's attributes of a person only from pulling the person for that
+//     program, and pulls only what the facility owns; central matches the values it
+//     holds. For an order, the persons the facility owns in that program must be in
+//     central's sequence.
+func acrossPrograms(direct *tk.Central, o tk.Outcome, q tk.Query, centralBody, hubBody []byte, truth *tk.Truth, m *tk.Manifest) string {
+	u, err := url.Parse(q.Path)
+	if err != nil {
+		return ""
+	}
+	v := u.Query()
+	param := "filterAttributes"
+	if o.Verdict == tk.Differs && strings.Contains(o.Detail, "order differs") && q.Kind == "trackedEntities" {
+		param = "order"
+	} else if o.Verdict != tk.Missing || q.Kind != "events" {
+		return ""
+	}
+	attr, _, _ := strings.Cut(v.Get(param), ":")
+	other := ""
+	for _, p := range m.Programs {
+		if p.ID != q.Program && slices.Contains(p.OnlyAttrs, attr) {
+			other = p.ID
+		}
+	}
+	if other == "" {
+		return ""
+	}
+	var acc struct {
+		Access struct {
+			Data struct{ Read bool } `json:"data"`
+		} `json:"access"`
+	}
+	st, b, err := direct.Do("GET", "/api/programs/"+other+"?fields=access", nil)
+	if err != nil {
+		return ""
+	}
+	reads := st == 200 && json.Unmarshal(b, &acc) == nil && acc.Access.Data.Read
+	const noRead = "a list filtered or ordered on an attribute of a program the user cannot read: central matches and orders on its values, the hub as if empty (review R-03; central seen 11 November 2026)"
+	const notHeld = "a list filtered or ordered on an attribute of another program, for persons the facility does not own in that program: central uses the values it holds, the hub never pulled them"
+	type row struct{ TrackedEntity, Event string }
+	seq := func(b []byte) []row {
+		var l struct{ TrackedEntities, Events, Instances []row }
+		json.Unmarshal(b, &l)
+		return append(append(l.TrackedEntities, l.Events...), l.Instances...)
+	}
+	if param == "filterAttributes" {
+		if !reads {
+			return noRead
+		}
+		te := map[string]string{}
+		for _, r := range seq(centralBody) {
+			te[r.Event] = r.TrackedEntity
+		}
+		for _, ev := range o.Objects {
+			if te[ev] == "" || truth.Owned[other][te[ev]] {
+				return ""
+			}
+		}
+		return notHeld
+	}
+	ids := func(rs []row) []string {
+		var out []string
+		for _, r := range rs {
+			out = append(out, r.TrackedEntity)
+		}
+		return out
+	}
+	hub := ids(seq(hubBody))
+	if !reads {
+		v.Set("order", "createdAt:desc")
+		u.RawQuery = v.Encode()
+		st, b, err := direct.Do("GET", u.String(), nil)
+		if err != nil || st != 200 {
+			return ""
+		}
+		var newest []string
+		for _, id := range ids(seq(b)) {
+			if slices.Contains(hub, id) {
+				newest = append(newest, id)
+			}
+		}
+		if !slices.Equal(hub, newest) {
+			return ""
+		}
+		return noRead
+	}
+	held := func(l []string) []string {
+		return slices.DeleteFunc(slices.Clone(l), func(id string) bool { return !truth.Owned[other][id] })
+	}
+	var central []string
+	for _, id := range ids(seq(centralBody)) {
+		if slices.Contains(hub, id) {
+			central = append(central, id)
+		}
+	}
+	if !slices.Equal(held(hub), held(central)) {
+		return ""
+	}
+	return notHeld
 }
 
 // createdTies accepts a list ordered by createdAt whose order differs from central's

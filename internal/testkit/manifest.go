@@ -97,6 +97,11 @@ type Program struct {
 	MandatoryGenerated []string `json:"mandatoryGenerated,omitempty"`
 	UniqueAttr         string   `json:"uniqueAttr,omitempty"`
 	GeneratedAttr      string   `json:"generatedAttr,omitempty"`
+	// OnlyAttrs: attributes of this program alone, neither its tracked entity type's
+	// nor another manifest program's. The oracle filters and orders other programs'
+	// lists on them, which a user who cannot read this program must not learn from
+	// (review R-03).
+	OnlyAttrs []string `json:"onlyAttrs,omitempty"`
 	// Valid values for what an enrollment or event must carry: mandatory attributes
 	// (attribute -> value) and, per stage, data elements (data element -> value).
 	// Writers fill these in so every profile's validation passes.

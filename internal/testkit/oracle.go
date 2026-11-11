@@ -138,6 +138,24 @@ func Queries(m *Manifest, p Program, sample map[string]string) []Query {
 	if v := sample["unique"]; v != "" {
 		add("trackedEntities", url.Values{"orgUnitMode": {"ACCESSIBLE"}, "fields": {te}, "filter": {p.UniqueAttr + ":eq:" + v}})
 	}
+	// Filters and orders on attributes of other programs only (review R-03): a user who
+	// cannot read that program must learn nothing of its values from this one's lists.
+	// sample["only:<attribute>"] is a value of it found in the data.
+	for _, q := range m.Programs {
+		if q.ID == p.ID || q.TET != p.TET {
+			continue
+		}
+		for _, a := range q.OnlyAttrs {
+			if slices.Contains(p.OnlyAttrs, a) {
+				continue
+			}
+			add("events", url.Values{"orgUnit": {m.Facility.ID}, "fields": {ev}, "filterAttributes": {a + ":!null"}})
+			if v := sample["only:"+a]; v != "" {
+				add("events", url.Values{"orgUnit": {m.Facility.ID}, "fields": {ev}, "filterAttributes": {a + ":sw:" + v[:1]}})
+			}
+			add("trackedEntities", url.Values{"orgUnits": {m.Facility.ID}, "fields": {te}, "order": {a + ":desc"}})
+		}
+	}
 	add("enrollments", url.Values{"orgUnits": {m.Facility.ID}, "fields": {en}})
 	add("events", url.Values{"orgUnit": {m.Facility.ID}, "fields": {ev}})
 	for _, st := range p.Stages {

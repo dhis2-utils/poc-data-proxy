@@ -3,6 +3,7 @@ package testkit
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -94,5 +95,37 @@ func TestJudgeSince(t *testing.T) {
 	}
 	if o := Judge(truth, q, "u", 200, central, 200, list("A", "B")); o.Verdict != Leak {
 		t.Errorf("Judge without the margin: %s, want LEAK", o.Verdict)
+	}
+}
+
+// The generator filters and orders each program's lists on attributes of other
+// programs only (review R-03), and not on its own or another tracked entity type's.
+func TestQueriesAcrossPrograms(t *testing.T) {
+	m := &Manifest{Facility: OrgUnit{ID: "Fac"}, Programs: []Program{
+		{ID: "Opd", TET: "Person", Stages: []string{"St1"}},
+		{ID: "Hiv", TET: "Person", Stages: []string{"St2"}, OnlyAttrs: []string{"HivNo"}},
+		{ID: "Hhs", TET: "House", Stages: []string{"St3"}, OnlyAttrs: []string{"HhNo"}},
+	}}
+	has := func(qs []Query, kind, param, value string) bool {
+		for _, q := range qs {
+			u, _ := url.Parse(q.Path)
+			if q.Kind == kind && u.Query().Get(param) == value {
+				return true
+			}
+		}
+		return false
+	}
+	opd := Queries(m, m.Programs[0], map[string]string{"only:HivNo": "ART-1"})
+	for _, want := range [][3]string{{"events", "filterAttributes", "HivNo:!null"}, {"events", "filterAttributes", "HivNo:sw:A"},
+		{"trackedEntities", "order", "HivNo:desc"}} {
+		if !has(opd, want[0], want[1], want[2]) {
+			t.Errorf("no %s query with %s=%s", want[0], want[1], want[2])
+		}
+	}
+	if has(opd, "events", "filterAttributes", "HhNo:!null") {
+		t.Error("filtered on another tracked entity type's attribute")
+	}
+	if has(Queries(m, m.Programs[1], nil), "trackedEntities", "order", "HivNo:desc") {
+		t.Error("ordered on the program's own attribute as if it were another's")
 	}
 }

@@ -202,6 +202,13 @@ func syntheticData(c *testkit.Central, size int, ouParam string, enrollmentAOC m
 		if rng.Intn(3) == 0 {
 			attrs = append(attrs, map[string]any{"attribute": atPhone, "value": fmt.Sprintf("+23276%06d", rng.Intn(1000000))})
 		}
+		// A value in an attribute of the closed program only, for the oracle's
+		// filters and orders across programs (review R-03).
+		for _, e := range enrol {
+			if e.program == prTb {
+				attrs = append(attrs, map[string]any{"attribute": atTbNo, "value": fmt.Sprintf("TB-%06d", seq)})
+			}
+		}
 		enrs := []any{} // "enrollments": null makes 2.42 answer 500
 		for _, e := range enrol {
 			en := uid("SynEn")
