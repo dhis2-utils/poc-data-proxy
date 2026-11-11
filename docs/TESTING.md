@@ -141,6 +141,14 @@ Test Windows 10 22H2 too, on an x86-64 machine such as an old laptop. Apple Sili
 - a PC with TPM 1.2, or none;
 - Firefox, which keeps its own certificate store.
 
+#### The self-signed installer
+
+Releases are signed with a self-signed test certificate. A publicly trusted certificate is left for later than the pilot. Find out whether the self-signed installer can be installed where it will be used:
+
+1. Download the installer from the release page on an ordinary Windows 10 PC and an ordinary Windows 11 PC, each with Defender and SmartScreen as they come. Note what each shows (SmartScreen's "unknown publisher", a Defender detection) and whether the install completes.
+2. Ask the ministry's IT, for each pilot country: which antivirus and application control (AppLocker, WDAC) facility PCs run, and whether software is deployed centrally. Central deployment skips SmartScreen; a policy that allows only trusted publishers blocks a self-signed installer.
+3. If Defender flags the installer, submit it as a false positive at Microsoft's submission portal.
+
 ### macOS
 
 `.github/workflows/macos.yml`, run by hand:
