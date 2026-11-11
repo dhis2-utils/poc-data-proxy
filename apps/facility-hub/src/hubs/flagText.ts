@@ -84,7 +84,7 @@ export const flagSentence = (kind: FlagKind, hb?: Heartbeat): string => {
             )
         case 'unsigned':
             return i18n.t(
-                'The hub ignores these entries on central – {{- entries}}. They have no valid code for it, or are older than one it took. Save each again in this app; an entry written by an older version of the app, or by anyone else, has no code.',
+                'The hub ignores these entries on central – {{- entries}}. They have no valid code for it, or are older than one it took. Save each again in this app; an entry written by anyone else has no code.',
                 { entries: (hb?.unsigned ?? []).join(', ') }
             )
     }

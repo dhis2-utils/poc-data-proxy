@@ -117,12 +117,10 @@ describe('ensureAdminEntries', () => {
             'central-move',
             'release',
             'retries',
-            ...configKeys.map((k) => `facility-hub-config/${k}`),
         ])
-        // The settings too: a hub not yet approved reads them as they are.
+        // Not the settings: a hub not yet approved uses the defaults.
         for (const key of configKeys) {
-            expect(api.entry('facility-hub-config', key)).toEqual({})
-            expect(api.creators[`facility-hub-config/${key}`]).toBe(api.me)
+            expect(api.store['facility-hub-config']?.[key]).toBeUndefined()
         }
         for (const key of keys.slice(1)) {
             expect(api.creators[`facility-hub-admin/${key}`]).toBe(api.me)
@@ -181,6 +179,12 @@ describe('shareAdminEntries', () => {
     it('shares the protected entries with the managers, and leaves open ones as they are', async () => {
         const api = new FakeApi()
         await ensureAdminEntries(api, undefined)
+        await writeAdminEntry(api, {
+            namespace: 'facility-hub-config',
+            key: 'retention',
+            value: {},
+            sign: false,
+        }) // a setting saved before the group was named
         api.store['facility-hub-admin'].retries = { retries: [] }
         delete api.sharing['meta-facility-hub-admin-retries'] // open to all
         await shareAdminEntries(api, 'HubGrpMgrs')

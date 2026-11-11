@@ -510,8 +510,7 @@ type retry struct {
 }
 
 // forThisHub reports whether a group instruction is for this hub: its facility is
-// below one of the instruction's org units. One without them, from an older app,
-// is for no hub.
+// below one of the instruction's org units. One without them is for no hub.
 func forThisHub(r retry, facilityPath string) bool {
 	return slices.ContainsFunc(r.OrgUnits, func(ou string) bool {
 		return ou != "" && slices.Contains(strings.Split(facilityPath, "/"), ou)

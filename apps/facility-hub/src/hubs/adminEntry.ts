@@ -143,12 +143,13 @@ export const configKeys = [
 ]
 
 /**
- * Creates the facility-hub-admin and facility-hub-config entries that do not exist
- * yet, protected as writeAdminEntry protects them, with values the hubs read as not
- * set (unsigned: nothing to act on): on 2.42 any user may create a missing key, own it
- * and keep writing it while its public access is read only, and a hub not yet approved
- * reads accounts, release and the settings as they are. Run when a hub manager opens
- * the app. It returns the keys it created.
+ * Creates the facility-hub-admin entries that do not exist yet, protected as
+ * writeAdminEntry protects them, with values the hubs read as not set (unsigned:
+ * nothing to act on): on 2.42 any user may create a missing key, own it and keep
+ * writing it while its public access is read only, and a hub not yet approved reads
+ * accounts and release as they are. The settings (facility-hub-config) need no such
+ * entry: a hub not yet approved uses the defaults, an approved one takes them signed.
+ * Run when a hub manager opens the app. It returns the keys it created.
  */
 export const ensureAdminEntries = async (api: Api, managers?: string) => {
     const made: string[] = []
@@ -161,19 +162,6 @@ export const ensureAdminEntries = async (api: Api, managers?: string) => {
                 sign: false,
             })
             made.push(key)
-        }
-    }
-    for (const key of configKeys) {
-        const path = `/dataStore/facility-hub-config/${key}/metaData`
-        if (!(await getOrNull<Meta>(api, path))) {
-            await writeAdminEntry(api, {
-                namespace: 'facility-hub-config',
-                key,
-                value: {},
-                managers,
-                sign: false,
-            })
-            made.push(`facility-hub-config/${key}`)
         }
     }
     return made
