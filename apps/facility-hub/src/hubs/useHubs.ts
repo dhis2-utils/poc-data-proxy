@@ -212,11 +212,16 @@ const adminEntryQuery = <T>(
  * An entry of facility-hub-admin (accounts, central-move, release) or facility-hub-config
  * (the country's settings for every hub: retention, aggregate, tokens): its value, or
  * null if it is not set; save, which writes it as writeAdminEntry does; and update, which
- * writes a change to the entry as it is now. Every entry
+ * writes a change to the entry as it is now, then runs afterWrite(written, latest) before
+ * the entry is read again. Every entry
  * but accounts is writable by the hub managers group that accounts names; accounts
  * itself is written by superusers only.
  */
-export const useAdminEntry = <T>(namespace: AdminNamespace, key: string) => {
+export const useAdminEntry = <T>(
+    namespace: AdminNamespace,
+    key: string,
+    afterWrite?: (written: T, latest: T | null) => Promise<void>
+) => {
     const api = useApi()
     const client = useQueryClient()
     const entry = adminEntryQuery<T>(api, namespace, key)
@@ -241,12 +246,16 @@ export const useAdminEntry = <T>(namespace: AdminNamespace, key: string) => {
     const update = useMutation(
         async (change: (latest: T | null) => T) => {
             const latest = await entry.queryFn()
+            const value = change(latest)
             await writeAdminEntry(api, {
                 namespace,
                 key,
-                value: change(latest),
+                value,
                 managers: shared ? accounts.data?.managers : undefined,
             })
+            // Inside the mutation, so that the page shows the entry as saved only once
+            // this is done too (a person, or a test, leaving then does not cut it off).
+            await afterWrite?.(value, latest)
         },
         { onSettled: () => client.invalidateQueries(entry.queryKey) }
     )

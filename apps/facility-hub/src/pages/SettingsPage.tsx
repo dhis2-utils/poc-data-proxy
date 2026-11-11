@@ -51,7 +51,23 @@ export const AccountsSettingsCard = () => {
         value: settings,
         isLoading,
         update: save,
-    } = useAdminEntry<AccountsSettings>('facility-hub-admin', 'accounts')
+    } = useAdminEntry<AccountsSettings>(
+        'facility-hub-admin',
+        'accounts',
+        async (saved, latest) => {
+            // Entries made before the managers were named.
+            if (saved.managers && !latest?.managers) {
+                await shareAdminEntries(api, saved.managers)
+            }
+            if (saved.group) {
+                await shareAccountsGroup(api, {
+                    group: saved.group,
+                    managers: saved.managers,
+                    owners: saved.owners,
+                })
+            }
+        }
+    )
     const { superuser } = useCanManage()
     const choices = useQuery({
         queryKey: ['groupsAndRoles'],
@@ -171,35 +187,11 @@ export const AccountsSettingsCard = () => {
                     onClick={() => {
                         // Written on the entry as central has it now: a group another
                         // superuser named meanwhile stays.
-                        let named: string | undefined
-                        let saved: AccountsSettings | undefined
-                        save.mutate(
-                            (latest) => {
-                                const v = accountsValue(
-                                    { group, role, managers, owners },
-                                    latest
-                                )
-                                named = latest?.managers
-                                    ? undefined
-                                    : v.managers
-                                saved = v
-                                return v
-                            },
-                            {
-                                onSuccess: async () => {
-                                    // Entries made before the managers were named.
-                                    if (named) {
-                                        await shareAdminEntries(api, named)
-                                    }
-                                    if (saved?.group) {
-                                        await shareAccountsGroup(api, {
-                                            group: saved.group,
-                                            managers: saved.managers,
-                                            owners: saved.owners,
-                                        })
-                                    }
-                                },
-                            }
+                        save.mutate((latest) =>
+                            accountsValue(
+                                { group, role, managers, owners },
+                                latest
+                            )
                         )
                     }}
                     loading={save.isLoading}

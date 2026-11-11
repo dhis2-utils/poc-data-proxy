@@ -16,11 +16,12 @@ jest.mock('@/api/useApi', () => ({ useApi: () => mockCentral.api }))
 // Renders useAdminEntry and returns a getter for its latest result.
 const render = <T,>(
     namespace: 'facility-hub-admin' | 'facility-hub-config',
-    key: string
+    key: string,
+    afterWrite?: (written: T, latest: T | null) => Promise<void>
 ) => {
     const out: { current?: ReturnType<typeof useAdminEntry<T>> } = {}
     const Probe = () => {
-        out.current = useAdminEntry<T>(namespace, key)
+        out.current = useAdminEntry<T>(namespace, key, afterWrite)
         return null
     }
     const client = new QueryClient({
@@ -147,6 +148,34 @@ describe('useAdminEntry update', () => {
             percent: 0,
         })
         await until(() => entry().value?.version === '0.3.1')
+    })
+
+    // The Settings page shares the hub accounts group after saving: a person who leaves
+    // once the page shows the save must not cut that off (the live app test did).
+    it('shows the entry as saved only after afterWrite is done', async () => {
+        type C = { percent: number }
+        let done = () => {}
+        const calls: [C, C | null][] = []
+        const entry = render<C>('facility-hub-admin', 'release', (w, l) => {
+            calls.push([w, l])
+            return new Promise<void>((r) => (done = r))
+        })
+        await until(() => entry().value?.percent === 10)
+        let settled = false
+        act(() => {
+            entry()
+                .update.mutateAsync((latest) => ({ ...latest!, percent: 50 }))
+                .then(() => (settled = true))
+        })
+        await until(() => calls.length === 1)
+        expect(calls[0][0].percent).toBe(50)
+        expect(calls[0][1]?.percent).toBe(10)
+        // Written, but not shown as saved while afterWrite runs.
+        await act(() => new Promise((r) => setTimeout(r, 20)))
+        expect(entry().value?.percent).toBe(10)
+        expect(settled).toBe(false)
+        done()
+        await until(() => settled && entry().value?.percent === 50)
     })
 
     it('writes nothing when the change refuses', async () => {
