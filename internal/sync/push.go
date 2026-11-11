@@ -228,6 +228,9 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 	for _, it := range send {
 		if persisted[it.UID] {
 			ok++
+			if err := h.Store.AcceptedByCentral(it.UID); err != nil {
+				return pushResult{}, err
+			}
 			if !h.Store.HasPendingOutboxFor(it.UID, e.Seq) {
 				w.setState(it.UID, store.SyncSynced)
 			}

@@ -68,6 +68,15 @@ func (c *Central) DeleteProgramEvent(uid string) {
 	}
 }
 
+// Hide makes central answer 404 for an object, as it does for one the user may not
+// see as well as for one it deleted, without a tombstone for the pull.
+func (c *Central) Hide(uid string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.objects, uid)
+	delete(c.kinds, uid)
+}
+
 // listProgramEvents answers /api/tracker/events for event programs.
 func (c *Central) listProgramEvents(w http.ResponseWriter, r *http.Request, u *User) {
 	q := r.URL.Query()

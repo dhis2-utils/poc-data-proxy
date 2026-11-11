@@ -128,7 +128,7 @@ func (im *Importer) Import(payload M) *ImportOutcome {
 		res.Created = created
 		im.pending[obj.UID] = obj
 		im.outcome.Accepted = append(im.outcome.Accepted, obj)
-		im.outcome.Refs = append(im.outcome.Refs, store.OutboxRef{UID: obj.UID, Kind: obj.Kind})
+		im.outcome.Refs = append(im.outcome.Refs, store.OutboxRef{UID: obj.UID, Kind: obj.Kind, Created: created})
 		key := map[string]string{store.KindTrackedEntity: "trackedEntities", store.KindEnrollment: "enrollments",
 			store.KindEvent: "events", store.KindRelationship: "relationships"}[it.Kind]
 		im.outcome.Flat[key] = append(im.outcome.Flat[key].([]any), it.Data)

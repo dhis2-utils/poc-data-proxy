@@ -135,3 +135,43 @@ func TestPendingAuthorsSkipsWaitingChildren(t *testing.T) {
 		t.Fatalf("authors %v after the parent was sent, want the child's", got)
 	}
 }
+
+// An object created on this hub counts as never on central until central accepts a
+// save of it (review R-47); the stick's copy of the outbox keeps the mark.
+func TestNeverOnCentral(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	k, _ := hubcrypto.NewKey()
+	if err := s.SetDK(k); err != nil {
+		t.Fatal(err)
+	}
+	err = s.Tx(context.Background(), func(tx *sql.Tx) error {
+		_, err := s.AppendOutbox(tx, 1, []byte(`{}`), "", []OutboxRef{{UID: "EvNew000001", Kind: KindEvent, Created: true},
+			{UID: "EvOld000001", Kind: KindEvent}}, 0)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.NeverOnCentral("EvNew000001") || s.NeverOnCentral("EvOld000001") {
+		t.Fatal("created mark not recorded")
+	}
+	raw, err := s.PendingRaw()
+	if err != nil || len(raw) != 1 {
+		t.Fatal(raw, err)
+	}
+	for _, o := range raw[0].Objects {
+		if o.Created != (o.UID == "EvNew000001") {
+			t.Errorf("stick copy: %+v", o)
+		}
+	}
+	if err := s.AcceptedByCentral("EvNew000001"); err != nil {
+		t.Fatal(err)
+	}
+	if s.NeverOnCentral("EvNew000001") {
+		t.Error("still never on central after central accepted it")
+	}
+}

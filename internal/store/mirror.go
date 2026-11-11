@@ -43,10 +43,10 @@ func (s *Store) PendingRaw() ([]*RawOutbox, error) {
 		return nil, err
 	}
 	for _, e := range out {
-		rows, err := s.DB().Query(`SELECT uid, kind FROM outbox_objects WHERE seq = ?`, e.Seq)
+		rows, err := s.DB().Query(`SELECT uid, kind, created FROM outbox_objects WHERE seq = ?`, e.Seq)
 		if err := scanRows(rows, err, func(r *sql.Rows) error {
 			var o OutboxRef
-			err := r.Scan(&o.UID, &o.Kind)
+			err := r.Scan(&o.UID, &o.Kind, &o.Created)
 			e.Objects = append(e.Objects, o)
 			return err
 		}); err != nil {
@@ -80,7 +80,7 @@ func (s *Store) RestoreOutbox(entries []*RawOutbox) (int, error) {
 			}
 			n++
 			for _, o := range e.Objects {
-				if _, err := tx.Exec(`INSERT OR IGNORE INTO outbox_objects(seq, uid, kind) VALUES(?,?,?)`, e.Seq, o.UID, o.Kind); err != nil {
+				if _, err := tx.Exec(`INSERT OR IGNORE INTO outbox_objects(seq, uid, kind, created) VALUES(?,?,?,?)`, e.Seq, o.UID, o.Kind, o.Created); err != nil {
 					return err
 				}
 			}

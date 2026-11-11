@@ -41,8 +41,12 @@ type OutboxEntry struct {
 	Kind   string // OutboxTracker or OutboxAggregate
 }
 
-// OutboxRef is an object UID + kind in an outbox entry.
-type OutboxRef struct{ UID, Kind string }
+// OutboxRef is an object UID + kind in an outbox entry. Created: the entry creates the
+// object on this hub; cleared once central accepts the object (AcceptedByCentral).
+type OutboxRef struct {
+	UID, Kind string
+	Created   bool `json:"created,omitempty"`
+}
 
 // AppendOutbox adds an entry and returns its seq. dependsOn is 0 for none.
 func (s *Store) AppendOutbox(tx *sql.Tx, userID int64, payload []byte, params string, refs []OutboxRef, dependsOn int64) (int64, error) {
@@ -65,11 +69,26 @@ func (s *Store) AppendOutbox(tx *sql.Tx, userID int64, payload []byte, params st
 		return 0, err
 	}
 	for _, r := range refs {
-		if _, err := tx.Exec(`INSERT OR IGNORE INTO outbox_objects(seq, uid, kind) VALUES(?,?,?)`, seq, r.UID, r.Kind); err != nil {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO outbox_objects(seq, uid, kind, created) VALUES(?,?,?,?)`, seq, r.UID, r.Kind, r.Created); err != nil {
 			return 0, err
 		}
 	}
 	return seq, nil
+}
+
+// AcceptedByCentral records that central accepted a save of uid: it is no longer an
+// object only this hub has.
+func (s *Store) AcceptedByCentral(uid string) error {
+	_, err := s.write(`UPDATE outbox_objects SET created = 0 WHERE uid = ? AND created = 1`, uid)
+	return err
+}
+
+// NeverOnCentral reports whether uid was created on this hub and central has accepted
+// no save of it since. Unknown for a save made before the hub recorded this (false).
+func (s *Store) NeverOnCentral(uid string) bool {
+	var n int
+	s.DB().QueryRow(`SELECT count(*) FROM outbox_objects WHERE uid = ? AND created = 1`, uid).Scan(&n)
+	return n > 0
 }
 
 // PendingAuthors returns the users with pending entries the push would try now,

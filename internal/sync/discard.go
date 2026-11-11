@@ -22,8 +22,12 @@ const discardAction = "discard"
 // discard throws away refused saves a hub manager discarded in the Facility Hub app,
 // for a change on central that the waiting data does not fit, or a duplicate. For each
 // refused tracker object the hub reads central's version by UID, as the object's
-// author, and keeps that. Where central has none (a refused registration), it keeps a
-// tombstone, so Android's next download drops the record. Its update time is the hub's
+// author, and keeps that. Where central has none and never had (a refused
+// registration: created here, never accepted), it keeps a tombstone, so Android's next
+// download drops the record. Any other object central does not show is kept refused:
+// central answers 404 alike for a record it deleted and for one the author may not
+// see (review R-47), and a tombstone would take a live record from every user. Real
+// deletions reach the hub by the pull and closeMoot. Its update time is the hub's
 // now, in central's time, so that download includes it. The refused outbox entries
 // are marked discarded, and their issues close at the next report. An aggregate edit's
 // entry is marked discarded only: the stored form left the edit out at the refusal.
@@ -64,6 +68,9 @@ func (w *Worker) discard(ctx context.Context, issues []*store.Issue) (string, er
 		}
 		var keep []*tracker.Obj
 		for _, o := range objs {
+			if failed[o.UID] == "" && have[o.UID] == nil && !(o.Origin == store.OriginLocal && h.Store.NeverOnCentral(o.UID)) {
+				failed[o.UID] = "central does not show this record to " + name + ": deleted, or no access"
+			}
 			if failed[o.UID] != "" {
 				why = append(why, fmt.Sprintf("%s %s kept: %s", o.Kind, o.UID, failed[o.UID]))
 				continue
@@ -161,8 +168,8 @@ func (w *Worker) closeMoot(ctx context.Context) error {
 // person once per programme the hub holds them in (central gives a programme's
 // attributes with the programme only), with their enrollments and events, and each
 // event of an event programme and each relationship alone. have holds the versions
-// found, without their children (a child missing from its person's answer is not on
-// central); failed says why an object could not be read.
+// found, without their children (a child missing from its person's answer is not shown
+// to auth, as a 404 is not); failed says why an object could not be read.
 func (w *Worker) centralVersions(ctx context.Context, auth central.Auth, objs []*tracker.Obj) (have map[string]tracker.M,
 	failed map[string]string, err error) {
 	h := w.H

@@ -206,3 +206,46 @@ func TestDiscardRefusedRegistration(t *testing.T) {
 		t.Error("the person registered again did not reach central")
 	}
 }
+
+// A discard keeps a tombstone only of a record central never had. Here central
+// answers 404 for a person the hub got from central (deleted, or no longer shown to
+// the author: central answers alike, review R-47): the person and their enrollment
+// stay refused, with the reason, for every user and tablet; only the event entered
+// offline, which central never accepted, becomes a tombstone.
+func TestDiscardKeepsWhatCentralHides(t *testing.T) {
+	e := newEnv(t)
+	e.central.Seed("CentralTe87", "CentralEn87", "Kept", "NAT-8787", nil)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.sync()
+	e.offline()
+	e.central.Seed("CentralTe88", "CentralEn88", "Other", "NAT-8888", nil)
+	a.json("POST", postSync, newPatient("CentralTe87", "CentralEn87", "Kept", "NAT-8888",
+		map[string]string{"HideEv00001": fc.Stage1}), 200)
+	e.online()
+	e.sync()
+	dup := groupWith(e, "E1064")
+	if dup == nil {
+		t.Fatalf("no E1064 group in %v", refusedGroups(e))
+	}
+	e.central.Hide("CentralTe87")
+	discardInstruction(e, "d-hidden", dup, "")
+	e.sync()
+	for _, uid := range []string{"CentralTe87", "CentralEn87"} {
+		if o := e.app.Hub.Index.Get(uid); o == nil || o.Deleted || o.SyncState != store.SyncRejected {
+			t.Errorf("%s after the discard: %+v, want kept refused", uid, o)
+		}
+	}
+	if o := e.app.Hub.Index.Get("HideEv00001"); o == nil || !o.Deleted {
+		t.Errorf("the event central never had is not a tombstone: %+v", o)
+	}
+	var why map[string]string
+	json.Unmarshal([]byte(e.app.Hub.Store.Meta("retries_not_applied")), &why)
+	if !strings.Contains(why["d-hidden"], "central does not show this record to nurse_a: deleted, or no access") {
+		t.Errorf("reason given for the kept saves: %q", why["d-hidden"])
+	}
+	if g := groupWith(e, "E1064"); g == nil {
+		t.Errorf("the refusal is gone: %v", refusedGroups(e))
+	}
+}

@@ -244,6 +244,11 @@ CREATE INDEX agg_forms_ds ON agg_forms(data_set, fetched_at);
 	// than by reading every enrollment of the program (tracker.searchCandidates): a name
 	// nobody has took 151 ms at 100 000 people, growing with the facility (2026-11-05).
 	`CREATE INDEX te_attrs_lc ON te_attrs(attr, value_lc, te_uid);`,
+	// 7: the save that created an object on this hub, until central accepts the object
+	// (NeverOnCentral): a discard keeps a tombstone only of a record central never had
+	// (review R-47). A new column with a constant default: existing rows are not
+	// rewritten.
+	`ALTER TABLE outbox_objects ADD COLUMN created INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // DataPath is the data file that belongs to the key file at path.
