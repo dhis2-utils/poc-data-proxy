@@ -1,10 +1,14 @@
 package e2e
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dhis2/facility-hub/internal/store"
+	"github.com/dhis2/facility-hub/internal/tracker"
 )
 
 // F4: Android stamps its records with the device's clock (createdAtClient,
@@ -124,5 +128,72 @@ func TestHubClockBehindLeavesDatesToCentral(t *testing.T) {
 	}
 	if strings.Contains(string(page), "Device clocks ahead") {
 		t.Error("the hub's page lists a device as ahead while its own clock is behind")
+	}
+}
+
+// A hub whose clock is ahead of central's (a Windows PC set ahead by hand) stamps
+// what is saved through it online later than central does. The pull used to replace
+// a held record only when central's updatedAt was newer, so such a copy stayed as the
+// hub stored it, missing later changes on central (review R-02). The pull now
+// refreshes on any difference, and brings central's exact times; a local save still
+// waiting to be pushed is kept. The hub's page says its clock is ahead.
+func TestHubClockAheadPullRefreshes(t *testing.T) {
+	e := newEnv(t)
+	e.central.ClockSkew = -20 * time.Minute // the hub twenty minutes ahead of central
+	centralNow := func() string { return time.Now().Add(e.central.ClockSkew).UTC().Format("2006-01-02T15:04:05.000") }
+	for _, uid := range e.central.Order() {
+		e.central.Backdate(uid, centralNow()) // seeded before the skew was set
+	}
+	e.setup()
+	tab := e.android("nurse_a")
+	tab.json("GET", "/api/me", nil, 200)
+	e.sync()
+	h := e.app.Hub
+
+	// Registered online and pulled, then changed online: the hub's copy carries the
+	// hub's time, central's its own.
+	tab.json("POST", postSync, newPatient("AheadTe0001", "AheadEn0001", "Ahead", "", nil), 200)
+	e.sync()
+	tab.json("POST", postSync, newPatient("AheadTe0001", "AheadEn0001", "Ahead2", "", nil), 200)
+	te := h.Index.Get("AheadTe0001")
+	if te == nil {
+		t.Fatal("the online save is not stored")
+	}
+	if at, err := time.Parse("2006-01-02T15:04:05.000", te.UpdatedAt); err != nil || time.Since(at).Abs() > time.Minute {
+		t.Errorf("hub's copy updatedAt %q, want the hub's time %q", te.UpdatedAt, h.CentralTime(time.Now()))
+	}
+
+	// Changed on central, at central's time: still before the hub's stamp.
+	e.central.SetStatus("AheadEn0001", "COMPLETED")
+	e.central.Backdate("AheadEn0001", centralNow())
+	e.sync()
+	for _, uid := range []string{"AheadTe0001", "AheadEn0001"} {
+		o, want := h.Index.Get(uid), tracker.Str(e.central.Object(uid), "updatedAt")
+		if o == nil || o.UpdatedAt != want {
+			t.Errorf("%s after the pull: %+v, want central's updatedAt %q", uid, o, want)
+		}
+	}
+	if o := h.Index.Get("AheadEn0001"); o == nil || tracker.Str(h.Index.Full(o), "status") != "COMPLETED" {
+		t.Error("the pull did not bring central's change of the enrollment")
+	}
+
+	// A local save waiting to be pushed is not replaced by central's other version.
+	e.offline()
+	tab.json("POST", postSync, newPatient("AheadTe0001", "AheadEn0001", "Ahead3", "", nil), 200)
+	e.central.SetStatus("AheadEn0001", "CANCELLED")
+	e.central.Backdate("AheadEn0001", centralNow())
+	e.online()
+	if err := e.app.Worker.Pull(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if o := h.Index.Get("AheadEn0001"); o == nil || o.SyncState != store.SyncPending || tracker.Str(h.Index.Full(o), "status") != "ACTIVE" {
+		t.Errorf("pending local save after a pull: %+v, want kept pending and ACTIVE", o)
+	}
+
+	admin := e.web("nurse_a")
+	admin.login()
+	_, page := admin.do("GET", "/hub/ui", nil)
+	if !strings.Contains(string(page), "clock is ahead") {
+		t.Error("the hub's page does not say its clock is ahead")
 	}
 }

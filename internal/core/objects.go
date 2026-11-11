@@ -39,7 +39,7 @@ func (h *Hub) ReplaceDiscarded(userID int64, payload tracker.M, discarded map[st
 // retry from the Facility Hub app sends them.
 func (h *Hub) UpsertSaved(userID int64, payload tracker.M, persisted map[string]bool) ([]string, error) {
 	// The payload is the client's: what the hub owns stays the hub's (review R-02).
-	tracker.StripHubOwned(payload)
+	tracker.StripHubOwned(payload, h.CentralTime(time.Now()))
 	var kids []string
 	for uid, ok := range persisted {
 		if o := h.Index.Get(uid); ok && o != nil && o.SyncState == store.SyncRejected {
@@ -224,9 +224,11 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 		}
 		o.UpdatedAt = tracker.Str(o.Data, "updatedAt")
 		if o.UpdatedAt == "" || o.Data["createdAt"] == nil {
-			// An online write the client sent without times: stamp the hub's now, so
-			// the hub's copy carries a time until the next pull gives central's, and a
-			// full pull running meanwhile keeps the object visible to its author (S2).
+			// No times (an online read with a narrow fields list; a new object saved
+			// online has no createdAt, UpsertSaved gives its updatedAt): stamp the
+			// hub's now, so the hub's copy carries a time until the next pull gives
+			// central's, and a full pull running meanwhile keeps the object visible
+			// to its author (S2).
 			now := h.CentralTime(time.Now())
 			if o.UpdatedAt == "" {
 				o.UpdatedAt, o.Data["updatedAt"] = now, now
@@ -525,7 +527,7 @@ func (h *Hub) stubOld(items []*tracker.Item, get func(string) *tracker.Obj) map[
 			continue
 		}
 		cutoff, ok := ret.Cutoff(program, now)
-		// No time (a save sent online, or a narrow fields list) is no reason to stub.
+		// No time (a narrow fields list) is no reason to stub.
 		upd := tracker.Str(it.Data, "updatedAt")
 		if !ok || upd == "" || upd >= cutoff || h.referenced(it.UID, get) {
 			continue

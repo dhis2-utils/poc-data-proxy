@@ -305,11 +305,12 @@ func (w *Worker) pullFor(ctx context.Context, g []*puller, p string, full bool, 
 
 // pullProgram pulls one user's view of one program (or "tet:<type>") in two steps:
 // it lists what central shows the user, identifiers and update times only, then
-// fetches in full only the tracked entities the hub lacks or holds older, or has not
-// yet fetched for this program's attributes. Everything listed becomes visible to the
-// user. So central still decides per user, while each record's content crosses the
-// uplink once, whoever is first to see it (docs/PERFORMANCE.md). It returns the
-// newest updatedAt listed (central's clock, used as the next updatedAfter).
+// fetches in full only the tracked entities the hub lacks or holds with another update
+// time, or has not yet fetched for this program's attributes. Everything listed
+// becomes visible to the user. So central still decides per user, while each record's
+// content crosses the uplink once, whoever is first to see it (docs/PERFORMANCE.md).
+// It returns the newest updatedAt listed (central's clock, used as the next
+// updatedAfter).
 func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.Auth, userID int64,
 	facility, program string, list func(page int) string, seen map[uint32]bool) (string, int, error) {
 	h := w.H
@@ -348,8 +349,12 @@ func (w *Worker) pullProgram(ctx context.Context, api compat.API, auth central.A
 				if underStub[it.Enrollment] {
 					continue // pruned by retention: what is under an unchanged stub counts as held
 				}
+				// Any difference, not only a newer time: a hub clock ahead of central's
+				// stamps saves later than central does, and "newer" kept such a copy
+				// for ever (review R-02). A pending or refused copy is fetched too;
+				// upsertCentral keeps it.
 				have, ok := held[it.UID]
-				if !ok || have.UpdatedAt < upd {
+				if !ok || have.UpdatedAt != upd {
 					isStale = true
 				}
 				listed = append(listed, it.UID)

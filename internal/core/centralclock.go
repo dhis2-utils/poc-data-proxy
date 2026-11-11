@@ -19,6 +19,7 @@ type centralSeen struct {
 	at     time.Time
 	stored time.Time
 	loaded bool
+	ahead  time.Duration // the hub's clock minus central's, at central's latest answer
 }
 
 // noteCentralDate keeps the newest time central has shown. It is stored at most every
@@ -27,6 +28,7 @@ type centralSeen struct {
 func (h *Hub) noteCentralDate(t time.Time) {
 	h.seen.mu.Lock()
 	defer h.seen.mu.Unlock()
+	h.seen.ahead = time.Since(t)
 	h.loadSeen()
 	if !t.After(h.seen.at) {
 		return
@@ -58,6 +60,20 @@ func (h *Hub) ClockBehind() time.Duration {
 	h.loadSeen()
 	if d := h.seen.at.Sub(time.Now()); d > clockBehindMargin {
 		return d
+	}
+	return 0
+}
+
+// ClockAhead reports how far the hub's clock was ahead of central's at central's
+// latest answer, when by more than ten minutes, and zero otherwise. A Pi without an
+// RTC is behind, not ahead; a Windows PC's clock may have been set ahead by hand.
+// Saves are then stamped later than central's times, until the next pull brings
+// central's. Not kept over a restart: the next answer from central sets it again.
+func (h *Hub) ClockAhead() time.Duration {
+	h.seen.mu.Lock()
+	defer h.seen.mu.Unlock()
+	if h.seen.ahead > clockBehindMargin {
+		return h.seen.ahead
 	}
 	return 0
 }

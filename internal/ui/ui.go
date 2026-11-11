@@ -344,7 +344,7 @@ func (u *UI) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"AggWarnings": h.AggWarnings(3 * 24 * time.Hour), "AggPending": h.Store.CountAggregatePending(), "Orphans": h.Store.PendingWithoutUser(),
 		"Offline": !h.Online(), "AccountCode": h.AccountCode(), "Housekeeping": h.Stats.HousekeepingError(),
 		"Reach": reachText(h.Reach()), "Proxy": h.Proxy(), "Net": u.netView(true), "Clocks": clocks, "HubBehind": behindText(h.ClockBehind()),
-		"OwnRefusals": own, "StoreDamaged": h.StoreDamaged(), "DamageAdvice": core.StoreDamageAdvice,
+		"HubAhead": hubAheadText(h.ClockAhead()), "OwnRefusals": own, "StoreDamaged": h.StoreDamaged(), "DamageAdvice": core.StoreDamageAdvice,
 		"DiskLow": diskText(diskfree.Space(h.Cfg.DataDir)),
 	})
 }
@@ -370,6 +370,15 @@ func behindText(d time.Duration) string {
 		return ""
 	}
 	return aheadText(d)
+}
+
+// hubAheadText is how far the hub's clock is ahead of central's, in minutes under an
+// hour (the warning starts at ten), "" when it is not.
+func hubAheadText(d time.Duration) string {
+	if d > 0 && d < time.Hour {
+		return fmt.Sprintf("%.0f min", d.Minutes())
+	}
+	return behindText(d)
 }
 
 func aheadText(d time.Duration) string {

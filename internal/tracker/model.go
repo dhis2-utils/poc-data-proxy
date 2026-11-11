@@ -430,13 +430,15 @@ func AssignUIDsWith(payload M, next func() string) {
 
 // StripHubOwned removes from every object of a client's payload the fields the hub
 // keeps itself: the deleted and stub marks, which decide what is listed, and the
-// times and authors central sets (review R-02). Without the times the save is
-// stored as one from a client that sent none (core.Hub.upsertCentral).
-func StripHubOwned(payload M) {
+// times and authors central sets (review R-02). Each object gets now, the hub's time
+// of the save in central's zone, as its updatedAt, as an offline save does
+// (Importer.newObj): the copy always has a time until the next pull brings central's.
+func StripHubOwned(payload M, now string) {
 	eachObject(payload, func(m M, _ string) {
-		for _, k := range []string{"deleted", "hubStub", "createdAt", "updatedAt", "createdBy", "updatedBy"} {
+		for _, k := range []string{"deleted", "hubStub", "createdAt", "createdBy", "updatedBy"} {
 			delete(m, k)
 		}
+		m["updatedAt"] = now
 	})
 }
 
