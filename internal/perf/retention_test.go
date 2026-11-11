@@ -1,7 +1,6 @@
 package perf
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -25,14 +24,16 @@ func TestTrackerRetention(t *testing.T) {
 		e := tk.Start(t)
 		e.NeedFake()
 		e.Fake.Generate(s)
-		if retention != "" {
-			e.Fake.DataStore["facility-hub-config"] = map[string]json.RawMessage{"retention": json.RawMessage(retention)}
-		}
 		// The fill starts with set-up: the setup user's pull and each user's first login
-		// pull, as TestCentralLoad counts it.
+		// pull, as TestCentralLoad counts it. Retention counts only signed for an approved
+		// hub, so it is set (approving the hub) between set-up and the first pull.
 		e.Net.Calls()
 		start := time.Now()
-		e.Setup()
+		e.SetupOnly(tk.RoleAdmin)
+		if retention != "" {
+			e.CentralSetRetention(retention)
+		}
+		e.Sync()
 		for i := 0; i < users; i++ {
 			if st, b := e.AndroidUser(fc.GenUser(i)).Do("GET", "/api/me?fields=id", nil); st != 200 {
 				t.Fatalf("%s: %d %s", fc.GenUser(i), st, b)

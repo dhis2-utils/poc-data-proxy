@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/hubaccount"
 	"github.com/dhis2/facility-hub/internal/store"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
@@ -63,12 +64,14 @@ func TestM1Soak(t *testing.T) {
 	t.Setenv("HUB_PPROF", pprof) // the hub process inherits it
 
 	// Retention on (the hub runs it every cycle; with a window it prunes), and the
-	// token lifetime the hub starts with.
-	e.CentralSetRetention(`{"defaultMonths": 12}`)
-	soakSetTokens(t, e, 90)
+	// token lifetime the hub starts with: signed, so set after set-up (a hub not approved
+	// uses the defaults) and before the first pull.
+	e.SetupOnly(tk.RoleAdmin)
+	e.CentralSetRetention(`{"defaultMonths": 12}`) // gives the hub tk.TestMoveKey
+	hubID := e.App.Hub.HubID()
+	soakSetTokens(t, e, hubID, 90)
 	t.Cleanup(func() { e.Central.Do("DELETE", "/api/dataStore/facility-hub-config/tokens", nil) })
-
-	e.Setup()
+	e.Sync()
 	for _, role := range []string{tk.RoleNurse, tk.RoleRestricted} {
 		if _, ok := e.M.User(role); ok {
 			e.Web(role).Login()
@@ -83,7 +86,7 @@ func TestM1Soak(t *testing.T) {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	so := &soak{r: r, pl: pl, out: out, pprof: pprof, start: time.Now()}
+	so := &soak{r: r, pl: pl, out: out, pprof: pprof, start: time.Now(), hubID: hubID}
 	so.writeJSON("run.json", map[string]any{"tag": r.tag, "program": r.prog.ID, "stage": r.stage, "dataElement": r.de,
 		"duration": d.String(), "plan": pl.describe(), "config": e.ProcConfig, "central": e.M.CentralURL, "hubLog": r.p.Log})
 	t.Logf("run tag %s; hub log %s; results %s", r.tag, r.p.Log, out)
@@ -233,6 +236,7 @@ type soak struct {
 	out   string
 	pprof string
 	start time.Time
+	hubID string // the detached hub's, for signing settings
 
 	mu      sync.Mutex
 	reads   []soakRead
@@ -286,7 +290,7 @@ func (so *soak) act(ev soakEvent) {
 		time.Sleep(so.pl.Down)
 		so.restart()
 	case "tokens":
-		soakSetTokens(r.t, r.e, ev.N)
+		soakSetTokens(r.t, r.e, so.hubID, ev.N)
 		so.note("token lifetime on central set to %d days", ev.N)
 	}
 }
@@ -747,10 +751,16 @@ func pct(ds []time.Duration, p int) float64 {
 	return float64(ds[i].Microseconds()) / 1000
 }
 
-func soakSetTokens(t *testing.T, e *tk.Env, days int) {
+// soakSetTokens writes the token lifetime as the Facility Hub app does, signed with the
+// move key CentralSetRetention gave the hub (the hub may run in its own process).
+func soakSetTokens(t *testing.T, e *tk.Env, hubID string, days int) {
 	t.Helper()
 	const path = "/api/dataStore/facility-hub-config/tokens"
-	v := []byte(fmt.Sprintf(`{"expiryDays": %d}`, days))
+	v, err := hubaccount.Sign(map[string][]byte{hubID: tk.TestMoveKey}, "facility-hub-config/tokens",
+		json.RawMessage(fmt.Sprintf(`{"expiryDays": %d}`, days)), time.Now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		t.Fatal(err)
+	}
 	st, b, err := e.Central.Do("PUT", path, v)
 	if err == nil && st == 404 {
 		st, b, err = e.Central.Do("POST", path, v)

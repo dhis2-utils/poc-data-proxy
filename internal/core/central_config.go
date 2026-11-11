@@ -34,9 +34,11 @@ func (h *Hub) EditRegistry(ctx context.Context, auth central.Auth, edit func(reg
 // refreshConfig reads the country's setting facility-hub-config/<key> into the store's
 // state under stateKey; a missing key is stored as {} (the defaults). An approved hub
 // takes a setting only signed for it, and otherwise keeps the last one it took (review
-// R-07). A hub without a move key takes it as read: most hubs make their first pull
-// before their approval, and retention keeps that pull short.
+// R-07). A hub without a move key cannot check a setting, so it uses the defaults.
 func (h *Hub) refreshConfig(ctx context.Context, key, stateKey string) error {
+	if !h.Approved() {
+		return h.Store.SetState(stateKey, json.RawMessage(`{}`))
+	}
 	kind := "facility-hub-config/" + key
 	var raw json.RawMessage
 	err := h.Central.JSON(ctx, "GET", "/api/dataStore/"+kind, nil, h.HubAuth(), &raw)
@@ -46,7 +48,7 @@ func (h *Hub) refreshConfig(ctx context.Context, key, stateKey string) error {
 		return h.Store.SetState(stateKey, json.RawMessage(`{}`))
 	case err != nil:
 		return err
-	case !h.Approved() || h.Signed(kind, raw):
+	case h.Signed(kind, raw):
 		return h.Store.SetState(stateKey, raw)
 	case emptyObject(raw):
 		h.NoteUnsigned(kind, false) // not set: nothing ignored worth showing

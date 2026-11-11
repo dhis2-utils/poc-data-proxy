@@ -210,13 +210,14 @@ func TestTokenLifeFromCentral(t *testing.T) {
 	if d := life(); d < 80*24*time.Hour {
 		t.Fatalf("default token life %v, want 90 days", d)
 	}
-	// A hub without a move key takes the setting as read; an approved one, signed.
+	// A hub without a move key cannot check the setting: it uses the default (it does
+	// not even read it). An approved one takes it signed.
 	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{"tokens": json.RawMessage(`{"expiryDays":60}`)}
 	if err := e.app.Hub.RefreshCatalog(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.app.Hub.TokenLife(); got != 60*24*time.Hour {
-		t.Fatalf("token life %v for a hub without a move key, want 60 days", got)
+	if got := e.app.Hub.TokenLife(); got != 90*24*time.Hour || len(e.app.Hub.Unsigned()) > 0 {
+		t.Fatalf("token life %v for a hub without a move key (ignored: %v), want the default 90 days", got, e.app.Hub.Unsigned())
 	}
 	e.putSigned("facility-hub-config/tokens", `{"expiryDays":30}`)
 	if err := e.app.Hub.RefreshCatalog(context.Background()); err != nil {

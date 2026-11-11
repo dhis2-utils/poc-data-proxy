@@ -156,7 +156,11 @@ func (c *channel) publish(version, bin string) {
 
 // choose sets the country's choice on central to version, for this hub alone; the
 // choice there before is put back when the test ends.
-func choose(e *tk.Env, version, hubID string) {
+func choose(e *tk.Env, version, hubID string) { chooseSigned(e, version, hubID, nil) }
+
+// chooseSigned is choose for an approved hub: the choice signed with its move key, as
+// the Facility Hub app writes it (an approved hub takes no other); nil writes it plain.
+func chooseSigned(e *tk.Env, version, hubID string, moveKey []byte) {
 	e.T.Helper()
 	const path = "/api/dataStore/facility-hub-admin/release"
 	st, was, err := e.Central.Do("GET", path, nil)
@@ -167,7 +171,11 @@ func choose(e *tk.Env, version, hubID string) {
 	if st == 404 {
 		method = "POST"
 	}
-	if st, b, err := e.Central.Do(method, path, map[string]any{"version": version, "pilotHubs": []string{hubID}, "percent": 0}); err != nil || st/100 != 2 {
+	v, _ := json.Marshal(map[string]any{"version": version, "pilotHubs": []string{hubID}, "percent": 0})
+	if moveKey != nil {
+		v = signedFor(e, hubID, moveKey, "facility-hub-admin/release", v)
+	}
+	if st, b, err := e.Central.Do(method, path, v); err != nil || st/100 != 2 {
 		e.T.Fatalf("choosing release %s: %d %v %s", version, st, err, b)
 	}
 	e.T.Cleanup(func() {

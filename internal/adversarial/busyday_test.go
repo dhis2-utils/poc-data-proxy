@@ -1,6 +1,9 @@
 package adversarial
 
 import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dhis2/facility-hub/internal/hubaccount"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
 
@@ -75,6 +79,17 @@ func TestM2BusyDay(t *testing.T) {
 	r.p.WaitFor("the first pull", 15*time.Minute, func(s map[string]any) bool { return s["lastPull"] != nil && s["syncing"] == false })
 	t.Logf("set up on %v; first pull %s; run tag %s; hub log %s", r.p.Status()["version"], time.Since(setup).Round(time.Second), r.tag, r.p.Log)
 	hubID := r.p.Status()["hubId"].(string)
+	// Retention and the release choice count only signed for an approved hub (a hub not
+	// approved uses the default retention, which keeps everything).
+	moveKey := approveProc(t, e, hubID)
+	setRetention := func(v string) {
+		const path = "/api/dataStore/facility-hub-config/retention"
+		b := signedFor(e, hubID, moveKey, "facility-hub-config/retention", json.RawMessage(v))
+		if st, _, _ := e.Central.Do("PUT", path, b); st == 404 {
+			e.Central.Do("POST", path, b)
+		}
+	}
+	t.Cleanup(func() { e.Central.Do("DELETE", "/api/dataStore/facility-hub-config/retention", nil) })
 
 	out := filepath.Join("..", "..", "testresults", "m2", time.Now().Format("20060102-1504")+"-"+r.tag)
 	if err := os.MkdirAll(out, 0o755); err != nil {
@@ -96,11 +111,11 @@ func TestM2BusyDay(t *testing.T) {
 	var offered, back time.Time
 	var queuedAtUp any
 	steps := []step{
-		{at(0.08), "retention of 12 months set on central", func() { e.CentralSetRetention(`{"defaultMonths": 12}`) }},
+		{at(0.08), "retention of 12 months set on central", func() { setRetention(`{"defaultMonths": 12}`) }},
 		{at(0.30), "uplink down", func() { e.Net.SetDown(true) }},
 		{at(0.35), "release 0.3.0 chosen on central", func() {
 			ch.publish("0.3.0", next)
-			choose(e, "0.3.0", hubID)
+			chooseSigned(e, "0.3.0", hubID, moveKey)
 			offered = time.Now()
 		}},
 		{at(0.42), "uplink up", func() {
@@ -108,7 +123,7 @@ func TestM2BusyDay(t *testing.T) {
 			e.Net.SetDown(false)
 			back = time.Now()
 		}},
-		{at(0.62), "retention tightened to 6 months", func() { e.CentralSetRetention(`{"defaultMonths": 6}`) }},
+		{at(0.62), "retention tightened to 6 months", func() { setRetention(`{"defaultMonths": 6}`) }},
 	}
 
 	stopW := so.write()
@@ -474,4 +489,63 @@ func TestM2AuthorKeepsOwnRecordsAfterPush(t *testing.T) {
 	if len(hidden) > 0 {
 		t.Errorf("I1/I8: %d of the %d people the nurse registered offline were refused to her by the hub during the cycle after the push", len(hidden), len(regs))
 	}
+}
+
+// approveProc approves the hub running in its own process as the Facility Hub app does
+// (hubaccount.Approve as the superuser, with the manifest's hub accounts group and role
+// and the code on the hub's page), waits until the hub has taken its account up, and
+// returns its move key. The account and the key are deleted when the test ends.
+func approveProc(t *testing.T, e *tk.Env, hubID string) []byte {
+	t.Helper()
+	admin := e.Web(tk.RoleAdmin)
+	admin.Login()
+	_, page := admin.Do("GET", "/hub/ui", nil)
+	m := regexp.MustCompile(`read them this code: <span class="mono">([^<]+)</span>`).FindSubmatch(page)
+	if m == nil {
+		t.Fatal("no account code on the hub's page")
+	}
+	t.Cleanup(func() {
+		var users struct{ Users []struct{ ID string } }
+		e.Central.JSON("GET", "/api/users?fields=id&filter=username:ieq:"+hubID, nil, &users)
+		for _, u := range users.Users {
+			e.Central.Do("DELETE", "/api/users/"+u.ID, nil)
+		}
+		e.Central.Do("DELETE", "/api/dataStore/facility-hub-keys/"+hubID, nil)
+	})
+	if _, err := hubaccount.Approve(context.Background(), hubaccount.Options{Central: e.M.CentralURL,
+		Username: e.M.AdminUser, Password: e.M.AdminPassword, Group: e.M.AccountsGroup, Role: e.M.AccountsRole},
+		[]hubaccount.Request{{HubID: hubID, Code: string(m[1])}}); err != nil {
+		t.Fatalf("approving the hub: %v", err)
+	}
+	var k struct {
+		MoveKey string `json:"moveKey"`
+	}
+	if err := e.Central.JSON("GET", "/api/dataStore/facility-hub-keys/"+hubID, nil, &k); err != nil {
+		t.Fatal(err)
+	}
+	key, err := base64.StdEncoding.DecodeString(k.MoveKey)
+	if err != nil || len(key) == 0 {
+		t.Fatalf("the hub's move key: %v", err)
+	}
+	for end := time.Now().Add(10 * time.Minute); ; time.Sleep(10 * time.Second) {
+		var reg map[string]any
+		e.Central.JSON("GET", "/api/dataStore/facility-hub-registry/"+hubID, nil, &reg)
+		if reg["hubTokenOwner"] == hubID && reg["account"] == nil {
+			return key
+		}
+		if time.Now().After(end) {
+			t.Fatalf("the hub did not take its account up: %v", reg)
+		}
+	}
+}
+
+// signedFor is obj as the Facility Hub app writes it in the entry kind, with a code
+// for hubID made with its move key.
+func signedFor(e *tk.Env, hubID string, moveKey []byte, kind string, obj json.RawMessage) json.RawMessage {
+	e.T.Helper()
+	b, err := hubaccount.Sign(map[string][]byte{hubID: moveKey}, kind, obj, time.Now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	return b
 }

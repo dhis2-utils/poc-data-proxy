@@ -209,10 +209,11 @@ func retentionEnv(t *testing.T, window string) (*tk.Env, *tk.Client) {
 	e := tk.Start(t)
 	e.NeedFake()
 	seedRetention(e)
+	e.SetupOnly(tk.RoleAdmin)
 	if window != "" {
-		setRetention(e, window)
+		setRetention(e, window) // signed, approving the hub, before the first pull
 	}
-	e.Setup()
+	e.Sync()
 	nurse := e.Android(tk.RoleNurse)
 	nurse.Do("GET", "/api/me?fields=id", nil)
 	e.Sync()
@@ -481,8 +482,9 @@ func TestRetentionWindowLive(t *testing.T) {
 		months = 12
 	}
 	program := e.M.Primary().ID
-	e.CentralSetRetention(`{"programs": {"` + program + `": ` + strconv.Itoa(months) + `}}`)
-	e.Setup()
+	e.SetupOnly(tk.RoleAdmin)
+	e.CentralSetRetention(`{"programs": {"` + program + `": ` + strconv.Itoa(months) + `}}`) // approves the hub
+	e.Sync()
 	nurse := e.Android(tk.RoleNurse)
 	nurse.Do("GET", "/api/me?fields=id", nil)
 	e.Sync()

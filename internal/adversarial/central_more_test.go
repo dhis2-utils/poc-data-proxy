@@ -522,13 +522,7 @@ func TestH7TokenLifeShortened(t *testing.T) {
 	web := s.Web(tk.RoleNurse)
 	web.Login()
 	t.Logf("before: the nurse's tokens on central %v; the hub's token expires %s", tokens(nurseUser.Username), s.App.Hub.Runtime().HubTokenExp)
-	method := "PUT"
-	if st != 200 {
-		method = "POST"
-	}
-	if st, b, err := s.Central.Do(method, key, map[string]any{"expiryDays": 7}); err != nil || st/100 != 2 {
-		t.Fatalf("token_settings: %d %v %s", st, err, b)
-	}
+	s.PutSigned("facility-hub-config/tokens", `{"expiryDays": 7}`) // as the app writes it; approves the hub
 	// A cycle renews the hub's token before it reads the country's settings: the cycle
 	// after takes the new life.
 	s.Sync()

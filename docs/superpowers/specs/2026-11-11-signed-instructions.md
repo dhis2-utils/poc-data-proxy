@@ -27,7 +27,7 @@ When an approved hub ignores an entry: no planned move; no retries applied; no u
 
 ## Hubs without a move key
 
-A hub not approved (running on a staff member's token) cannot check a code. It ignores `central-move`, `retries` and `metadataReload`, and reads `release`, `accounts` and the other `facility-hub-config` settings as before. `release` only chooses among releases signed by the supplier, which the hub verifies. `accounts` is needed at set-up, before any approval (the hub owners group for the registry entry's sharing). The settings are read because most hubs make their first pull before they are approved, and retention keeps that pull short; to make them harder to forge, the app creates every `facility-hub-config` entry, protected and empty, when a hub manager opens it, as it does the `facility-hub-admin` ones. A "revoked" in such a hub's registry entry is handled as before: taken only when central refuses the hub's token, undone when the entry no longer says it.
+A hub not approved (running on a staff member's token) cannot check a code. It ignores `central-move`, `retries`, `metadataReload` and the `facility-hub-config` settings, for which it uses the built-in defaults, and reads `release` and `accounts` as before. A first pull before approval therefore uses the default retention (everything kept). `release` only chooses among releases signed by the supplier, which the hub verifies. `accounts` is needed at set-up, before any approval (the hub owners group for the registry entry's sharing; set-up is refused without one). A "revoked" in such a hub's registry entry is handled as before: taken only when central refuses the hub's token, undone when the entry no longer says it.
 
 ## Approvals and Revoke
 
@@ -41,7 +41,7 @@ Older releases of the app write no codes, and hubs on this release ignore unsign
 ## Remaining risks
 
 - Every hub manager reads every move key (accepted 2026-10-19), so any manager can sign anything for any hub. The codes keep out other DHIS2 users, not managers.
-- `accounts`, `release` and the settings, for unapproved hubs, and `accounts` for approved hubs that have not yet accepted a signed one, are trusted as before: on the entry's sharing, which a user who created a missing entry first can pass.
+- `accounts` and `release`, for unapproved hubs, and `accounts` for approved hubs that have not yet accepted a signed one, are trusted as before: on the entry's sharing, which a user who created a missing entry first can pass.
 - `retired` in the registry is written by the replacing hub at its set-up, which has no key of the hub it replaces. It stays unsigned: a forged one stops a hub from serving offline until the entry says active again (the hub keeps its data and pushes its outbox).
 - A revoked hub that was offline while it was revoked cannot read its registry entry afterwards (its tokens are deleted and its user disabled), so it does not drop what it holds by itself. Its data stays encrypted on the device and can no longer reach central.
 - A code covers the entry's content, not who wrote it: a manager's honest mistake is signed like anything else.
