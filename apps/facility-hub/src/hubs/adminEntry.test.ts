@@ -5,6 +5,7 @@ import {
     addHubCodes,
     configKeys,
     ensureAdminEntries,
+    shareAccountsGroup,
     shareAdminEntries,
     writeAdminEntry,
 } from './adminEntry'
@@ -283,5 +284,51 @@ describe('signed instructions', () => {
             defaultMonths: 1,
             codes: { 'hub-a': 'forged' },
         })
+    })
+})
+
+// A hub shares its registry entry with the hub accounts group as whoever set it up, and
+// DHIS2 2.42 drops from a sharing a group the sender cannot see.
+describe('shareAccountsGroup', () => {
+    it('makes the hub accounts group readable by the owners and managers, keeping its sharing', async () => {
+        const api = new FakeApi()
+        const id = 'HubGrpAccts'
+        api.sharing[id] = {
+            object: {
+                publicAccess: '--------',
+                userAccesses: [{ id: 'SomeUser001', access: 'rw------' }],
+                userGroupAccesses: [{ id: 'HubGrpMgrs', access: 'r-------' }],
+            },
+        }
+        await shareAccountsGroup(api, {
+            group: id,
+            managers: 'HubGrpMgrs',
+            owners: 'HubGrpOwnr',
+        })
+        expect(api.sharing[id]).toEqual({
+            object: {
+                publicAccess: '--------',
+                externalAccess: false,
+                userAccesses: [{ id: 'SomeUser001', access: 'rw------' }],
+                userGroupAccesses: [
+                    { id: 'HubGrpMgrs', access: 'r-------' },
+                    { id: 'HubGrpOwnr', access: 'r-------' },
+                ],
+            },
+        })
+        // Nothing to add: nothing written.
+        api.log = []
+        await shareAccountsGroup(api, {
+            group: id,
+            managers: 'HubGrpMgrs',
+            owners: 'HubGrpOwnr',
+        })
+        expect(api.log).toEqual(['GET /sharing'])
+    })
+
+    it('shares with neither group while none is named', async () => {
+        const api = new FakeApi()
+        await shareAccountsGroup(api, { group: 'HubGrpAccts' })
+        expect(api.log).toEqual(['GET /sharing'])
     })
 })

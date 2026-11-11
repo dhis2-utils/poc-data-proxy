@@ -236,3 +236,52 @@ export const shareAdminEntries = async (api: Api, managers: string) => {
         }
     }
 }
+
+type Access = { id: string; access: string }
+type AccountsGroups = { group: string; managers?: string; owners?: string }
+
+/**
+ * Gives the hub owners and hub managers groups metadata read access to the hub accounts
+ * group, keeping its other sharing. A hub shares its registry entry with the hub accounts
+ * group as whoever set it up, and DHIS2 (2.42) silently drops from a sharing a group the
+ * sender cannot see: the hub's own account could then not write its entry. Superusers
+ * only.
+ */
+export const shareAccountsGroup = async (
+    api: Api,
+    { group, managers, owners }: AccountsGroups
+) => {
+    const path = `/sharing?type=userGroup&id=${encodeURIComponent(group)}`
+    const cur = (await api.request('GET', path)) as {
+        object?: {
+            publicAccess?: string
+            userAccesses?: Access[]
+            userGroupAccesses?: Access[]
+        }
+    }
+    const o = cur.object ?? {}
+    const groups = (o.userGroupAccesses ?? []).map(({ id, access }) => ({
+        id,
+        access,
+    }))
+    const missing = [owners, managers].filter(
+        (g): g is string => !!g && !groups.some((a) => a.id === g)
+    )
+    if (missing.length === 0) {
+        return
+    }
+    await api.request('POST', path, {
+        object: {
+            publicAccess: o.publicAccess ?? '--------',
+            externalAccess: false,
+            userAccesses: (o.userAccesses ?? []).map(({ id, access }) => ({
+                id,
+                access,
+            })),
+            userGroupAccesses: [
+                ...groups,
+                ...missing.map((id) => ({ id, access: 'r-------' })),
+            ],
+        },
+    })
+}

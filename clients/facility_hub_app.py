@@ -9,6 +9,7 @@ Run by internal/live/hubapp_test.go, which installs the app and passes:
     announce  ADDRESS: announce a planned move to it
     withdraw  withdraw the planned move
     stage     HUB_ID, VERSION: start VERSION with HUB_ID as the only pilot hub
+    owners    OWNERS: name the hub owners group (its display name) in Settings and save
     screens   screenshots of every page into OUT (for a person to look at)
   OUT (folder for screenshots).
 Prints one JSON object: the action's result, any page errors and failed requests.
@@ -119,6 +120,17 @@ def run(page):
         # The app writes "–", not ":", in shown strings (review R-53a).
         app.get_by_text(f"Version {version} – Pilot hubs only").wait_for(timeout=120_000)
         R["shown"] = f"Version {version} – Pilot hubs only"
+    elif ACTION == "owners":
+        name = os.environ["OWNERS"]
+        app = open_page(page, "/settings")
+        app.locator("[data-test=owners-group] [data-test=dhis2-uicore-select-input]").click(timeout=120_000)
+        app.locator("[data-test=dhis2-uicore-select-menu-menuwrapper] input:not([type=checkbox])").first.fill(name)
+        app.locator("[data-test=dhis2-uicore-select-menu-menuwrapper]").get_by_text(name, exact=True).first.click()
+        save = app.get_by_role("button", name="Save").first
+        save.click()
+        # Named: the field is locked once central has the group.
+        app.get_by_text("Change who is in this group in the Users app, not the group itself").nth(1).wait_for(timeout=120_000)
+        R["shown"] = "saved"
     elif ACTION == "screens":
         for name, route in [("hubs", "/"), ("approvals", "/approvals"), ("moves", "/moves"), ("version", "/version")]:
             open_page(page, route)

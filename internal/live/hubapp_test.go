@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dhis2/facility-hub/internal/hubaccount"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
@@ -69,6 +70,7 @@ type appResult struct {
 	Approved  bool     `json:"approved"`
 	Dialog    string   `json:"dialog"`
 	Code      string   `json:"code"`
+	Shown     string   `json:"shown"`
 	Exception string   `json:"exception"`
 	Errors    []string `json:"errors"`
 	Failed    []any    `json:"failed"`
@@ -135,11 +137,8 @@ func TestFacilityHubApp(t *testing.T) {
 		{"/api/users", map[string]any{"id": tk.UID(), "username": manager, "password": e.M.Password,
 			"firstName": "Hub", "surname": "manager", "organisationUnits": []map[string]string{{"id": e.M.District.ID}},
 			"userRoles": []map[string]string{{"id": mgrRole}}, "userGroups": []map[string]string{{"id": mgrGroup}}}},
-		// Readable by the hub owners too: set-up shares the hub's registry entry with the
-		// group as its owner, and DHIS2 drops, without an error, a group the user cannot
-		// read (2.42), leaving the hub's account unable to write its entry.
 		{"/api/sharing?type=userGroup&id=" + group, map[string]any{"object": map[string]any{"publicAccess": "--------",
-			"userGroupAccesses": []map[string]string{{"id": mgrGroup, "access": "r-------"}, {"id": e.M.SetupGroup, "access": "r-------"}}}}},
+			"userGroupAccesses": []map[string]string{{"id": mgrGroup, "access": "r-------"}}}}},
 	} {
 		if st, b, err := e.Central.Do("POST", p.path, p.body); err != nil || st >= 300 {
 			t.Fatalf("%s: %d %v %.300s", p.path, st, err, b)
@@ -155,8 +154,37 @@ func TestFacilityHubApp(t *testing.T) {
 	e.Central.Do("POST", "/api/sharing?type=dataStore&id="+meta.ID, map[string]any{"object": map[string]any{
 		"publicAccess": "r-------", "userAccesses": []any{}, "userGroupAccesses": []any{}}})
 	if st, b, err := e.Central.Do("PUT", "/api/dataStore/facility-hub-admin/accounts",
-		map[string]string{"group": group, "role": role, "managers": mgrGroup, "owners": e.M.SetupGroup}); err != nil || st >= 300 {
+		map[string]string{"group": group, "role": role, "managers": mgrGroup}); err != nil || st >= 300 {
 		t.Fatalf("accounts settings: %d %v %.300s", st, err, b)
+	}
+	// A superuser names the hub owners group in the app's Settings. The save also gives
+	// the hub owners read access to the hub accounts group: set-up shares the registry
+	// entry with it as a hub owner, and DHIS2 drops, without an error, a group the
+	// sender cannot see (2.42, 2.43), leaving the hub's account unable to write its entry.
+	var owners struct {
+		DisplayName string `json:"displayName"`
+	}
+	e.Central.JSON("GET", "/api/userGroups/"+e.M.SetupGroup+"?fields=displayName", nil, &owners)
+	if r := runApp(t, e, e.M.AdminUser, e.M.AdminPassword, "owners", "OWNERS="+owners.DisplayName); r.Shown != "saved" {
+		t.Fatalf("hub owners group not saved in Settings")
+	}
+	readable := false
+	for i := 0; i < 60 && !readable; i++ {
+		var sh struct {
+			Object struct {
+				UserGroupAccesses []struct{ ID string } `json:"userGroupAccesses"`
+			} `json:"object"`
+		}
+		e.Central.JSON("GET", "/api/sharing?type=userGroup&id="+group, nil, &sh)
+		for _, a := range sh.Object.UserGroupAccesses {
+			readable = readable || a.ID == e.M.SetupGroup
+		}
+		if !readable {
+			time.Sleep(time.Second)
+		}
+	}
+	if !readable {
+		t.Fatal("saving the groups did not give the hub owners read access to the hub accounts group")
 	}
 	// Set up after the groups are named, as DEPLOYMENT.md orders it: the hub shares its
 	// registry entry with them, so the manager can approve it.

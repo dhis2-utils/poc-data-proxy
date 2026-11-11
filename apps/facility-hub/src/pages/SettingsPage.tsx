@@ -17,7 +17,7 @@ import { useApi } from '@/api/useApi'
 import { ManagersOnly } from '@/components/hub/ManagersOnly'
 import { useCanManage } from '@/hooks/useCanManage'
 import { Named, useNamed } from '@/hooks/useNamed'
-import { shareAdminEntries } from '@/hubs/adminEntry'
+import { shareAccountsGroup, shareAdminEntries } from '@/hubs/adminEntry'
 import {
     aggregateForm,
     aggregateValue,
@@ -96,7 +96,7 @@ export const AccountsSettingsCard = () => {
             <h2 className={styles.subtitle}>{i18n.t('Hub accounts')}</h2>
             <div className={styles.muted}>
                 {i18n.t(
-                    'Each approved hub gets a user in this group (write sharing on the facility-hub namespaces, except facility-hub-admin) with this role, which must have no authorities. Members of the hub managers group approve hubs and make move codes without being superusers; they need a role with F_USER_ADD, F_USER_VIEW, F_USER_GROUPS_READ_ONLY_ADD_MEMBERS and M_facilityhub, and read access to the hub accounts group. Each hub makes its registry entry writable by the hub owners group (staff who set hubs up, take them over or replace them), the hub accounts group and the hub managers only, once the hub owners group is named. Only superusers change these settings, and the hub managers and hub owners groups only until they are named.'
+                    'Each approved hub gets a user in this group (write sharing on the facility-hub namespaces, except facility-hub-admin) with this role, which must have no authorities. Members of the hub managers group approve hubs and make move codes without being superusers; they need a role with F_USER_ADD, F_USER_VIEW, F_USER_GROUPS_READ_ONLY_ADD_MEMBERS and M_facilityhub. Saving gives the hub managers and hub owners groups read access to the hub accounts group, because central drops, without an error, a group the person sharing cannot see. Each hub makes its registry entry writable by the hub owners group (staff who set hubs up, take them over or replace them), the hub accounts group and the hub managers only, once the hub owners group is named. Only superusers change these settings, and the hub managers and hub owners groups only until they are named.'
                 )}
             </div>
             <div className={styles.row}>
@@ -150,6 +150,7 @@ export const AccountsSettingsCard = () => {
                 </SingleSelectField>
                 <SingleSelectField
                     label={i18n.t('Hub owners group')}
+                    dataTest="owners-group"
                     selected={owners}
                     onChange={({ selected }) => setOwners(selected)}
                     disabled={!!settings?.owners}
@@ -171,6 +172,7 @@ export const AccountsSettingsCard = () => {
                         // Written on the entry as central has it now: a group another
                         // superuser named meanwhile stays.
                         let named: string | undefined
+                        let saved: AccountsSettings | undefined
                         save.mutate(
                             (latest) => {
                                 const v = accountsValue(
@@ -180,12 +182,23 @@ export const AccountsSettingsCard = () => {
                                 named = latest?.managers
                                     ? undefined
                                     : v.managers
+                                saved = v
                                 return v
                             },
                             {
-                                // Entries made before the managers were named.
-                                onSuccess: () =>
-                                    named && shareAdminEntries(api, named),
+                                onSuccess: async () => {
+                                    // Entries made before the managers were named.
+                                    if (named) {
+                                        await shareAdminEntries(api, named)
+                                    }
+                                    if (saved?.group) {
+                                        await shareAccountsGroup(api, {
+                                            group: saved.group,
+                                            managers: saved.managers,
+                                            owners: saved.owners,
+                                        })
+                                    }
+                                },
                             }
                         )
                     }}

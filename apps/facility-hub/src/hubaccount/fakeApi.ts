@@ -140,6 +140,17 @@ export class FakeApi implements Api {
                 userGroups: this.groups.map((id) => ({ id })),
             }
         }
+        if (p === '/sharing' && method === 'GET') {
+            return clone(
+                this.sharing[new URLSearchParams(query).get('id') ?? ''] ?? {
+                    object: {
+                        publicAccess: '--------',
+                        userAccesses: [],
+                        userGroupAccesses: [],
+                    },
+                }
+            )
+        }
         if (p === '/sharing' && method === 'POST') {
             this.sharing[new URLSearchParams(query).get('id') ?? ''] = body
             return {}
