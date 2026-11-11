@@ -214,6 +214,23 @@ func (w *Worker) pullGroup(ctx context.Context, g []*puller, readers map[string]
 	return nil
 }
 
+// pullOverlap is how far before the last pull's newest update time an incremental pull
+// starts. A record can be stamped before that time and committed after the listing
+// read it, for example during a long import on central; without the overlap only the
+// weekly full pull would bring it (review R-34). Records listed again with the time
+// the hub holds are not fetched again (pullProgram compares the times).
+const pullOverlap = 5 * time.Minute
+
+// overlap is the cursor last (central's time, as DHIS2 writes it) moved back by
+// pullOverlap, in the same form; a cursor in another form is used as it is.
+func overlap(last string) string {
+	t, err := time.Parse(tracker.DHIS2Layout, last)
+	if err != nil {
+		return last
+	}
+	return t.Add(-pullOverlap).Format(tracker.DHIS2Layout)
+}
+
 // pullFor pulls one program for users with the same access, listing as the first of
 // them; incremental pulls start from the oldest of their last pulls, so none misses a
 // change. ok: the pull decided the program's visibility. stop: the listing user can
@@ -222,15 +239,16 @@ func (w *Worker) pullFor(ctx context.Context, g []*puller, p string, full bool, 
 	readers map[string]*puller, failed *[]error) (ok, stop bool, err error) {
 	h := w.H
 	rep := g[0]
-	after := ""
+	last := ""
 	if !full {
 		for i, m := range g {
-			last, _ := h.Store.PullState(m.u.ID, p)
-			if i == 0 || last < after {
-				after = last
+			l, _ := h.Store.PullState(m.u.ID, p)
+			if i == 0 || l < last {
+				last = l
 			}
 		}
 	}
+	after := overlap(last)
 	var maxUpdated string
 	var n int
 	var perr error
@@ -288,7 +306,7 @@ func (w *Worker) pullFor(ctx context.Context, g []*puller, p string, full bool, 
 		readers[p] = rep
 	}
 	if maxUpdated == "" {
-		maxUpdated = after
+		maxUpdated = last
 	}
 	for _, m := range g {
 		if full {

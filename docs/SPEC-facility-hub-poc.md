@@ -329,6 +329,8 @@ For each user with a valid PAT and each cached program (section 6.2, step 6) the
 
 `GET {central}/api/tracker/trackedEntities?orgUnits=<facility>&orgUnitMode=SELECTED&program=<p>&updatedAfter=<last pull for user+program>&fields=*,enrollments[*,events[*]],relationships[*]&pageSize=200`
 
+`updatedAfter` is 5 minutes before the last pull's newest update time, for a record stamped before it and committed after the listing (review R-34); records listed again with the time the hub holds are not fetched again.
+
 Page through all results. Upsert objects with `origin=central`, `sync_state=synced`, unless a pending local version exists (local pending wins until pushed). Add the user to each object's visibility set.
 
 Remove a user from the visibility set of objects that central no longer returns to them only on a full (non-incremental) pull. Do a full pull per user at most once a day.
