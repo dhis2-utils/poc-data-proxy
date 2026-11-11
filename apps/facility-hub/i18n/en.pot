@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-11-11T09:30:24.187Z\n"
-"PO-Revision-Date: 2026-11-11T09:30:24.190Z\n"
+"POT-Creation-Date: 2026-11-11T10:53:34.024Z\n"
+"PO-Revision-Date: 2026-11-11T10:53:34.025Z\n"
 
 msgid "Your session has expired. Reload the page and log in again."
 msgstr "Your session has expired. Reload the page and log in again."
@@ -404,32 +404,18 @@ msgstr "Pilot hubs and {{percent}} % of hubs"
 msgid "{{percent}} % of hubs"
 msgstr "{{percent}} % of hubs"
 
-msgid "Change who is in this group in the Users app, not the group itself"
-msgstr "Change who is in this group in the Users app, not the group itself"
-
-msgid "Hub accounts"
-msgstr "Hub accounts"
-
-msgid "User group"
-msgstr "User group"
-
-msgid "User role"
-msgstr "User role"
-
-msgid "Hub managers group"
-msgstr "Hub managers group"
-
-msgid "Hub owners group"
-msgstr "Hub owners group"
-
-msgid "Save"
-msgstr "Save"
-
-msgid "Not saved"
-msgstr "Not saved"
-
 msgid "Could not load the hubs"
 msgstr "Could not load the hubs"
+
+msgid "Hub accounts not set up"
+msgstr "Hub accounts not set up"
+
+msgid ""
+"A superuser must name the hub accounts group and role in Settings before "
+"hubs can be approved."
+msgstr ""
+"A superuser must name the hub accounts group and role in Settings before "
+"hubs can be approved."
 
 msgid "Hubs waiting for their own account"
 msgstr "Hubs waiting for their own account"
@@ -748,6 +734,9 @@ msgstr ""
 "Every hub switches to {{- url}} once this address has stopped answering for "
 "an hour, and only if the new one is the same DHIS2."
 
+msgid "Not saved"
+msgstr "Not saved"
+
 msgid "Move codes"
 msgstr "Move codes"
 
@@ -896,6 +885,27 @@ msgstr ""
 "program}}, and what they blocked. The values entered are not sent to "
 "central. Each hub keeps central's version of the record, or drops a record "
 "central never had. This cannot be undone from the app."
+
+msgid "Change who is in this group in the Users app, not the group itself"
+msgstr "Change who is in this group in the Users app, not the group itself"
+
+msgid "Hub accounts"
+msgstr "Hub accounts"
+
+msgid "User group"
+msgstr "User group"
+
+msgid "User role"
+msgstr "User role"
+
+msgid "Hub managers group"
+msgstr "Hub managers group"
+
+msgid "Hub owners group"
+msgstr "Hub owners group"
+
+msgid "Save"
+msgstr "Save"
 
 msgid "A whole number from {{- min}} to {{- max}}"
 msgstr "A whole number from {{- min}} to {{- max}}"
@@ -1129,6 +1139,25 @@ msgstr "Pilot hubs"
 msgid "Start with pilot hubs"
 msgstr "Start with pilot hubs"
 
+msgctxt "LOGIN) can be resent as another user of the hub."
+msgid ""
+"Saves central refused, added up across the hubs still in use, by kind, "
+"programme and error code. Once the cause is fixed on central (a setting, an "
+"option, someone's access), Resend asks every hub to send that group's "
+"refused saves again, as their original authors, at its next sync. Central's "
+"new answer stands; a save it refuses again shows up here as a fresh "
+"refusal. Saves whose author could not log in online for 7 days after "
+"central stopped accepting their token (error code NO"
+msgstr ""
+"Saves central refused, added up across the hubs still in use, by kind, "
+"programme and error code. Once the cause is fixed on central (a setting, an "
+"option, someone's access), Resend asks every hub to send that group's "
+"refused saves again, as their original authors, at its next sync. Central's "
+"new answer stands; a save it refuses again shows up here as a fresh "
+"refusal. Saves whose author could not log in online for 7 days after "
+"central stopped accepting their token (error code NO_LOGIN) can be resent "
+"as another user of the hub."
+
 msgctxt ""
 "facilityhub, and read access to the hub accounts group. Each hub makes its "
 "registry entry writable by the hub owners group (staff who set hubs up, "
@@ -1154,25 +1183,6 @@ msgstr ""
 "managers only, once the hub owners group is named. Only superusers change "
 "these settings, and the hub managers and hub owners groups only until they "
 "are named."
-
-msgctxt "LOGIN) can be resent as another user of the hub."
-msgid ""
-"Saves central refused, added up across the hubs still in use, by kind, "
-"programme and error code. Once the cause is fixed on central (a setting, an "
-"option, someone's access), Resend asks every hub to send that group's "
-"refused saves again, as their original authors, at its next sync. Central's "
-"new answer stands; a save it refuses again shows up here as a fresh "
-"refusal. Saves whose author could not log in online for 7 days after "
-"central stopped accepting their token (error code NO"
-msgstr ""
-"Saves central refused, added up across the hubs still in use, by kind, "
-"programme and error code. Once the cause is fixed on central (a setting, an "
-"option, someone's access), Resend asks every hub to send that group's "
-"refused saves again, as their original authors, at its next sync. Central's "
-"new answer stands; a save it refuses again shows up here as a fresh "
-"refusal. Saves whose author could not log in online for 7 days after "
-"central stopped accepting their token (error code NO_LOGIN) can be resent "
-"as another user of the hub."
 
 msgctxt "Application title"
 msgid "__MANIFEST_APP_TITLE"

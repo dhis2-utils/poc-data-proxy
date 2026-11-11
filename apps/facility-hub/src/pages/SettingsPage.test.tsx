@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
-import { AccountsSettingsCard } from './ApprovalsPage'
+import { AccountsSettingsCard } from './SettingsPage'
 import { FakeApi } from '@/hubaccount/fakeApi'
 import { accountsValue } from '@/hubs/useHubs'
 
@@ -10,14 +10,6 @@ import { accountsValue } from '@/hubs/useHubs'
 ;(
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true
-
-// Jest 27 cannot load react-router-dom (it reads no package exports).
-jest.mock('react-router-dom', () => ({ Link: () => null }))
-// Nor jsdom the cryptography it imports (no TextEncoder); approvals are not shown here.
-jest.mock('@/components/hub/ApproveDialog', () => ({
-    ApproveDialog: () => null,
-}))
-jest.mock('@/hubaccount/approve', () => ({ dismiss: jest.fn() }))
 
 // The fake central, with the groups and roles the card offers.
 class Central extends FakeApi {
@@ -55,7 +47,7 @@ const render = async () => {
             </QueryClientProvider>
         )
     })
-    for (let i = 0; i < 100 && !div.textContent?.includes('Save'); i++) {
+    for (let i = 0; i < 40 && !div.textContent?.includes('Save'); i++) {
         await act(() => new Promise((r) => setTimeout(r, 5)))
     }
     return div
@@ -100,6 +92,16 @@ describe('the hub managers and hub owners groups', () => {
         const div = await render()
         expect(count(div.textContent ?? '', LOCKED)).toBe(0)
         expect(div.querySelectorAll('.root.disabled')).toHaveLength(0)
+    })
+
+    // Country-wide settings: hub managers who are not superusers do not see them.
+    it('are not shown to other users', async () => {
+        mockCentral.api.superuser = false
+        mockCentral.api.store['facility-hub-admin'] = {
+            accounts: { group: 'G', role: 'R', managers: 'Managers' },
+        }
+        const div = await render()
+        expect(div.textContent).toBe('')
     })
 
     it('stay as central has them when saved', () => {
