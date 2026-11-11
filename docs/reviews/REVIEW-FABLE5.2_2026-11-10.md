@@ -258,6 +258,7 @@ Severity is judged for a proof of concept heading towards field pilots, against 
 - **Scenario:** a nurse who can read the outpatient program but not the HIV program asks for `GET /api/tracker/events?program=<OPD>&orgUnit=<F>&filterAttributes=<HIV attribute>:!null`. The answer lists the outpatients who have a value in an HIV-only attribute. With `sw:A`, `sw:AB` and so on she recovers the value. `order=<HIV attribute>:desc` on a person search puts those people first.
 - **Why it matters:** this is the disclosure FINDINGS item 9 set out to prevent, and it is the one finding that touches the hub's first promise, that each user sees only what central lets them see.
 - **Fix:** check `ReadableAttribute` for every `filterAttributes` and every `order` attribute before building the search. Add both parameters to the oracle's query generator, and give the synthetic profile program-only attribute values so the oracle can see the difference.
+- **Added 11 November, after the oracle was extended:** central does the same. On 2.42.6 and 2.43.2, `syn_clerk`, who cannot read the TB program, gets 14 maternal events for `filterAttributes=<TB number>:!null` and 4 for `sw:TB-0001`; `order` on the TB number sorts people by it. The hub, with the fix, refuses these filters and sorts as for empty values, so it is stricter than central here. The oracle accepts the difference (`acrossPrograms` in `internal/live/oracle_test.go`). To be reported to DHIS2.
 
 #### R-04. The login throttle counts after checking, and forgets
 
