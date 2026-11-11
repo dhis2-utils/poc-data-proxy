@@ -47,12 +47,9 @@ func TestLocalReadsHideWhatRolesMayNotSee(t *testing.T) {
 		"nurse_b":    stage3, // no access to stage 3
 		"clerk_c":    stage3, // reads the program, writes nothing, no stage 3
 		"outsider_d": everything,
-		// No tracked entity type: no person, attribute value or relationship, and
-		// nothing pulled from central. The enrollment and events saved on the hub are
-		// shown today, with their trackedEntity reference; whether central shows them
-		// to such a user is not yet checked on a live instance.
-		"notype_f": {"SeedTe00001", "SeedEn00001", "SeedEv00001", "SeedEv00003", "NegRel00001",
-			"Hidden", "NAT-9101", "Seeded", "NAT-0001"},
+		// No tracked entity type: nothing of the program, whether pulled from central
+		// or saved on the hub, as central hides it (2.42 and 2.43, checked live).
+		"notype_f": everything,
 	}
 
 	const tt = "/api/tracker/"
@@ -100,6 +97,12 @@ func TestLocalReadsHideWhatRolesMayNotSee(t *testing.T) {
 					none := fmt.Sprintf("NoSuchUid%02d", i)
 					asked, unknown = strings.ReplaceAll(asked, uid, none), strings.ReplaceAll(unknown, uid, none)
 				}
+			}
+			// Central refuses lists in the program without its tracked entity type
+			// (2.43; 2.42 lists its events regardless, which the hub does not repeat).
+			if role == "notype_f" && strings.Contains(p.path, prog) &&
+				(st != 403 || !strings.Contains(string(body), "E1006")) {
+				t.Errorf("%s as %s: %d %.200s, want 403 E1006", p.path, role, st, body)
 			}
 			for _, uid := range hidden[role] {
 				if strings.Contains(string(body), uid) && (st == 200 || !strings.Contains(p.path, uid)) {

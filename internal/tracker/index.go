@@ -376,9 +376,25 @@ func accessAllows(v *Viewer, o *Obj) bool {
 	case store.KindTrackedEntity:
 		return o.TET == "" || v.Access.TET(o.TET).Read
 	case store.KindEnrollment:
-		return v.Access.Program(o.Program).Read
+		return programReadable(v, o.Program)
 	case store.KindEvent:
-		return v.Access.Program(o.Program).Read && v.Access.Stage(o.Stage).Read
+		return programReadable(v, o.Program) && v.Access.Stage(o.Stage).Read
+	}
+	return true
+}
+
+// programReadable: data read access to the program and, for a tracker program, to its
+// tracked entity type. Without the latter central hides the program's enrollments and
+// events (404 one by one, E1006 for lists; 2.42 and 2.43, checked live), as the pull
+// does (sync.pullGroup).
+func programReadable(v *Viewer, program string) bool {
+	if !v.Access.Program(program).Read {
+		return false
+	}
+	if v.Catalog != nil {
+		if pm := v.Catalog.Programs[program]; pm != nil && pm.TET != "" {
+			return v.Access.TET(pm.TET).Read
+		}
 	}
 	return true
 }
@@ -398,9 +414,9 @@ func (ix *Index) CanRead(v *Viewer, o *Obj) bool {
 	case store.KindTrackedEntity:
 		return v.Access.TET(o.TET).Read
 	case store.KindEnrollment:
-		return v.Access.Program(o.Program).Read
+		return programReadable(v, o.Program)
 	case store.KindEvent:
-		return v.Access.Program(o.Program).Read && v.Access.Stage(o.Stage).Read
+		return programReadable(v, o.Program) && v.Access.Stage(o.Stage).Read
 	case store.KindRelationship:
 		// Each end must be of the kind its reference names, so never a relationship:
 		// a stored relationship that pointed at itself recursed until the stack ran

@@ -392,6 +392,12 @@ func (ix *Index) programCheck(v *Viewer, program string) *APIError {
 	if !v.Access.Program(program).Read {
 		return &APIError{Status: 403, Message: "User has no access to program: " + program}
 	}
+	// Central refuses lists in a tracker program whose tracked entity type the user may
+	// not read (2.43; 2.42 lists the program's events regardless, which the hub does not
+	// repeat).
+	if tet := v.Catalog.Programs[program].TET; tet != "" && !v.Access.TET(tet).Read {
+		return &APIError{Status: 403, Code: "E1006", Message: "User is not authorized to read data from selected program's tracked entity type: " + tet}
+	}
 	return nil
 }
 

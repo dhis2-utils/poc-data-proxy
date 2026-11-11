@@ -346,6 +346,10 @@ func (im *Importer) validateEnrollment(it *Item, old *Obj) (*Obj, bool, []ErrorR
 	if errs := im.checkAOC(it, Str(it.Data, "attributeOptionCombo"), pm.EnrollmentCategoryCombo); errs != nil {
 		return nil, false, errs
 	}
+	// Before the person is looked up: without read access to its type the hub hides it.
+	if errs := im.tetReadable(it, program, pm); errs != nil {
+		return nil, false, errs
+	}
 	parent, rej := im.resolve(te)
 	if rej {
 		return nil, false, im.errf(it, "E5000", "%s `%s` cannot be persisted because %s `%s` referenced by it cannot be persisted.",
@@ -363,9 +367,6 @@ func (im *Importer) validateEnrollment(it *Item, old *Obj) (*Obj, bool, []ErrorR
 	if !im.V.Access.Program(program).Write {
 		return nil, false, im.errf(it, "E1091", "User: `%s`, has no data write access to Program: `%s`.", im.UserUID, program)
 	}
-	if !im.V.Access.TET(parent.TET).Read {
-		return nil, false, im.errf(it, "E1104", "User: `%s`, has no data read access to program: `%s`, TrackedEntityType: `%s`.", im.UserUID, program, parent.TET)
-	}
 	// Central runs these two checks together and reports both (EnrollmentValidator).
 	var errs []ErrorReport
 	if old == nil {
@@ -381,6 +382,15 @@ func (im *Importer) validateEnrollment(it *Item, old *Obj) (*Obj, bool, []ErrorR
 	}
 	o.Data["trackedEntity"], o.Data["program"] = te, program
 	return o, old == nil, nil
+}
+
+// tetReadable refuses an enrollment or event in a tracker program whose tracked entity
+// type the user may not read, as central does (E1104, 2.42 and 2.43, checked live).
+func (im *Importer) tetReadable(it *Item, program string, pm *access.ProgramMeta) []ErrorReport {
+	if pm.TET != "" && !im.V.Access.TET(pm.TET).Read {
+		return im.errf(it, "E1104", "User: `%s` has no data read access to Program: `%s`, TrackedEntityType: `%s`.", im.UserUID, program, pm.TET)
+	}
+	return nil
 }
 
 // enrollOnce applies central's checks on a new enrollment against the person's others
@@ -456,6 +466,9 @@ func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport
 	}
 	if pm.Event {
 		return im.eventProgramEvent(it, old, program, stage)
+	}
+	if errs := im.tetReadable(it, program, pm); errs != nil {
+		return nil, false, errs
 	}
 	enr := it.Enrollment
 	if enr == "" && old != nil {

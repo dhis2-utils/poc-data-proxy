@@ -3,6 +3,7 @@ package tracker
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/url"
 	"slices"
 	"testing"
@@ -343,5 +344,56 @@ func TestInvalidOrderRefused(t *testing.T) {
 		if got != c.status {
 			t.Errorf("%s order=%s: %v, want status %d", c.coll, c.order, apiErr, c.status)
 		}
+	}
+}
+
+// Without data read access to the program's tracked entity type, central hides the
+// program's enrollments and events, refuses lists in it (E1006) and refuses writes to
+// it (E1104), even with read and write access to the program and its stages (2.42 and
+// 2.43, checked live). The hub does the same with what was saved on it.
+func TestNoTETReadHidesAndRefuses(t *testing.T) {
+	f := newInputFixture(t)
+	noType := f.viewer(func(l *access.List) { delete(l.TETs, inTET) })
+	readType := f.viewer(func(l *access.List) { l.TETs[inTET] = access.Perm{Read: true} })
+	for _, uid := range []string{"EnInput0001", "EvInput0001"} {
+		if f.ix.CanRead(noType, f.ix.Get(uid)) {
+			t.Errorf("%s: readable without the type", uid)
+		}
+		if !f.ix.CanRead(readType, f.ix.Get(uid)) {
+			t.Errorf("%s: not readable with read access to the type", uid)
+		}
+	}
+	for _, coll := range []string{"enrollments", "events", "trackedEntities"} {
+		q := url.Values{"program": {inProgA}, "orgUnit": {inOU}, "orgUnits": {inOU}}
+		if _, err := f.ix.Search(noType, coll, q); err == nil || err.Status != 403 || err.Code != "E1006" ||
+			err.Message != "User is not authorized to read data from selected program's tracked entity type: "+inTET {
+			t.Errorf("%s: %v, want 403 E1006", coll, err)
+		}
+	}
+	now := time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)
+	event := M{"events": []any{M{"event": "EvNoType001", "enrollment": "EnInput0001", "programStage": inStA2,
+		"orgUnit": inOU, "occurredAt": "2026-11-01"}}}
+	enrollment := M{"enrollments": []any{M{"enrollment": "EnNoType001", "trackedEntity": "TeInput0001",
+		"program": inProgB, "orgUnit": inOU, "enrolledAt": "2026-11-01"}}}
+	noTypeB := f.viewer(func(l *access.List) {
+		delete(l.TETs, inTET)
+		l.Programs[inProgB] = access.Perm{Read: true, Write: true}
+	})
+	want := "User: `UsNurse0001` has no data read access to Program: `%s`, TrackedEntityType: `" + inTET + "`."
+	for _, c := range []struct {
+		what, program string
+		v             *Viewer
+		payload       M
+	}{
+		{"a new event in an enrollment", inProgA, noType, event},
+		{"a new enrollment of a person", inProgB, noTypeB, enrollment},
+	} {
+		out := f.importAs(c.v, now, c.payload)
+		if len(out.Errors) != 1 || out.Errors[0].ErrorCode != "E1104" || out.Errors[0].Message != fmt.Sprintf(want, c.program) {
+			t.Errorf("%s: %v, want E1104", c.what, out.Errors)
+		}
+	}
+	if out := f.importAs(readType, now, event); len(out.Errors) != 0 {
+		t.Errorf("with read access to the type: %v", out.Errors)
 	}
 }
