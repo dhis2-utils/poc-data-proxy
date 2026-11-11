@@ -9,6 +9,7 @@ import {
     issueCodes,
     notAppliedOn,
     partlyReported,
+    reachOf,
     refusedGroupsOf,
     resend,
     Retry,
@@ -155,6 +156,68 @@ describe('groupRefusals, superseded', () => {
         ])
         expect(rows[0]).toMatchObject({ count: 5, superseded: 3 })
         expect(rows[1]).not.toHaveProperty('superseded')
+    })
+})
+
+describe('reachOf', () => {
+    const at = (path: string) => ({ id: '', displayName: '', path })
+    const hubs = [
+        hub('hub-a', {
+            orgUnit: at('/Country/DistA/FacA'),
+            heartbeat: {
+                refused: [
+                    g('event', 'P1', 'E1300', 2),
+                    g('event', 'P1', 'E1', 4),
+                ],
+                refusedGroups: 2,
+            },
+        }),
+        hub('hub-b', {
+            orgUnit: at('/Country/DistB/FacB'),
+            heartbeat: {
+                refused: [g('event', 'P1', 'E1300', 5)],
+                refusedGroups: 1,
+            },
+        }),
+        hub('hub-c', {
+            orgUnit: at('/Country/DistA/FacC'),
+            heartbeat: {
+                refused: [g('event', 'P1', 'E1', 1)],
+                refusedGroups: 120,
+            },
+        }),
+        hub('hub-d', { orgUnit: at('/Country/DistA/FacD') }),
+        hub('hub-old', {
+            retired: true,
+            orgUnit: at('/Country/DistA/FacE'),
+            heartbeat: { refused: [g('event', 'P1', 'E1300', 9)] },
+        }),
+    ]
+    const group = { kind: 'event', program: 'P1', code: 'E1300' }
+
+    it("counts the saves and hubs below the instruction's org units", () => {
+        expect(reachOf(group, hubs, ['DistA'])).toEqual({
+            saves: 2,
+            hubs: 1,
+            uncounted: 2, // hub-c lists only some groups, hub-d never reported
+        })
+        expect(reachOf(group, hubs, ['Country'])).toEqual({
+            saves: 7,
+            hubs: 2,
+            uncounted: 2,
+        })
+        expect(reachOf(group, hubs, ['DistB'])).toEqual({
+            saves: 5,
+            hubs: 1,
+            uncounted: 0,
+        })
+    })
+    it('reaches nothing without org units', () => {
+        expect(reachOf(group, hubs, [])).toEqual({
+            saves: 0,
+            hubs: 0,
+            uncounted: 0,
+        })
     })
 })
 

@@ -119,6 +119,50 @@ export const scopeOf = (
 export const isDiscard = (r: Retry) => r.action === 'discard'
 
 /**
+ * What a group instruction for orgUnits reaches, as far as this page can tell: the
+ * group's refused saves and the hubs that report them, among the hubs below orgUnits
+ * that still work, and how many of those hubs this page may not count in full (no
+ * heartbeat, or more groups than their heartbeat lists). Each hub decides by its own
+ * path (review R-30a).
+ */
+export const reachOf = (
+    group: { kind: string; program: string; code: string },
+    hubs: HubRow[],
+    orgUnits: string[]
+): { saves: number; hubs: number; uncounted: number } => {
+    const inScope = hubs.filter(
+        (h) =>
+            !h.retired &&
+            orgUnits.some((ou) =>
+                (h.orgUnit?.path ?? '').split('/').includes(ou)
+            )
+    )
+    let saves = 0
+    let reporting = 0
+    for (const h of inScope) {
+        const n = refusedGroupsOf(h.heartbeat)
+            .filter(
+                (g) =>
+                    g.kind === group.kind &&
+                    (g.program ?? '') === group.program &&
+                    g.code === group.code
+            )
+            .reduce((sum, g) => sum + (g.count ?? 0), 0)
+        if (n > 0) {
+            saves += n
+            reporting++
+        }
+    }
+    const uncounted = inScope.filter(
+        (h) =>
+            !h.heartbeat ||
+            (h.heartbeat.refusedGroups ?? 0) >
+                refusedGroupsOf(h.heartbeat).length
+    ).length
+    return { saves, hubs: reporting, uncounted }
+}
+
+/**
  * The error code of saves a hub refused itself: their author could not log in online
  * for 7 days after central stopped accepting their token. They can be resent as
  * another user.

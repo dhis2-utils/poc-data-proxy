@@ -31,6 +31,7 @@ import {
     noLoginCode,
     notAppliedOn,
     partlyReported,
+    reachOf,
     readRetries,
     RefusalRow,
     resend,
@@ -95,6 +96,9 @@ const Refusals = () => {
         }
     )
     const rows = useMemo(() => groupRefusals(hubs ?? []), [hubs])
+    const reach = confirming
+        ? reachOf(confirming, hubs ?? [], me ? scopeOf(me, hubs ?? []) : [])
+        : { saves: 0, hubs: 0, uncounted: 0 }
     const partly = useMemo(() => partlyReported(hubs ?? []), [hubs])
     const names = new Map(programs.list.map((p) => [p.id, p.displayName]))
     const programName = (id: string) => (id ? (names.get(id) ?? id) : '—')
@@ -122,10 +126,10 @@ const Refusals = () => {
         <>
             <div className={styles.muted}>
                 {i18n.t(
-                    "Saves central refused, added up across the hubs still in use, by kind, programme and error code. Once the cause is fixed on central (a setting, an option, someone's access), Resend asks every hub to send that group's refused saves again, as their original authors, at its next sync. Central's new answer stands; a save it refuses again shows up here as a fresh refusal. Saves whose author could not log in online for 7 days after central stopped accepting their token (error code NO_LOGIN) can be resent as another user of the hub."
+                    "Saves central refused, added up across the hubs still in use, by kind, programme and error code. Once the cause is fixed on central (a setting, an option, someone's access), Resend asks every hub in your org units to send that group's refused saves again, as their original authors, at its next sync. Central's new answer stands; a save it refuses again shows up here as a fresh refusal. Saves whose author could not log in online for 7 days after central stopped accepting their token (error code NO_LOGIN) can be resent as another user of the hub."
                 )}{' '}
                 {i18n.t(
-                    "When central was changed on purpose and the waiting saves do not fit (a new rule, a closed period, a duplicate), Discard asks every hub to throw that group away, with what it blocked. Each hub then keeps central's version of the record, or drops a record central never had. Hubs keep a discarded save for 30 days."
+                    "When central was changed on purpose and the waiting saves do not fit (a new rule, a closed period, a duplicate), Discard asks every hub in your org units to throw that group away, with what it blocked. Each hub then keeps central's version of the record, or drops a record central never had. Hubs keep a discarded save for 30 days."
                 )}{' '}
                 {i18n.t(
                     "A superseded save is one whose record central changed after the refusal. The hub shows central's version, and the refused save waits until it is resent (on top of central's version) or discarded."
@@ -335,14 +339,28 @@ const Refusals = () => {
                 <Modal small onClose={() => setConfirming(null)}>
                     <ModalTitle>{i18n.t('Discard refused saves')}</ModalTitle>
                     <ModalContent>
-                        {i18n.t(
-                            "Every hub throws away its {{- kind}} saves refused with {{- code}} in {{- program}}, and what they blocked. The values entered are not sent to central. Each hub keeps central's version of the record, or drops a record central never had. This cannot be undone from the app.",
-                            {
-                                kind: confirming.kind,
-                                code: confirming.code,
-                                program: programName(confirming.program),
-                            }
-                        )}
+                        <p>
+                            {i18n.t(
+                                "Each hub in your org units (for a superuser, every hub) throws away its {{- kind}} saves refused with {{- code}} in {{- program}}, and what they blocked. The values entered are not sent to central. Each hub keeps central's version of the record, or drops a record central never had. This cannot be undone from the app.",
+                                {
+                                    kind: confirming.kind,
+                                    code: confirming.code,
+                                    program: programName(confirming.program),
+                                }
+                            )}
+                        </p>
+                        <p>
+                            {i18n.t(
+                                'As reported here, this reaches {{- saves}} saves on {{- hubs}} hubs, with what they blocked. It also reaches saves of this group refused since each hub last reported (about hourly).',
+                                { saves: reach.saves, hubs: reach.hubs }
+                            )}
+                            {reach.uncounted > 0 &&
+                                ' ' +
+                                    i18n.t(
+                                        '{{- n}} more hubs in these org units have not reported all their refusals here (no report yet, or more groups than their report lists). Their saves of this group are thrown away too.',
+                                        { n: reach.uncounted }
+                                    )}
+                        </p>
                     </ModalContent>
                     <ModalActions>
                         <ButtonStrip end>
