@@ -25,6 +25,7 @@ import { shareAdminEntries } from '@/hubs/adminEntry'
 import { when } from '@/hubs/format'
 import {
     AccountsSettings,
+    accountsValue,
     HubRow,
     useAdminEntry,
     useHubs,
@@ -33,14 +34,15 @@ import {
 
 type Named = { id: string; displayName: string }
 
-// The hub accounts group and role, and the hub managers group, set once by a superuser
-// (managers read them but do not change them).
-const AccountsSettingsCard = () => {
+// The hub accounts group and role, and the hub managers and hub owners groups, set by a
+// superuser (managers read them but do not change them). The managers and owners groups
+// cannot be changed once named (accountsValue).
+export const AccountsSettingsCard = () => {
     const api = useApi()
     const {
         value: settings,
         isLoading,
-        save,
+        update: save,
     } = useAdminEntry<AccountsSettings>('facility-hub-admin', 'accounts')
     const { superuser } = useCanManage()
     const choices = useQuery({
@@ -70,6 +72,10 @@ const AccountsSettingsCard = () => {
         setOwners(settings?.owners ?? '')
     }, [settings])
 
+    const locked = i18n.t(
+        'Change who is in this group in the Users app, not the group itself'
+    )
+
     if (isLoading || choices.isLoading) {
         return <CircularLoader small />
     }
@@ -78,7 +84,7 @@ const AccountsSettingsCard = () => {
             <h2 className={styles.subtitle}>{i18n.t('Hub accounts')}</h2>
             <div className={styles.muted}>
                 {i18n.t(
-                    'Each approved hub gets a user in this group (write sharing on the facility-hub namespaces, except facility-hub-admin) with this role, which must have no authorities. Members of the hub managers group approve hubs and make move codes without being superusers; they need a role with F_USER_ADD, F_USER_VIEW, F_USER_GROUPS_READ_ONLY_ADD_MEMBERS and M_facilityhub, and read access to the hub accounts group. Each hub makes its registry entry writable by the hub owners group (staff who set hubs up, take them over or replace them), the hub accounts group and the hub managers only, once the hub owners group is named. Only superusers change these settings.'
+                    'Each approved hub gets a user in this group (write sharing on the facility-hub namespaces, except facility-hub-admin) with this role, which must have no authorities. Members of the hub managers group approve hubs and make move codes without being superusers; they need a role with F_USER_ADD, F_USER_VIEW, F_USER_GROUPS_READ_ONLY_ADD_MEMBERS and M_facilityhub, and read access to the hub accounts group. Each hub makes its registry entry writable by the hub owners group (staff who set hubs up, take them over or replace them), the hub accounts group and the hub managers only, once the hub owners group is named. Only superusers change these settings, and the hub managers and hub owners groups only until they are named.'
                 )}
             </div>
             <div className={styles.row}>
@@ -118,9 +124,10 @@ const AccountsSettingsCard = () => {
                     label={i18n.t('Hub managers group')}
                     selected={managers}
                     onChange={({ selected }) => setManagers(selected)}
-                    disabled={!superuser}
+                    disabled={!superuser || !!settings?.managers}
+                    helpText={settings?.managers ? locked : undefined}
                     filterable
-                    clearable
+                    clearable={!settings?.managers}
                     className={styles.search}
                 >
                     {(choices.data?.groups ?? []).map((g) => (
@@ -135,9 +142,10 @@ const AccountsSettingsCard = () => {
                     label={i18n.t('Hub owners group')}
                     selected={owners}
                     onChange={({ selected }) => setOwners(selected)}
-                    disabled={!superuser}
+                    disabled={!superuser || !!settings?.owners}
+                    helpText={settings?.owners ? locked : undefined}
                     filterable
-                    clearable
+                    clearable={!settings?.owners}
                     className={styles.search}
                 >
                     {(choices.data?.groups ?? []).map((g) => (
@@ -149,23 +157,28 @@ const AccountsSettingsCard = () => {
                     ))}
                 </SingleSelectField>
                 <Button
-                    onClick={() =>
+                    onClick={() => {
+                        // Written on the entry as central has it now: a group another
+                        // superuser named meanwhile stays.
+                        let named: string | undefined
                         save.mutate(
-                            {
-                                group,
-                                role,
-                                ...(managers && { managers }),
-                                ...(owners && { owners }),
+                            (latest) => {
+                                const v = accountsValue(
+                                    { group, role, managers, owners },
+                                    latest
+                                )
+                                named = latest?.managers
+                                    ? undefined
+                                    : v.managers
+                                return v
                             },
                             {
                                 // Entries made before the managers were named.
                                 onSuccess: () =>
-                                    managers &&
-                                    managers !== settings?.managers &&
-                                    shareAdminEntries(api, managers),
+                                    named && shareAdminEntries(api, named),
                             }
                         )
-                    }
+                    }}
                     loading={save.isLoading}
                     disabled={
                         !superuser ||

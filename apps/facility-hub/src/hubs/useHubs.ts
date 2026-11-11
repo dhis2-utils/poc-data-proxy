@@ -166,6 +166,28 @@ export type AccountsSettings = {
     owners?: string
 }
 
+/**
+ * The accounts settings to write: the chosen ones, except that a hub managers or hub
+ * owners group once named stays. Central shares much with each of them, once (move keys,
+ * settings, tokens; registry entries), and none of it would follow a new group: the old
+ * one would keep it and the new one would not get it. Who is in the group changes in
+ * the Users app instead.
+ */
+export const accountsValue = (
+    chosen: AccountsSettings,
+    latest?: AccountsSettings | null
+): AccountsSettings => {
+    const managers = latest?.managers || chosen.managers
+    const owners = latest?.owners || chosen.owners
+    return {
+        ...latest,
+        group: chosen.group,
+        role: chosen.role,
+        ...(managers && { managers }),
+        ...(owners && { owners }),
+    }
+}
+
 /** A planned move of central (facility-hub-admin/central-move), read by every hub. */
 export type CentralMove = { url: string; from?: string }
 
