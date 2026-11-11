@@ -222,3 +222,42 @@ func TestAnswersOnSharedAddressSpace(t *testing.T) {
 		t.Fatalf("%+v", rrs)
 	}
 }
+
+// Hostile packets (review section 10): no panic; an answer, when there is one, is a
+// well-formed response holding only the responder's private addresses, and a legacy
+// answer repeats a question that reads as the name.
+func FuzzPackets(f *testing.F) {
+	f.Add(query("dhis2.local", 1, false), true)
+	f.Add(query("DHIS2.local", 255, true), false)
+	f.Add([]byte{0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0xc0, 12, 0, 1, 0, 1}, true)
+	two := append(query("dhis2.local", 28, false), 0xc0, 12, 0, 1, 0, 1) // the second question points at the first's name
+	two[5] = 2
+	f.Add(two, true)
+	r := responder()
+	f.Fuzz(func(t *testing.T, b []byte, legacy bool) {
+		if ips := answeredIPs(b, r.Name); len(ips) > 64 {
+			t.Fatalf("%d addresses", len(ips))
+		}
+		resp := r.Answer(b, net.IPv4(192, 168, 1, 7), legacy)
+		if resp == nil {
+			return
+		}
+		if len(resp) > 512 {
+			t.Fatalf("answer of %d bytes", len(resp))
+		}
+		ips := answeredIPs(resp, r.Name)
+		if len(ips) != int(binary.BigEndian.Uint16(resp[6:])) || len(ips) == 0 {
+			t.Fatalf("answer %x: addresses %v", resp, ips)
+		}
+		for _, ip := range ips {
+			if !ip.Equal(net.IPv4(192, 168, 1, 20)) {
+				t.Fatalf("answered %v", ip)
+			}
+		}
+		if legacy {
+			if name, _, ok := readName(resp, 12); !ok || !strings.EqualFold(name, r.Name) {
+				t.Fatalf("legacy answer %x repeats question %q (%v)", resp, name, ok)
+			}
+		}
+	})
+}

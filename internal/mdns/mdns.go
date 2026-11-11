@@ -55,7 +55,6 @@ func (r *Responder) Answer(q []byte, from net.IP, legacy bool) []byte {
 	asked := false
 	var question []byte
 	for i := 0; i < qd; i++ {
-		start := off
 		name, next, ok := readName(q, off)
 		if !ok || next+4 > len(q) {
 			return nil
@@ -65,7 +64,9 @@ func (r *Responder) Answer(q []byte, from net.IP, legacy bool) []byte {
 		off = next + 4
 		if strings.EqualFold(name, r.Name) && (qtype == typeA || qtype == typeAny) && (qclass == classIN || qclass == typeAny) {
 			asked = true
-			question = q[start:off]
+			// Written out, not copied: a compression pointer in the query would point
+			// elsewhere in the answer, or at itself (fuzzing, review section 10).
+			question = append(appendName(nil, name), q[next:off]...)
 		}
 	}
 	if !asked {
