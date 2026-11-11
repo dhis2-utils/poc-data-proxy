@@ -911,11 +911,8 @@ func (w *workEnv) setLocalReads(t testing.TB, e *tk.Env, on bool) {
 	if on {
 		body["programs"] = []string{w.m.Primary().ID}
 	}
-	if err := e.Central.JSON("PUT", "/api/dataStore/facility-hub-config/localReads", body, nil); err != nil {
-		if err = e.Central.JSON("POST", "/api/dataStore/facility-hub-config/localReads", body, nil); err != nil {
-			t.Fatal(err)
-		}
-	}
+	b, _ := json.Marshal(body)
+	e.PutSigned("facility-hub-config/localReads", string(b))
 	if err := e.App.Hub.RefreshCatalog(context.Background()); err != nil {
 		t.Fatal(err)
 	}

@@ -99,10 +99,8 @@ func TestH5CentralMoved(t *testing.T) {
 	}
 	announce := func(v any) {
 		t.Helper()
-		method := map[bool]string{true: "PUT", false: "POST"}[st == 200]
-		if st, b, err := s.Central.Do(method, move, v); err != nil || st/100 != 2 {
-			t.Fatalf("announcing: %d %v %s", st, err, b)
-		}
+		b, _ := json.Marshal(v)
+		s.PutSigned("facility-hub-admin/central-move", string(b)) // as the app writes it (review R-07)
 	}
 	announce(map[string]any{"url": second.URL()})
 	if st == 200 {

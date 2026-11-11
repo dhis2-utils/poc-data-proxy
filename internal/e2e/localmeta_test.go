@@ -1,7 +1,7 @@
 package e2e
 
 import (
-	"encoding/json"
+	"context"
 	"net/url"
 	"strings"
 	"testing"
@@ -17,9 +17,9 @@ import (
 // (core/metadata.go, proxy.localCopy).
 func TestMetadataFromHubWhileOnline(t *testing.T) {
 	e := newEnv(t)
-	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{
-		"localReads": json.RawMessage(`{"programs":["` + fc.Program + `"]}`)}
 	e.setup()
+	e.putSigned("facility-hub-config/localReads", `{"programs":["`+fc.Program+`"]}`)
+	e.app.Hub.RefreshCatalog(context.Background())
 	e.app.Hub.Cfg.AccessRefreshInterval = 0 // the hourly check in every cycle
 	a := e.web("nurse_a")
 	a.login()
@@ -54,7 +54,7 @@ func TestMetadataFromHubWhileOnline(t *testing.T) {
 	// that window is seen again by the next check. Here they run seconds apart.
 	e.central.MetadataChangedAt = time.Time{}
 
-	e.central.DataStore["facility-hub-config"]["metadataReload"] = json.RawMessage(`{"at":"2026-11-06T13:00:00Z"}`)
+	e.putSigned("facility-hub-config/metadataReload", `{"at":"2026-11-06T13:00:00Z"}`)
 	e.sync()
 	open("refresh on all hubs", true)
 	e.sync() // the same value again: nothing new
@@ -92,9 +92,9 @@ func TestMetadataFromHubWhileOnline(t *testing.T) {
 // 2.43, 9 November). Such a request goes to central.
 func TestMeNestedFieldsWhileOnline(t *testing.T) {
 	e := newEnv(t)
-	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{
-		"localReads": json.RawMessage(`{"programs":["` + fc.Program + `"]}`)}
 	e.setup()
+	e.putSigned("facility-hub-config/localReads", `{"programs":["`+fc.Program+`"]}`)
+	e.app.Hub.RefreshCatalog(context.Background())
 	a := e.web("nurse_a")
 	a.login()
 	e.sync()

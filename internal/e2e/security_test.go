@@ -716,9 +716,7 @@ func TestReservedPoolSetting(t *testing.T) {
 	}
 
 	// The app's setting: a default of 40 and an override of 250 for the TB identifier.
-	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{
-		"reserved": json.RawMessage(`{"default": 40, "attributes": {"` + fc.AttrTBID + `": 250}}`),
-	}
+	e.putSigned("facility-hub-config/reserved", `{"default": 40, "attributes": {"`+fc.AttrTBID+`": 250}}`)
 	if err := e.app.Hub.RefreshCatalog(context.Background()); err != nil { // the cycle refreshes the catalog only at its interval
 		t.Fatal(err)
 	}
@@ -753,9 +751,7 @@ func TestReservedPoolSetting(t *testing.T) {
 	reserve(100) // 50 left
 	reserve(100) // empty
 	e.online()
-	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{
-		"reserved": json.RawMessage(`{"default": 40, "attributes": {"` + fc.AttrTBID + `": 3}}`),
-	}
+	e.putSigned("facility-hub-config/reserved", `{"default": 40, "attributes": {"`+fc.AttrTBID+`": 3}}`)
 	if err := e.app.Hub.RefreshCatalog(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -782,9 +778,7 @@ func TestReservedPoolSetting(t *testing.T) {
 
 	// An explicit 0 turns the attribute's pool off: no refill while online, and
 	// offline requests get needs-connection even when leftovers sit in the pool.
-	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{
-		"reserved": json.RawMessage(`{"default": 40, "attributes": {"` + fc.AttrTBID + `": 0}}`),
-	}
+	e.putSigned("facility-hub-config/reserved", `{"default": 40, "attributes": {"`+fc.AttrTBID+`": 0}}`)
 	if err := e.app.Hub.RefreshCatalog(context.Background()); err != nil {
 		t.Fatal(err)
 	}

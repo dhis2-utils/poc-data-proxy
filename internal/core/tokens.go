@@ -41,13 +41,11 @@ func (h *Hub) renewToken(exp time.Time) bool {
 }
 
 // shareWithManagers shares a new token with the hub managers group named in
-// facility-hub-admin/accounts, as its owner. Best effort: a token that is not shared
+// facility-hub-admin/accounts (ReadAccounts), as its owner. Best effort: a token that is not shared
 // can still be deleted by its owner, and the app reports the ones it could not reach.
 func (h *Hub) shareWithManagers(ctx context.Context, owner central.Auth, uid string) {
-	var acc struct {
-		Managers string `json:"managers"`
-	}
-	if err := h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-admin/accounts", nil, owner, &acc); err != nil || acc.Managers == "" {
+	acc, err := h.ReadAccounts(ctx, owner)
+	if err != nil || acc.Managers == "" {
 		return // no hub managers named yet
 	}
 	body := map[string]any{"object": map[string]any{"publicAccess": "--------",

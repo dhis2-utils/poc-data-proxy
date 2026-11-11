@@ -1,6 +1,7 @@
 package adversarial
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"testing"
@@ -154,18 +155,15 @@ func (s *scene) resentAfterAWeek(gone, other tk.User) {
 	for _, g := range groups {
 		if g["code"] == "NO_LOGIN" {
 			retries = append(retries, map[string]any{"id": "adv-" + tk.UID(), "kind": g["kind"], "program": g["program"],
-				"code": "NO_LOGIN", "at": time.Now().UTC().Format(time.RFC3339), "by": "adversarial", "user": other.Username})
+				"code": "NO_LOGIN", "at": time.Now().UTC().Format(time.RFC3339Nano), "by": "adversarial", "user": other.Username,
+				"orgUnits": []string{s.App.Hub.Facility()}})
 		}
 	}
 	if len(retries) == 0 {
 		s.t.Fatalf("no NO_LOGIN refusal: %v", groups)
 	}
-	body := map[string]any{"retries": retries}
-	if err := s.Central.JSON("PUT", "/api/dataStore/facility-hub-admin/retries", body, nil); err != nil {
-		if err := s.Central.JSON("POST", "/api/dataStore/facility-hub-admin/retries", body, nil); err != nil {
-			s.t.Fatal(err)
-		}
-	}
+	body, _ := json.Marshal(map[string]any{"retries": retries})
+	s.PutSigned("facility-hub-admin/retries", string(body)) // as the app writes it (review R-07)
 	protectEntry(s.t, s.Central, "facility-hub-admin", "retries")
 	s.reconnect(2)
 	// Live, the ledger compares central's createdBy with the author: the resent saves

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -115,6 +116,25 @@ func TestChoiceUpgrades(t *testing.T) {
 	}
 	if r := lastUpgrade(e); r["to"] != "0.3.0" || !strings.Contains(r["reason"].(string), "migration") {
 		t.Fatalf("last upgrade %v", r)
+	}
+}
+
+// An approved hub takes the choice only signed with its move key (review R-07); the
+// tests around this one use a hub without a move key, which takes it as read.
+func TestChoiceSignedForApprovedHub(t *testing.T) {
+	e, rs := upgradeEnv(t)
+	e.giveMoveKey()
+	rs.publish("0.3.0", "0.3.0")
+	e.choose(`{"version":"0.3.0","pilotHubs":[],"percent":100}`)
+	e.sync()
+	if got := rs.requested(); len(got) != 0 || !slices.Contains(e.app.Hub.Unsigned(), "facility-hub-admin/release") {
+		t.Fatalf("an unsigned choice: fetched %v, listed %v", got, e.app.Hub.Unsigned())
+	}
+	e.putSigned("facility-hub-admin/release", `{"version":"0.3.0","pilotHubs":[],"percent":100}`)
+	e.sync()
+	e.downloaded()
+	if len(rs.requested()) == 0 || len(e.app.Hub.Unsigned()) != 0 {
+		t.Fatalf("a signed choice: fetched %v, listed %v", rs.requested(), e.app.Hub.Unsigned())
 	}
 }
 

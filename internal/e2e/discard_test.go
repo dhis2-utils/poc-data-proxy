@@ -15,17 +15,13 @@ import (
 // Hub app's Discard does: for a group (kind, programme, code), or, with issue, for one
 // refused change.
 func discardInstruction(e *env, id string, g map[string]any, issue string) {
-	r := map[string]any{"id": id, "action": "discard", "kind": g["kind"], "program": g["program"], "code": g["code"],
-		"at": time.Now().UTC().Format(time.RFC3339), "by": "hub_admin"}
+	r := groupRetry(e, id, g)
+	r["action"] = "discard"
 	if issue != "" {
 		r["issue"] = issue
+		delete(r, "orgUnits") // names its hub already
 	}
-	b, _ := json.Marshal(map[string]any{"retries": []any{r}})
-	if e.central.DataStore["facility-hub-admin"] == nil {
-		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{}
-	}
-	e.central.DataStore["facility-hub-admin"]["retries"] = b
-	e.central.SetPublicAccess("facility-hub-admin", "retries", "r-------")
+	putRetries(e, true, r)
 }
 
 func groupWith(e *env, code string) map[string]any {

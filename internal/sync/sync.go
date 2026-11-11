@@ -254,19 +254,26 @@ func (w *Worker) cycle(ctx context.Context) error {
 }
 
 // checkRegistry reads this hub's registry entry and records whether another hub
-// replaced it (FINDINGS item 16, REVIEW-2 F9). A "revoked" read here is forged.
+// replaced it (FINDINGS item 16, REVIEW-2 F9). An approved hub takes a revocation
+// signed with its move key (core.TakeRegistryStatus); any other "revoked" read here
+// is ignored.
 func (w *Worker) checkRegistry(ctx context.Context) {
 	h := w.H
+	var raw json.RawMessage
 	var reg struct {
 		Status string `json:"status"`
 	}
-	if err := h.Central.JSON(ctx, "GET", core.RegistryPath(h.HubID()), nil, h.HubAuth(), &reg); err != nil {
+	if err := h.Central.JSON(ctx, "GET", core.RegistryPath(h.HubID()), nil, h.HubAuth(), &raw); err != nil || json.Unmarshal(raw, &reg) != nil {
 		return // unknown: keep the last answer
 	}
+	if h.TakeRegistryStatus(ctx, raw) && h.Revoked() {
+		return
+	}
 	if reg.Status == "revoked" {
-		// Read with the hub's token: central still takes it, so the entry is forged
-		// (core.revokedForReal). A real revocation is found at the next token made.
-		slog.Warn("the registry marks this hub's tokens as revoked, but central still takes its token: ignored (protect facility-hub-registry, docs/DEPLOYMENT.md)")
+		// Not signed, or read with the hub's token, which central still takes: forged
+		// (core.revokedForReal). A real revocation of a hub without a move key is
+		// found at the next token made.
+		slog.Warn("the registry marks this hub's tokens as revoked, unsigned or while central still takes its token: ignored")
 		return
 	}
 	retired := reg.Status == "retired"

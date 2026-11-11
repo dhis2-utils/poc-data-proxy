@@ -305,10 +305,15 @@ func (u *Upgrader) migrate(ctx context.Context, newBin, next, version string, dk
 	return fmt.Errorf("migration: %v: %s", err, out)
 }
 
-// fetchChoice reads the country's choice from central; nil when there is none.
+// fetchChoice reads the country's choice from central; nil when there is none. An
+// approved hub takes it only signed with its move key (review R-07). A hub without a
+// move key takes it as read: it only chooses among releases the supplier signed,
+// which fetchManifest verifies.
 func (u *Upgrader) fetchChoice(ctx context.Context) (*Choice, error) {
+	const kind = "facility-hub-admin/release"
+	var raw json.RawMessage
 	var c Choice
-	err := u.H.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-admin/release", nil, u.H.HubAuth(), &c)
+	err := u.H.Central.JSON(ctx, "GET", "/api/dataStore/"+kind, nil, u.H.HubAuth(), &raw)
 	var he *central.HTTPError
 	if errors.As(err, &he) && he.Status == http.StatusNotFound {
 		return nil, nil
@@ -316,7 +321,14 @@ func (u *Upgrader) fetchChoice(ctx context.Context) (*Choice, error) {
 	if err != nil {
 		return nil, fmt.Errorf("release choice: %w", err)
 	}
+	if err := json.Unmarshal(raw, &c); err != nil {
+		return nil, fmt.Errorf("release choice: %w", err)
+	}
 	if c.Version == "" {
+		u.H.NoteUnsigned(kind, false)
+		return nil, nil
+	}
+	if u.H.Approved() && !u.H.Signed(kind, raw) {
 		return nil, nil
 	}
 	return &c, nil

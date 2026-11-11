@@ -18,9 +18,8 @@ import (
 func TestRetentionTableRead(t *testing.T) {
 	e := tk.Start(t)
 	e.NeedFake()
-	e.Fake.DataStore["facility-hub-config"] = map[string]json.RawMessage{
-		"retention": json.RawMessage(`{"defaultMonths": 24, "programs": {"X": 6}}`)}
 	e.Setup()
+	e.PutSigned("facility-hub-config/retention", `{"defaultMonths": 24, "programs": {"X": 6}}`)
 	if err := e.App.Hub.RefreshCatalog(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -171,8 +170,7 @@ func TestEventRetention(t *testing.T) {
 	if e.App.Hub.Index.Get("FakeEvOld01") == nil {
 		t.Fatal("without retention the old event is held")
 	}
-	e.Fake.DataStore["facility-hub-config"] = map[string]json.RawMessage{
-		"retention": json.RawMessage(`{"programs": {"` + fc.EventProgram + `": 12}}`)}
+	e.PutSigned("facility-hub-config/retention", `{"programs": {"`+fc.EventProgram+`": 12}}`)
 	e.App.Hub.RefreshCatalog(context.Background())
 	e.Sync()
 	if e.App.Hub.Index.Get("FakeEvOld01") != nil || e.App.Hub.Index.Get("FakeEvNew01") == nil {
@@ -332,8 +330,7 @@ func TestEventRetentionPrunesPushedEdits(t *testing.T) {
 	nurse.JSON("POST", tk.SyncImport, map[string]any{"events": []any{map[string]any{"event": "FakeEvOld04",
 		"program": fc.EventProgram, "programStage": fc.EventStage, "orgUnit": e.M.Facility.ID, "occurredAt": old,
 		"status": "COMPLETED"}}}, 200)
-	e.Fake.DataStore["facility-hub-config"] = map[string]json.RawMessage{
-		"retention": json.RawMessage(`{"defaultMonths": 12}`)} // the pull no longer lists it
+	e.PutSigned("facility-hub-config/retention", `{"defaultMonths": 12}`) // the pull no longer lists it
 	e.Online()
 	e.App.Hub.RefreshCatalog(context.Background())
 	e.Sync() // pushed (and pruned at the cycle's end)

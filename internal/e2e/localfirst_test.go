@@ -15,10 +15,10 @@ import (
 func TestLocalReadsWhileOnline(t *testing.T) {
 	e := newEnv(t)
 	e.central.Users["nurse_b"].SearchOrgUnits = []string{fc.District} // searches the district
-	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{
-		"localReads": json.RawMessage(`{"programs":["` + fc.Program + `","` + fc.EventProgram + `"]}`)}
 	e.central.SeedProgramEvent("LocEvent001", fc.EventProgram, fc.EventStage, "2026-11-01T00:00:00.000", fc.DefaultAOC)
 	e.setup()
+	e.putSigned("facility-hub-config/localReads", `{"programs":["`+fc.Program+`","`+fc.EventProgram+`"]}`)
+	e.app.Hub.RefreshCatalog(context.Background())
 	a, b := e.web("nurse_a"), e.web("nurse_b")
 	a.login()
 	b.login()
@@ -94,9 +94,9 @@ func TestLocalReadsWhileOnline(t *testing.T) {
 // (found by TestCentralWork on 2.43, 9 November).
 func TestLocalReadsRegistrationWithoutEnrollmentUID(t *testing.T) {
 	e := newEnv(t)
-	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{
-		"localReads": json.RawMessage(`{"programs":["` + fc.Program + `"]}`)}
 	e.setup()
+	e.putSigned("facility-hub-config/localReads", `{"programs":["`+fc.Program+`"]}`)
+	e.app.Hub.RefreshCatalog(context.Background())
 	a := e.web("nurse_a")
 	a.login()
 	e.sync()

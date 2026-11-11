@@ -22,7 +22,9 @@ import (
 
 	"github.com/dhis2/facility-hub/internal/app"
 	"github.com/dhis2/facility-hub/internal/config"
+	"github.com/dhis2/facility-hub/internal/core"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
+	"github.com/dhis2/facility-hub/internal/hubaccount"
 	"github.com/dhis2/facility-hub/internal/hubcrypto"
 	"github.com/dhis2/facility-hub/internal/store"
 )
@@ -1054,4 +1056,46 @@ func issueID(issues []*store.Issue, uid string) string {
 		}
 	}
 	return ""
+}
+
+// testMoveKey is the move key tests give the hub, as an approval would: instructions
+// on central count only signed with it (docs/superpowers/specs/
+// 2026-11-11-signed-instructions.md).
+var testMoveKey = bytes.Repeat([]byte{7}, 32)
+
+// giveMoveKey gives the running hub a move key, as an approval does.
+func (e *env) giveMoveKey() {
+	e.t.Helper()
+	h := e.app.Hub
+	if err := h.UpdateRuntime(func(rt *core.Runtime) {
+		if rt.MoveKey == nil {
+			rt.MoveKey = testMoveKey
+		}
+	}); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+// signed is obj as the Facility Hub app writes it in the entry kind ("<namespace>/
+// <key>"), with a code for the running hub, which gets a move key if it has none.
+func (e *env) signed(kind, obj string) json.RawMessage {
+	e.t.Helper()
+	e.giveMoveKey()
+	b, err := hubaccount.Sign(map[string][]byte{e.app.Hub.HubID(): e.app.Hub.Runtime().MoveKey}, kind, json.RawMessage(obj),
+		time.Now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return b
+}
+
+// putSigned writes obj, signed for the running hub, to central's entry kind.
+func (e *env) putSigned(kind, obj string) {
+	e.t.Helper()
+	ns, key, _ := strings.Cut(kind, "/")
+	b := e.signed(kind, obj)
+	if e.central.DataStore[ns] == nil {
+		e.central.DataStore[ns] = map[string]json.RawMessage{}
+	}
+	e.central.DataStore[ns][key] = b
 }

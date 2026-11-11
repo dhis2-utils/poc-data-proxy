@@ -32,17 +32,26 @@ func (h *Hub) EditRegistry(ctx context.Context, auth central.Auth, edit func(reg
 }
 
 // refreshConfig reads the country's setting facility-hub-config/<key> into the store's
-// state under stateKey; a missing key is stored as {} (the defaults).
+// state under stateKey; a missing key is stored as {} (the defaults). An approved hub
+// takes a setting only signed for it, and otherwise keeps the last one it took (review
+// R-07). A hub without a move key takes it as read: most hubs make their first pull
+// before their approval, and retention keeps that pull short.
 func (h *Hub) refreshConfig(ctx context.Context, key, stateKey string) error {
+	kind := "facility-hub-config/" + key
 	var raw json.RawMessage
-	err := h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-config/"+key, nil, h.HubAuth(), &raw)
-	if central.Status(err) == http.StatusNotFound {
-		raw, err = json.RawMessage(`{}`), nil
-	}
-	if err != nil {
+	err := h.Central.JSON(ctx, "GET", "/api/dataStore/"+kind, nil, h.HubAuth(), &raw)
+	switch {
+	case central.Status(err) == http.StatusNotFound:
+		h.NoteUnsigned(kind, false)
+		return h.Store.SetState(stateKey, json.RawMessage(`{}`))
+	case err != nil:
 		return err
+	case !h.Approved() || h.Signed(kind, raw):
+		return h.Store.SetState(stateKey, raw)
+	case emptyObject(raw):
+		h.NoteUnsigned(kind, false) // not set: nothing ignored worth showing
 	}
-	return h.Store.SetState(stateKey, raw)
+	return nil
 }
 
 // configState decodes the setting refreshConfig stored under stateKey into v; v keeps
@@ -102,8 +111,8 @@ func (h *Hub) CheckProtection(ctx context.Context) {
 // sharing. Without a hub owners group named, the entry is left as it is: a staff
 // member could no longer take the hub over. It reports whether the entry is shared so.
 func (h *Hub) ProtectRegistry(ctx context.Context, auth central.Auth) bool {
-	var acc struct{ Group, Managers, Owners string }
-	if err := h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-admin/accounts", nil, auth, &acc); err != nil || acc.Owners == "" {
+	acc, err := h.ReadAccounts(ctx, auth)
+	if err != nil || acc.Owners == "" {
 		return false
 	}
 	var meta struct {

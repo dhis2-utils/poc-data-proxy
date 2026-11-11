@@ -96,3 +96,28 @@ func TestHubProtectsItsRegistryEntry(t *testing.T) {
 		}
 	})
 }
+
+// An approved hub names, in its heartbeat and on its admin page, the instructions it
+// ignored for want of a valid code (review R-07); a signed one clears the list.
+func TestHeartbeatReportsUnsignedEntries(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.giveMoveKey()
+	e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"central-move": json.RawMessage(`{"url":"https://new.example.org"}`)}
+	e.app.Hub.RefreshCatalog(context.Background())
+	e.sync()
+	if got := e.central.DataStoreValue("facility-hub-status", e.app.Hub.HubID())["unsigned"]; fmt.Sprint(got) != "[facility-hub-admin/central-move]" {
+		t.Errorf("heartbeat unsigned %v", got)
+	}
+	a := e.web("hub_admin")
+	a.login()
+	if _, page := a.do("GET", "/hub/ui", nil); !strings.Contains(string(page), "not signed for this hub") {
+		t.Error("the admin page does not say what the hub ignored")
+	}
+	e.putSigned("facility-hub-admin/central-move", `{"url":"https://new.example.org"}`)
+	e.app.Hub.RefreshCatalog(context.Background())
+	e.sync()
+	if got, _ := e.central.DataStoreValue("facility-hub-status", e.app.Hub.HubID())["unsigned"].([]any); len(got) > 0 {
+		t.Errorf("heartbeat unsigned %v once the entry is signed", got)
+	}
+}

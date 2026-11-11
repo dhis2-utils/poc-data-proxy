@@ -106,19 +106,28 @@ func (h *Hub) CheckMetadata(ctx context.Context, members []central.Auth) error {
 }
 
 // CheckMetadataReload reads facility-hub-config/metadataReload ({"at": ...}), which
-// the Facility Hub app writes; a value the hub has not seen moves the cutoff.
+// the Facility Hub app writes; a value the hub has not seen moves the cutoff. Only an
+// approved hub takes it, signed for it (review R-07).
 func (h *Hub) CheckMetadataReload(ctx context.Context) error {
+	const kind = "facility-hub-config/metadataReload"
+	var raw json.RawMessage
 	var v struct {
 		At string `json:"at"`
 	}
-	err := h.Central.JSON(ctx, "GET", "/api/dataStore/facility-hub-config/metadataReload", nil, h.HubAuth(), &v)
+	if !h.Approved() {
+		return nil
+	}
+	err := h.Central.JSON(ctx, "GET", "/api/dataStore/"+kind, nil, h.HubAuth(), &raw)
 	if central.Status(err) == http.StatusNotFound {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if v.At != "" && v.At != h.Store.Private(metaReloadKey) {
+	if json.Unmarshal(raw, &v); v.At == "" || v.At == h.Store.Private(metaReloadKey) {
+		return nil
+	}
+	if h.Signed(kind, raw) {
 		h.MetadataChanged("refresh on all hubs, " + v.At)
 		h.Store.SetPrivate(metaReloadKey, v.At)
 	}

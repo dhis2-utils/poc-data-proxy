@@ -784,9 +784,8 @@ func TestAggregateRetryAfterFix(t *testing.T) {
 		t.Fatal("approved period: central must not have the value")
 	}
 	e.Fake.Unapprove(ag.DataSet, pe)
-	e.Fake.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"retries": json.RawMessage(
-		`{"retries":[{"id":"r1","kind":"aggregate","program":"","code":"E2017","at":"` + time.Now().UTC().Format(time.RFC3339) + `","by":"admin"}]}`)}
-	e.Fake.SetPublicAccess("facility-hub-admin", "retries", "r-------")
+	e.PutSigned("facility-hub-admin/retries",
+		`{"retries":[{"id":"r1","kind":"aggregate","program":"","code":"E2017","at":"`+time.Now().UTC().Format(time.RFC3339Nano)+`","by":"admin","orgUnits":["`+e.M.Facility.ID+`"]}]}`)
 	e.Sync()
 	if val, by, _ := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "5" || by != nurse.User {
 		t.Fatalf("after the retry central has %q by %q", val, by)
@@ -811,9 +810,8 @@ func TestAggregateRetrySkipsReplacedEdit(t *testing.T) {
 	if val, _, _ := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "7" {
 		t.Fatalf("central has %q, want the later 7", val)
 	}
-	e.Fake.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"retries": json.RawMessage(
-		`{"retries":[{"id":"r1","kind":"aggregate","program":"","code":"E2017","at":"` + time.Now().UTC().Format(time.RFC3339) + `","by":"admin"}]}`)}
-	e.Fake.SetPublicAccess("facility-hub-admin", "retries", "r-------")
+	e.PutSigned("facility-hub-admin/retries",
+		`{"retries":[{"id":"r1","kind":"aggregate","program":"","code":"E2017","at":"`+time.Now().UTC().Format(time.RFC3339Nano)+`","by":"admin","orgUnits":["`+e.M.Facility.ID+`"]}]}`)
 	e.Sync()
 	if val, _, _ := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "7" {
 		t.Fatalf("the resend put back the replaced value: central has %q", val)
@@ -838,10 +836,9 @@ func TestAggregateDiscard(t *testing.T) {
 		t.Fatalf("%d issues, want the refused edit's", len(n))
 	}
 	e.Fake.Unapprove(ag.DataSet, pe)
-	e.Fake.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"retries": json.RawMessage(
-		`{"retries":[{"id":"d1","action":"discard","kind":"aggregate","program":"","code":"E2017","at":"` +
-			time.Now().UTC().Format(time.RFC3339) + `","by":"admin"}]}`)}
-	e.Fake.SetPublicAccess("facility-hub-admin", "retries", "r-------")
+	e.PutSigned("facility-hub-admin/retries",
+		`{"retries":[{"id":"d1","action":"discard","kind":"aggregate","program":"","code":"E2017","at":"`+
+			time.Now().UTC().Format(time.RFC3339Nano)+`","by":"admin","orgUnits":["`+e.M.Facility.ID+`"]}]}`)
 	e.Sync()
 	e.Sync()
 	if _, _, ok := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); ok {
@@ -906,9 +903,8 @@ func TestAggregateAuthorGoneResentAsAnother(t *testing.T) {
 	if is, _ := e.App.Hub.Store.UnresolvedIssues(10); len(is) != 1 || !strings.Contains(string(is[0].Error), "NO_LOGIN") {
 		t.Fatalf("issues after 7 days: %d", len(is))
 	}
-	e.Fake.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"retries": json.RawMessage(
-		`{"retries":[{"id":"r1","kind":"aggregate","program":"","code":"NO_LOGIN","at":"` + time.Now().UTC().Format(time.RFC3339) + `","by":"admin","user":"` + clerk.User + `"}]}`)}
-	e.Fake.SetPublicAccess("facility-hub-admin", "retries", "r-------")
+	e.PutSigned("facility-hub-admin/retries",
+		`{"retries":[{"id":"r1","kind":"aggregate","program":"","code":"NO_LOGIN","at":"`+time.Now().UTC().Format(time.RFC3339Nano)+`","by":"admin","orgUnits":["`+e.M.Facility.ID+`"],"user":"`+clerk.User+`"}]}`)
 	e.Sync()
 	if val, by, _ := e.CentralDataValue(ag.DataSet, pe, ag.Number, ag.COC, ag.DefaultAOC); val != "5" || by != clerk.User {
 		t.Fatalf("after the resend central has %q by %q, want 5 by %s", val, by, clerk.User)

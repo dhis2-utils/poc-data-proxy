@@ -47,14 +47,9 @@ func noLoginGroup(e *env) map[string]any {
 }
 
 func retryAs(e *env, id string, g map[string]any, user string) {
-	r := map[string]any{"id": id, "kind": g["kind"], "program": g["program"], "code": g["code"],
-		"at": time.Now().UTC().Format(time.RFC3339), "by": "hub_admin", "user": user}
-	b, _ := json.Marshal(map[string]any{"retries": []any{r}})
-	if e.central.DataStore["facility-hub-admin"] == nil {
-		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{}
-	}
-	e.central.DataStore["facility-hub-admin"]["retries"] = b
-	e.central.SetPublicAccess("facility-hub-admin", "retries", "r-------")
+	r := groupRetry(e, id, g)
+	r["user"] = user
+	putRetries(e, true, r)
 }
 
 // A user disabled (or deleted) on central never logs in online again: after 7 days

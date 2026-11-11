@@ -204,7 +204,15 @@ func TestTokenLifeFromCentral(t *testing.T) {
 	if d := life(); d < 80*24*time.Hour {
 		t.Fatalf("default token life %v, want 90 days", d)
 	}
-	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{"tokens": json.RawMessage(`{"expiryDays":30}`)}
+	// A hub without a move key takes the setting as read; an approved one, signed.
+	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{"tokens": json.RawMessage(`{"expiryDays":60}`)}
+	if err := e.app.Hub.RefreshCatalog(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.app.Hub.TokenLife(); got != 60*24*time.Hour {
+		t.Fatalf("token life %v for a hub without a move key, want 60 days", got)
+	}
+	e.putSigned("facility-hub-config/tokens", `{"expiryDays":30}`)
 	if err := e.app.Hub.RefreshCatalog(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +223,13 @@ func TestTokenLifeFromCentral(t *testing.T) {
 	if d := life(); d > 31*24*time.Hour || d < 29*24*time.Hour {
 		t.Fatalf("token renewed to %v, want 30 days", d)
 	}
-	e.central.DataStore["facility-hub-config"]["tokens"] = json.RawMessage(`{"expiryDays":1}`)
+	// An approved hub keeps the last signed setting over an unsigned one.
+	e.central.DataStore["facility-hub-config"]["tokens"] = json.RawMessage(`{"expiryDays":365}`)
+	e.app.Hub.RefreshCatalog(context.Background())
+	if got := e.app.Hub.TokenLife(); got != 30*24*time.Hour || !slices.Contains(e.app.Hub.Unsigned(), "facility-hub-config/tokens") {
+		t.Fatalf("token life %v after an unsigned setting (listed: %v), want 30 days", got, e.app.Hub.Unsigned())
+	}
+	e.putSigned("facility-hub-config/tokens", `{"expiryDays":1}`)
 	e.app.Hub.RefreshCatalog(context.Background())
 	if got := e.app.Hub.TokenLife(); got != 7*24*time.Hour {
 		t.Fatalf("token life %v for a setting below the minimum, want 7 days", got)
@@ -227,8 +241,8 @@ func TestTokenLifeFromCentral(t *testing.T) {
 // (bug review 2026-10-20).
 func TestShortTokenLifeNotRenewedEachLogin(t *testing.T) {
 	e := newEnv(t)
-	e.central.DataStore["facility-hub-config"] = map[string]json.RawMessage{"tokens": json.RawMessage(`{"expiryDays":7}`)}
 	e.setup()
+	e.putSigned("facility-hub-config/tokens", `{"expiryDays":7}`)
 	e.app.Hub.RefreshCatalog(context.Background())
 	e.sync() // the setup's 90-day hub token is replaced by a 7-day one, once
 	e.web("nurse_a").login()
@@ -326,5 +340,76 @@ func TestHeartbeatHourly(t *testing.T) {
 	e.sync()
 	if n := e.central.RequestCount(key) - before; n != 2 {
 		t.Fatalf("no heartbeat at the first sync after a start: %d", n)
+	}
+}
+
+// An approved hub takes "revoked", and its end, only signed with its move key, as the
+// Facility Hub app writes it in signedStatus (review R-23). A plain "revoked", or one
+// signed for another hub, is ignored even while central refuses the hub's token; a
+// signed one is taken at once, and an older one written back later is not.
+func TestSignedRevocation(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.giveMoveKey()
+	e.web("nurse_a").login()
+	e.sync()
+	kind := "facility-hub-registry/" + e.app.Hub.HubID()
+	status := func(s string) json.RawMessage {
+		return e.signed(kind, `{"status":"`+s+`","by":"nurse_b","at":"`+time.Now().UTC().Format(time.RFC3339)+`"}`)
+	}
+
+	other, _ := json.Marshal(map[string]any{"status": "revoked", "issued": time.Now().UTC().Format(time.RFC3339Nano),
+		"codes": map[string]string{"hub-Other": "AAAAAAAAAAAAAAAAAAAAAA=="}})
+	reg := registryEntry(e)
+	reg["status"], reg["signedStatus"] = "revoked", json.RawMessage(other)
+	setRegistry(e, reg)
+	e.sync()
+	if e.app.Hub.Revoked() {
+		t.Fatal("an approved hub took a 'revoked' signed for another hub")
+	}
+	if !slices.Contains(e.app.Hub.Unsigned(), kind) {
+		t.Errorf("the unsigned 'revoked' is not listed: %v", e.app.Hub.Unsigned())
+	}
+	delete(reg, "signedStatus")
+	setRegistry(e, reg)
+	if st := deleteTokenAs(e, "hub_admin", e.app.Hub.Runtime().HubTokenUID); st != 200 {
+		t.Fatalf("deleting the hub's token: %d", st)
+	}
+	e.web("nurse_b").login() // the registry is read with nurse_b's password
+	if e.app.Hub.Revoked() {
+		t.Fatal("an approved hub took a plain 'revoked' while central refuses its token")
+	}
+	if err := e.app.Hub.TakeOverHubToken(context.Background(), "nurse_b", fc.Password); err != nil {
+		t.Fatalf("take-over: %v", err)
+	}
+
+	revoked := status("revoked")
+	reg = registryEntry(e)
+	reg["signedStatus"] = revoked
+	setRegistry(e, reg)
+	e.sync() // read with the hub's token, which central still takes
+	if !e.app.Hub.Revoked() {
+		t.Fatal("the hub did not take a signed 'revoked'")
+	}
+	if u, _ := e.app.Hub.Store.UserByName("nurse_a"); u.HasPAT {
+		t.Fatal("a revoked hub keeps its users' tokens")
+	}
+
+	reg = registryEntry(e)
+	reg["status"], reg["signedStatus"] = "active", status("active")
+	setRegistry(e, reg)
+	e.web("nurse_b").login()
+	if e.app.Hub.Revoked() {
+		t.Fatal("a newer signed 'active' did not end the revocation")
+	}
+	if u, _ := e.app.Hub.Store.UserByName("nurse_b"); u == nil || !u.HasPAT {
+		t.Fatal("no token for nurse_b once the hub is active again")
+	}
+	reg = registryEntry(e)
+	reg["signedStatus"] = revoked // the older signed 'revoked', written back
+	setRegistry(e, reg)
+	e.web("nurse_a").login()
+	if e.app.Hub.Revoked() {
+		t.Fatal("an older signed 'revoked', replayed, was taken")
 	}
 }

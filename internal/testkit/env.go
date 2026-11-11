@@ -22,7 +22,9 @@ import (
 
 	"github.com/dhis2/facility-hub/internal/app"
 	"github.com/dhis2/facility-hub/internal/config"
+	"github.com/dhis2/facility-hub/internal/core"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
+	"github.com/dhis2/facility-hub/internal/hubaccount"
 )
 
 // Env is one hub between test clients and a central: fake, or the live instance the
@@ -474,9 +476,18 @@ func (e *Env) SetUplink(up bool) error {
 }
 
 // CentralSetRetention sets facility-hub-config/retention on central (the hub reads it
-// at its next catalog refresh). Live, it is deleted when the test ends.
+// at its next catalog refresh): signed for a hub with a move key (PutSigned), as read
+// by one without. Live, it is deleted when the test ends.
 func (e *Env) CentralSetRetention(v string) {
 	e.T.Helper()
+	const path = "/api/dataStore/facility-hub-config/retention"
+	if e.Fake == nil {
+		e.T.Cleanup(func() { e.Central.Do("DELETE", path, nil) })
+	}
+	if e.App != nil && e.App.Hub.Runtime() != nil && e.App.Hub.Runtime().MoveKey != nil {
+		e.PutSigned("facility-hub-config/retention", v)
+		return
+	}
 	if e.Fake != nil {
 		if e.Fake.DataStore["facility-hub-config"] == nil {
 			e.Fake.DataStore["facility-hub-config"] = map[string]json.RawMessage{}
@@ -484,7 +495,6 @@ func (e *Env) CentralSetRetention(v string) {
 		e.Fake.DataStore["facility-hub-config"]["retention"] = json.RawMessage(v)
 		return
 	}
-	const path = "/api/dataStore/facility-hub-config/retention"
 	st, b, err := e.Central.Do("PUT", path, []byte(v))
 	if err == nil && st == 404 {
 		st, b, err = e.Central.Do("POST", path, []byte(v))
@@ -492,5 +502,43 @@ func (e *Env) CentralSetRetention(v string) {
 	if err != nil || st >= 300 {
 		e.T.Fatalf("setting retention on central: %d %v %.500s", st, err, b)
 	}
-	e.T.Cleanup(func() { e.Central.Do("DELETE", path, nil) })
+}
+
+// TestMoveKey is the move key PutSigned gives the hub, as an approval would.
+var TestMoveKey = bytes.Repeat([]byte{7}, 32)
+
+// PutSigned writes obj (JSON) to central's entry kind ("<namespace>/<key>") as the
+// Facility Hub app does: with a code for this hub, which gets a move key first if it
+// has none (docs/superpowers/specs/2026-11-11-signed-instructions.md). Hubs ignore an
+// entry without one.
+func (e *Env) PutSigned(kind, obj string) {
+	e.T.Helper()
+	h := e.App.Hub
+	if err := h.UpdateRuntime(func(rt *core.Runtime) {
+		if rt.MoveKey == nil {
+			rt.MoveKey = TestMoveKey
+		}
+	}); err != nil {
+		e.T.Fatal(err)
+	}
+	b, err := hubaccount.Sign(map[string][]byte{h.HubID(): h.Runtime().MoveKey}, kind, json.RawMessage(obj), time.Now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		e.T.Fatal(err)
+	}
+	if e.Fake != nil {
+		ns, key, _ := strings.Cut(kind, "/")
+		if e.Fake.DataStore[ns] == nil {
+			e.Fake.DataStore[ns] = map[string]json.RawMessage{}
+		}
+		e.Fake.DataStore[ns][key] = b
+		return
+	}
+	path := "/api/dataStore/" + kind
+	st, body, err := e.Central.Do("PUT", path, b)
+	if err == nil && st == 404 {
+		st, body, err = e.Central.Do("POST", path, b)
+	}
+	if err != nil || st >= 300 {
+		e.T.Fatalf("writing %s on central: %d %v %.500s", kind, st, err, body)
+	}
 }

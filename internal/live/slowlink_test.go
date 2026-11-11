@@ -394,12 +394,9 @@ func TestSlowLinkScreens(t *testing.T) {
 			if r.URL.Query().Get("on") == "1" {
 				body["programs"] = []string{p.ID}
 			}
-			if err = e.Central.JSON("PUT", "/api/dataStore/facility-hub-config/localReads", body, nil); err != nil {
-				err = e.Central.JSON("POST", "/api/dataStore/facility-hub-config/localReads", body, nil)
-			}
-			if err == nil {
-				err = e.App.Hub.RefreshCatalog(r.Context())
-			}
+			b, _ := json.Marshal(body)
+			e.PutSigned("facility-hub-config/localReads", string(b))
+			err = e.App.Hub.RefreshCatalog(r.Context())
 		case "/offline":
 			err = e.SetUplink(false)
 		case "/online":

@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 )
@@ -15,9 +16,23 @@ func refusedGroups(e *env) []map[string]any {
 }
 
 func retry(e *env, id string, g map[string]any) {
-	r := map[string]any{"id": id, "kind": g["kind"], "program": g["program"], "code": g["code"],
-		"at": time.Now().UTC().Format(time.RFC3339), "by": "hub_admin"}
-	b, _ := json.Marshal(map[string]any{"retries": []any{r}})
+	putRetries(e, true, groupRetry(e, id, g))
+}
+
+// groupRetry is a group instruction as the Facility Hub app writes it, by a manager of
+// the hub's facility.
+func groupRetry(e *env, id string, g map[string]any) map[string]any {
+	return map[string]any{"id": id, "kind": g["kind"], "program": g["program"], "code": g["code"],
+		"at": time.Now().UTC().Format(time.RFC3339Nano), "by": "hub_admin", "orgUnits": []string{e.app.Hub.Facility()}}
+}
+
+// putRetries writes facility-hub-admin/retries, signed for the hub or not.
+func putRetries(e *env, sign bool, rs ...map[string]any) {
+	e.t.Helper()
+	b, _ := json.Marshal(map[string]any{"retries": rs})
+	if sign {
+		b = e.signed("facility-hub-admin/retries", string(b))
+	}
 	if e.central.DataStore["facility-hub-admin"] == nil {
 		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{}
 	}
@@ -59,14 +74,32 @@ func TestRetryResendsRefusedGroup(t *testing.T) {
 	}
 	// Central is fixed: the other person's national ID was a typo.
 	e.central.Seed("CentralTe79", "CentralEn79", "Other", "NAT-0000", nil)
-	// An instruction in an entry any user may write is not applied (review R-07).
-	retry(e, "r-dup", dup)
-	e.central.SetPublicAccess("facility-hub-admin", "retries", "rw------")
+	// An instruction not signed for this hub is not applied (review R-07), nor one for
+	// another district's hubs (R-30a).
+	putRetries(e, false, groupRetry(e, "r-dup", dup))
 	e.sync()
 	if e.central.Object("DupTe000079") != nil {
-		t.Fatal("a retry from an entry any user may write was applied")
+		t.Fatal("an unsigned retry was applied")
 	}
-	e.central.SetPublicAccess("facility-hub-admin", "retries", "r-------")
+	if !slices.Contains(e.app.Hub.Unsigned(), "facility-hub-admin/retries") {
+		t.Errorf("the unsigned retries are not listed: %v", e.app.Hub.Unsigned())
+	}
+	elsewhere := groupRetry(e, "r-elsewhere", dup)
+	elsewhere["orgUnits"] = []string{"OtherDist01"}
+	putRetries(e, true, elsewhere)
+	e.sync()
+	if e.central.Object("DupTe000079") != nil {
+		t.Fatal("a retry for another district's hubs was applied")
+	}
+	// A group instruction takes only saves refused before it was asked (R-30a).
+	early := groupRetry(e, "r-early", dup)
+	early["at"] = time.Now().Add(-time.Hour).UTC().Format(time.RFC3339Nano)
+	putRetries(e, true, early)
+	e.sync()
+	if e.central.Object("DupTe000079") != nil {
+		t.Fatal("a retry asked before the save was refused was applied to it")
+	}
+	retry(e, "r-dup", dup)
 	e.sync()
 	if e.central.Object("DupTe000079") == nil {
 		t.Fatal("the retried person did not reach central")

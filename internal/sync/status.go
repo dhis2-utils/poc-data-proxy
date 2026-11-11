@@ -54,6 +54,8 @@ func Status(h *core.Hub) map[string]any {
 		// The dataStore entries the hub acts on that any user may write: until a country
 		// protects them, anyone could retire the hub or announce a move (not followed).
 		"unprotected": h.Unprotected(),
+		// The instructions on central the hub ignored: not signed for it (review R-07).
+		"unsigned": h.Unsigned(),
 		// What staff asked for offline that the hub could not answer ("needs connection":
 		// a screen nobody opened online), since the hub started: the 10 most frequent,
 		// by endpoint (identifiers as {uid}, parameter names without values).

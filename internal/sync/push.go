@@ -501,8 +501,21 @@ func (r *refusals) with(pick func(*store.Issue, refusalGroup) bool) []*store.Iss
 // Action "discard" throws the saves away instead (discard.go); "" or "resend" sends
 // them again. Issue, if given, is one refused change's key in facility-hub-issues
 // (<hub ID>-<n>) in place of a group: a key of another hub's names nothing here.
+// OrgUnits, for a group, are the org units of the manager who asked: only hubs below
+// them take it (review R-30a). At is when it was asked: a group takes only saves
+// refused before then.
 type retry struct {
 	ID, Kind, Program, Code, At, User, Action, Issue string
+	OrgUnits                                         []string
+}
+
+// forThisHub reports whether a group instruction is for this hub: its facility is
+// below one of the instruction's org units. One without them, from an older app,
+// is for no hub.
+func forThisHub(r retry, facilityPath string) bool {
+	return slices.ContainsFunc(r.OrgUnits, func(ou string) bool {
+		return ou != "" && slices.Contains(strings.Split(facilityPath, "/"), ou)
+	})
 }
 
 const (
@@ -517,29 +530,32 @@ const (
 // new answer stands. A discard instruction throws the same saves away (discard.go).
 func (w *Worker) applyRetries(ctx context.Context) error {
 	h := w.H
+	if !h.Approved() {
+		return nil // no move key: no code to check (review R-07)
+	}
+	var raw json.RawMessage
 	var v struct {
 		Retries []retry `json:"retries"`
 	}
-	const path = "/api/dataStore/facility-hub-admin/retries"
-	err := h.Central.JSON(ctx, "GET", path, nil, h.HubAuth(), &v)
+	const kind = "facility-hub-admin/retries"
+	err := h.Central.JSON(ctx, "GET", "/api/dataStore/"+kind, nil, h.HubAuth(), &raw)
 	if central.Status(err) == http.StatusNotFound {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if len(v.Retries) > 0 {
-		// An entry any user may write could discard refused saves or resend them as
-		// someone else: it is not used, as an open central-move is not (review R-07).
-		// The heartbeat lists it as unprotected (CheckProtection).
-		open, err := h.WritableByAll(ctx, path)
-		if err != nil {
-			return err
-		}
-		if open {
-			slog.Warn("retries is writable by any user: its instructions are not applied; protect facility-hub-admin (docs/DEPLOYMENT.md)")
-			return nil
-		}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return err
+	}
+	if len(v.Retries) == 0 {
+		h.NoteUnsigned(kind, false)
+		return nil
+	}
+	// Instructions can discard refused saves or resend them as someone else: only
+	// signed for this hub, and nothing of an entry that is not (review R-07).
+	if !h.Signed(kind, raw) {
+		return nil
 	}
 	applied := slices.DeleteFunc(strings.Split(h.Store.Meta(metaRetriesApplied), ","), func(id string) bool { return id == "" })
 	var notApplied map[string]string
@@ -565,17 +581,24 @@ func (w *Worker) applyRetries(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		// picked: the open issues an instruction names, with what they blocked.
+		// picked: the open issues an instruction names, with what they blocked. A group
+		// takes only saves refused before it was asked (review R-30a): a later refusal
+		// was not what the manager looked at.
 		picked := func(r retry) []*store.Issue {
+			at, _ := time.Parse(time.RFC3339Nano, r.At)
 			return open.with(func(is *store.Issue, g refusalGroup) bool {
 				if r.Issue != "" {
 					return r.Issue == fmt.Sprintf("%s-%d", h.HubID(), is.ID)
 				}
-				return is.Kind == r.Kind && g.program == r.Program && g.codes[r.Code]
+				return is.Kind == r.Kind && g.program == r.Program && g.codes[r.Code] && store.ParseTime(is.CreatedAt).Before(at)
 			})
 		}
 		reassigned := false
 		for _, r := range todo {
+			if r.Issue == "" && !forThisHub(r, h.FacilityPath()) {
+				slog.Info("retry from the Facility Hub app for other hubs' org units: not applied here", "id", r.ID, "orgUnits", r.OrgUnits)
+				continue
+			}
 			switch r.Action {
 			case "", "resend":
 			case discardAction:

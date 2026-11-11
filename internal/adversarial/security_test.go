@@ -905,11 +905,11 @@ func TestL6FakeCentral(t *testing.T) {
 	fakeURL := "https://" + strings.TrimPrefix(fake.srv.URL, "http://")
 	before := h.Central.BaseURL()
 
-	// Part A: an announcement the hub would trust (written by the superuser, shared
-	// read-only so the writable-by-all guard passes), pointing at the fake.
+	// Part A: an announcement the hub would trust (signed for it, as the Facility Hub
+	// app writes it, and shared read-only), pointing at the fake.
 	path := "/api/dataStore/facility-hub-admin/central-move"
-	s.writeDataStore(s.Central, "facility-hub-admin", "central-move",
-		map[string]any{"url": fakeURL, "from": "2000-01-01T00:00:00Z"})
+	s.writeDataStore(s.Central, "facility-hub-admin", "central-move", map[string]any{})
+	s.PutSigned("facility-hub-admin/central-move", `{"url":"`+fakeURL+`","from":"2000-01-01T00:00:00Z"}`)
 	s.setPublicAccess(path, "r-------")
 	s.Sync()
 	s.t.Logf("L6 part A: the hub took the vouched announcement as central's next address: %q", h.Store.Meta(core.MetaCentralNext))

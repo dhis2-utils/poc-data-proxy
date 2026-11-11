@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -48,7 +49,7 @@ func moveEnv(t *testing.T) (e *env, newURL string, down, redirect *atomic.Bool) 
 }
 
 func announce(e *env, url string) {
-	e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"central-move": json.RawMessage(`{"url":"` + url + `"}`)}
+	e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"central-move": e.signed("facility-hub-admin/central-move", `{"url":"`+url+`"}`)}
 	protect(e, "facility-hub-admin", "central-move")
 	e.app.Hub.RefreshCatalog(context.Background())
 }
@@ -119,7 +120,7 @@ func TestCentralMoveRefusesAnotherServer(t *testing.T) {
 
 // Review fixes: no move for a hub pinned to its address in hub.yaml; none while the old
 // address has been down only briefly; an announcement in a namespace hub owners can
-// write is not taken.
+// write is not taken, nor one a hub without a move key cannot check.
 func TestCentralMoveGuards(t *testing.T) {
 	t.Run("pinned", func(t *testing.T) {
 		e, newURL, down, _ := moveEnv(t)
@@ -151,9 +152,22 @@ func TestCentralMoveGuards(t *testing.T) {
 			t.Fatalf("moved on an announcement any hub owner can write: %s", got)
 		}
 	})
+	t.Run("not approved", func(t *testing.T) {
+		// A hub without a move key cannot check a code: it takes no announcement.
+		e, newURL, down, _ := moveEnv(t)
+		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"central-move": json.RawMessage(`{"url":"` + newURL + `"}`)}
+		protect(e, "facility-hub-admin", "central-move")
+		e.app.Hub.RefreshCatalog(context.Background())
+		down.Store(true)
+		e.cycleOffline()
+		if got := e.app.Hub.Central.BaseURL(); got != e.cSrv.URL {
+			t.Fatalf("a hub without a move key moved: %s", got)
+		}
+	})
 	t.Run("not yet", func(t *testing.T) {
 		e, newURL, down, _ := moveEnv(t)
-		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"central-move": json.RawMessage(`{"url":"` + newURL + `","from":"` + time.Now().Add(24*time.Hour).UTC().Format(time.RFC3339) + `"}`)}
+		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"central-move": e.signed("facility-hub-admin/central-move",
+			`{"url":"`+newURL+`","from":"`+time.Now().Add(24*time.Hour).UTC().Format(time.RFC3339)+`"}`)}
 		protect(e, "facility-hub-admin", "central-move")
 		e.app.Hub.RefreshCatalog(context.Background())
 		down.Store(true)
@@ -213,9 +227,12 @@ func TestCentralMoveIgnoresHTTPRedirect(t *testing.T) {
 
 // Finding 1 (critical review 2026-10-27): any user may write central-move until a
 // country protects it, and the hub's ID is public. A server that echoes the ID back
-// must get neither the hub's token nor the hub.
+// must get neither the hub's token nor the hub. The staff member who created the entry
+// shares it read-only, as any owner may on 2.42: without a code for the hub it is
+// still ignored (review R-07).
 func TestCentralMoveSendsNothingToAForgedAddress(t *testing.T) {
 	e, _, down, _ := moveEnv(t)
+	e.giveMoveKey()
 	var tokens atomic.Int32
 	evil := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "" {
@@ -231,7 +248,11 @@ func TestCentralMoveSendsNothingToAForgedAddress(t *testing.T) {
 	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != http.StatusCreated {
 		t.Fatalf("writing the announcement: %v %v", resp, err)
 	}
+	protect(e, "facility-hub-admin", "central-move")
 	e.app.Hub.RefreshCatalog(context.Background())
+	if !slices.Contains(e.app.Hub.Unsigned(), "facility-hub-admin/central-move") {
+		t.Errorf("the forged announcement is not listed as ignored: %v", e.app.Hub.Unsigned())
+	}
 	down.Store(true)
 	e.cycleOffline()
 	if n := tokens.Load(); n > 0 {

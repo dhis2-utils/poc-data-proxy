@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -311,15 +312,20 @@ func (h *Hub) renewHubToken(ctx context.Context, now bool) error {
 // CreatePAT creates a personal access token on central.
 // A revoked hub makes none: the registry entry is read first, with the creating
 // credentials, since the hub's own token may be gone with the revocation (bug review
-// 2026-10-20). A revoked hub whose entry no longer says so is revoked no more, as a
-// retired one is active again: a token refused for another reason (expired in an
-// outage, its owner disabled) can make a forged "revoked" pass (review R-23).
+// 2026-10-20). An approved hub takes its revocation, and its end, only signed with its
+// move key (review R-23, TakeRegistryStatus). A hub without a move key takes
+// "revoked" only when central refuses its token, and a revoked hub whose entry no
+// longer says so is revoked no more, as a retired one is active again: a token
+// refused for another reason (expired in an outage, its owner disabled) can make a
+// forged "revoked" pass.
 func (h *Hub) CreatePAT(ctx context.Context, with central.Auth, exp time.Time) (uid, key string, err error) {
 	if h.HubID() != "" {
+		var raw json.RawMessage
 		var reg struct {
 			Status string `json:"status"`
 		}
-		if h.Central.JSON(ctx, "GET", RegistryPath(h.HubID()), nil, with, &reg) == nil {
+		if h.Central.JSON(ctx, "GET", RegistryPath(h.HubID()), nil, with, &raw) == nil && json.Unmarshal(raw, &reg) == nil &&
+			!h.TakeRegistryStatus(ctx, raw) {
 			switch {
 			case reg.Status == "revoked" && !h.Revoked() && h.revokedForReal(ctx):
 				h.SetRevoked()
