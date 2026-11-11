@@ -1,6 +1,6 @@
 import { hmac } from '@noble/hashes/hmac.js'
 import { sha256 } from '@noble/hashes/sha2.js'
-import { utf8ToBytes } from '@noble/hashes/utils.js'
+import { randomBytes, utf8ToBytes } from '@noble/hashes/utils.js'
 
 // The two codes people read out to each other, as the hub computes them
 // (internal/hubaccount/codes.go, docs/FACILITY-HUB-APP.md).
@@ -118,3 +118,71 @@ export const normalizeAddress = (raw: string): string => {
 /** A code as typed, without spaces or dashes, in upper case. */
 export const normalizeCode = (typed: string): string =>
     typed.replace(/[-\s]/g, '').toUpperCase()
+
+// A string as Go's encoding/json writes it without HTML escaping: JSON.stringify's
+// form, but for U+2028 and U+2029.
+const jsonString = (s: string) =>
+    JSON.stringify(s)
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029')
+
+/**
+ * v as the hub writes it to check a code (internal/hubaccount/instruction.go): object
+ * keys sorted, no spaces; undefined members left out, as JSON.stringify leaves them.
+ */
+export const canonical = (v: unknown): string => {
+    if (Array.isArray(v)) {
+        return `[${v.map((x) => canonical(x === undefined ? null : x)).join(',')}]`
+    }
+    if (v !== null && typeof v === 'object') {
+        const o = v as Record<string, unknown>
+        return `{${Object.keys(o)
+            .filter((k) => o[k] !== undefined)
+            .sort()
+            .map((k) => `${jsonString(k)}:${canonical(o[k])}`)
+            .join(',')}}`
+    }
+    return typeof v === 'string' ? jsonString(v) : JSON.stringify(v)
+}
+
+export const toBase64 = (bytes: Uint8Array): string =>
+    btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''))
+
+/** Standard base64 with padding, strictly (as Go's base64.StdEncoding): anything else is empty. */
+export const fromBase64 = (s: string): Uint8Array =>
+    // atob would also take it unpadded, with spaces, or with = inside.
+    s.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(s)
+        ? Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
+        : new Uint8Array(0)
+
+/**
+ * A hub's code for an instruction (docs/superpowers/specs/2026-11-11-signed-instructions.md):
+ * base64 of the first 16 bytes of HMAC-SHA256(moveKey, "facility-hub instruction" 0
+ * hubID 0 kind 0 canonical(obj without codes)). kind is "<namespace>/<key>" of the entry.
+ */
+export const instructionCode = (
+    moveKey: Uint8Array,
+    hubID: string,
+    { kind, obj }: { kind: string; obj: Record<string, unknown> }
+): string => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { codes, ...rest } = obj
+    return toBase64(
+        hmac(
+            sha256,
+            moveKey,
+            utf8ToBytes(
+                `facility-hub instruction\x00${hubID}\x00${kind}\x00${canonical(rest)}`
+            )
+        ).slice(0, 16)
+    )
+}
+
+const alnum = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+
+/** n random letters and digits. */
+export const token = (n: number) =>
+    Array.from(randomBytes(n), (b) => alnum[b % alnum.length]).join('')
+
+/** A password meeting DHIS2's rules: upper and lower case, a digit, a special character. */
+export const newPassword = (): string => `Hub-${token(28)}9a!`

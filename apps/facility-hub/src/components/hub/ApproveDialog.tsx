@@ -13,6 +13,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import React, { useState } from 'react'
 import { useApi } from '@/api/useApi'
 import { approve } from '@/hubaccount/approve'
+import { addHubCodes } from '@/hubs/adminEntry'
 import { AccountsSettings, HubRow } from '@/hubs/useHubs'
 import styles from '@/pages/Pages.module.css'
 
@@ -47,6 +48,9 @@ export const ApproveDialog = ({
                 { hubID: hub.id, code },
                 { ...settings, onStep: (s) => setSteps((xs) => [...xs, s]) }
             )
+            // Its code in the instructions in force, which it takes only signed.
+            setSteps((xs) => [...xs, i18n.t('Signing the hub settings for it')])
+            await addHubCodes(api, hub.id)
             setDone(true)
             client.invalidateQueries(['hubs'])
         } catch (e) {

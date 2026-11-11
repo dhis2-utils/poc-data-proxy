@@ -57,7 +57,17 @@ const revokedText = (r: RevokeResult) => {
                     '{{- n}} tokens could not be deleted (already gone, or not shared with the hub managers).',
                     { n: r.failed.length }
                 )
-    return `${deleted} ${failed}`
+    const account = {
+        disabled: i18n.t("The hub's own DHIS2 user is disabled."),
+        password: i18n.t(
+            "The hub's own DHIS2 user could not be disabled; it has a new random password."
+        ),
+        none: '',
+        failed: i18n.t(
+            "The hub's own DHIS2 user could not be disabled. Disable it in the Users app."
+        ),
+    }[r.account]
+    return [deleted, failed, account].filter(Boolean).join(' ')
 }
 
 /** "Revoke all tokens of this hub" (spec 2026-10-20, section 2), for managers. */

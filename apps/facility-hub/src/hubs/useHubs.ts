@@ -36,7 +36,7 @@ export type HubRow = {
 
 // The heartbeat fields the list shows: not its 90-day history.
 const listFields =
-    'time,lastPush,pending,pendingOutbox,stuckOutbox,issues,diskFreeBytes,usb,hubTokenOwner,hubTokenExpires,lastUpgrade,needsUpgrade,version,refused,refusedGroups,unprotected,retriesNotApplied'
+    'time,lastPush,pending,pendingOutbox,stuckOutbox,issues,diskFreeBytes,usb,hubTokenOwner,hubTokenExpires,lastUpgrade,needsUpgrade,version,refused,refusedGroups,unprotected,unsigned,retriesNotApplied'
 
 const chunks = <T>(xs: T[], n: number) =>
     Array.from({ length: Math.ceil(xs.length / n) }, (_, i) =>

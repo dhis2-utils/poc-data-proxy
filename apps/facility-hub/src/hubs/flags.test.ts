@@ -51,6 +51,7 @@ describe('flags', () => {
         ],
         ['needsUpgrade', { needsUpgrade: true }],
         ['unprotected', { unprotected: ['facility-hub-admin/central-move'] }],
+        ['unsigned', { unsigned: ['facility-hub-admin/release'] }],
     ])('raises %s', (kind, change) => {
         expect(kinds({ ...healthy, ...change })).toEqual([kind])
     })

@@ -15,6 +15,7 @@ export const flagLabel = (kind: FlagKind): string =>
         upgrade: i18n.t('Upgrade failed'),
         needsUpgrade: i18n.t('Needs upgrade'),
         unprotected: i18n.t('Unprotected entries'),
+        unsigned: i18n.t('Unsigned instructions'),
     })[kind]
 
 /** A sentence explaining a flag, for the hub's page. */
@@ -80,6 +81,11 @@ export const flagSentence = (kind: FlagKind, hb?: Heartbeat): string => {
             return i18n.t(
                 'Any user can change these entries on central – {{- entries}}. Check each, then protect it with sharing, read only for the public. Saving a setting in this app protects its entry; a hub protects its own registry entry once the hub owners group is named on the Approvals page.',
                 { entries: (hb?.unprotected ?? []).join(', ') }
+            )
+        case 'unsigned':
+            return i18n.t(
+                'The hub ignores these entries on central – {{- entries}}. They have no valid code for it, or are older than one it took. Save each again in this app; an entry written by an older version of the app, or by anyone else, has no code.',
+                { entries: (hb?.unsigned ?? []).join(', ') }
             )
     }
 }

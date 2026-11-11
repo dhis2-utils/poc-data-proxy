@@ -12,6 +12,7 @@ import {
     refusedGroupsOf,
     resend,
     Retry,
+    scopeOf,
     withRetry,
 } from './refusals'
 import { HubRow } from './useHubs'
@@ -149,13 +150,26 @@ describe('withRetry', () => {
 
 describe('resend', () => {
     const group = { kind: 'event', program: 'P1', code: 'E1300' }
-    const who = { by: 'manager', at: '2026-10-20T12:00:00Z', id: 'abc' }
+    const who = {
+        by: 'manager',
+        at: '2026-10-20T12:00:00Z',
+        id: 'abc',
+        orgUnits: ['DistOU00001'],
+    }
 
     it('creates facility-hub-admin/retries with admin-entry sharing', async () => {
         const api = new FakeApi()
         await resend(api, group, { ...who, managers: 'HubGrpMgrs' })
-        expect(api.entry('facility-hub-admin', 'retries')).toEqual({
-            retries: [{ id: 'abc', ...group, at: who.at, by: 'manager' }],
+        expect(api.entry('facility-hub-admin', 'retries')).toMatchObject({
+            retries: [
+                {
+                    id: 'abc',
+                    ...group,
+                    at: who.at,
+                    by: 'manager',
+                    orgUnits: who.orgUnits,
+                },
+            ],
         })
         expect(api.sharing['meta-facility-hub-admin-retries']).toEqual({
             object: {
@@ -175,7 +189,13 @@ describe('resend', () => {
                 .retries
         ).toEqual([
             retry(1),
-            { id: 'abc', ...group, at: who.at, by: 'manager' },
+            {
+                id: 'abc',
+                ...group,
+                at: who.at,
+                by: 'manager',
+                orgUnits: who.orgUnits,
+            },
         ])
     })
 
@@ -186,7 +206,7 @@ describe('resend', () => {
             { ...group, code: 'NO_LOGIN' },
             { ...who, user: 'nurse_b' }
         )
-        expect(api.entry('facility-hub-admin', 'retries')).toEqual({
+        expect(api.entry('facility-hub-admin', 'retries')).toMatchObject({
             retries: [
                 {
                     id: 'abc',
@@ -195,6 +215,7 @@ describe('resend', () => {
                     at: who.at,
                     by: 'manager',
                     user: 'nurse_b',
+                    orgUnits: who.orgUnits,
                 },
             ],
         })
@@ -222,6 +243,7 @@ describe('resend', () => {
             code: 'none',
             at: who.at,
             by: 'manager',
+            orgUnits: who.orgUnits,
         })
     })
 })
@@ -252,13 +274,18 @@ describe('notAppliedOn', () => {
 
 describe('discardGroup', () => {
     const group = { kind: 'event', program: 'P1', code: 'E1300' }
-    const who = { by: 'manager', at: '2026-11-04T12:00:00Z', id: 'd1' }
+    const who = {
+        by: 'manager',
+        at: '2026-11-04T12:00:00Z',
+        id: 'd1',
+        orgUnits: ['DistOU00001'],
+    }
 
     it('appends a discard of the group to the retries, with admin-entry sharing', async () => {
         const api = new FakeApi()
         api.store['facility-hub-admin'] = { retries: { retries: [retry(1)] } }
         await discardGroup(api, group, { ...who, managers: 'HubGrpMgrs' })
-        expect(api.entry('facility-hub-admin', 'retries')).toEqual({
+        expect(api.entry('facility-hub-admin', 'retries')).toMatchObject({
             retries: [
                 retry(1),
                 {
@@ -267,6 +294,7 @@ describe('discardGroup', () => {
                     ...group,
                     at: who.at,
                     by: 'manager',
+                    orgUnits: who.orgUnits,
                 },
             ],
         })
@@ -293,7 +321,7 @@ describe('discardChange', () => {
     it('names the one refused change by its issue key, for one hub', async () => {
         const api = new FakeApi()
         await discardChange(api, issue, who)
-        expect(api.entry('facility-hub-admin', 'retries')).toEqual({
+        expect(api.entry('facility-hub-admin', 'retries')).toMatchObject({
             retries: [
                 {
                     id: 'd2',
@@ -313,7 +341,11 @@ describe('discardChange', () => {
 
     it('is found again by its issue key, and resends are not', async () => {
         const api = new FakeApi()
-        await resend(api, { kind: 'event', program: 'P1', code: 'E1' }, who)
+        await resend(
+            api,
+            { kind: 'event', program: 'P1', code: 'E1' },
+            { ...who, orgUnits: ['DistOU00001'] }
+        )
         const list = await discardChange(api, issue, { ...who, id: 'd3' })
         expect(discardOf(list, 'hub-a-7')?.id).toBe('d3')
         expect(discardOf(list, 'hub-a-8')).toBeUndefined()
@@ -338,5 +370,27 @@ describe('issueCodes', () => {
                 },
             })
         ).toEqual(['E1064', 'E5000'])
+    })
+})
+
+// A group instruction is for the hubs the Refusals page counts (review R-30a).
+describe('scopeOf', () => {
+    const hubs = [
+        { orgUnit: { path: '/Root0000001/DistA000001/FacA0000001' } },
+        { orgUnit: { path: '/Root0000001/DistB000001/FacB0000001' } },
+        {},
+    ]
+    it("is a manager's own org units", () => {
+        expect(
+            scopeOf(
+                { superuser: false, paths: ['/Root0000001/DistA000001'] },
+                hubs
+            )
+        ).toEqual(['DistA000001'])
+    })
+    it("is the top of every hub's path for a superuser", () => {
+        expect(scopeOf({ superuser: true, paths: [] }, hubs)).toEqual([
+            'Root0000001',
+        ])
     })
 })

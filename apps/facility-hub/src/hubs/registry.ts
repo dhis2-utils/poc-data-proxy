@@ -1,5 +1,7 @@
 import i18n from '@dhis2/d2-i18n'
-import { Api, ApiError } from '@/hubaccount/api'
+import { signedValue } from './adminEntry'
+import { Api, ApiError, getOrNull } from '@/hubaccount/api'
+import { fromBase64, newPassword } from '@/hubaccount/codes'
 
 /** A hub's registry entry (facility-hub-registry/<hub ID>, written at set-up). */
 export type Registry = {
@@ -19,6 +21,8 @@ export type Registry = {
     tokens?: string[]
     revokedBy?: string
     revokedAt?: string
+    /** The status the hub acts on, signed with its move key (approved hubs only). */
+    signedStatus?: Record<string, unknown>
     /** The hub that replaced this one, or "reset" (reset on the hub) or "undo". */
     retiredBy?: string
     retiredByUser?: string
@@ -43,16 +47,27 @@ export const replacedBy = (r: Registry): string | undefined =>
         ? r.retiredBy
         : undefined
 
-/** The entry of a hub whose tokens a manager revoked (every other field kept). */
+/**
+ * The entry of a hub whose tokens a manager revoked (every other field kept). An
+ * approved hub acts only on signedStatus, signed with its move key (review R-23); the
+ * plain status is for the app and for hubs without one.
+ */
 export const revokedEntry = (
     r: Registry,
-    by: string,
-    at: string
+    { by, at, moveKey }: { by: string; at: string; moveKey?: Uint8Array }
 ): Registry => ({
     ...r,
     status: 'revoked',
     revokedBy: by,
     revokedAt: at,
+    ...(r.hubId &&
+        moveKey && {
+            signedStatus: signedValue(
+                { status: 'revoked', by, at },
+                `facility-hub-registry/${r.hubId}`,
+                new Map([[r.hubId, moveKey]])
+            ),
+        }),
 })
 
 /**
@@ -95,13 +110,21 @@ export type RevokeResult = {
     deleted: number
     /** Tokens central would not delete: already gone, or not shared with the managers. */
     failed: string[]
+    /**
+     * The hub's own DHIS2 user: disabled, given a new random password (disabling was
+     * refused), none (the hub has no account of its own) or failed.
+     */
+    account: 'disabled' | 'password' | 'none' | 'failed'
 }
 
 /**
- * Revokes a hub's tokens (spec 2026-10-20, section 2): marks the entry revoked, then
- * deletes each token it lists. Revoked first, so a hub that syncs meanwhile still
- * reads it with its own token and drops what it holds. Central answers 404 for a
- * token that is gone or not shared with the user: such tokens are counted, not fatal.
+ * Revokes a hub's tokens (spec 2026-10-20, section 2): marks the entry revoked, signed
+ * for the hub when the user can read its move key, then deletes each token it lists,
+ * then disables the hub's own user, whose password the hub holds. Revoked first, so a
+ * hub that syncs meanwhile still reads it with its own token and drops what it holds.
+ * Central answers 404 for a token that is gone or not shared with the user: such
+ * tokens are counted, not fatal. A hub manager may disable the users of their own org
+ * units (checked on 2.42 and 2.43, 11 November 2026).
  */
 export const revokeTokens = async (
     api: Api,
@@ -109,7 +132,19 @@ export const revokeTokens = async (
     { by, at }: { by: string; at: string }
 ): Promise<RevokeResult> => {
     const entry = await read(api, hubId)
-    await api.request('PUT', entryPath(hubId), revokedEntry(entry, by, at))
+    const key = await getOrNull<{ moveKey?: string }>(
+        api,
+        `/dataStore/facility-hub-keys/${encodeURIComponent(hubId)}`
+    ).catch(() => null)
+    const moveKey = fromBase64(key?.moveKey ?? '')
+    await api.request(
+        'PUT',
+        entryPath(hubId),
+        revokedEntry(
+            { hubId, ...entry },
+            { by, at, moveKey: moveKey.length === 32 ? moveKey : undefined }
+        )
+    )
     const tokens = entry.tokens ?? []
     const failed: string[] = []
     for (const t of tokens) {
@@ -126,6 +161,45 @@ export const revokeTokens = async (
         listed: tokens.length,
         deleted: tokens.length - failed.length,
         failed,
+        account: await disableAccount(api, hubId),
+    }
+}
+
+// disableAccount disables the hub's own user (named as the hub), or gives it a new
+// random password if disabling is refused.
+const disableAccount = async (
+    api: Api,
+    hubId: string
+): Promise<RevokeResult['account']> => {
+    try {
+        const found = (await api.request(
+            'GET',
+            `/users?filter=username:eq:${encodeURIComponent(hubId)}&fields=id&paging=false`
+        )) as { users?: { id: string }[] }
+        const id = found.users?.length === 1 ? found.users[0].id : null
+        if (!id) {
+            return 'none'
+        }
+        try {
+            await api.request('POST', `/users/${id}/disabled`)
+            return 'disabled'
+        } catch (e) {
+            if (!(e instanceof ApiError)) {
+                throw e
+            }
+        }
+        await api.request(
+            'PATCH',
+            `/users/${id}`,
+            [{ op: 'replace', path: '/password', value: newPassword() }],
+            'application/json-patch+json'
+        )
+        return 'password'
+    } catch (e) {
+        if (!(e instanceof ApiError)) {
+            throw e
+        }
+        return 'failed'
     }
 }
 

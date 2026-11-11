@@ -9,6 +9,8 @@ import {
     undoReplacement,
     undoneEntries,
 } from './registry'
+import { toBase64 } from '@/hubaccount/approve'
+import { instructionCode } from '@/hubaccount/codes'
 import { FakeApi } from '@/hubaccount/fakeApi'
 
 const at = '2026-10-20T12:00:00.000Z'
@@ -18,8 +20,7 @@ describe('registry transitions', () => {
         expect(
             revokedEntry(
                 { hubId: 'hub-a', facility: 'F1', tokens: ['t1'], x: 1 },
-                'manager',
-                at
+                { by: 'manager', at }
             )
         ).toEqual({
             hubId: 'hub-a',
@@ -97,7 +98,12 @@ describe('revokeTokens', () => {
             },
         }
         const r = await revokeTokens(api, 'hub-a', { by: 'manager', at })
-        expect(r).toEqual({ listed: 3, deleted: 2, failed: ['tok2'] })
+        expect(r).toEqual({
+            listed: 3,
+            deleted: 2,
+            failed: ['tok2'],
+            account: 'none',
+        })
         expect([...api.apiTokens]).toEqual([])
         expect(api.entry('facility-hub-registry', 'hub-a')).toEqual({
             hubId: 'hub-a',
@@ -115,7 +121,12 @@ describe('revokeTokens', () => {
             'hub-a': { hubId: 'hub-a', status: 'active' },
         }
         const r = await revokeTokens(api, 'hub-a', { by: 'manager', at })
-        expect(r).toEqual({ listed: 0, deleted: 0, failed: [] })
+        expect(r).toEqual({
+            listed: 0,
+            deleted: 0,
+            failed: [],
+            account: 'none',
+        })
         expect(api.entry('facility-hub-registry', 'hub-a')?.status).toBe(
             'revoked'
         )
@@ -207,5 +218,56 @@ describe('undoReplacement', () => {
         await expect(
             undoReplacement(api, 'hub-old', { by: 'manager', at })
         ).rejects.toThrow(/not retired by a replacement/)
+    })
+})
+
+// An approved hub takes "revoked" only signed with its move key (review R-23), and the
+// hub's own user is disabled, so its password, which the hub holds, opens nothing.
+describe('revokeTokens of an approved hub', () => {
+    const key = new Uint8Array(32).fill(3)
+    const approved = () => {
+        const api = new FakeApi()
+        api.store['facility-hub-registry'] = {
+            'hub-a': { hubId: 'hub-a', status: 'active', tokens: [] },
+        }
+        api.store['facility-hub-keys'] = { 'hub-a': { moveKey: toBase64(key) } }
+        api.users['HubUser0001'] = {
+            id: 'HubUser0001',
+            username: 'hub-a',
+            password: 'p',
+            disabled: false,
+            organisationUnits: ['F1'],
+            dataViewOrganisationUnits: [],
+            teiSearchOrganisationUnits: [],
+            roles: [],
+            groups: [],
+        }
+        return api
+    }
+
+    it('signs the revocation for the hub and disables its user', async () => {
+        const api = approved()
+        const r = await revokeTokens(api, 'hub-a', { by: 'manager', at })
+        const s = api.entry('facility-hub-registry', 'hub-a')
+            ?.signedStatus as Record<string, unknown> & {
+            codes: Record<string, string>
+        }
+        expect(s).toMatchObject({ status: 'revoked', by: 'manager', at })
+        expect(s.codes['hub-a']).toBe(
+            instructionCode(key, 'hub-a', {
+                kind: 'facility-hub-registry/hub-a',
+                obj: s,
+            })
+        )
+        expect(r.account).toBe('disabled')
+        expect(api.users['HubUser0001'].disabled).toBe(true)
+    })
+
+    it('gives the user a new password when disabling is refused', async () => {
+        const api = approved()
+        api.failNext['POST /users/HubUser0001/disabled'] = 403
+        const r = await revokeTokens(api, 'hub-a', { by: 'manager', at })
+        expect(r.account).toBe('password')
+        expect(api.users['HubUser0001'].password).not.toBe('p')
     })
 })

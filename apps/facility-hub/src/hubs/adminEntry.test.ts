@@ -2,10 +2,14 @@
  * @jest-environment node
  */
 import {
+    addHubCodes,
+    configKeys,
     ensureAdminEntries,
     shareAdminEntries,
     writeAdminEntry,
 } from './adminEntry'
+import { toBase64 } from '@/hubaccount/approve'
+import { instructionCode } from '@/hubaccount/codes'
 import { FakeApi } from '@/hubaccount/fakeApi'
 
 // facility-hub-admin must be writable by administrators only (docs/DEPLOYMENT.md): a
@@ -19,7 +23,7 @@ describe('writeAdminEntry', () => {
             value: { url: 'https://new.example.org' },
             managers: 'HubGrpMgrs',
         })
-        expect(api.entry('facility-hub-admin', 'central-move')).toEqual({
+        expect(api.entry('facility-hub-admin', 'central-move')).toMatchObject({
             url: 'https://new.example.org',
         })
         expect(api.sharing['meta-facility-hub-admin-central-move']).toEqual({
@@ -39,7 +43,7 @@ describe('writeAdminEntry', () => {
             value: { url: 'https://new.example.org' },
             managers: 'HubGrpMgrs',
         })
-        expect(api.entry('facility-hub-admin', 'central-move')).toEqual({
+        expect(api.entry('facility-hub-admin', 'central-move')).toMatchObject({
             url: 'https://new.example.org',
         })
         expect(
@@ -59,7 +63,7 @@ describe('writeAdminEntry', () => {
             managers: 'HubGrpMgrs',
         })
         expect(api.creators['facility-hub-admin/central-move']).toBe(api.me)
-        expect(api.entry('facility-hub-admin', 'central-move')).toEqual({
+        expect(api.entry('facility-hub-admin', 'central-move')).toMatchObject({
             url: 'https://new.example.org',
         })
     })
@@ -80,7 +84,7 @@ describe('writeAdminEntry in facility-hub-config', () => {
             value: { defaultMonths: 12 },
             managers: 'HubGrpMgrs',
         })
-        expect(api.entry('facility-hub-config', 'retention')).toEqual({
+        expect(api.entry('facility-hub-config', 'retention')).toMatchObject({
             defaultMonths: 12,
         })
         expect(api.creators['facility-hub-config/retention']).toBe(api.me)
@@ -113,7 +117,13 @@ describe('ensureAdminEntries', () => {
             'central-move',
             'release',
             'retries',
+            ...configKeys.map((k) => `facility-hub-config/${k}`),
         ])
+        // The settings too: a hub not yet approved reads them as they are.
+        for (const key of configKeys) {
+            expect(api.entry('facility-hub-config', key)).toEqual({})
+            expect(api.creators[`facility-hub-config/${key}`]).toBe(api.me)
+        }
         for (const key of keys.slice(1)) {
             expect(api.creators[`facility-hub-admin/${key}`]).toBe(api.me)
             expect(api.sharing[`meta-facility-hub-admin-${key}`]).toEqual({
@@ -182,6 +192,9 @@ describe('shareAdminEntries', () => {
             },
         })
         expect(api.sharing['meta-facility-hub-admin-retries']).toBeUndefined()
+        expect(api.sharing['meta-facility-hub-config-retention']).toEqual(
+            api.sharing['meta-facility-hub-admin-release']
+        )
         expect(
             (
                 api.sharing['meta-facility-hub-admin-accounts'] as {
@@ -189,5 +202,82 @@ describe('shareAdminEntries', () => {
                 }
             ).object.userGroupAccesses
         ).toEqual([])
+    })
+})
+
+// Every instruction the app writes carries a code for each approved hub, made with its
+// move key, which the hub checks (internal/core/instructions.go; the shared vector is
+// in codes.test.ts).
+describe('signed instructions', () => {
+    const keyA = new Uint8Array(32).fill(1)
+    const keyB = new Uint8Array(32).fill(2)
+    const withKeys = (api: FakeApi, keys: Record<string, Uint8Array>) => {
+        api.store['facility-hub-keys'] = Object.fromEntries(
+            Object.entries(keys).map(([h, k]) => [h, { moveKey: toBase64(k) }])
+        )
+    }
+
+    it('signs what it writes for every hub whose move key it reads', async () => {
+        const api = new FakeApi()
+        withKeys(api, { 'hub-a': keyA, 'hub-b': keyB })
+        await writeAdminEntry(api, {
+            key: 'release',
+            value: { version: '0.3.0', codes: { 'hub-x': 'old' } },
+        })
+        const v = api.entry('facility-hub-admin', 'release') as {
+            issued: string
+            codes: Record<string, string>
+        }
+        expect(Date.parse(v.issued)).not.toBeNaN()
+        expect(Object.keys(v.codes).sort()).toEqual(['hub-a', 'hub-b'])
+        expect(v.codes['hub-a']).toBe(
+            instructionCode(keyA, 'hub-a', {
+                kind: 'facility-hub-admin/release',
+                obj: v,
+            })
+        )
+        expect(v.codes['hub-b']).toBe(
+            instructionCode(keyB, 'hub-b', {
+                kind: 'facility-hub-admin/release',
+                obj: v,
+            })
+        )
+    })
+
+    it("adds a newly approved hub's code to what it signed before, and to nothing else", async () => {
+        const api = new FakeApi()
+        withKeys(api, { 'hub-a': keyA })
+        await writeAdminEntry(api, { key: 'release', value: { version: '1' } })
+        const before = api.entry('facility-hub-admin', 'release') as {
+            issued: string
+            codes: Record<string, string>
+        }
+        api.store['facility-hub-admin']['central-move'] = {
+            url: 'https://unsigned',
+        }
+        api.store['facility-hub-config'] = {
+            retention: { defaultMonths: 1, codes: { 'hub-a': 'forged' } },
+        }
+        withKeys(api, { 'hub-a': keyA, 'hub-b': keyB })
+        await addHubCodes(api, 'hub-b')
+        const after = api.entry('facility-hub-admin', 'release') as {
+            issued: string
+            codes: Record<string, string>
+        }
+        expect(after.issued).toBe(before.issued)
+        expect(after.codes['hub-a']).toBe(before.codes['hub-a'])
+        expect(after.codes['hub-b']).toBe(
+            instructionCode(keyB, 'hub-b', {
+                kind: 'facility-hub-admin/release',
+                obj: after,
+            })
+        )
+        expect(api.entry('facility-hub-admin', 'central-move')).toEqual({
+            url: 'https://unsigned',
+        })
+        expect(api.entry('facility-hub-config', 'retention')).toEqual({
+            defaultMonths: 1,
+            codes: { 'hub-a': 'forged' },
+        })
     })
 })

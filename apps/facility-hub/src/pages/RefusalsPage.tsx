@@ -36,6 +36,7 @@ import {
     resend,
     Retry,
     retryId,
+    scopeOf,
 } from '@/hubs/refusals'
 import { AccountsSettings, useAdminEntry, useHubs } from '@/hubs/useHubs'
 
@@ -71,6 +72,7 @@ const Refusals = () => {
                 id: retryId(),
                 managers: settings?.managers,
                 user: g.code === noLoginCode ? sendAs[groupKey(g)] : undefined,
+                orgUnits: me ? scopeOf(me, hubs ?? []) : [],
             }),
         { onSuccess: () => client.invalidateQueries(['retries']) }
     )
@@ -83,6 +85,7 @@ const Refusals = () => {
                 at: new Date().toISOString(),
                 id: retryId(),
                 managers: settings?.managers,
+                orgUnits: me ? scopeOf(me, hubs ?? []) : [],
             }),
         {
             onSuccess: () => {

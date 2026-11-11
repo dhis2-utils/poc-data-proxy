@@ -1,28 +1,20 @@
 import { randomBytes, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Api, ApiError } from './api'
 import { seal } from './box'
-import { accountCode, normalizeCode } from './codes'
+import {
+    accountCode,
+    fromBase64,
+    newPassword,
+    normalizeCode,
+    toBase64,
+    token,
+} from './codes'
 
 // Approving a hub's own account (docs/FACILITY-HUB-APP.md), as the reference does
 // (internal/hubaccount/approve.go): the steps, their order and their refusals are the
 // contract with the hub.
 
-export const toBase64 = (bytes: Uint8Array): string =>
-    btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''))
-
-/** Standard base64 with padding, strictly (as Go's base64.StdEncoding): anything else is empty. */
-export const fromBase64 = (s: string): Uint8Array =>
-    // atob would also take it unpadded, with spaces, or with = inside.
-    s.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(s)
-        ? Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
-        : new Uint8Array(0)
-
-const alnum = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-const token = (n: number) =>
-    Array.from(randomBytes(n), (b) => alnum[b % alnum.length]).join('')
-
-/** A password meeting DHIS2's rules: upper and lower case, a digit, a special character. */
-export const newPassword = (): string => `Hub-${token(28)}9a!`
+export { fromBase64, newPassword, toBase64 } from './codes'
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 

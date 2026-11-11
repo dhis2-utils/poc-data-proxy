@@ -6,7 +6,9 @@ import fs from 'fs'
 import path from 'path'
 import {
     accountCode,
+    canonical,
     checkAddress,
+    instructionCode,
     moveCode,
     normalizeAddress,
     normalizeCode,
@@ -89,5 +91,50 @@ describe('codes', () => {
         for (const typed of ['abcde-fghij', 'ABCDE FGHIJ', 'abcdefghij']) {
             expect(normalizeCode(typed)).toBe('ABCDEFGHIJ')
         }
+    })
+})
+
+// The hub gives the same code for the same input (internal/hubaccount/codes_test.go,
+// TestInstructionCodeVector).
+describe('instructionCode', () => {
+    const key = new Uint8Array(32).fill(2)
+    const obj = JSON.parse(
+        '{"url":"https://new.example.org/dhis","from":"2026-11-12T08:00:00.000Z","issued":"2026-11-11T10:00:00.000Z",' +
+            '"note":"Bø <&> \\u2028 \\"q\\" \\n","n":[10,1.5,true,null,{"b":1,"a":"x"}],"codes":{"hub-x":"zzz"}}'
+    )
+    it('matches the hub', () => {
+        expect(
+            instructionCode(key, 'hub-Abc123XyZ90', {
+                kind: 'facility-hub-admin/central-move',
+                obj,
+            })
+        ).toBe('EiA0hT5/YySwjrCFD87XUg==')
+    })
+    it('depends on the hub, the kind and every value', () => {
+        const base = instructionCode(key, 'hub-A', { kind: 'k', obj })
+        expect(instructionCode(key, 'hub-B', { kind: 'k', obj })).not.toBe(base)
+        expect(instructionCode(key, 'hub-A', { kind: 'k2', obj })).not.toBe(
+            base
+        )
+        expect(
+            instructionCode(key, 'hub-A', {
+                kind: 'k',
+                obj: { ...obj, url: 'https://x' },
+            })
+        ).not.toBe(base)
+        expect(
+            instructionCode(key, 'hub-A', {
+                kind: 'k',
+                obj: { ...obj, codes: {} },
+            })
+        ).toBe(base)
+    })
+    it('writes JSON as the hub does', () => {
+        expect(
+            canonical({
+                b: [1, 'é\u2028'],
+                a: { d: null, c: true, e: undefined },
+            })
+        ).toBe('{"a":{"c":true,"d":null},"b":[1,"é\\u2028"]}')
     })
 })

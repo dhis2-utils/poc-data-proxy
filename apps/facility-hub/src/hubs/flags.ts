@@ -52,6 +52,8 @@ export type Heartbeat = {
     caFingerprint?: string
     /** The dataStore entries the hub acts on that any user may write (CheckProtection). */
     unprotected?: string[] | null
+    /** The instructions on central the hub ignored: not signed for it (review R-07). */
+    unsigned?: string[] | null
     history?: Day[]
 }
 
@@ -80,6 +82,7 @@ export type FlagKind =
     | 'upgrade'
     | 'needsUpgrade'
     | 'unprotected'
+    | 'unsigned'
 
 export type Flag = { kind: FlagKind }
 
@@ -124,6 +127,7 @@ export const flags = (hb: Heartbeat | undefined, now: Date): Flag[] => {
     add('upgrade', hb.lastUpgrade?.result === 'failed')
     add('needsUpgrade', hb.needsUpgrade === true)
     add('unprotected', (hb.unprotected?.length ?? 0) > 0)
+    add('unsigned', (hb.unsigned?.length ?? 0) > 0)
     return out
 }
 

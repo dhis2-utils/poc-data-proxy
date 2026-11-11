@@ -77,7 +77,7 @@ describe('useAdminEntry', () => {
         await act(() => entry().save.mutateAsync({ defaultMonths: 12 }))
         expect(
             mockCentral.api.entry('facility-hub-config', 'retention')
-        ).toEqual({
+        ).toMatchObject({
             defaultMonths: 12,
         })
         expect(
@@ -139,7 +139,9 @@ describe('useAdminEntry update', () => {
             })
         )
         expect(seen).toEqual([{ version: '0.3.0', pilotHubs: [], percent: 0 }])
-        expect(mockCentral.api.entry('facility-hub-admin', 'release')).toEqual({
+        expect(
+            mockCentral.api.entry('facility-hub-admin', 'release')
+        ).toMatchObject({
             version: '0.3.1',
             pilotHubs: [],
             percent: 0,

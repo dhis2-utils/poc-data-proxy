@@ -50,6 +50,20 @@ export class FakeApi implements Api {
             delete this.failNext[`${method} ${p}`]
             throw new ApiError(fail, 'failing as asked')
         }
+        const list = /^\/dataStore\/([^/]+)$/.exec(p)
+        if (list && method === 'GET') {
+            // A namespace's entries, as listNamespace asks for them (fields=.).
+            const ns = this.store[list[1]]
+            if (!ns) {
+                throw new ApiError(404, 'not found')
+            }
+            return {
+                entries: Object.entries(ns).map(([key, value]) => ({
+                    key,
+                    value: clone(value),
+                })),
+            }
+        }
         let m = /^\/dataStore\/([^/]+)\/([^/]+?)(\/metaData)?$/.exec(p)
         if (m) {
             const [, ns, key, meta] = m
@@ -197,6 +211,14 @@ export class FakeApi implements Api {
                     u.groups = (op.value as { id: string }[]).map((g) => g.id)
                 }
             }
+            return {}
+        }
+        m = /^\/users\/(\w+)\/disabled$/.exec(p)
+        if (m && method === 'POST') {
+            if (!this.users[m[1]]) {
+                throw new ApiError(404, 'no such user')
+            }
+            this.users[m[1]].disabled = true
             return {}
         }
         m = /^\/userGroups\/(\w+)\/users\/(\w+)$/.exec(p)

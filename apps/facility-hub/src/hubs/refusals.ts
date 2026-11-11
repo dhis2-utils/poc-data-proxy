@@ -84,7 +84,29 @@ export type Retry = {
     /** With issue: the hub and the object, for the list of requests. */
     hub?: string
     object?: string
+    /**
+     * For a group: the org units of the manager who asked. Only hubs below them take
+     * it, and only for saves refused before at (review R-30a).
+     */
+    orgUnits?: string[]
 }
+
+/**
+ * The org units a group instruction is for: the hubs the Refusals page counts. A
+ * user's own org units; for a superuser, who sees every hub, the top of each hub's
+ * path.
+ */
+export const scopeOf = (
+    me: { superuser: boolean; paths: string[] },
+    hubs: { orgUnit?: { path: string } }[]
+): string[] =>
+    [
+        ...new Set(
+            me.superuser
+                ? hubs.map((h) => h.orgUnit?.path.split('/')[1] ?? '')
+                : me.paths.map((p) => p.split('/').pop() ?? '')
+        ),
+    ].filter(Boolean)
 
 export const isDiscard = (r: Retry) => r.action === 'discard'
 
@@ -121,8 +143,8 @@ export const readRetries = async (api: Api): Promise<Retry[]> => {
 }
 
 /**
- * Asks every hub to send a group's refused saves again, as their authors or as user,
- * at its next sync: appended to facility-hub-admin/retries, written as an admin entry.
+ * Asks the hubs below orgUnits to send a group's refused saves again, as their
+ * authors or as user, at their next sync: appended to facility-hub-admin/retries, written as an admin entry.
  */
 export const resend = async (
     api: Api,
@@ -133,7 +155,15 @@ export const resend = async (
         id,
         managers,
         user,
-    }: { by: string; at: string; id: string; managers?: string; user?: string }
+        orgUnits,
+    }: {
+        by: string
+        at: string
+        id: string
+        managers?: string
+        user?: string
+        orgUnits: string[]
+    }
 ): Promise<Retry[]> => {
     const as = user?.trim()
     const retries = withRetry(await readRetries(api), {
@@ -144,6 +174,7 @@ export const resend = async (
         at,
         by,
         ...(as ? { user: as } : {}),
+        orgUnits,
     })
     await writeAdminEntry(api, {
         key: 'retries',
@@ -160,8 +191,8 @@ export const retryId = () =>
     ).join('')
 
 /**
- * Asks every hub to throw a group's refused saves away, with what they blocked, at its
- * next sync. A hub keeps central's version of each record, or a tombstone where central
+ * Asks the hubs below orgUnits to throw a group's refused saves away, with what they
+ * blocked, at their next sync. A hub keeps central's version of each record, or a tombstone where central
  * has none.
  */
 export const discardGroup = async (
@@ -172,7 +203,14 @@ export const discardGroup = async (
         at,
         id,
         managers,
-    }: { by: string; at: string; id: string; managers?: string }
+        orgUnits,
+    }: {
+        by: string
+        at: string
+        id: string
+        managers?: string
+        orgUnits: string[]
+    }
 ): Promise<Retry[]> => {
     const retries = withRetry(await readRetries(api), {
         id,
@@ -182,6 +220,7 @@ export const discardGroup = async (
         code: group.code,
         at,
         by,
+        orgUnits,
     })
     await writeAdminEntry(api, { key: 'retries', value: { retries }, managers })
     return retries
