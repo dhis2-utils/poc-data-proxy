@@ -120,7 +120,7 @@ export const HubPage = () => {
                     </Button>{' '}
                     {!settings?.group &&
                         i18n.t(
-                            'Set the hub accounts group and role on the Approvals page first.'
+                            'A superuser must name the hub accounts group and role in Settings first.'
                         )}
                 </NoticeBox>
             )}

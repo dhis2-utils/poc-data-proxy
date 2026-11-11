@@ -496,8 +496,8 @@ msgstr "Retired"
 msgid "Waiting for its own account"
 msgstr "Waiting for its own account"
 
-msgid "Set the hub accounts group and role on the Approvals page first."
-msgstr "Set the hub accounts group and role on the Approvals page first."
+msgid "A superuser must name the hub accounts group and role in Settings first."
+msgstr "A superuser must name the hub accounts group and role in Settings first."
 
 msgid "Latest report"
 msgstr "Latest report"
