@@ -24,7 +24,7 @@ A scenario fails if any of these is false at its end. They are checked after eve
 ### Central
 
 - **For the sandbox track:** disposable DHIS2 instances from the broker, from the curated seeds: Sierra Leone 2.42 and 2.43, Laos 2.42 and 2.43, and empty ones for the synthetic profile (`cmd/hubtest`). Each scenario family gets a fresh instance, so a broken central costs nothing.
-- **For the physical track:** an instance on the internet that the Pis can reach and the sandbox can change. The demo central (implement.im.dhis2.org/facility-hub) was stopped by an infrastructure upgrade on 27 October and has been restarted. A separate instance for these tests is still better, so the demo stays clean: same seed as the synthetic profile, with a snapshot to go back to after each session.
+- **For the physical track:** an instance on the internet that the Pis can reach and the sandbox can change. The demo central (implement.im.dhis2.org/facility-hub) was stopped by an infrastructure upgrade on 27 October and has been restarted. A separate instance for these tests is still better, so the demo stays clean: same seed as the synthetic profile, with a snapshot to go back to after each session. Before any hub is set up on it, a superuser names the hub owners, hub accounts and hub managers groups in the Facility Hub app's Settings, and the staff who set hubs up (on the demo central, the staff account of each facility used for set-up, such as `ngelehun1`) go in the hub owners group: hubs refuse set-up until a hub owners group is named (docs/DEPLOYMENT.md, section 3, "On central, before the first hub"). The demo central had none named on 21 October; `cmd/hubtest` provisioning names them on the broker's instances.
 
 ### Hubs
 

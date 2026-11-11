@@ -29,13 +29,18 @@ type Manifest struct {
 	AdminUser     string `json:"adminUser"`
 	AdminPassword string `json:"adminPassword"`
 
-	Password   string          `json:"password"` // every role user's
-	SetupGroup string          `json:"setupGroup"`
-	Facility   OrgUnit         `json:"facility"`
-	Sibling    OrgUnit         `json:"sibling"` // another facility in the same district
-	District   OrgUnit         `json:"district"`
-	Programs   []Program       `json:"programs"`
-	Users      map[string]User `json:"users"` // role -> user
+	Password   string `json:"password"`   // every role user's
+	SetupGroup string `json:"setupGroup"` // also the hub owners group
+	// The hub accounts group and role. With SetupGroup as the hub owners, they are
+	// named in facility-hub-admin/accounts before any hub is set up, as a superuser
+	// does in the Facility Hub app (docs/DEPLOYMENT.md).
+	AccountsGroup string          `json:"accountsGroup"`
+	AccountsRole  string          `json:"accountsRole"`
+	Facility      OrgUnit         `json:"facility"`
+	Sibling       OrgUnit         `json:"sibling"` // another facility in the same district
+	District      OrgUnit         `json:"district"`
+	Programs      []Program       `json:"programs"`
+	Users         map[string]User `json:"users"` // role -> user
 	// Matrix users cover combinations of capture and search scope and of program,
 	// stage and tracked entity type sharing; the differential oracle checks each.
 	Matrix []MatrixUser `json:"matrix,omitempty"`

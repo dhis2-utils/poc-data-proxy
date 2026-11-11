@@ -79,7 +79,7 @@ export const flagSentence = (kind: FlagKind, hb?: Heartbeat): string => {
             )
         case 'unprotected':
             return i18n.t(
-                'Any user can change these entries on central – {{- entries}}. Check each, then protect it with sharing, read only for the public. Saving a setting in this app protects its entry; a hub protects its own registry entry once the hub owners group is named on the Approvals page.',
+                'Any user can change these entries on central – {{- entries}}. Check each, then protect it with sharing, read only for the public. Saving a setting in this app protects its entry; a hub protects its own registry entry at its next heartbeat.',
                 { entries: (hb?.unprotected ?? []).join(', ') }
             )
         case 'unsigned':

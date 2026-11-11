@@ -108,8 +108,8 @@ func (h *Hub) CheckProtection(ctx context.Context) {
 // the groups named in facility-hub-admin/accounts: the hub owners (set-up, take-over,
 // replacement), the hub accounts and the hub managers (approvals). A new entry is
 // writable by any user on 2.42; its owner (whoever set the hub up) may change its
-// sharing. Without a hub owners group named, the entry is left as it is: a staff
-// member could no longer take the hub over. It reports whether the entry is shared so.
+// sharing. Set-up needs the hub owners group named (OwnersNamed); an entry read
+// without one leaves the sharing as it is. It reports whether the entry is shared so.
 func (h *Hub) ProtectRegistry(ctx context.Context, auth central.Auth) bool {
 	acc, err := h.ReadAccounts(ctx, auth)
 	if err != nil || acc.Owners == "" {

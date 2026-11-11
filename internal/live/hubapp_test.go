@@ -116,23 +116,11 @@ func TestFacilityHubApp(t *testing.T) {
 		t.Skip("needs a live instance to install the app on")
 	}
 	zip := appZip(t)
-	e.Setup()
-	h := e.App.Hub
 	installApp(t, e, zip)
 
-	// The hub accounts group and role, as the national team sets them once in the app.
-	role, group := tk.UID(), tk.UID()
-	for _, p := range []struct {
-		path string
-		body map[string]any
-	}{
-		{"/api/userRoles", map[string]any{"id": role, "name": "Facility hub account " + role, "authorities": []string{}}},
-		{"/api/userGroups", map[string]any{"id": group, "name": "Facility hub accounts " + group}},
-	} {
-		if st, b, err := e.Central.Do("POST", p.path, p.body); err != nil || st >= 300 {
-			t.Fatalf("%s: %d %v %.300s", p.path, st, err, b)
-		}
-	}
+	// The hub accounts group and role, as the national team sets them once in the app
+	// (provisioned, with the hub owners group).
+	role, group := e.M.AccountsRole, e.M.AccountsGroup
 	// The hub managers, set up once by a superuser: a group, and a role with the
 	// authorities to create users and add them to the (read-only) hub accounts group. The
 	// manager is not a superuser, and is assigned to the hub's district only.
@@ -164,9 +152,13 @@ func TestFacilityHubApp(t *testing.T) {
 	e.Central.Do("POST", "/api/sharing?type=dataStore&id="+meta.ID, map[string]any{"object": map[string]any{
 		"publicAccess": "r-------", "userAccesses": []any{}, "userGroupAccesses": []any{}}})
 	if st, b, err := e.Central.Do("PUT", "/api/dataStore/facility-hub-admin/accounts",
-		map[string]string{"group": group, "role": role, "managers": mgrGroup}); err != nil || st >= 300 {
+		map[string]string{"group": group, "role": role, "managers": mgrGroup, "owners": e.M.SetupGroup}); err != nil || st >= 300 {
 		t.Fatalf("accounts settings: %d %v %.300s", st, err, b)
 	}
+	// Set up after the groups are named, as DEPLOYMENT.md orders it: the hub shares its
+	// registry entry with them, so the manager can approve it.
+	e.Setup()
+	h := e.App.Hub
 
 	r := runApp(t, e, manager, e.M.Password, "approve", "HUB_ID="+h.HubID(), "CODE="+h.AccountCode())
 	if !r.Approved {

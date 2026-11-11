@@ -42,7 +42,9 @@ const (
 	AttrTBID      = "xs8A6tQJY0s" // generated, unique
 	RelType       = "RelTypTE001" // person to person, of TET; everyone reads and writes
 	DefaultAOC    = "HllvX50cXC0"
-	SetupGroup    = "HubGrpSetup"
+	SetupGroup    = "HubGrpSetup" // the hub owners group of the default accounts settings
+	AccountsGroup = "HubGrpAccts" // the hub accounts group of the default accounts settings
+	AccountsRole  = "HubRoleAcct"
 	Password      = "Hub-Test-2026!"
 	Version       = "2.42.6"
 )
@@ -208,6 +210,15 @@ func New() *Central {
 		owners: map[string]string{}, temp: map[string]time.Time{}, TempAccess: time.Hour,
 		aggValues: map[string]*aggValue{}, aggRegs: map[string]*aggReg{}, approved: map[string]bool{},
 	}
+	// The Facility Hub app's accounts settings, as a superuser names them before any hub
+	// is set up (docs/DEPLOYMENT.md): set-up needs the hub owners group. Readable by all,
+	// written by the superuser only.
+	id := entryID("facility-hub-admin", "accounts")
+	c.DataStore["facility-hub-admin"] = map[string]json.RawMessage{
+		"accounts": json.RawMessage(`{"group":"` + AccountsGroup + `","role":"` + AccountsRole + `","owners":"` + SetupGroup + `"}`)}
+	c.creators = map[string]string{id: "hub_admin"}
+	c.public = map[string]string{id: "r-------"}
+	c.readers, c.writers = map[string]map[string]bool{id: {}}, map[string]map[string]bool{id: {}}
 	return c
 }
 
@@ -1253,11 +1264,11 @@ func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
 	// Shared with some users only; the superuser and the entry's owner (its creator)
 	// always have access, as on DHIS2.
 	owner := u.Username == "hub_admin" || c.creators[id] == u.Username
-	if rs := c.readers[id]; rs != nil && !rs[u.UID] && !owner && pub[0] != 'r' {
+	if rs := c.readers[id]; rs != nil && !sharedWith(rs, u) && !owner && pub[0] != 'r' {
 		webMessage(w, 403, "Access denied for key", "E1102")
 		return
 	}
-	if ws := c.writers[id]; c.readers[id] != nil && r.Method != "GET" && !ws[u.UID] && !owner && pub[1] != 'w' {
+	if ws := c.writers[id]; c.readers[id] != nil && r.Method != "GET" && !sharedWith(ws, u) && !owner && pub[1] != 'w' {
 		webMessage(w, 403, "Access denied for key", "E1102")
 		return
 	}

@@ -357,6 +357,11 @@ func (u *UI) setupLogin(ctx context.Context, centralURL, username, password stri
 	if compat.For(version) == nil {
 		return nil, fmt.Errorf("this hub release does not support DHIS2 %s (supported: %v); upgrade the hub first", version, compat.SupportedMajors())
 	}
+	// The hub shares its registry entry with the hub owners group at set-up: without
+	// one named, anyone assigned to the facility could set a hub up.
+	if err := h.OwnersNamed(ctx, auth); err != nil {
+		return nil, err
+	}
 	p = &pendingSetup{Nonce: core.NewUID(), CentralURL: centralURL, Username: username, Password: password, Me: me,
 		Version: version, Expires: time.Now().Add(5 * time.Minute)} // holds the password
 	// The hub serves the org unit it is set up for: the user's only one, or the one

@@ -112,19 +112,19 @@ func TestReplacementRecorded(t *testing.T) {
 	}
 }
 
-// A staff member assigned to the facility takes the hub's housekeeping account over
-// (its token for the heartbeat, issue reports and the like) when the person who set
-// it up leaves: the hub swaps to a token of theirs and deletes the old one. The
-// heartbeat says whose token it is.
+// A hub owner assigned to the facility (the admin role is in the hub owners group)
+// takes the hub's housekeeping account over (its token for the heartbeat, issue reports
+// and the like) when the person who set it up leaves: the hub swaps to a token of
+// theirs and deletes the old one. The heartbeat says whose token it is.
 func TestHubTokenTakeOver(t *testing.T) {
 	e := tk.Start(t)
-	e.Setup()
+	e.SetupAs(tk.RoleNurse)
 	old := e.App.Hub.Runtime().HubToken
-	nurse := e.Web(tk.RoleNurse)
-	nurse.Login()
+	owner := e.Web(tk.RoleAdmin)
+	owner.Login()
 	take := func(password string) {
 		t.Helper()
-		resp, err := nurse.PostForm("/hub/ui/takeover", url.Values{"password": {password}})
+		resp, err := owner.PostForm("/hub/ui/takeover", url.Values{"password": {password}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -136,7 +136,7 @@ func TestHubTokenTakeOver(t *testing.T) {
 	}
 	take(e.M.Password)
 	rt := e.App.Hub.Runtime()
-	name := e.M.Users[tk.RoleNurse].Username
+	name := e.M.Users[tk.RoleAdmin].Username
 	if rt.HubToken == old || rt.HubTokenOwner != name || !tokenValid(t, e, rt.HubToken) {
 		t.Fatalf("not taken over: owner %q, new token valid %v", rt.HubTokenOwner, tokenValid(t, e, rt.HubToken))
 	}
@@ -270,9 +270,10 @@ func TestAdminActionsRefuseCrossOrigin(t *testing.T) {
 func TestTakeOverDuringRenewal(t *testing.T) {
 	e := tk.Start(t)
 	e.NeedFake()
-	e.Setup()
+	e.SetupAs(tk.RoleNurse)
 	h := e.App.Hub
-	admin, nurse := e.M.Users[tk.RoleAdmin].Username, e.M.Users[tk.RoleNurse].Username
+	// The nurse set the hub up; the admin, a hub owner, takes it over.
+	setupBy, owner := e.M.Users[tk.RoleNurse].Username, e.M.Users[tk.RoleAdmin].Username
 	if err := h.UpdateRuntime(func(rt *core.Runtime) {
 		rt.HubTokenExp = time.Now().Add(time.Hour).UTC().Format(time.RFC3339) // due for renewal
 	}); err != nil {
@@ -280,11 +281,11 @@ func TestTakeOverDuringRenewal(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	e.Fake.OnTokenCreate = func(user string) {
-		if user != admin {
+		if user != setupBy {
 			return
 		}
 		e.Fake.OnTokenCreate = nil
-		go func() { done <- h.TakeOverHubToken(context.Background(), nurse, e.M.Password) }()
+		go func() { done <- h.TakeOverHubToken(context.Background(), owner, e.M.Password) }()
 		time.Sleep(300 * time.Millisecond) // the take-over runs now, if nothing holds it back
 	}
 	if err := h.RenewHubToken(context.Background()); err != nil {
@@ -294,8 +295,8 @@ func TestTakeOverDuringRenewal(t *testing.T) {
 		t.Fatal(err)
 	}
 	rt := h.Runtime()
-	if owner := e.Fake.TokenOwner(rt.HubToken); owner != nurse || rt.TokenOwner() != nurse {
-		t.Fatalf("the hub uses a token of %q, says it is %q's", owner, rt.TokenOwner())
+	if got := e.Fake.TokenOwner(rt.HubToken); got != owner || rt.TokenOwner() != owner {
+		t.Fatalf("the hub uses a token of %q, says it is %q's", got, rt.TokenOwner())
 	}
 }
 
@@ -334,22 +335,9 @@ func TestHubAccountLive(t *testing.T) {
 	e := tk.Start(t)
 	e.Setup()
 	h := e.App.Hub
-	group, role := "HubGrpAccts", "HubRoleAcct"
-	if e.Live() {
-		role = tk.UID()
-		group = tk.UID()
-		for _, p := range []struct {
-			path string
-			body map[string]any
-		}{
-			{"/api/userRoles", map[string]any{"id": role, "name": "Facility hub account " + role, "authorities": []string{}}},
-			{"/api/userGroups", map[string]any{"id": group, "name": "Facility hub accounts " + group}},
-		} {
-			if st, b, err := e.Central.Do("POST", p.path, p.body); err != nil || st >= 300 {
-				t.Fatalf("%s: %d %v %.300s", p.path, st, err, b)
-			}
-		}
-	}
+	// The hub accounts group and role named before set-up: the hub shares its registry
+	// entry with that group, so its own account can write it.
+	group, role := e.M.AccountsGroup, e.M.AccountsRole
 	keyPath := "/api/dataStore/facility-hub-keys/" + h.HubID()
 	nurse := tk.NewCentral(e.M.CentralURL, e.M.Users[tk.RoleNurse].Username, e.M.Password)
 	if e.Fake != nil {

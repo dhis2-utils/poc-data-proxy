@@ -718,6 +718,24 @@ func programFields(api compat.API, af string) string {
 // central, which countries share with a "hub owners" group (docs/DEPLOYMENT.md).
 var ErrNotHubOwner = errors.New("your account cannot write the hub's records on central: ask the national team or the district to add you to the hub owners group")
 
+// ErrNoOwnersGroup: facility-hub-admin/accounts names no hub owners group. Each hub
+// shares its registry entry with that group; without it, anyone assigned to a facility
+// could set a hub up or take one over.
+var ErrNoOwnersGroup = errors.New("a superuser must name the hub owners group in the Facility Hub app (Settings) first")
+
+// OwnersNamed refuses with ErrNoOwnersGroup when facility-hub-admin/accounts, read
+// with auth, names no hub owners group.
+func (h *Hub) OwnersNamed(ctx context.Context, auth central.Auth) error {
+	acc, err := h.ReadAccounts(ctx, auth)
+	if err != nil && central.Status(err) != http.StatusNotFound {
+		return fmt.Errorf("reading the Facility Hub app's settings: %w", err)
+	}
+	if acc.Owners == "" {
+		return ErrNoOwnersGroup
+	}
+	return nil
+}
+
 // ErrOwnAccountWorks: a take-over of a hub whose own account central still accepts.
 // The national team approved that account; staff must not set it aside.
 var ErrOwnAccountWorks = errors.New("this hub has its own account on central, which still works. A hub manager must revoke it first")
@@ -762,6 +780,9 @@ func (h *Hub) TakeOverHubToken(ctx context.Context, username, password string) e
 	}
 	if me.ManagesUsers() {
 		return fmt.Errorf("%s can manage users on central: the hub keeps no token of such an account", username)
+	}
+	if err := h.OwnersNamed(ctx, with); err != nil {
+		return err
 	}
 	if rt.TokenOwner() == h.HubID() && rt.HubPassword != "" {
 		refused, err := h.ownAccountRefused(ctx, rt)

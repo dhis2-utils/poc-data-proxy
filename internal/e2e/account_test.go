@@ -21,7 +21,7 @@ import (
 )
 
 func (e *env) approveOpts() hubaccount.Options {
-	return hubaccount.Options{Central: e.cSrv.URL, Username: "hub_admin", Password: fc.Password, Group: "HubGrpAccts", Role: "HubRoleAcct"}
+	return hubaccount.Options{Central: e.cSrv.URL, Username: "hub_admin", Password: fc.Password, Group: fc.AccountsGroup, Role: fc.AccountsRole}
 }
 
 // approveWith does what the Facility Hub app does when the national team approves
@@ -185,6 +185,7 @@ func TestOnlyAHubAskingShowsACode(t *testing.T) {
 		t.Fatal("approved again with an old code")
 	}
 	e.central.SetDisabled(h.HubID(), true) // revoked: staff may take the hub over
+	hubOwner(e, "nurse_a")
 	if err := h.TakeOverHubToken(context.Background(), "nurse_a", fc.Password); err != nil {
 		t.Fatal(err)
 	}
@@ -464,6 +465,7 @@ func TestTakeOverSetsTheOwnAccountAside(t *testing.T) {
 		t.Fatalf("a refused take-over changed the hub: owner %q", rt.TokenOwner())
 	}
 	e.central.SetDisabled(h.HubID(), true) // what Revoke in the Facility Hub app does
+	hubOwner(e, "nurse_a")
 	if err := h.TakeOverHubToken(context.Background(), "nurse_a", fc.Password); err != nil {
 		t.Fatal(err)
 	}

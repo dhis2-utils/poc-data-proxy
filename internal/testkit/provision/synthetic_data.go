@@ -28,6 +28,9 @@ func Synthetic(c *testkit.Central, size int) (*testkit.Manifest, error) {
 	if err := importMetadata(c, md); err != nil {
 		return nil, err
 	}
+	if err := nameHubGroups(c, m); err != nil {
+		return nil, err
+	}
 	// The superuser writes the generated data, so it needs the whole tree in scope.
 	if err := c.JSON("PATCH", "/api/users/"+meID(c), []map[string]any{
 		{"op": "add", "path": "/organisationUnits", "value": []any{map[string]any{"id": ouRoot}}},

@@ -68,7 +68,11 @@ type Access struct {
 	Sharing map[string]*sharing // object UID -> grants to add
 	Roles   map[string]testkit.User
 	Matrix  []testkit.MatrixUser
-	Setup   string // the setup user group
+	Setup   string // the setup user group, also the hub owners group
+	// The hub accounts group and its role (no authorities), named with the hub owners
+	// in facility-hub-admin/accounts (nameHubGroups).
+	AccountsGroup, AccountsRole string
+	AccountsRoleMeta            map[string]any
 }
 
 func (l *Layout) uid(kind string, n int) string {
@@ -92,6 +96,7 @@ func buildAccess(l *Layout) *Access {
 	role := l.uid("Rol", 1)
 	grpSetup, grpNurse, grpLab, grpClerk, grpDistrict := l.uid("Grp", 1), l.uid("Grp", 2), l.uid("Grp", 3), l.uid("Grp", 4), l.uid("Grp", 5)
 	a.Setup = grpSetup
+	a.AccountsGroup, a.AccountsRole = l.uid("Grp", 6), l.uid("Rol", 2)
 
 	// Role groups.
 	for i := range l.Programs {
@@ -213,7 +218,7 @@ func buildAccess(l *Layout) *Access {
 		}
 	}
 	for _, g := range []struct{ id, name string }{{grpSetup, "hub setup"}, {grpNurse, "nurses"}, {grpLab, "lab access"},
-		{grpClerk, "clerks"}, {grpDistrict, "district officers"}} {
+		{grpClerk, "clerks"}, {grpDistrict, "district officers"}, {a.AccountsGroup, "hub accounts"}} {
 		a.Groups = append(a.Groups, map[string]any{"id": g.id, "name": l.Prefix + " " + g.name,
 			"sharing": (&sharing{Public: acMeta}).json()})
 	}
@@ -225,6 +230,7 @@ func buildAccess(l *Layout) *Access {
 	a.Role = map[string]any{"id": role, "name": l.Prefix + " hub test user",
 		"authorities": []string{"M_dhis-web-capture", "M_dhis-web-dashboard", "F_UNCOMPLETE_EVENT",
 			"M_dhis-web-aggregate-data-entry", "F_DATAVALUE_ADD", "F_DATAVALUE_DELETE"}}
+	a.AccountsRoleMeta = map[string]any{"id": a.AccountsRole, "name": l.Prefix + " hub account", "authorities": []string{}}
 	for _, s := range specs {
 		a.Users = append(a.Users, map[string]any{"id": s.uid, "username": s.username, "password": Password,
 			"firstName": s.first, "surname": s.surname, "userRoles": refs(role), "organisationUnits": refs(s.capture...),
@@ -241,4 +247,30 @@ func refs(ids ...string) []any {
 		out = append(out, ref(id))
 	}
 	return out
+}
+
+// nameHubGroups writes facility-hub-admin/accounts as a superuser does in the Facility
+// Hub app's Settings before any hub is set up (docs/DEPLOYMENT.md): set-up needs the
+// hub owners group. The entry is created, shared as readable by all, then written.
+func nameHubGroups(c *testkit.Central, m *testkit.Manifest) error {
+	const path = "/api/dataStore/facility-hub-admin/accounts"
+	c.Do("DELETE", path, nil)
+	if st, b, err := c.Do("POST", path, map[string]string{}); err != nil || st >= 300 {
+		return fmt.Errorf("accounts settings: %d %v %.300s", st, err, b)
+	}
+	var meta struct {
+		ID string `json:"id"`
+	}
+	if err := c.JSON("GET", path+"/metaData", nil, &meta); err != nil {
+		return err
+	}
+	if st, b, err := c.Do("POST", "/api/sharing?type=dataStore&id="+meta.ID, map[string]any{"object": map[string]any{
+		"publicAccess": "r-------", "userAccesses": []any{}, "userGroupAccesses": []any{}}}); err != nil || st >= 300 {
+		return fmt.Errorf("sharing the accounts settings: %d %v %.300s", st, err, b)
+	}
+	if st, b, err := c.Do("PUT", path, map[string]string{"owners": m.SetupGroup, "group": m.AccountsGroup,
+		"role": m.AccountsRole}); err != nil || st >= 300 {
+		return fmt.Errorf("accounts settings: %d %v %.300s", st, err, b)
+	}
+	return nil
 }

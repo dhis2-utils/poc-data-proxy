@@ -395,13 +395,14 @@ func syntheticMetadata() (map[string]any, *testkit.Manifest) {
 			"fromConstraint": map[string]any{"relationshipEntity": "TRACKED_ENTITY_INSTANCE", "trackedEntityType": ref(tetPerson)},
 			"toConstraint":   map[string]any{"relationshipEntity": "TRACKED_ENTITY_INSTANCE", "trackedEntityType": ref(tetPerson)},
 			"sharing":        sh(rtMotherChild).json()}},
-		"userRoles":  []any{acc.Role},
+		"userRoles":  []any{acc.Role, acc.AccountsRoleMeta},
 		"userGroups": acc.Groups,
 		"users":      acc.Users,
 	}
 
 	m := &testkit.Manifest{
 		Profile: "synthetic", Password: Password, SetupGroup: acc.Setup,
+		AccountsGroup: acc.AccountsGroup, AccountsRole: acc.AccountsRole,
 		Facility: testkit.OrgUnit{ID: ouFac, Name: "North clinic", Code: "SYN_N1", Path: "/" + ouRoot + "/" + ouNorth + "/" + ouFac},
 		Sibling:  testkit.OrgUnit{ID: ouSib, Name: "North health post", Code: "SYN_N2", Path: "/" + ouRoot + "/" + ouNorth + "/" + ouSib},
 		District: testkit.OrgUnit{ID: ouNorth, Name: "North district", Code: "SYN_N", Path: "/" + ouRoot + "/" + ouNorth},

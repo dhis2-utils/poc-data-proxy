@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -269,7 +270,16 @@ func TestG9HubAccountRevoked(t *testing.T) {
 		t.Logf("the heartbeat still goes")
 	}
 
-	// 3. A staff member takes the housekeeping over on the hub page.
+	// 3. A staff member takes the housekeeping over on the hub page. Refused while central
+	// still takes the account's token (on 2.42 a token outlives its disabled user; the
+	// app's Revoke deletes the tokens too).
+	tokenWorks := false
+	req, _ := http.NewRequest("GET", s.M.CentralURL+"/api/me?fields=id", nil)
+	req.Header.Set("Authorization", "ApiToken "+h.Runtime().HubToken)
+	if res, err := http.DefaultClient.Do(req); err == nil {
+		res.Body.Close()
+		tokenWorks = res.StatusCode == http.StatusOK
+	}
 	resp, err := adminPage.PostForm("/hub/ui/takeover", url.Values{"password": {s.M.Password}})
 	if err != nil {
 		t.Fatal(err)
@@ -277,8 +287,11 @@ func TestG9HubAccountRevoked(t *testing.T) {
 	resp.Body.Close()
 	msg, _ := url.QueryUnescape(resp.Header.Get("Location"))
 	cycle()
-	t.Logf("taken over: %s; owner %q; heartbeat %s", msg, h.Runtime().TokenOwner(), beat())
-	if h.Runtime().TokenOwner() == id || beat() == after {
+	t.Logf("take-over (the account's token works: %v): %s; owner %q; heartbeat %s", tokenWorks, msg, h.Runtime().TokenOwner(), beat())
+	switch {
+	case tokenWorks && (h.Runtime().TokenOwner() != id || !strings.Contains(msg, "still works")):
+		t.Errorf("taken over while central takes the hub's own account (owner %q)", h.Runtime().TokenOwner())
+	case !tokenWorks && (h.Runtime().TokenOwner() == id || beat() == after):
 		t.Errorf("after the take-over the heartbeat does not go (owner %q)", h.Runtime().TokenOwner())
 	}
 	var reg map[string]any
@@ -297,23 +310,14 @@ func TestG9HubAccountRevoked(t *testing.T) {
 
 // approveAccount gives the scene's hub an account of its own, as the Facility Hub app
 // does (hubaccount.Approve, as the superuser), and waits for the hub to take it up. The
-// account, its role, group and move key are deleted when the test ends.
+// account and its move key are deleted when the test ends.
 func approveAccount(t *testing.T, s *scene) tk.User {
 	t.Helper()
 	h := s.App.Hub
 	id := h.HubID()
-	group, role := tk.UID(), tk.UID()
-	for _, p := range []struct {
-		path string
-		body map[string]any
-	}{
-		{"/api/userRoles", map[string]any{"id": role, "name": "Facility hub account " + role, "authorities": []string{}}},
-		{"/api/userGroups", map[string]any{"id": group, "name": "Facility hub accounts " + group}},
-	} {
-		if st, b, err := s.Central.Do("POST", p.path, p.body); err != nil || st >= 300 {
-			t.Fatalf("%s: %d %v %.300s", p.path, st, err, b)
-		}
-	}
+	// The hub accounts group and role named before set-up (the manifest's): the hub
+	// shares its registry entry with that group, so its own account can write it.
+	group, role := s.M.AccountsGroup, s.M.AccountsRole
 	t.Cleanup(func() {
 		var users struct{ Users []struct{ ID string } }
 		s.Central.JSON("GET", "/api/users?fields=id&filter=username:ieq:"+id, nil, &users)
@@ -321,8 +325,6 @@ func approveAccount(t *testing.T, s *scene) tk.User {
 			s.Central.Do("DELETE", "/api/users/"+u.ID, nil)
 		}
 		s.Central.Do("DELETE", "/api/dataStore/facility-hub-keys/"+id, nil)
-		s.Central.Do("DELETE", "/api/userGroups/"+group, nil)
-		s.Central.Do("DELETE", "/api/userRoles/"+role, nil)
 	})
 	done, err := hubaccount.Approve(context.Background(), hubaccount.Options{Central: s.M.CentralURL,
 		Username: s.M.AdminUser, Password: s.M.AdminPassword, Group: group, Role: role},

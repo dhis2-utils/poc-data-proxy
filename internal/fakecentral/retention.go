@@ -223,14 +223,11 @@ func (c *Central) shareEntry(w http.ResponseWriter, r *http.Request) {
 		rs[a.ID] = strings.HasPrefix(a.Access, "r")
 		ws[a.ID] = strings.HasPrefix(a.Access, "rw")
 	}
-	// A group's access goes to its members.
+	// A group's access goes to its members at each request, as on DHIS2: a user added
+	// to the group later has it too (sharedWith).
 	for _, a := range in.Object.UserGroupAccesses {
-		for _, u := range c.Users {
-			if slices.Contains(u.Groups, a.ID) {
-				rs[u.UID] = rs[u.UID] || strings.HasPrefix(a.Access, "r")
-				ws[u.UID] = ws[u.UID] || strings.HasPrefix(a.Access, "rw")
-			}
-		}
+		rs[a.ID] = rs[a.ID] || strings.HasPrefix(a.Access, "r")
+		ws[a.ID] = ws[a.ID] || strings.HasPrefix(a.Access, "rw")
 	}
 	if c.readers == nil {
 		c.readers, c.writers = map[string]map[string]bool{}, map[string]map[string]bool{}
@@ -243,6 +240,12 @@ func (c *Central) shareEntry(w http.ResponseWriter, r *http.Request) {
 	c.public[r.URL.Query().Get("id")] = (in.Object.PublicAccess + "--------")[:8]
 	c.mu.Unlock()
 	writeJSON(w, 200, map[string]any{"status": "OK"})
+}
+
+// sharedWith reports whether m, user and group IDs an entry is shared with, holds u
+// or one of u's groups.
+func sharedWith(m map[string]bool, u *User) bool {
+	return m[u.UID] || slices.ContainsFunc(u.Groups, func(g string) bool { return m[g] })
 }
 
 // changePassword handles PUT /api/me/changePassword (users created through the API).

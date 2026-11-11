@@ -18,7 +18,7 @@ func Fake(t testing.TB) (*Manifest, *fc.Central) {
 	m := &Manifest{
 		Profile: "fake", DHIS2Version: fc.Version, CentralURL: srv.URL,
 		AdminUser: "hub_admin", AdminPassword: fc.Password,
-		Password: fc.Password, SetupGroup: fc.SetupGroup,
+		Password: fc.Password, SetupGroup: fc.SetupGroup, AccountsGroup: fc.AccountsGroup, AccountsRole: fc.AccountsRole,
 		Facility: OrgUnit{ID: fc.Facility, Name: "Facility", Path: "/root/" + fc.Facility},
 		Sibling:  OrgUnit{ID: fc.OtherFacility, Name: "Other facility", Path: "/root/" + fc.OtherFacility},
 		Programs: []Program{{ID: fc.Program, Name: "TB program", TET: fc.TET, AccessLevel: "OPEN",

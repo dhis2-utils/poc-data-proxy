@@ -292,9 +292,13 @@ func Seeded(c *testkit.Central, o SeededOptions) (*testkit.Manifest, error) {
 
 	acc := buildAccess(l)
 	m.SetupGroup, m.Users, m.Matrix = acc.Setup, acc.Roles, acc.Matrix
-	md := map[string]any{"userRoles": []any{acc.Role}, "userGroups": acc.Groups, "users": acc.Users}
+	m.AccountsGroup, m.AccountsRole = acc.AccountsGroup, acc.AccountsRole
+	md := map[string]any{"userRoles": []any{acc.Role, acc.AccountsRoleMeta}, "userGroups": acc.Groups, "users": acc.Users}
 	log.Printf("seeded: importing %d users", len(acc.Users))
 	if err := importMetadata(c, md); err != nil {
+		return nil, err
+	}
+	if err := nameHubGroups(c, m); err != nil {
 		return nil, err
 	}
 	types := map[string]string{}

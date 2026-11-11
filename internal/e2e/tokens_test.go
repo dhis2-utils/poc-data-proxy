@@ -18,8 +18,13 @@ func managersGroup(e *env) {
 	if e.central.DataStore["facility-hub-admin"] == nil {
 		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{}
 	}
-	e.central.DataStore["facility-hub-admin"]["accounts"] = json.RawMessage(`{"managers":"HubGrpMgrs"}`)
+	e.central.DataStore["facility-hub-admin"]["accounts"] = json.RawMessage(`{"group":"` + fc.AccountsGroup + `","owners":"` + fc.SetupGroup + `","managers":"HubGrpMgrs"}`)
 	e.central.Users["nurse_b"].Groups = append(e.central.Users["nurse_b"].Groups, "HubGrpMgrs")
+}
+
+// hubOwner puts user in the hub owners group the fake's accounts settings name.
+func hubOwner(e *env, user string) {
+	e.central.Users[user].Groups = append(e.central.Users[user].Groups, fc.SetupGroup)
 }
 
 func registryEntry(e *env) map[string]any {
@@ -181,6 +186,7 @@ func TestForgedRevokedUndoneWhenEntryIsActive(t *testing.T) {
 	if u, _ := e.app.Hub.Store.UserByName("nurse_b"); u == nil || !u.HasPAT {
 		t.Fatal("no token for nurse_b once the entry is active again")
 	}
+	hubOwner(e, "nurse_b")
 	if err := e.app.Hub.TakeOverHubToken(context.Background(), "nurse_b", fc.Password); err != nil {
 		t.Fatalf("take-over: %v", err)
 	}
@@ -379,6 +385,7 @@ func TestSignedRevocation(t *testing.T) {
 	if e.app.Hub.Revoked() {
 		t.Fatal("an approved hub took a plain 'revoked' while central refuses its token")
 	}
+	hubOwner(e, "nurse_b")
 	if err := e.app.Hub.TakeOverHubToken(context.Background(), "nurse_b", fc.Password); err != nil {
 		t.Fatalf("take-over: %v", err)
 	}

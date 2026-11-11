@@ -3,11 +3,15 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
+	"github.com/dhis2/facility-hub/internal/core"
 	fc "github.com/dhis2/facility-hub/internal/fakecentral"
 )
 
@@ -24,8 +28,7 @@ func TestHeartbeatReportsUnprotectedEntries(t *testing.T) {
 	}
 	protect(e, "facility-hub-admin", "accounts")
 	e.sync()
-	registry := "facility-hub-registry/" + e.app.Hub.HubID()
-	want := []string{"facility-hub-admin/central-move", registry}
+	want := []string{"facility-hub-admin/central-move"} // the registry entry: protected at set-up
 	if got := e.central.DataStoreValue("facility-hub-status", e.app.Hub.HubID())["unprotected"]; fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("heartbeat unprotected %v, want %v", got, want)
 	}
@@ -36,7 +39,6 @@ func TestHeartbeatReportsUnprotectedEntries(t *testing.T) {
 	}
 
 	protect(e, "facility-hub-admin", "central-move")
-	protect(e, "facility-hub-registry", e.app.Hub.HubID())
 	e.sync()
 	if got, _ := e.central.DataStoreValue("facility-hub-status", e.app.Hub.HubID())["unprotected"].([]any); len(got) > 0 {
 		t.Errorf("heartbeat unprotected %v once all are protected", got)
@@ -45,8 +47,9 @@ func TestHeartbeatReportsUnprotectedEntries(t *testing.T) {
 
 // A new registry entry is writable by any user on 2.42. The hub owns its entry, and
 // shares it as readable by all and writable by the hub owners, the hub accounts and
-// the hub managers groups (facility-hub-admin/accounts), at set-up, or at the next
-// heartbeat for a hub set up before the groups were named.
+// the hub managers groups (facility-hub-admin/accounts), at set-up. Set-up needs the
+// hub owners group named: before that a hub is not set up at all, and the facility is
+// left as it was.
 func TestHubProtectsItsRegistryEntry(t *testing.T) {
 	accounts := `{"group":"HubGrpAccts","managers":"HubGrpMgrs","owners":"HubGrpOwnrs"}`
 	unprotected := func(e *env) any {
@@ -80,19 +83,29 @@ func TestHubProtectsItsRegistryEntry(t *testing.T) {
 		if err := e.app.Hub.TakeOverHubToken(context.Background(), "nurse_a", fc.Password); err != nil {
 			t.Errorf("take-over by a hub owner: %v", err)
 		}
+		// Take-over, like set-up, needs the hub owners group named.
+		e.central.DataStore["facility-hub-admin"]["accounts"] = json.RawMessage(`{"group":"HubGrpAccts"}`)
+		if err := e.app.Hub.TakeOverHubToken(context.Background(), "hub_admin", fc.Password); !errors.Is(err, core.ErrNoOwnersGroup) {
+			t.Errorf("take-over without a hub owners group: %v", err)
+		}
 	})
 
-	t.Run("at the next heartbeat", func(t *testing.T) {
+	t.Run("no hub owners group named", func(t *testing.T) {
 		e := newEnv(t)
-		e.setup()
-		if got := fmt.Sprint(unprotected(e)); !strings.Contains(got, "facility-hub-registry/") {
-			t.Fatalf("heartbeat unprotected %v before the groups are named", got)
+		e.central.DataStore["facility-hub-admin"]["accounts"] = json.RawMessage(`{"group":"HubGrpAccts"}`)
+		c := e.web("hub_admin")
+		resp, err := c.postForm("/hub/setup", url.Values{"step": {"login"}, "central_url": {e.cSrv.URL},
+			"username": {"hub_admin"}, "password": {fc.Password}})
+		if err != nil {
+			t.Fatal(err)
 		}
-		e.central.DataStore["facility-hub-admin"] = map[string]json.RawMessage{"accounts": json.RawMessage(accounts)}
-		protect(e, "facility-hub-admin", "accounts")
-		e.sync()
-		if got, _ := unprotected(e).([]any); len(got) > 0 {
-			t.Errorf("heartbeat unprotected %v once the groups are named", got)
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if e.app.Hub.Mode() != "setup" || !strings.Contains(string(b), "name the hub owners group") {
+			t.Fatalf("set up without a hub owners group: mode %q, %.300s", e.app.Hub.Mode(), b)
+		}
+		if n := len(e.central.DataStore["facility-hub-registry"]); n > 0 || e.central.TokensOf("hub_admin") > 0 {
+			t.Errorf("a refused set-up left %d registry entries, %d tokens", n, e.central.TokensOf("hub_admin"))
 		}
 	})
 }

@@ -710,9 +710,9 @@ func TestL3ForgedMoveAnnouncement(t *testing.T) {
 
 // L3 (registry): an ordinary user forges this hub's registry entry, marking it
 // "retired" (or "revoked"). Must hold (as DEPLOYMENT.md requires the namespace
-// protected): the hub ignores a status it cannot trust. This instance's namespaces are
-// unprotected (no hub owners group is named, so ProtectRegistry leaves the entry open;
-// CheckProtection warns). Accepted for "retired" (FINDINGS.md 16, DEPLOYMENT.md "Protect
+// protected): the hub ignores a status it cannot trust. The hub shares its entry with
+// the hub owners group at set-up (set-up needs one named), so an ordinary user's write
+// is refused and the test ends there; on an entry left open, accepted for "retired" (FINDINGS.md 16, DEPLOYMENT.md "Protect
 // the data store namespaces"): it costs offline service, no data, and ends when the entry
 // is active again; the test checks exactly that.
 func TestL3ForgedRegistryStatus(t *testing.T) {
