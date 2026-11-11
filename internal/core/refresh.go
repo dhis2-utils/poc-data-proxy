@@ -60,6 +60,22 @@ func (m *Me) Belongs(facilityPath string) bool {
 	return false
 }
 
+// userAdminAuthorities let an account create, change, delete or act as users, or
+// change user roles, on central: with one, a stolen token can make or take over other
+// accounts, so the hub keeps no token of such an account (review R-25). ALL is the
+// superuser. User groups are left out: they give data access, not accounts.
+var userAdminAuthorities = []string{"ALL", "F_USER_ADD", "F_USER_ADD_WITHIN_MANAGED_GROUP", "F_USER_DELETE",
+	"F_USER_DELETE_WITHIN_MANAGED_GROUP", "F_USERROLE_PUBLIC_ADD", "F_USERROLE_PRIVATE_ADD", "F_REPLICATE_USER",
+	"F_IMPERSONATE_USER"}
+
+// ManagesUsers reports whether the user may create, change or delete users or user
+// roles on central. Such accounts are passed through to central only: no key slot, no
+// stored token, so no offline login either, since saves made offline could never be
+// sent.
+func (m *Me) ManagesUsers() bool {
+	return slices.ContainsFunc(m.Authorities, func(a string) bool { return slices.Contains(userAdminAuthorities, a) })
+}
+
 const meFields = "id,username,organisationUnits[id],teiSearchOrganisationUnits[id],dataViewOrganisationUnits[id],authorities,userGroups[id]"
 
 func (h *Hub) FetchMe(ctx context.Context, auth central.Auth) (*Me, error) {
@@ -705,6 +721,9 @@ func (h *Hub) TakeOverHubToken(ctx context.Context, username, password string) e
 	}
 	if !me.Belongs(h.FacilityPath()) {
 		return fmt.Errorf("%s is not assigned to this facility", username)
+	}
+	if me.ManagesUsers() {
+		return fmt.Errorf("%s can manage users on central: the hub keeps no token of such an account", username)
 	}
 	exp := time.Now().Add(h.TokenLife())
 	uid, key, err := h.CreatePAT(ctx, with, exp)

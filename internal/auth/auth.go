@@ -225,9 +225,19 @@ func (a *Auth) registerOnline(ctx context.Context, username, password string, wi
 		return h.Sessions.New(0, username, with)
 	}
 	if path := h.FacilityPath(); path != "" && !me.Belongs(path) {
-		// Only facility staff and hub admins get a key slot and a stored token. Anyone
+		// Only facility staff get a key slot and a stored token. Anyone
 		// else is passed through to central, as when the store is locked (REVIEW-2 F5).
 		slog.Info("login: user is not facility staff; pass-through only", "user", username)
+		return h.Sessions.New(0, username, with)
+	}
+	if me.ManagesUsers() {
+		// Nor do accounts that can manage users on central: one password and the disk
+		// or the stick would give their token, and with it any account (review R-25).
+		// Without a token their offline saves could never be sent, so no slot either.
+		slog.Info("login: user can manage users on central; pass-through only", "user", username)
+		if u, _ := h.Store.UserByName(username); u != nil {
+			h.DropUserToken(ctx, u, with)
+		}
 		return h.Sessions.New(0, username, with)
 	}
 	known, _ := h.Store.UserByName(username)

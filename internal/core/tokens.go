@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/central"
+	"github.com/dhis2/facility-hub/internal/store"
 )
 
 // Personal access tokens on DHIS2 2.42.6 outlive their user: disabling the user,
@@ -78,6 +79,22 @@ func (h *Hub) Revoked() bool { return h.Store.Meta(MetaRetired) == retiredRevoke
 // DropTokens deletes on central every token the hub still holds, each as its owner,
 // and forgets them: when its tokens were revoked (a revoked hub makes no new ones),
 // and at a reset.
+// DropUserToken deletes the user's token on central, with their own credential, and
+// forgets it and any kept password, and keeps them from logging in offline: for a
+// registered user who may now manage users on central (Me.ManagesUsers).
+func (h *Hub) DropUserToken(ctx context.Context, u *store.User, with central.Auth) {
+	h.Store.SetNeedsLogin(u.ID, true)
+	if !h.Unlocked() || !(u.HasPAT || u.HasPassword) {
+		return
+	}
+	if u.PATUID != "" {
+		h.Central.JSON(ctx, "DELETE", "/api/apiToken/"+url.PathEscape(u.PATUID), nil, with, nil)
+	}
+	h.Store.SetPAT(u.ID, "", "", "")
+	h.Store.SetPassword(u.ID, "")
+	slog.Info("deleted the token of a user who can manage users on central", "user", u.Username)
+}
+
 func (h *Hub) DropTokens(ctx context.Context) {
 	users, _ := h.Store.Users()
 	for _, u := range users {

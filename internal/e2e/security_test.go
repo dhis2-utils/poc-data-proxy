@@ -501,6 +501,50 @@ func TestOutsiderNotRegistered(t *testing.T) {
 	}
 }
 
+// Review R-25: an account that can manage users on central (a superuser, or one that
+// may create users or roles) gets no key slot and no stored token: one staff
+// password and the hub's disk would otherwise give its token, and with it any
+// account. It works through the hub online only. A registered user who gains such an
+// authority loses their token, on central too, and their offline login.
+func TestUserAdminsNotRegistered(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.central.Users["nurse_b"].Authorities = []string{"ALL"}
+	b := e.web("nurse_b")
+	b.login()
+	if u, _ := e.app.Hub.Store.UserByName("nurse_b"); u != nil {
+		t.Error("a superuser got a key slot")
+	}
+	if n := e.central.TokensOf("nurse_b"); n != 0 {
+		t.Errorf("%d tokens made for a superuser", n)
+	}
+	b.json("GET", "/api/me", nil, 200) // passed through
+	if err := e.app.Hub.TakeOverHubToken(context.Background(), "nurse_b", fc.Password); err == nil {
+		t.Error("a superuser took the hub's token over")
+	}
+
+	a := e.web("nurse_a")
+	a.login()
+	if n := e.central.TokensOf("nurse_a"); n != 1 {
+		t.Fatalf("%d tokens of nurse_a, want 1", n)
+	}
+	e.central.Users["nurse_a"].Authorities = []string{"M_dhis-web-capture", "F_USER_ADD"}
+	e.web("nurse_a").login()
+	if n := e.central.TokensOf("nurse_a"); n != 0 {
+		t.Errorf("%d tokens of nurse_a left on central after F_USER_ADD", n)
+	}
+	if u, _ := e.app.Hub.Store.UserByName("nurse_a"); u == nil || u.HasPAT || u.HasPassword || !u.NeedsLogin {
+		t.Errorf("nurse_a after F_USER_ADD: %+v", u)
+	}
+	e.offline()
+	for _, user := range []string{"nurse_a", "nurse_b"} {
+		if st, body := e.web(user).do("POST", "/api/auth/login", map[string]string{"username": user, "password": fc.Password}); st == 200 &&
+			strings.Contains(string(body), "SUCCESS") {
+			t.Errorf("%s logged in offline", user)
+		}
+	}
+}
+
 // REVIEW-2 F4: metadata is not served from another user's copy offline: central
 // answers it per user (metadata sharing, from public, group and individual sharing;
 // display names in the user's language), and the hub does not evaluate that. Only
