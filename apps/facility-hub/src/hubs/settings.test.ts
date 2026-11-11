@@ -148,7 +148,17 @@ describe('reserved-value pool', () => {
             attributes: { xs8A6tQJY0s: 3000 },
         })
         expect(poolValue({ ...form, defaultPool: '0' }, null)).toBe(null)
-        expect(poolValue({ ...form, defaultPool: '100001' }, null)).toBe(null)
+        expect(poolValue({ ...form, defaultPool: '5000' }, null)).toEqual({
+            default: 5000,
+            attributes: { xs8A6tQJY0s: 3000 },
+        })
+        expect(poolValue({ ...form, defaultPool: '5001' }, null)).toBe(null)
+        expect(
+            poolValue(
+                { ...form, attributes: [{ id: 'x', value: '5001' }] },
+                null
+            )
+        ).toBe(null)
         expect(
             poolValue(
                 { ...form, attributes: [{ id: 'x', value: 'many' }] },

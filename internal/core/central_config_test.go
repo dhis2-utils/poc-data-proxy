@@ -35,8 +35,13 @@ func TestConfigSettingsClamped(t *testing.T) {
 	if r := h.Retention(); r.DefaultMonths != 0 || r.Programs["p"] != maxMonths || r.TrackedEntityTypes["t"] != 0 {
 		t.Errorf("retention %+v", r)
 	}
-	if n, m := h.PoolTarget("a"), h.PoolTarget("other"); n != maxPool || m != maxPool {
-		t.Errorf("pool targets %d %d", n, m)
+	if n, m := h.PoolTarget("a"), h.PoolTarget("other"); n != 5000 || m != 5000 {
+		t.Errorf("pool targets %d %d, want 5000", n, m)
+	}
+	h.Cfg.ReservedPoolSize = 6000 // reserved_pool_size, without a setting from central
+	st.SetState(reservedPoolKey, []byte(`{}`))
+	if n := h.PoolTarget("a"); n != 5000 {
+		t.Errorf("pool target from reserved_pool_size %d, want 5000", n)
 	}
 	if r := h.AggRetention(); r.Default != maxPeriods || r.For("d") != maxPeriods {
 		t.Errorf("aggregate retention %+v", r)

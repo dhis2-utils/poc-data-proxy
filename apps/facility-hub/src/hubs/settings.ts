@@ -60,8 +60,9 @@ export const limits = {
     months: { min: 0, max: 1200 },
     periods: { min: 1, max: 1000 },
     expiryDays: { min: 7, max: 365 },
-    pool: { min: 1, max: 100000 },
-    poolRow: { min: 0, max: 100000 }, // 0 turns an attribute's offline pool off
+    // At most 5000 per generated attribute, as the hub keeps it (core.maxPool).
+    pool: { min: 1, max: 5000 },
+    poolRow: { min: 0, max: 5000 }, // 0 turns an attribute's offline pool off
 }
 
 /** The whole number typed, or null when it is not one within the limits. */
