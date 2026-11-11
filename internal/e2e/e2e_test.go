@@ -303,6 +303,12 @@ const postSync = "/api/tracker?async=false&importStrategy=CREATE_AND_UPDATE&atom
 
 func TestAcceptance(t *testing.T) {
 	e := newEnv(t)
+	// A USB stick (a folder, with no mount check), so scenario 9 also reads its copy.
+	usb := t.TempDir()
+	e.stop()
+	e.cfgHook = func(c *config.Config) { c.USBDir, c.USBRequireMount = usb, false }
+	e.start()
+	e.app.Stick.Tick(context.Background()) // at boot: the stick gets the hub's mark
 	t.Run("10 setup: a staff member sets up with only a login", func(t *testing.T) {
 		e.setup()
 		h := e.app.Hub
@@ -663,25 +669,48 @@ func TestAcceptance(t *testing.T) {
 	})
 
 	t.Run("9 encryption: no patient data in any file on disk", func(t *testing.T) {
+		e.app.Stick.Tick(context.Background()) // the stick's copy, while the store is unlocked
 		e.stop()
-		files, _ := filepath.Glob(filepath.Join(e.dir, "*"))
-		if len(files) < 2 {
-			t.Fatalf("files: %v", files)
-		}
 		// Values, search terms and secrets, and also what the index used to keep in
 		// plaintext (review H1): which tracked entities exist, in which program, at
 		// which facility, and when.
 		needles := []string{"Amina", "amin", "Kwame", "Seeded", "NAT-2001", "NAT-0001", fc.Password, "d2p_",
 			"OffTe000001", "SeedTe00001", "SeedEv00001", fc.Program, fc.Stage1, "2026-10-07"}
+		// Every file in the data folder and on the stick, in subfolders too: the
+		// database's -wal and -shm, temporary and staged files (review section 10).
+		var files []string
+		for _, root := range []string{e.dir, usb} {
+			err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if !d.IsDir() {
+					files = append(files, path)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		var onStick int
+		for _, f := range files {
+			if strings.HasPrefix(f, usb) {
+				onStick++
+			}
+		}
+		if len(files)-onStick < 2 || onStick < 2 {
+			t.Fatalf("files: %v", files)
+		}
 		for _, f := range files {
 			data, err := os.ReadFile(f)
 			if err != nil {
-				continue
+				t.Fatal(err) // a file the test cannot read could hold anything
 			}
 			for _, needle := range needles {
 				// The request log has today's date in its timestamps.
 				if bytes.Contains(data, []byte(needle)) && !(filepath.Base(f) == "requests.log" && needle == "2026-10-07") {
-					t.Fatalf("%q found in plain text in %s", needle, filepath.Base(f))
+					t.Fatalf("%q found in plain text in %s", needle, f)
 				}
 			}
 		}
