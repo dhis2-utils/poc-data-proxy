@@ -135,8 +135,11 @@ func TestFacilityHubApp(t *testing.T) {
 		{"/api/users", map[string]any{"id": tk.UID(), "username": manager, "password": e.M.Password,
 			"firstName": "Hub", "surname": "manager", "organisationUnits": []map[string]string{{"id": e.M.District.ID}},
 			"userRoles": []map[string]string{{"id": mgrRole}}, "userGroups": []map[string]string{{"id": mgrGroup}}}},
+		// Readable by the hub owners too: set-up shares the hub's registry entry with the
+		// group as its owner, and DHIS2 drops, without an error, a group the user cannot
+		// read (2.42), leaving the hub's account unable to write its entry.
 		{"/api/sharing?type=userGroup&id=" + group, map[string]any{"object": map[string]any{"publicAccess": "--------",
-			"userGroupAccesses": []map[string]string{{"id": mgrGroup, "access": "r-------"}}}}},
+			"userGroupAccesses": []map[string]string{{"id": mgrGroup, "access": "r-------"}, {"id": e.M.SetupGroup, "access": "r-------"}}}}},
 	} {
 		if st, b, err := e.Central.Do("POST", p.path, p.body); err != nil || st >= 300 {
 			t.Fatalf("%s: %d %v %.300s", p.path, st, err, b)
