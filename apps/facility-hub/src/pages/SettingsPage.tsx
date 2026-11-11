@@ -195,14 +195,10 @@ export const AccountsSettingsCard = () => {
                         )
                     }}
                     loading={save.isLoading}
-                    disabled={
-                        !group ||
-                        !role ||
-                        (group === settings?.group &&
-                            role === settings?.role &&
-                            managers === (settings?.managers ?? '') &&
-                            owners === (settings?.owners ?? ''))
-                    }
+                    // Open when nothing changed too: saving again shares the
+                    // entries and the hub accounts group again, as a hub's
+                    // "dropped groups" warning asks.
+                    disabled={!group || !role}
                 >
                     {i18n.t('Save')}
                 </Button>

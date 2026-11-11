@@ -79,6 +79,11 @@ describe('the hub managers and hub owners groups', () => {
         expect(div.querySelectorAll('.root.disabled')).toHaveLength(2)
         expect(text).toContain('Group Managers')
         expect(text).toContain('Group Owners')
+        // Saving again, unchanged, shares again (a hub's "dropped groups" warning).
+        const save = [...div.querySelectorAll('button')].find(
+            (b) => b.textContent === 'Save'
+        )
+        expect(save?.disabled).toBe(false)
     })
 
     it('can be chosen while not named', async () => {
