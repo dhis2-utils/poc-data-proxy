@@ -471,6 +471,35 @@ A device whose clock or time zone is ahead of central's dates its records in cen
 
 Allowing future enrollment and incident dates in a program also avoids E1020, but it changes what the program allows. It is a workaround, not the fix.
 
+### Offline edits and newer changes on central
+
+An edit saved at the hub while it is offline can replace a newer change made on central meanwhile, and nobody is told. Seen on 3 November 2026 (FINDINGS.md, physical session A):
+1. A nurse changed a weight offline at 13:59.
+2. Someone changed it on central at 14:00.
+3. The hub pushed at 14:06, and central kept the nurse's older value.
+
+Central decides by arrival: the last save it receives wins. It does not compare versions.
+
+The hub pushes each saved object as the app sent it: a person, an enrollment or an event, each on its own, never a person with all their enrollments and events.
+- An edit of a person sends that person's attributes.
+- An edit of an event sends that event's data values.
+
+Where the app sends every attribute or every value, not only the changed one, a stale copy also puts back fields the nurse never touched. In adversarial C1 (27 October 2026) the person went with every attribute, and central's earlier change to the last name was undone. Central's change log keeps both edits.
+
+Within the facility, nothing new happens. Every device saves to the same copy on the hub, so the later save wins, as it does online on central. A browser reads the record from the hub when it opens it, so its copy is minutes old at most.
+
+The case needs two places editing one record while the hub is offline:
+- the facility, through the hub;
+- central: the district, another facility, or a tablet that stays pointed at central.
+
+It is not specific to the hub. Android Capture on its own does the same: its SDK sends every changed record with all its values, with `CREATE_AND_UPDATE`, and makes no version check (read in `dhis2-android-sdk` at `3ff01d8`, 14 October 2026, `NewTrackerImporterTrackedEntityPostPayloadGenerator`; not run on a tablet). The hub makes the case more common: more people work offline, and for longer.
+
+What to tell staff and districts: while a facility's hub is offline, do not edit that facility's records on central. Where someone must, check the record once the hub has pushed. The hub's page shows when that was.
+
+Options, if the pilot shows the case is common (not built):
+- Before pushing, read central's `updatedAt` for the records in each batch, one request per batch. Where central's version is newer than the one the edit started from, hold the edit as a refusal ("changed on central meanwhile"). It then appears on the Refusals page, with Resend and Discard as for any refusal.
+- Send only the values that changed, so only an edit of the same field replaces a newer one. First check on 2.42 and 2.43 that central keeps the attributes and data values an update leaves out.
+
 ### Security operations
 
 - **Protect the data store namespaces** on central (`facility-hub-*`) before the first hub goes out. By default any user can write them (FINDINGS.md): a forged registry entry can retire a hub (it then stops serving offline, though it keeps its data) or block setup of a facility.
