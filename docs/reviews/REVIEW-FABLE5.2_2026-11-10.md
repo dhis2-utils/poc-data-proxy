@@ -583,6 +583,23 @@ The documents are unusually candid about what was measured, what was decided and
 
 14. Decide which of the parts outside the core (Windows, TPM, USB restore, network management, central moves) a first pilot needs, and leave the rest out until each has had this level of review.
 
+## 13. Left open after the fixes
+
+Added 12 November. The fixes are on the branch `review-fable`. The findings below are not fixed, or fixed only in part:
+
+- **R-20, the data-value filter.** Paging and the uncapped reads are bounded. The filter on data values reads every event of the program. Measure it at 150 000 events (`internal/perf`) before adding anything.
+- **R-21.1, batching.** Pushes still go one object per request. Not measured as a problem yet.
+- **R-26 and R-31, the Pi image.** Need a Pi:
+  - the dnsmasq path and the polkit actions;
+  - `MemorySwapMax` and `ProtectSystem` in `deploy/hub.service`;
+  - the field-reliability items in R-31.
+- **R-27, the Windows installer.** Not run on a real PC. The check of the self-signed installer is in TESTING.md, "The self-signed installer".
+- **R-53c, strict TypeScript.** `strict` is still off in the app.
+- **R-03 on the other profiles.** The oracle queries and baselines for R-03 exist for the synthetic profile only (`internal/live/testdata/oracle/synthetic-4{2,3}.json`). Run and record Sierra Leone and Laos.
+- **Two DHIS2 bugs, to be reported:**
+  - On 2.43 an event read by its ID answers 200 without program sharing; 2.42 answers 404.
+  - Central filters and sorts on attributes of programs the user cannot read (see the note under R-03).
+
 ## Appendix: environment and traces
 
 - **Toolchain:** Go 1.26.8 `linux/arm64`; staticcheck built from its `master`; four CPU cores.
