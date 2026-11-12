@@ -566,6 +566,8 @@ Options, if the pilot shows the case is common (not built):
 
 ### Possible future enhancement: wards or departments as org units
 
+**Today: one org unit per hub.** A hub set up on a facility with a community unit or ward below it serves the facility org unit alone: facility staff (assigned there or above) log in, records owned by the facility work online and offline, records owned by the unit below pass through to central online and are not held offline (lists show the facility's own, writes there get "needs connection"), and users assigned only to the unit below cannot log in through the hub.
+
 Not planned for now. Some countries put wards or departments below the facility org unit, with staff assigned to the facility or to a ward, and search scope usually the whole facility. The hub does not support this today: a user assigned only to a ward cannot log in through it (it accepts the facility or above), its pulls take only data owned by the facility org unit itself, and set-up offers the lowest-level org units, which would be the wards. Supporting it would take: a facility level set by the country in the Facility Hub app; the hub serves the facility and everything below it; pulls with the facility's descendants, still per user, so central decides what each user sees; login for anyone assigned at or below the facility; data written offline readable by users whose capture or search scope covers its org unit, and writable only to org units in the user's capture scope; searches on the subtree, or the ward an app selects.
 
 ### Longer term
