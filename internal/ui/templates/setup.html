@@ -43,14 +43,11 @@
 {{else}}
 
 <h2>Set up this hub</h2>
-<p>The hub must be online. Give it central's address, from the QR code on the installation card, and the setup code{{if .NeedToken}} from <span class="mono">facility-hub/hub.txt</span> on the USB stick in the box{{end}}.</p>
+<p>The hub must be online. Give it central's address and the setup code{{if .NeedToken}} from <span class="mono">facility-hub/hub.txt</span> on the USB stick in the box{{end}}.</p>
 <form method="post" action="/hub/setup"><input type="hidden" name="step" value="server">
 <label for="c">Central server (https{{if .Hosts}} on {{.Hosts}}{{end}})</label><input id="c" type="url" name="central_url" required>
-<p id="scan-row" hidden><button type="button" id="scan" class="secondary">Scan the QR code</button></p>
-<video id="scan-video" hidden playsinline style="max-width:100%"></video>
 {{if .NeedToken}}<label for="t">Setup code</label><input id="t" type="text" name="setup_token" inputmode="numeric" autocomplete="off" placeholder="8 digits, in hub.txt on the USB stick" required>{{end}}
 <p><button type="submit">Continue</button></p></form>
-<script src="/hub/setup.js"></script>
 {{end}}
 </div></main>
 {{template "foot"}}
