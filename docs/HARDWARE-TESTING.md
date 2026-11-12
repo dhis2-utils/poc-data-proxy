@@ -4,7 +4,7 @@ The performance results so far come from containers on a Mac that approximate a 
 
 ## Results so far
 
-2026-10-26: a Pi 5 (4 GB) on a SATA SSD (Intenso SATA III High Performance, 120 GB; StarTech USB 3.1 Gen 2 to SATA cable) at 100 k and 300 k, and a Pi 4 (1 GB, no heatsink) on a microSD card (SanDisk High Endurance, 64 GB) at 10 k, 30 k and 60 k, over Wi-Fi at 20 °C, with the image's load-test mode (PERFORMANCE.md, "On Raspberry Pis"). Not done yet: the Pi 4 on an SSD, the Pi 5 on a card, sizes above 300 k, the calibration of the container profiles, bytes written per day (sampled from the next runs on), and power cuts.
+2026-10-26: a Pi 5 (4 GB) on a SATA SSD (Intenso SATA III High Performance, 120 GB; StarTech USB 3.1 Gen 2 to SATA cable) at 100 k and 300 k, and a Pi 4 (1 GB, no heatsink) on a microSD card (SanDisk High Endurance, 64 GB) at 10 k, 30 k and 60 k, over Wi-Fi at 20 °C, with the image's load-test mode (PERFORMANCE.md, "On Raspberry Pis"; since 12 November only in an image built with `LOADTEST=1`, image/README.md). Not done yet: the Pi 4 on an SSD, the Pi 5 on a card, sizes above 300 k, the calibration of the container profiles, bytes written per day (sampled from the next runs on), and power cuts.
 
 ## What is being tested
 

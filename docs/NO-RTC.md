@@ -63,6 +63,8 @@ Every case in the table that depends on the size of the offset is worse with a f
 
 Recommendation: fix, in the image only. A root timer that runs `touch /var/lib/systemd/timesync/clock` every 15 minutes, and once at shutdown, gives systemd's existing epoch check a recent time. No hub code changes. This needs F1 on hardware first, to confirm the epoch, and once more after the change. The touched file is on the system partition. If the system partition becomes read-only (DEPLOYMENT.md, "Options under consideration"), it must move to the data partition, as that section already says.
 
+Done 12 November in the image, not yet run on a Pi (image/README.md, "Checks on a Pi after an image change"): `hub-clock.service` touches the file every 15 minutes and when it stops at shutdown. It is one service with a loop, not a timer, since a timer cannot also run at shutdown without a second unit. The mechanism applies with chrony: the epoch check is systemd's own at boot (PID 1), not systemd-timesyncd's, and nothing else updates the file now that timesyncd is removed.
+
 ### The month's aggregate form offline
 
 Offline, the hub's clock decides which periods are open (`aggregate.Window`). With the clock on 6 October and the true date 4 November, a monthly data set with 10 expiry days offers September, which central has locked, and not October, which staff need to report (`TestNoRTCAggregateWindow`). Values entered for September are refused at push. A sync cycle that runs between the network's return and chrony's step also pulls by the wrong window and drops the stored October forms until the next cycle.

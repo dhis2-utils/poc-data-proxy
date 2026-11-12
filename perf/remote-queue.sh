@@ -11,6 +11,8 @@
 # summaries as they finish. For several machines at once, give each queue its own
 # LABEL and PORT (its own fake central):
 #   LABEL=rpi5 PORT=8091 perf/remote-queue.sh http://rpi5.local "100k 300k" 60 1h 10m/5m
+# On a Pi the queue's other half is load-test mode, only in an image built for it:
+# gh workflow run image.yml -f loadtest=true, or LOADTEST=1 image/build.sh (image/README.md).
 set -uo pipefail
 HUB=${1:?hub URL}
 SIZES=${2:?sizes, e.g. "100k 300k 500k 700k"}
