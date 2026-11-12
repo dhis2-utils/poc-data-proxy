@@ -27,7 +27,7 @@ func netEnvCode(t *testing.T, codeMode bool) (*env, string, *nmfake.NM, *netsetu
 	e, usb := stickEnv(t, codeMode)
 	nm := nmfake.New(nmfake.Net{SSID: "Clinic", Signal: 70, Secure: true})
 	now := time.Now()
-	m := &netsetup.Manager{R: nm, DataDir: e.dir, HubID: e.app.Hub.HubID(), DnsmasqDir: t.TempDir(),
+	m := &netsetup.Manager{R: nm, DataDir: e.dir, HubID: e.app.Hub.HubID(), CaptiveDir: t.TempDir(),
 		Now: func() time.Time { return now }, Delay: func(f func()) { f() }}
 	e.app.SetNet(m)
 	m.Tick(context.Background())

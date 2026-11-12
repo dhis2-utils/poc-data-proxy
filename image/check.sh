@@ -58,7 +58,6 @@ check "the hub binary is an arm64 executable" python3 -c "
 import sys; b = open('$WORK/hub', 'rb').read(20)
 sys.exit(0 if b[:4] == b'\x7fELF' and int.from_bytes(b[18:20], 'little') == 183 else 1)"
 HUBUID=$(cat_ /etc/passwd | awk -F: '$1 == "hub" {print $3}')
-HUBGID=$(cat_ /etc/passwd | awk -F: '$1 == "hub" {print $4}')
 check "a hub system user exists" test -n "$HUBUID"
 check "the hub binary belongs to the hub user (self-upgrade)" sh -c "debugfs -R 'stat /usr/local/lib/hub/hub' '$R' 2>/dev/null | grep -q 'User: *$HUBUID '"
 # Self-upgrade writes the new binary next to the running one, then renames it: the
@@ -79,7 +78,7 @@ wifi_on() { cat_ /var/lib/NetworkManager/NetworkManager.state | grep -q '^Wirele
 check "NetworkManager starts with the Wi-Fi on" wifi_on
 check "hub.service may bind ports 80 and 443" sh -c "debugfs -R 'cat /etc/systemd/system/hub.service' '$R' 2>/dev/null | grep -q CAP_NET_BIND_SERVICE"
 UNIT=$(cat_ /etc/systemd/system/hub.service)
-for want in StateDirectoryMode=0700 UMask=0077 NoNewPrivileges=yes PrivateTmp=yes LimitCORE=0; do
+for want in StateDirectoryMode=0700 UMask=0077 NoNewPrivileges=yes PrivateTmp=yes LimitCORE=0 RuntimeDirectory=hub; do
   check "hub.service: $want" grep -qx "$want" <<<"$UNIT"
 done
 check "setpriv is installed (hub-diag)" exists /usr/bin/setpriv
@@ -114,7 +113,20 @@ check "the hardware watchdog is on (RuntimeWatchdogSec)" sh -c "debugfs -R 'cat 
 check "the USB stick is mounted for the hub" sh -c "debugfs -R 'cat /etc/udev/rules.d/90-hub-usb.rules' '$R' 2>/dev/null | grep -q /media/hub-usb"
 check "a USB stick without a partition table is mounted too" sh -c "debugfs -R 'cat /etc/udev/rules.d/90-hub-usb.rules' '$R' 2>/dev/null | grep -qF 'ENV{DEVTYPE}==\"partition|disk\"'"
 check "machine-id is empty (made at first boot)" test -z "$(cat_ /etc/machine-id)"
-check "the setup Wi-Fi's DNS folder is writable by the hub" sh -c "test -n '$HUBGID' && debugfs -R 'stat /etc/NetworkManager/dnsmasq-shared.d' '$R' 2>/dev/null | grep -q 'Group: *$HUBGID '"
+# The setup Wi-Fi's captive DNS answer: written by root on the hub's flag, never by
+# the hub, since dnsmasq runs as root (review R-26).
+check "the dnsmasq folder is root's (User 0, Group 0)" sh -c "debugfs -R 'stat /etc/NetworkManager/dnsmasq-shared.d' '$R' 2>/dev/null | grep -q 'User: *0 *Group: *0 '"
+[ "$(mode /etc/NetworkManager/dnsmasq-shared.d)" = 0755 ] && ok "the dnsmasq folder is 0755" || bad "the dnsmasq folder's mode $(mode /etc/NetworkManager/dnsmasq-shared.d)"
+check "no captive line in the image (written at run time)" sh -c "! debugfs -R 'stat /etc/NetworkManager/dnsmasq-shared.d/hub-captive.conf' '$R' 2>/dev/null | grep -q '^Inode:'"
+CAPTIVE=$(cat_ /usr/local/sbin/hub-captive)
+check "hub-captive writes the one fixed line" grep -qF 'address=/#/10.42.0.1' <<<"$CAPTIVE"
+check "hub-captive follows the flag in the hub's runtime folder" grep -qF '[ -e /run/hub/captive ]' <<<"$CAPTIVE"
+[ "$(mode /usr/local/sbin/hub-captive)" = 0755 ] && ok "hub-captive is 0755" || bad "hub-captive mode $(mode /usr/local/sbin/hub-captive)"
+check "hub-captive is root's" sh -c "debugfs -R 'stat /usr/local/sbin/hub-captive' '$R' 2>/dev/null | grep -q 'User: *0 '"
+check "hub-captive.path watches the flag" sh -c "debugfs -R 'cat /etc/systemd/system/hub-captive.path' '$R' 2>/dev/null | grep -qx 'PathChanged=/run/hub/captive'"
+check "hub-captive.path is enabled" exists /etc/systemd/system/paths.target.wants/hub-captive.path
+check "hub-captive.service clears a stale line before NetworkManager" sh -c "debugfs -R 'cat /etc/systemd/system/hub-captive.service' '$R' 2>/dev/null | grep -qx 'Before=NetworkManager.service'"
+check "hub-captive.service runs at each start" exists /etc/systemd/system/multi-user.target.wants/hub-captive.service
 
 echo
 if [ "$FAILS" -gt 0 ]; then echo "$FAILS checks failed"; exit 1; fi

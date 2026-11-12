@@ -26,8 +26,11 @@ type Config struct {
 	// Network "networkmanager": the hub manages its network through NetworkManager
 	// (the Pi image; internal/netsetup). Empty: the machine's network as it is.
 	Network string
-	// NMDnsmasqDir is NetworkManager's dnsmasq-shared.d, for the setup Wi-Fi's DNS.
-	NMDnsmasqDir string
+	// CaptiveDir gets the hub's flag while its setup Wi-Fi is on (RuntimeDirectory=hub
+	// in deploy/hub.service), and CaptiveConf is the fixed dnsmasq line the image's
+	// root unit hub-captive.path writes while the flag is there (internal/netsetup).
+	CaptiveDir  string
+	CaptiveConf string
 	// MDNS: the hub answers dhis2.local itself (Windows; the Pi has avahi).
 	MDNS bool
 	// SetupLocalOnly: set-up only from the machine itself (Windows: being at the PC
@@ -100,7 +103,8 @@ type Config struct {
 func Default() Config {
 	return Config{
 		Listen:                 ":8443",
-		NMDnsmasqDir:           "/etc/NetworkManager/dnsmasq-shared.d",
+		CaptiveDir:             "/run/hub",
+		CaptiveConf:            "/etc/NetworkManager/dnsmasq-shared.d/hub-captive.conf",
 		DataDir:                "/var/lib/hub",
 		SyncInterval:           15 * time.Minute,
 		PingInterval:           15 * time.Second,

@@ -21,7 +21,7 @@ type rig struct {
 func newRig(t *testing.T) *rig {
 	nm := nmfake.New(nmfake.Net{SSID: "Clinic", Signal: 70, Secure: true}, nmfake.Net{SSID: "Open", Signal: 40})
 	r := &rig{nm: nm, now: time.Date(2026, 10, 19, 8, 0, 0, 0, time.UTC), t: t}
-	r.m = &Manager{R: nm, DataDir: t.TempDir(), HubID: "hub-abc123", DnsmasqDir: t.TempDir(),
+	r.m = &Manager{R: nm, DataDir: t.TempDir(), HubID: "hub-abc123", CaptiveDir: t.TempDir(),
 		Now: func() time.Time { return r.now }, Delay: func(f func()) { f() }}
 	return r
 }
@@ -32,7 +32,7 @@ func (r *rig) tick(after time.Duration) {
 }
 
 func (r *rig) captiveFile() bool {
-	_, err := os.Stat(filepath.Join(r.m.DnsmasqDir, "hub-captive.conf"))
+	_, err := os.Stat(filepath.Join(r.m.CaptiveDir, "captive"))
 	return err == nil
 }
 
@@ -425,5 +425,56 @@ func TestCaptiveRemovedAtStart(t *testing.T) {
 	r.tick(0)
 	if r.captiveFile() {
 		t.Fatal("every name still answered by the hub without its setup Wi-Fi")
+	}
+}
+
+// The hub writes only a flag; on the image a root unit puts the fixed dnsmasq line in
+// place. The setup Wi-Fi starts after the line is there, since dnsmasq reads it only
+// when it starts, and the hub goes on without it when the unit does not follow.
+func TestCaptiveWaitsForTheRootUnit(t *testing.T) {
+	r := newRig(t)
+	conf := filepath.Join(t.TempDir(), "hub-captive.conf")
+	r.m.CaptiveConf = conf
+	defer func(w time.Duration) { captiveWait = w }(captiveWait)
+	captiveWait = 2 * time.Second
+	// The root unit, following the flag.
+	done, stopped := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(stopped)
+		for {
+			select {
+			case <-done:
+				return
+			case <-time.After(20 * time.Millisecond):
+			}
+			if r.captiveFile() {
+				os.WriteFile(conf, []byte("address=/#/10.42.0.1\n"), 0o644)
+			} else {
+				os.Remove(conf)
+			}
+		}
+	}()
+	if err := r.m.writeCaptive(true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(conf); err != nil {
+		t.Fatal("returned before the line was in place")
+	}
+	if err := r.m.writeCaptive(false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(conf); err == nil {
+		t.Fatal("returned before the line was removed")
+	}
+	close(done)
+	<-stopped
+
+	// No root unit: an error after captiveWait, and the flag is still set.
+	captiveWait = 100 * time.Millisecond
+	if err := r.m.writeCaptive(true); err == nil {
+		t.Fatal("no error without the root unit")
+	}
+	if !r.captiveFile() {
+		t.Fatal("flag not set")
 	}
 }

@@ -1,0 +1,13 @@
+# Writes or removes the setup Wi-Fi's captive DNS answer as the hub's flag says
+# (/usr/local/sbin/hub-captive): when the flag changes (hub-captive.path), and at each
+# start before NetworkManager, so a line left by a power cut is gone.
+[Unit]
+Description=Facility hub: captive DNS answer of the setup Wi-Fi
+Before=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hub-captive
+
+[Install]
+WantedBy=multi-user.target

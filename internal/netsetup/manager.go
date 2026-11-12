@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/dhis2/facility-hub/internal/devkey"
 	"log/slog"
 	"math/big"
@@ -21,7 +22,7 @@ const (
 	bootGrace   = 60 * time.Second // no network this long after start: setup Wi-Fi
 	lostGrace   = 15 * time.Minute // network gone this long: setup Wi-Fi again
 	setupIP     = "10.42.0.1"
-	captiveFile = "hub-captive.conf"
+	captiveFlag = "captive"
 	// The setup Wi-Fi's password: no letters that look alike (0/O, 1/l/I).
 	setupAlphabet = "0123456789"
 	// The facility Wi-Fi's password: lowercase letters and digits without 0/o, 1/l/i.
@@ -32,11 +33,20 @@ const (
 // "Hub-<hub ID>", from which an admin joins it to a Wi-Fi or makes it the facility's own
 // Wi-Fi (docs/DEPLOYMENT.md, "Setup Wi-Fi"). A cable is left to NetworkManager.
 type Manager struct {
-	R          Runner
-	DataDir    string // keeps the setup password and the chosen networks' names
-	HubID      string
-	DnsmasqDir string // NetworkManager's dnsmasq-shared.d: the captive answer goes here
-	Now        func() time.Time
+	R       Runner
+	DataDir string // keeps the setup password and the chosen networks' names
+	HubID   string
+	// CaptiveDir holds the file "captive" while the setup Wi-Fi is on. The hub never
+	// writes dnsmasq's configuration: NetworkManager runs dnsmasq as root. On the Pi
+	// image a root unit (hub-captive.path) puts one fixed line in NetworkManager's
+	// dnsmasq-shared.d while the file exists, and removes it when the file goes
+	// (docs/DEPLOYMENT.md, "Setup Wi-Fi").
+	CaptiveDir string
+	// CaptiveConf is the file that unit writes. dnsmasq reads it only when
+	// NetworkManager starts a shared Wi-Fi, so the hub waits for it to follow the flag
+	// (at most captiveWait) before it starts one. "": no wait.
+	CaptiveConf string
+	Now         func() time.Time
 	// Delay runs a switch a moment later, so the page that asked for it can answer
 	// first (tests run it at once).
 	Delay func(func())
@@ -233,7 +243,9 @@ func (m *Manager) setupOnce(ctx context.Context) bool {
 
 func (m *Manager) stopSetup(ctx context.Context) {
 	m.R.Run(ctx, "connection", "down", SetupConn)
-	m.writeCaptive(false)
+	if err := m.writeCaptive(false); err != nil {
+		slog.Warn("network: captive DNS", "err", err)
+	}
 	m.markDown(SetupConn)
 	m.publish()
 	slog.Info("network: setup Wi-Fi off")
@@ -257,18 +269,34 @@ func (m *Manager) markDown(conn string) {
 }
 
 func (m *Manager) writeCaptive(on bool) error {
-	if m.DnsmasqDir == "" {
+	if m.CaptiveDir == "" {
 		return nil
 	}
-	p := filepath.Join(m.DnsmasqDir, captiveFile)
-	if !on {
-		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+	p := filepath.Join(m.CaptiveDir, captiveFlag)
+	if on {
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
 			return err
 		}
+	} else if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if m.CaptiveConf == "" {
 		return nil
 	}
-	return os.WriteFile(p, []byte("# The hub's setup Wi-Fi: every name leads to its setup page.\naddress=/#/"+setupIP+"\n"), 0o644)
+	deadline := time.Now().Add(captiveWait)
+	for {
+		if _, err := os.Stat(m.CaptiveConf); (err == nil) == on {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("the captive DNS answer did not follow the hub within %s (hub-captive.path)", captiveWait)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
+
+// captiveWait bounds the wait for the image's root unit to follow the flag.
+var captiveWait = 5 * time.Second
 
 // Join switches the hub to an existing Wi-Fi a moment later. If joining fails within
 // a minute, the setup Wi-Fi comes back with the reason.

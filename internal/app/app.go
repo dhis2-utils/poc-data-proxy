@@ -194,7 +194,7 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 		a2.MDNS = &mdns.Responder{Name: hubtls.Name, Nets: mdns.InterfaceNets}
 	}
 	if cfg.Network == "networkmanager" {
-		a2.SetNet(&netsetup.Manager{R: netsetup.ExecRunner{}, DataDir: cfg.DataDir, HubID: h.HubID(), DnsmasqDir: cfg.NMDnsmasqDir})
+		a2.SetNet(&netsetup.Manager{R: netsetup.ExecRunner{}, DataDir: cfg.DataDir, HubID: h.HubID(), CaptiveDir: cfg.CaptiveDir, CaptiveConf: cfg.CaptiveConf})
 	}
 	return a2, nil
 }

@@ -1,0 +1,10 @@
+# The setup Wi-Fi's captive DNS answer follows the hub's flag (/usr/local/sbin/hub-captive).
+[Unit]
+Description=Facility hub: captive DNS answer of the setup Wi-Fi, on the hub's flag
+
+[Path]
+PathChanged=/run/hub/captive
+Unit=hub-captive.service
+
+[Install]
+WantedBy=paths.target

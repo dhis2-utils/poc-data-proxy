@@ -1,0 +1,19 @@
+#!/bin/sh
+# The setup Wi-Fi's captive DNS answer (docs/DEPLOYMENT.md, "Setup Wi-Fi"): while the
+# hub's flag /run/hub/captive exists, every name on the hub's own Wi-Fi leads to its
+# setup page. NetworkManager runs that Wi-Fi's dnsmasq as root, so the hub may not
+# write its configuration (review R-26): the hub only creates and removes the flag, and
+# this script, as root, writes or removes this one fixed line. It never reads the
+# flag's content. Run by hub-captive.path when the flag changes, and at each start
+# before NetworkManager, when /run is empty: a line left by a power cut goes.
+set -eu
+conf=/etc/NetworkManager/dnsmasq-shared.d/hub-captive.conf
+if [ -e /run/hub/captive ]; then
+	mkdir -p "${conf%/*}"
+	printf '# The hub'\''s setup Wi-Fi: every name leads to its setup page (hub-captive).\naddress=/#/10.42.0.1\n' >"$conf.tmp"
+	mv "$conf.tmp" "$conf"
+	echo "captive DNS answer on"
+else
+	rm -f "$conf" "$conf.tmp"
+	echo "captive DNS answer off"
+fi

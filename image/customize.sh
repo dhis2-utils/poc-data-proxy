@@ -23,16 +23,16 @@ usermod -aG tss hub
 chown -R hub:hub /usr/local/lib/hub
 chmod 0755 /usr/local/lib/hub /usr/local/lib/hub/hub
 ln -sf ../lib/hub/hub /usr/local/bin/hub
-# The setup Wi-Fi's captive DNS answer is written here by the hub (internal/netsetup).
+# The setup Wi-Fi's captive DNS answer: root's, written by hub-captive on the hub's
+# flag. NetworkManager runs dnsmasq as root, so the hub may not write here (review R-26).
 mkdir -p /etc/NetworkManager/dnsmasq-shared.d
-chgrp hub /etc/NetworkManager/dnsmasq-shared.d
-chmod 2775 /etc/NetworkManager/dnsmasq-shared.d
+chmod 0755 /etc/NetworkManager/dnsmasq-shared.d
 
 echo dhis2 > /etc/hostname
 sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tdhis2/' /etc/hosts
 grep -q '^127\.0\.1\.1' /etc/hosts || printf '127.0.1.1\tdhis2\n' >> /etc/hosts
 
-systemctl enable hub.service hub-loadtest.service hub-wifi-unblock.service hub-diag.timer hub-growdisk.service nftables.service chrony.service avahi-daemon.service NetworkManager.service
+systemctl enable hub.service hub-loadtest.service hub-wifi-unblock.service hub-diag.timer hub-growdisk.service hub-captive.path hub-captive.service nftables.service chrony.service avahi-daemon.service NetworkManager.service
 systemctl disable userconfig.service sshswitch.service 2>/dev/null || true
 # A new machine ID at first boot, so cloned images do not share one. An empty one also
 # makes systemd treat that boot as a first boot, when systemd-firstboot asks on the
@@ -40,7 +40,7 @@ systemctl disable userconfig.service sshswitch.service 2>/dev/null || true
 # keyboard, the hub never started (two Pis, 2026-10-22). The image sets what it would
 # ask for, or needs none of it.
 systemctl mask systemd-firstboot.service
-chmod 0755 /usr/local/sbin/hub-diag /usr/local/sbin/hub-growdisk /usr/local/sbin/hub-loadtest
+chmod 0755 /usr/local/sbin/hub-diag /usr/local/sbin/hub-growdisk /usr/local/sbin/hub-loadtest /usr/local/sbin/hub-captive
 # NetworkManager keeps the Wi-Fi off, and blocks the radio, while its saved state says
 # so: the base image ships WirelessEnabled=false (Pi OS, until a country is set), which
 # overrode hub-wifi-unblock and kept the setup Wi-Fi from starting (rpi5, 2026-10-22).
