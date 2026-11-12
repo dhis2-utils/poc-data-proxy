@@ -11,5 +11,6 @@ Independent reviews of the approach and the code, each as of its date. Code comm
 | "review ML4-H1 … ML4-L23" | [CRITICAL-REVIEW_2026-10-27_ML4.md](CRITICAL-REVIEW_2026-10-27_ML4.md) | 2026-10-27 | Critical review of hub, app, image, installers and CI: security, data leaks and loss, bugs, KISS | H1–H3, M1–M7, L1–L23 |
 | "review GLM5-F1 … GLM5-F42" | [CRITICAL-REVIEW_2026-10-27_GLM5.md](CRITICAL-REVIEW_2026-10-27_GLM5.md) | 2026-10-27 | Critical review of v0.1.5, same scope: security, data leaks and loss, bugs, redundant code and KISS | F1–F42 |
 | "review R-01 … R-53" | [REVIEW-FABLE5.2_2026-11-10.md](REVIEW-FABLE5.2_2026-11-10.md) | 2026-11-10 | Independent review of v0.1.5: security, data integrity, input validation, control channel, CI | R-01–R-53 |
+| KISS review 2026-11-12 | [KISS-2026-11-12.md](KISS-2026-11-12.md) | 2026-11-12 | The whole project against AGENTS.md's rule, after the R-fixes; what remains before a pilot | S1–S6, C1–C13, T1–T5, D1–D6 |
 
 A new review gets the next name (REVIEW-3, …), a dated file here and a row in this table. Two reviews of the same day with overlapping IDs are cited with their reviewer's prefix instead (ML4-H1, GLM5-F3).
