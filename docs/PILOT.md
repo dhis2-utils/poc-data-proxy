@@ -36,29 +36,30 @@ The list below is what remains, from the KISS review, REVIEW-FABLE5.2 section 13
    Run the 14 checks in `image/README.md` ("Checks on a Pi after an image change") before this counts as done.
 7. **"Needs connection" in Capture web** shows as "An unknown error occurred (503)". Staff need to know what it means: fix it in the hub's answer or cover it in training. **Answered:** accepted for the pilot; cover it in training. After a successful pilot, raise it with the Capture team.
 8. **Request logging** (C6) before anyone turns `log_requests` on at a facility. **Done** on `pilot-prep`: `hub.log` gets parameter names only (`TestRequestLogKeepsNoValues`).
+9. **A release key.** The repository has no `RELEASE_PUBLIC_KEY` variable and no `release` environment, and no release has been published (checked 12 November). Without them the release workflow cannot sign, and a hub built without the key never upgrades itself. Make the pair with `hub keygen` on a trusted machine, set the public key as the repository variable and the private key as the secret of the environment `release` with required reviewers (README, "Releases"), and keep an offline copy of the private key: a lost key means re-imaging every hub. Image tests until then use a throwaway key and a release served from a laptop (`image/README.md`, step 5).
 
 **Run**
 
-9. **A release from `main`**: v0.1.6 with the review fixes, the image built by the release workflow, and every step of the workflow run by hand first (tags are protected).
-10. **A soak on that image on a Pi**, with `hubdrive check`. Much changed on 10 and 11 November: signed instructions, input checks at the boundary, the throttle, the pull overlap.
-11. **The live suite on Sierra Leone and Laos** for the R-03 baselines. The adversarial suite was not run in review FABLE5.2.
-12. **The Facility Hub app on the demo central** with the new groups, signed instructions and Revoke, as a hub manager who is not a superuser.
-13. **The unexplained hardware findings:**
+10. **A release from `main`**: v0.1.6 with the review fixes, the image built by the release workflow, and every step of the workflow run by hand first (tags are protected).
+11. **A soak on that image on a Pi**, with `hubdrive check`. Much changed on 10 and 11 November: signed instructions, input checks at the boundary, the throttle, the pull overlap.
+12. **The live suite on Sierra Leone and Laos** for the R-03 baselines. The adversarial suite was not run in review FABLE5.2.
+13. **The Facility Hub app on the demo central** with the new groups, signed instructions and Revoke, as a hub manager who is not a superuser.
+14. **The unexplained hardware findings:**
     - the Pi 4 restarted on its own on 30 October;
     - the Pi 4 did no sync cycle on the night of 9 November;
     - the Pi 5 reported "online" under a firewall block without pushing;
     - two USB sticks in at once.
 
     The journal now stays on disk, so the next occurrence can be read.
-14. **Windows on a real facility PC.** Run TESTING.md's Windows steps, including step 10 (the PC's TPM). Check the installer's privilege boundaries (R-27) and the service start timeout after a cut (event 7009, FINDINGS session B).
-15. **Two hubs on neighbouring facilities** (TESTING.md phase 6), if the pilot district has neighbours that share patients.
-16. **Report the two DHIS2 bugs** from REVIEW-FABLE5.2 section 13, and J1, C2, I8c and J4.
+15. **Windows on a real facility PC.** Run TESTING.md's Windows steps, including step 10 (the PC's TPM). Check the installer's privilege boundaries (R-27) and the service start timeout after a cut (event 7009, FINDINGS session B).
+16. **Two hubs on neighbouring facilities** (TESTING.md phase 6), if the pilot district has neighbours that share patients.
+17. **Report the two DHIS2 bugs** from REVIEW-FABLE5.2 section 13, and J1, C2, I8c and J4.
 
 **Prepare** (Rollout, "At national level")
 
-17. The pilot district and its facilities, chosen by the criteria.
-18. Central's time zone: DHIS2's dates and, on a Pi, the time of the nightly update reboot follow it.
-19. The hub groups named in the app.
-20. Retention set.
-21. A password policy.
-22. The installation card, the kits with their USB sticks, training and the support line.
+18. The pilot district and its facilities, chosen by the criteria.
+19. Central's time zone: DHIS2's dates and, on a Pi, the time of the nightly update reboot follow it.
+20. The hub groups named in the app.
+21. Retention set.
+22. A password policy.
+23. The installation card, the kits with their USB sticks, training and the support line.
