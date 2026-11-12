@@ -1,8 +1,15 @@
 package app
 
 import (
+	"bytes"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/dhis2/facility-hub/internal/config"
 
 	"github.com/dhis2/facility-hub/internal/core"
 	"github.com/dhis2/facility-hub/internal/store"
@@ -44,5 +51,26 @@ func TestEnsureIdentityKeepsID(t *testing.T) {
 	s.Keys.Exec(`ALTER TABLE meta_damaged RENAME TO meta`)
 	if got := s.Meta(core.MetaHubID); got != id {
 		t.Errorf("hub ID %q, was %q", got, id)
+	}
+}
+
+// With log_requests on, hub.log gets a request's parameter names, never their values:
+// a data value, its comment or a search term can name a patient (KISS-2026-11-12 C6).
+func TestRequestLogKeepsNoValues(t *testing.T) {
+	var buf bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(old)
+	h := logRequests(config.Config{LogRequests: true}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	r := httptest.NewRequest(http.MethodPost, "/api/dataValues?de=s46m5MS0hxu&value=Mary%20Kamara&comment=HIV%20positive&filter=w75KJ2mc4zz:like:Kamara", nil)
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	got := buf.String()
+	for _, v := range []string{"Mary", "Kamara", "HIV", "s46m5MS0hxu"} {
+		if strings.Contains(got, v) {
+			t.Errorf("hub.log holds %q: %s", v, got)
+		}
+	}
+	if !strings.Contains(got, "comment,de,filter,value") {
+		t.Errorf("hub.log lacks the parameter names: %s", got)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -70,11 +71,6 @@ func Template(path string) string {
 
 // Record logs method, path template, parameter names, client and how it was served.
 func (l *RequestLog) Record(r *http.Request, client, servedBy string, status int) {
-	var params []string
-	for k := range r.URL.Query() {
-		params = append(params, k)
-	}
-	slices.Sort(params)
 	k := key(r, client)
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -82,19 +78,14 @@ func (l *RequestLog) Record(r *http.Request, client, servedBy string, status int
 	if l.enabled {
 		// Parameter names only: values can hold search terms (patient names).
 		fmt.Fprintf(l.file, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n", time.Now().UTC().Format(time.RFC3339), client, r.Method,
-			trunc(Template(r.URL.Path)), status, servedBy, trunc(strings.Join(params, ",")))
+			trunc(Template(r.URL.Path)), status, servedBy, trunc(ParamNames(r.URL.Query())))
 	}
 }
 
 // key is a request as the log and its page show it: method, path template, parameter
 // names (values can hold search terms) and client.
 func key(r *http.Request, client string) string {
-	var params []string
-	for k := range r.URL.Query() {
-		params = append(params, k)
-	}
-	slices.Sort(params)
-	return fmt.Sprintf("%s %s ?%s [%s]", trunc(r.Method), trunc(Template(r.URL.Path)), trunc(strings.Join(params, ",")), client)
+	return fmt.Sprintf("%s %s ?%s [%s]", trunc(r.Method), trunc(Template(r.URL.Path)), trunc(ParamNames(r.URL.Query())), client)
 }
 
 // The request log's maps hold at most maxKeys keys of at most a few hundred bytes:
@@ -167,20 +158,15 @@ func (l *RequestLog) Snapshot() (counts, unsupported map[string]int) {
 	return
 }
 
-// SafeQuery renders a query with the values of free-text parameters (filter, query)
-// replaced, for logs.
-func SafeQuery(q map[string][]string) string {
-	var parts []string
-	for k, vs := range q {
-		for _, v := range vs {
-			if k == "filter" || k == "query" {
-				v = "***"
-			}
-			parts = append(parts, k+"="+v)
-		}
+// ParamNames lists a query's parameter names, sorted, without their values: a value
+// can be a search term, a data value or a comment, any of which can name a patient.
+func ParamNames(q url.Values) string {
+	names := make([]string, 0, len(q))
+	for k := range q {
+		names = append(names, k)
 	}
-	slices.Sort(parts)
-	return strings.Join(parts, "&")
+	slices.Sort(names)
+	return strings.Join(names, ",")
 }
 
 // ClientKind guesses web vs Android from the User-Agent.

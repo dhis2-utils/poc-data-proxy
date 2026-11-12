@@ -380,7 +380,7 @@ func logRequests(cfg config.Config, next http.Handler) http.Handler {
 		t := time.Now()
 		sw := &statusWriter{ResponseWriter: w, status: 200}
 		next.ServeHTTP(sw, r)
-		slog.Info("request", "method", r.Method, "path", core.Template(r.URL.Path), "query", core.SafeQuery(r.URL.Query()), "client", core.ClientKind(r),
+		slog.Info("request", "method", r.Method, "path", core.Template(r.URL.Path), "params", core.ParamNames(r.URL.Query()), "client", core.ClientKind(r),
 			"status", sw.status, "ms", time.Since(t).Milliseconds())
 	})
 }

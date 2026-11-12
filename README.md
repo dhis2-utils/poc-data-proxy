@@ -121,7 +121,7 @@ The hub has no facility-specific configuration. It reads one small image-default
 | `full_pull_interval` | How often a full, non-incremental pull runs per access group (default 168h, a week). A changed access list gives a full pull at the next sync anyway |
 | `ownership_check_interval` | How often the hub checks which of its people the facility still owns, to catch transfers out (default 1h) |
 | `offline_search_facility` | Answer offline searches with `orgUnitMode=ACCESSIBLE` from the facility's data instead of refusing them (default `true`; FINDINGS.md) |
-| `log_requests` | Log every request and append it to `data_dir/requests.log` (spec 13.1) |
+| `log_requests` | Log every request (method, path with IDs replaced, parameter names, status, time) to `hub.log` and append it to `data_dir/requests.log` (spec 13.1). No parameter values: they can name a patient |
 | `hub_hosts` | Extra host names clients may use for the hub (comma separated; no wildcard). The hub answers 421 to any other `Host`; its own names and addresses are always accepted |
 | `session_idle`, `session_max` | End a hub session after this long without requests (default 1h) or after login (default 12h) |
 | `key_slot_max_age` | Remove the key slot of a user who has not logged in for this long (default 2160h, 90 days); the three most recently used slots are always kept |
