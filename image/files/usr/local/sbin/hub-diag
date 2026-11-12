@@ -49,6 +49,7 @@ mountpoint -q /boot/firmware || { echo "/boot/firmware is not mounted"; exit 0; 
   journalctl -b -u hub-captive.service --no-pager -n 6 -o short-iso 2>&1
   echo; echo "== clock"
   echo "now $(date -Is); saved $(date -Is -r /var/lib/systemd/timesync/clock 2>&1); hub-clock $(systemctl is-active hub-clock.service 2>&1)"
+  echo "time zone $(timedatectl show --property=Timezone --value 2>&1); reboot scheduled: $(u=$(sed -n 's/^USEC=//p' /run/systemd/shutdown/scheduled 2>/dev/null); [ -n "$u" ] && date -Is -d "@$((u / 1000000))" || echo none)"
   journalctl -b --no-pager -o short-monotonic 2>&1 | grep -iE 'system time|advanc.*clock|clock.*epoch' | head -3
   chronyc -n tracking 2>&1 | grep -E 'Reference ID|System time|Leap status'
   echo; echo "== boot partition"

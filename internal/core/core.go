@@ -108,6 +108,11 @@ type Hub struct {
 	ReqLog    *RequestLog
 	Started   time.Time
 
+	// SystemZone, on a Pi image, sets the system's time zone to central's each time
+	// the hub reads it (nil elsewhere): the nightly update reboot at 03:00 then falls
+	// in the facility's night, not at 03:00 UTC.
+	SystemZone func(name string)
+
 	mu     sync.RWMutex
 	rt     *Runtime
 	rtMu   sync.Mutex // one UpdateRuntime at a time: each reads, changes and saves rt

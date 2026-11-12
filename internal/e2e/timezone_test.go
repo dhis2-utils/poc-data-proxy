@@ -30,3 +30,17 @@ func TestOfflineRecordsUseCentralTimeZone(t *testing.T) {
 			wall.Format(time.DateTime), e.central.TimeZone)
 	}
 }
+
+// On a Pi image the hub hands central's zone to the system (netsetup.SetTimeZone), so
+// the 03:00 update reboot falls in the facility's night.
+func TestSystemZoneFollowsCentral(t *testing.T) {
+	e := newEnv(t)
+	e.central.TimeZone = "Asia/Vientiane"
+	var got []string
+	e.app.Hub.SystemZone = func(name string) { got = append(got, name) }
+	e.setup()
+	e.sync()
+	if len(got) == 0 || got[len(got)-1] != "Asia/Vientiane" {
+		t.Fatalf("system zone set to %v, want Asia/Vientiane", got)
+	}
+}

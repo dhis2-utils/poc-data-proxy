@@ -142,6 +142,10 @@ var cases = [[NM + "network-control", "hub", "yes"], [NM + "wifi.share.protected
   ["org.freedesktop.login1.reboot", "hub", null]];
 process.exit(cases.every(function (c) { return rule({id: c[0]}, {user: c[1]}) === c[2]; }) ? 0 : 1);' <<<"$POLKIT"
 fi
+# The hub sets the Pi's time zone to central's, so the 03:00 update reboot is at night.
+TZRULE=$(cat_ /etc/polkit-1/rules.d/51-hub-timezone.rules)
+check "polkit lets the hub set only the time zone" bash -c 'r=$(cat); grep -q "timedate1.set-timezone" <<<"$r" && ! grep -qE "set-time\"|set-ntp|set-local-rtc" <<<"$r"' <<<"$TZRULE"
+check "unattended upgrades reboot at 03:00 local time" sh -c "debugfs -R 'cat /etc/apt/apt.conf.d/20auto-upgrades' '$R' 2>/dev/null | grep -q 'Automatic-Reboot-Time \"03:00\"'"
 check "nftables is enabled" exists /etc/systemd/system/sysinit.target.wants/nftables.service
 check "nftables opens 80 and 443" sh -c "debugfs -R 'cat /etc/nftables.conf' '$R' 2>/dev/null | grep -q 'tcp dport { 80, 443 }'"
 check "nftables keeps NetworkManager's sharing (no flush ruleset)" sh -c "! debugfs -R 'cat /etc/nftables.conf' '$R' 2>/dev/null | grep -q '^flush ruleset' && debugfs -R 'cat /etc/systemd/system/nftables.service.d/hub.conf' '$R' 2>/dev/null | grep -q '^ExecStop=-/usr/sbin/nft delete table inet hub'"

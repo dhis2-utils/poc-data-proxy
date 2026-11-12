@@ -377,6 +377,9 @@ func (h *Hub) RefreshServerVersion(ctx context.Context, auth central.Auth) (stri
 	if info.TimeZone != "" && info.TimeZone != h.Store.Meta(MetaServerTimeZone) {
 		h.Store.SetMeta(MetaServerTimeZone, info.TimeZone)
 	}
+	if info.TimeZone != "" && h.SystemZone != nil {
+		h.SystemZone(info.TimeZone)
+	}
 	return info.Version, nil
 }
 

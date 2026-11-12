@@ -1,0 +1,9 @@
+// The hub service sets the Pi's time zone to central's (internal/netsetup/timezone.go),
+// so the nightly update reboot at 03:00 falls in the facility's night. It gets only
+// that timedated action, not setting the clock or NTP.
+polkit.addRule(function (action, subject) {
+    if (subject.user === "hub" && action.id === "org.freedesktop.timedate1.set-timezone") {
+        return polkit.Result.YES;
+    }
+    return polkit.Result.NOT_HANDLED;
+});

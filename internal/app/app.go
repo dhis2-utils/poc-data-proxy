@@ -195,6 +195,7 @@ func New(cfg config.Config, version string, healthFail bool, shutdown func()) (*
 	}
 	if cfg.Network == "networkmanager" {
 		a2.SetNet(&netsetup.Manager{R: netsetup.ExecRunner{}, DataDir: cfg.DataDir, HubID: h.HubID(), CaptiveDir: cfg.CaptiveDir, CaptiveConf: cfg.CaptiveConf})
+		h.SystemZone = netsetup.SetTimeZone
 	}
 	return a2, nil
 }
