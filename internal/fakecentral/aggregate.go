@@ -75,6 +75,11 @@ func (c *Central) aggregate(w http.ResponseWriter, r *http.Request, u *User) boo
 		// With an ETag, as central sends: a request with the current one gets 304.
 		b, _ := json.Marshal(c.aggMetadata(opts))
 		etag := fmt.Sprintf(`"%x"`, md5.Sum(b))
+		c.mu.Lock()
+		if c.AggETag != "" {
+			etag = c.AggETag
+		}
+		c.mu.Unlock()
 		w.Header().Set("ETag", etag)
 		if r.Header.Get("If-None-Match") == etag {
 			c.mu.Lock()

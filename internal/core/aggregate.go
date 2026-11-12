@@ -9,12 +9,33 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dhis2/facility-hub/internal/access"
 	"github.com/dhis2/facility-hub/internal/aggregate"
 	"github.com/dhis2/facility-hub/internal/central"
 	"github.com/dhis2/facility-hub/internal/store"
 )
 
 func aggAccessKey(userID int64) string { return fmt.Sprintf("agg_access:%d", userID) }
+
+// aggStampKey holds accessStamp of the user when their dataEntry/metadata was last
+// fetched in full.
+func aggStampKey(userID int64) string { return fmt.Sprintf("agg_access_stamp:%d", userID) }
+
+// accessStamp is the part of a user's access that their dataEntry/metadata depends on
+// but central's ETag does not cover: on 2.43.2.1 a user given a second org unit got
+// new data set org units in the answer with the same ETag, and a 304 to the old one
+// (FINDINGS.md, "Aggregate Data Entry through the hub"). Group membership is in it
+// for the same reason; a data set's own sharing change did change the ETag.
+func accessStamp(l *access.List) string {
+	var b strings.Builder
+	for _, part := range [][]string{l.OrgUnits, l.UserGroups, l.Authorities} {
+		p := slices.Clone(part)
+		slices.Sort(p)
+		b.WriteString(strings.Join(p, ","))
+		b.WriteByte(';')
+	}
+	return b.String()
+}
 
 // AggAccess is what the user may enter in the Aggregate Data Entry app (their
 // dataEntry/metadata at the last access refresh), or nil.
@@ -52,15 +73,18 @@ func (h *Hub) APIMinor() string {
 // enter. The answer is also cached for the app, which asks for it at start-up, so
 // the app opens offline for users who never opened it online through the hub. A
 // user without the app's authority gets 403 or an empty list: no aggregate access.
-func (h *Hub) RefreshAggAccess(ctx context.Context, userID int64, auth central.Auth, authorities []string) error {
+func (h *Hub) RefreshAggAccess(ctx context.Context, userID int64, auth central.Auth, l *access.List) error {
 	path := "/api/" + h.APIMinor() + "/dataEntry/metadata"
+	authorities, stamp := l.Authorities, accessStamp(l)
 	// Asked with the ETag of the copy the hub holds: unchanged, central answers 304
 	// with no body (3.5 MB a user an hour with Uganda's eRegisters forms otherwise;
-	// PERFORMANCE.md, "Central's load from one facility"). A change to the forms or
-	// to the user's access changes the ETag.
+	// PERFORMANCE.md, "Central's load from one facility"). A change to the forms
+	// changes the ETag; a change to the user's org units or groups does not, so the
+	// hub asks without it when those changed since the copy (accessStamp).
 	var cond http.Header
 	old := h.AggAccess(userID)
-	if c, _ := h.Store.GetCache(userID, "GET", path); c != nil && c.Status == http.StatusOK && old != nil {
+	prev, _ := h.Store.State(aggStampKey(userID))
+	if c, _ := h.Store.GetCache(userID, "GET", path); c != nil && c.Status == http.StatusOK && old != nil && string(prev) == stamp {
 		if et := c.Header.Get("ETag"); et != "" {
 			cond = http.Header{"If-None-Match": {et}}
 		}
@@ -91,6 +115,9 @@ func (h *Hub) RefreshAggAccess(ctx context.Context, userID int64, auth central.A
 		hdr := resp.Header.Clone()
 		hdr.Del("Set-Cookie")
 		if err := h.Store.PutCache(userID, "GET", path, &store.CachedResponse{Status: 200, Header: hdr, Body: b}); err != nil {
+			return err
+		}
+		if err := h.Store.SetState(aggStampKey(userID), []byte(stamp)); err != nil {
 			return err
 		}
 	case http.StatusForbidden, http.StatusNotFound: // no aggregate data entry for this user

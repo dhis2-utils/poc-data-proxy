@@ -202,7 +202,7 @@ func (h *Hub) RefreshAccessWith(ctx context.Context, userID int64, auth central.
 		}
 		return err
 	}
-	if err := h.RefreshAggAccess(ctx, userID, auth, l.Authorities); err != nil {
+	if err := h.RefreshAggAccess(ctx, userID, auth, l); err != nil {
 		if central.IsNetwork(err) {
 			return err
 		}

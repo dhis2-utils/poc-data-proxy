@@ -113,6 +113,35 @@ func TestAggregateRefreshNotModified(t *testing.T) {
 	}
 }
 
+// Central's ETag does not cover the user's org units (2.43.2.1: a second org unit
+// changed the answer, not the ETag, and the old one got 304). After such a change the
+// hub asks without it and gets the new answer; unchanged, it asks with it again.
+func TestAggregateRefreshAfterAccessChange(t *testing.T) {
+	e, _, nurse, _ := aggregateEnv(t)
+	e.NeedFake()
+	h := e.App.Hub
+	u, _ := h.Store.UserByName(nurse.User)
+	e.Fake.AggETag = `"same-for-every-answer"`
+	if err := h.RefreshAccess(context.Background(), u.ID); err != nil { // stores the fixed ETag
+		t.Fatal(err)
+	}
+	before := e.Fake.AggMetadataNotModified
+	fu := e.Fake.Users[nurse.User]
+	fu.OrgUnits = append(slices.Clone(fu.OrgUnits), e.M.Sibling.ID)
+	if err := h.RefreshAccess(context.Background(), u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.Fake.AggMetadataNotModified - before; n != 0 {
+		t.Fatalf("after the nurse got a second org unit, %d refresh answered 304 to the old ETag, want a full answer", n)
+	}
+	if err := h.RefreshAccess(context.Background(), u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.Fake.AggMetadataNotModified - before; n != 1 {
+		t.Errorf("an unchanged refresh after that: %d answered 304, want 1", n)
+	}
+}
+
 func formPath(e *tk.Env, ds, pe string) string {
 	q := url.Values{"ds": {ds}, "pe": {pe}, "ou": {e.M.Facility.ID}}
 	return "/api/" + e.App.Hub.APIMinor() + "/dataEntry/dataValues?" + q.Encode()

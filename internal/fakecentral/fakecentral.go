@@ -138,6 +138,9 @@ type Central struct {
 	// selectEnrollmentDatesInFuture and selectIncidentDatesInFuture. False, as on a new
 	// program on central, refuses dates after central's today (E1020, E1021).
 	FutureEnrollmentDates, FutureIncidentDates bool
+	// AggETag, when set, is dataEntry/metadata's ETag whatever the answer holds: as
+	// on 2.43.2.1, where a user's new org units change the answer, not the ETag.
+	AggETag string
 	// AggMetadataNotModified counts dataEntry/metadata requests answered 304.
 	AggMetadataNotModified int
 	// GeneratedPattern replaces the generated attribute's pattern when set.
