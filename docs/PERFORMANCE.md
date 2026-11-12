@@ -300,7 +300,22 @@ Where it comes from (the monthly form adds under 0.1 s of DB time a day in every
 | Capture web | 3 | Android | 3.8 | 34 268 | 5.3 | 0.9 |
 | Capture web | 3 | the hub's own work | 9.3 | 413 220 | 102 | 339 |
 
-The hub's own work in the working day: its 24 cycles 2.8 s of DB time and 14 s of server time, its 8 hourly refreshes 1.8 s and 56 s, the catch-up 3.9 s and 15 s, the pings 12 s of server time and no database work. Counted for 24 hours instead (72 cycles and 24 hourly refreshes, as the hub runs day and night), its own work is 18 s of DB time, 240 s of server time and about 1 GB a day, as measured; with the form refresh's ETag (above), about 0.1 GB a day while forms and access do not change (estimated from the units above, not measured).
+The hub's own work in the working day: its 24 cycles 2.8 s of DB time and 14 s of server time, its 8 hourly refreshes 1.8 s and 56 s, the catch-up 3.9 s and 15 s, the pings 12 s of server time and no database work. Counted for 24 hours instead (72 cycles and 24 hourly refreshes, as the hub runs day and night), its own work is 18 s of DB time, 240 s of server time and about 1 GB a day, as measured on 9 November. Measured again on 12 November with the form refresh's ETag: about 50 MB a day (next paragraph).
+
+**The hub's own traffic, measured again (12 November 2026).** The same set-up rebuilt (`agent-load-43`, DHIS2 2.43.2.1, Uganda's eRegisters configuration, 3 000 people and 11 745 visits from `central_load_seed.py`), the hub at `3df88ac`, only its own units (`HUB_CENTRAL_UNITS=hub`, 5 runs each; medians):
+
+| Unit | Requests | MB | 9 November |
+|---|---|---|---|
+| Sync cycle | 13 | 0.25 | 27 requests, 0.67 MB |
+| Hourly refresh | 90 | 1.04 | 127 requests, 38.8 MB |
+| Catch-up after half a day offline | 164 | 2.6 | 178, 2.7 MB |
+| 60 pings | 120 | 0.15 | 120, 0.15 MB |
+| Weekly full pull | 18 | 1.5 | 38, 4.3 MB |
+| Set-up and first pull (once) | 326 | 111.5 | 398, 172 MB |
+
+All ten `dataEntry/metadata` requests of each hourly refresh were answered 304 with no body. Counted for 24 hours as above (72 cycles, 24 hourly refreshes, one catch-up, a day of pings, a seventh of the weekly pull): **about 50 MB a day** (49.8 MB, 6 100 requests) while forms and access do not change. One form change in the day invalidates every user's copy: each user's `dataEntry/metadata` comes once in full (3.46 MB here), about 35 MB more for ten users, about 85 MB that day (checked with curl: a data set's description changed, both users checked got 200 instead of 304; reverted). Smaller cycles (13 requests instead of 27) and no refresh for the admin (accounts that manage users pass through, `da7b657`) account for the rest of the drop besides the ETag. With local reads on (section "Answering staff from the hub while online" in DEPLOYMENT.md, off by default), a cycle was 0.52 MB and an hourly refresh 1.29 MB: about 75 MB a day.
+
+Not in the 50 MB: the daily refetch of every held aggregate form (`aggFullEvery`), empty forms of 93 bytes on this seed, perhaps 5–15 MB a day at a facility with a year of filled forms (not measured); the staff's own requests through the hub. The 72 cycles assume a working quarter-hour's changes day and night, which overstates the night. Set-up needed the hub owners group named on central first (`f1263b1`), which `eregisters_setup.py` does not do: written by hand to `facility-hub-admin/accounts`.
 
 **What the numbers say:**
 
