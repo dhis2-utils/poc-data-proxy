@@ -5,6 +5,9 @@
 # mtools (docs/superpowers/specs/2026-10-19-pi-image-design.md). Run as root on arm64.
 #
 #   sudo image/build.sh <hub binary, linux/arm64> <version> <output folder>
+#
+# LOADTEST=1 adds load-test mode (image/loadtest/, image/README.md) and names the image
+# dhis2-hub-<version>-loadtest-arm64.img.xz. It is never in a facility's image.
 set -euo pipefail
 BIN=$(realpath "$1") VERSION=$2 OUT=$(realpath -m "$3")
 HERE=$(dirname "$(realpath "$0")")
@@ -16,6 +19,8 @@ BASE_URL=https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lit
 BASE_SHA256=$(cat "$HERE/base.sha256")
 ROOT_SIZE=${ROOT_SIZE:-3G} # Pi OS grows it to the disk at first boot
 CACHE=${CACHE:-/var/cache/hub-image}
+[ "${LOADTEST:-}" = 1 ] || LOADTEST=
+NAME=dhis2-hub-$VERSION${LOADTEST:+-loadtest}-arm64
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/hub-image.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
@@ -51,6 +56,9 @@ debugfs -R "rdump / $ROOT" "$WORK/root.ext4" >/dev/null 2>&1
 python3 "$HERE/fixmodes.py" "$WORK/root.ext4" "$ROOT"
 rm "$WORK/root.ext4"
 cp -r --no-preserve=ownership "$HERE/files/." "$ROOT/"
+if [ -n "$LOADTEST" ]; then cp -r --no-preserve=ownership "$HERE/loadtest/." "$ROOT/"; fi
+# The USB stick's rule leaves out this disk's own partitions, by its identifier.
+sed -i "s/@HUB_DISK_ID@/${LABEL#0x}/" "$ROOT/etc/udev/rules.d/90-hub-usb.rules"
 install -D -m 0755 "$BIN" "$ROOT/usr/local/lib/hub/hub"
 install -D -m 0644 "$REPO/deploy/hub.service" "$ROOT/etc/systemd/system/hub.service"
 install -m 0755 "$HERE/customize.sh" "$ROOT/tmp/customize.sh"
@@ -78,7 +86,7 @@ mtype -i "$WORK/boot.vfat" ::/cmdline.txt | sed 's/ resize\b//' > "$WORK/cmdline
 mcopy -o -i "$WORK/boot.vfat" "$WORK/cmdline.txt" ::/cmdline.txt
 
 echo "== disk"
-IMG=$OUT/dhis2-hub-$VERSION-arm64.img
+IMG=$OUT/$NAME.img
 R_SECTORS=$(( $(stat -c %s "$WORK/root.ext4") / 512 ))
 truncate -s 0 "$IMG"
 truncate -s $(( (R_START + R_SECTORS) * 512 )) "$IMG"

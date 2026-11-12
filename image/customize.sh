@@ -27,12 +27,25 @@ ln -sf ../lib/hub/hub /usr/local/bin/hub
 # flag. NetworkManager runs dnsmasq as root, so the hub may not write here (review R-26).
 mkdir -p /etc/NetworkManager/dnsmasq-shared.d
 chmod 0755 /etc/NetworkManager/dnsmasq-shared.d
+# The USB stick's mount point (90-hub-usb.rules): there before the hub starts, so its
+# ReadWritePaths= keeps it writable (deploy/hub.service).
+mkdir -p /media/hub-usb
+# The boot partition is not needed to run the hub: a FAT file system that a power cut
+# left damaged (hub-diag writes there) must not stop the start in emergency mode, with
+# no console to answer it (review R-31).
+awk '$2 == "/boot/firmware" && $4 !~ /(^|,)nofail(,|$)/ {$4 = $4 ",nofail"} {print}' /etc/fstab > /etc/fstab.new
+mv /etc/fstab.new /etc/fstab
 
 echo dhis2 > /etc/hostname
 sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tdhis2/' /etc/hosts
 grep -q '^127\.0\.1\.1' /etc/hosts || printf '127.0.1.1\tdhis2\n' >> /etc/hosts
 
-systemctl enable hub.service hub-loadtest.service hub-wifi-unblock.service hub-diag.timer hub-growdisk.service hub-captive.path hub-captive.service nftables.service chrony.service avahi-daemon.service NetworkManager.service
+systemctl enable hub.service hub-wifi-unblock.service hub-diag.timer hub-growdisk.service hub-captive.path hub-captive.service hub-clock.service nftables.service chrony.service avahi-daemon.service NetworkManager.service
+# Load-test mode, only in an image built with LOADTEST=1 (image/README.md).
+if [ -e /etc/systemd/system/hub-loadtest.service ]; then
+	systemctl enable hub-loadtest.service
+	chmod 0755 /usr/local/sbin/hub-loadtest
+fi
 systemctl disable userconfig.service sshswitch.service 2>/dev/null || true
 # A new machine ID at first boot, so cloned images do not share one. An empty one also
 # makes systemd treat that boot as a first boot, when systemd-firstboot asks on the
@@ -40,7 +53,7 @@ systemctl disable userconfig.service sshswitch.service 2>/dev/null || true
 # keyboard, the hub never started (two Pis, 2026-10-22). The image sets what it would
 # ask for, or needs none of it.
 systemctl mask systemd-firstboot.service
-chmod 0755 /usr/local/sbin/hub-diag /usr/local/sbin/hub-growdisk /usr/local/sbin/hub-loadtest /usr/local/sbin/hub-captive
+chmod 0755 /usr/local/sbin/hub-diag /usr/local/sbin/hub-growdisk /usr/local/sbin/hub-captive
 # NetworkManager keeps the Wi-Fi off, and blocks the radio, while its saved state says
 # so: the base image ships WirelessEnabled=false (Pi OS, until a country is set), which
 # overrode hub-wifi-unblock and kept the setup Wi-Fi from starting (rpi5, 2026-10-22).

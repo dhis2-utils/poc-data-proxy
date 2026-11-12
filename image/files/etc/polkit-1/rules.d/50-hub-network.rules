@@ -1,7 +1,24 @@
 // The hub service manages the network (setup Wi-Fi, joining a Wi-Fi, the facility's
-// Wi-Fi) through NetworkManager, as its own unprivileged user.
+// Wi-Fi) through nmcli, as its own unprivileged user (internal/netsetup). It gets only
+// the NetworkManager actions those nmcli calls need (review R-26), and no other.
+// Reading devices and connections ("device", "device show") needs none.
 polkit.addRule(function (action, subject) {
-    if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0 && subject.user === "hub") {
-        return polkit.Result.YES;
+    if (subject.user !== "hub" || action.id.indexOf("org.freedesktop.NetworkManager.") !== 0) {
+        return polkit.Result.NOT_HANDLED;
     }
+    var allowed = {
+        // "connection up" and "connection down": start and stop a connection.
+        "org.freedesktop.NetworkManager.network-control": true,
+        // "connection up" of the setup Wi-Fi and the facility's Wi-Fi: a shared access
+        // point with a WPA password.
+        "org.freedesktop.NetworkManager.wifi.share.protected": true,
+        // "device wifi list --rescan yes": the networks in reach, for joining one.
+        "org.freedesktop.NetworkManager.wifi.scan": true,
+        // "connection add", "connection modify" and "connection delete": the hub's
+        // Wi-Fi connections, which NetworkManager keeps as system connections.
+        "org.freedesktop.NetworkManager.settings.modify.system": true
+    };
+    // Every other NetworkManager action is refused here, before a later rule (such as
+    // one for the netdev group) could allow it.
+    return allowed[action.id] === true ? polkit.Result.YES : polkit.Result.NO;
 });

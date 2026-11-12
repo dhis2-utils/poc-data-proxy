@@ -3,8 +3,10 @@
 # 2026-10-19-pi-image-design.md, "Testing"). Run as root (debugfs reads the files).
 #
 #   sudo image/check.sh dhis2-hub-0.3.0-arm64.img.xz
+#   sudo LOADTEST=1 image/check.sh dhis2-hub-0.3.0-loadtest-arm64.img.xz
 set -uo pipefail
 IMG=$1
+LOADTEST=${LOADTEST:-}
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 FAILS=0
@@ -70,26 +72,44 @@ check "the journal is kept on the disk (hub-diag.txt shows the previous start)" 
 check "diagnostics for support are written to the boot partition" exists /etc/systemd/system/timers.target.wants/hub-diag.timer
 check "no first-boot prompt waits for a console nobody has" masked systemd-firstboot.service
 check "the disk is grown at the first start" exists /etc/systemd/system/multi-user.target.wants/hub-growdisk.service
-check "load-test mode is there, off unless the boot partition asks for it" sh -c "debugfs -R 'cat /etc/systemd/system/hub-loadtest.service' '$R' 2>/dev/null | grep -q '^ConditionPathExists=/boot/firmware/hub-loadtest.txt'"
-check "load-test mode is enabled" exists /etc/systemd/system/multi-user.target.wants/hub-loadtest.service
-check "the facility hub stays off in load-test mode" sh -c "debugfs -R 'cat /etc/systemd/system/hub.service.d/loadtest.conf' '$R' 2>/dev/null | grep -q '^ConditionPathExists=!/boot/firmware/hub-loadtest.txt'"
-check "curl is installed (load-test mode)" exists /usr/bin/curl
+if [ "$LOADTEST" = 1 ]; then
+  check "load-test mode is there, off unless the boot partition asks for it" sh -c "debugfs -R 'cat /etc/systemd/system/hub-loadtest.service' '$R' 2>/dev/null | grep -q '^ConditionPathExists=/boot/firmware/hub-loadtest.txt'"
+  check "load-test mode is enabled" exists /etc/systemd/system/multi-user.target.wants/hub-loadtest.service
+  check "the facility hub stays off in load-test mode" sh -c "debugfs -R 'cat /etc/systemd/system/hub.service.d/loadtest.conf' '$R' 2>/dev/null | grep -q '^ConditionPathExists=!/boot/firmware/hub-loadtest.txt'"
+  check "curl is installed (load-test mode)" exists /usr/bin/curl
+else
+  # A facility's image has no load-test mode (review R-31): build.sh adds it only with
+  # LOADTEST=1.
+  for f in /etc/systemd/system/hub-loadtest.service /etc/systemd/system/hub.service.d/loadtest.conf /usr/local/sbin/hub-loadtest; do
+    exists "$f" && bad "load-test mode in a facility's image: $f" || ok "no load-test mode: $f"
+  done
+fi
 wifi_on() { cat_ /var/lib/NetworkManager/NetworkManager.state | grep -q '^WirelessEnabled=true'; }
 check "NetworkManager starts with the Wi-Fi on" wifi_on
 check "hub.service may bind ports 80 and 443" sh -c "debugfs -R 'cat /etc/systemd/system/hub.service' '$R' 2>/dev/null | grep -q CAP_NET_BIND_SERVICE"
 UNIT=$(cat_ /etc/systemd/system/hub.service)
-for want in StateDirectoryMode=0700 UMask=0077 NoNewPrivileges=yes PrivateTmp=yes LimitCORE=0 RuntimeDirectory=hub; do
+for want in StateDirectoryMode=0700 UMask=0077 NoNewPrivileges=yes PrivateTmp=yes LimitCORE=0 \
+  MemorySwapMax=0 ProtectSystem=strict ProtectHome=yes RuntimeDirectory=hub \
+  ReadWritePaths=/usr/local/lib/hub ReadWritePaths=-/media/hub-usb; do
   check "hub.service: $want" grep -qx "$want" <<<"$UNIT"
 done
+check "the stick's mount point is there before the hub starts (ReadWritePaths)" exists /media/hub-usb
 check "setpriv is installed (hub-diag)" exists /usr/bin/setpriv
 check "hub-diag runs the hub binary as the hub's user, not root" sh -c "debugfs -R 'cat /usr/local/sbin/hub-diag' '$R' 2>/dev/null | grep -F 'lib/hub/hub version' | grep -q 'setpriv --reuid=hub'"
 YAML=$(cat_ /etc/hub/hub.yaml)
 check "hub.yaml has no central_url (one image for every country)" sh -c "! grep -q '^central_url' <<'X'
 $YAML
 X"
-for want in 'network: networkmanager' 'listen: ":443"' 'http_listen: ":80"' 'usb_dir: /media/hub-usb'; do
+for want in 'network: networkmanager' 'listen: ":443"' 'http_listen: ":80"' 'usb_dir: /media/hub-usb' 'data_dir: /var/lib/hub'; do
   check "hub.yaml: $want" grep -qF "$want" <<<"$YAML"
 done
+# Every folder hub.yaml has the hub write to is writable under ProtectSystem=strict.
+check "hub.yaml's data_dir is hub.service's StateDirectory" sh -c "grep -q '^data_dir: /var/lib/hub\b' <<'X'
+$YAML
+X
+grep -qx StateDirectory=hub <<'X'
+$UNIT
+X"
 
 # The system around it.
 check "host name dhis2" test "$(cat_ /etc/hostname | tr -d '\n')" = dhis2
@@ -104,14 +124,39 @@ for p in cloud-init userconf-pi; do
 done
 LOGIN=$(cat_ /etc/passwd | awk -F: '$3 >= 1000 && $3 < 65000 && $7 !~ /(nologin|false)$/')
 check "no login user" test -z "$LOGIN"
-check "polkit lets the hub manage NetworkManager" sh -c "debugfs -R 'cat /etc/polkit-1/rules.d/50-hub-network.rules' '$R' 2>/dev/null | grep -q 'org.freedesktop.NetworkManager'"
+# Only the NetworkManager actions the hub's nmcli calls need (review R-26).
+POLKIT=$(cat_ /etc/polkit-1/rules.d/50-hub-network.rules)
+ACTIONS=$(grep -o '"org\.freedesktop\.NetworkManager\.[a-z][a-z.-]*"' <<<"$POLKIT" | tr -d '"' | sort | tr '\n' ' ')
+WANT_ACTIONS="org.freedesktop.NetworkManager.network-control org.freedesktop.NetworkManager.settings.modify.system org.freedesktop.NetworkManager.wifi.scan org.freedesktop.NetworkManager.wifi.share.protected "
+[ "$ACTIONS" = "$WANT_ACTIONS" ] && ok "polkit allows the hub only: $ACTIONS" || bad "polkit allows the hub: $ACTIONS"
+check "polkit refuses the hub every other NetworkManager action" grep -q 'polkit.Result.NO' <<<"$POLKIT"
+if command -v node >/dev/null; then
+  check "the polkit rule does what it says (node)" node -e '
+var polkit = {Result: {YES: "yes", NO: "no", NOT_HANDLED: null}, addRule: function (f) { rule = f; }}, rule;
+eval(require("fs").readFileSync(0, "utf8"));
+var NM = "org.freedesktop.NetworkManager.";
+var cases = [[NM + "network-control", "hub", "yes"], [NM + "wifi.share.protected", "hub", "yes"],
+  [NM + "wifi.scan", "hub", "yes"], [NM + "settings.modify.system", "hub", "yes"],
+  [NM + "reload", "hub", "no"], [NM + "settings.modify.hostname", "hub", "no"],
+  [NM + "wifi.share.open", "hub", "no"], [NM + "network-control", "nobody", null],
+  ["org.freedesktop.login1.reboot", "hub", null]];
+process.exit(cases.every(function (c) { return rule({id: c[0]}, {user: c[1]}) === c[2]; }) ? 0 : 1);' <<<"$POLKIT"
+fi
 check "nftables is enabled" exists /etc/systemd/system/sysinit.target.wants/nftables.service
 check "nftables opens 80 and 443" sh -c "debugfs -R 'cat /etc/nftables.conf' '$R' 2>/dev/null | grep -q 'tcp dport { 80, 443 }'"
 check "nftables keeps NetworkManager's sharing (no flush ruleset)" sh -c "! debugfs -R 'cat /etc/nftables.conf' '$R' 2>/dev/null | grep -q '^flush ruleset' && debugfs -R 'cat /etc/systemd/system/nftables.service.d/hub.conf' '$R' 2>/dev/null | grep -q '^ExecStop=-/usr/sbin/nft delete table inet hub'"
 check "nftables counts 100.64.0.0/10 (CGNAT) as local" sh -c "debugfs -R 'cat /etc/nftables.conf' '$R' 2>/dev/null | grep -q '100.64.0.0/10'"
 check "the hardware watchdog is on (RuntimeWatchdogSec)" sh -c "debugfs -R 'cat /etc/systemd/system.conf.d/watchdog.conf' '$R' 2>/dev/null | grep -q '^RuntimeWatchdogSec='"
-check "the USB stick is mounted for the hub" sh -c "debugfs -R 'cat /etc/udev/rules.d/90-hub-usb.rules' '$R' 2>/dev/null | grep -q /media/hub-usb"
-check "a USB stick without a partition table is mounted too" sh -c "debugfs -R 'cat /etc/udev/rules.d/90-hub-usb.rules' '$R' 2>/dev/null | grep -qF 'ENV{DEVTYPE}==\"partition|disk\"'"
+USBRULE=$(cat_ /etc/udev/rules.d/90-hub-usb.rules)
+check "the USB stick is mounted for the hub" grep -q /media/hub-usb <<<"$USBRULE"
+check "a USB stick without a partition table is mounted too" grep -qF 'ENV{DEVTYPE}!="partition|disk", GOTO="hub_usb_end"' <<<"$USBRULE"
+check "the stick's rule leaves out this disk's partitions ($LABEL-*: a Pi started from USB)" grep -qxF "ENV{ID_PART_ENTRY_UUID}==\"$LABEL-*\", GOTO=\"hub_usb_end\"" <<<"$USBRULE"
+check "the stick's rule gives vfat its flush option" grep -qF 'ENV{ID_FS_TYPE}=="vfat", RUN{program}+="/usr/bin/systemd-mount --no-block --collect --owner=hub --options=flush,umask=0077 ' <<<"$USBRULE"
+check "the stick's rule gives exFAT no vfat option" grep -qF 'ENV{ID_FS_TYPE}=="exfat", RUN{program}+="/usr/bin/systemd-mount --no-block --collect --owner=hub --options=umask=0077 ' <<<"$USBRULE"
+if udevadm verify --help >/dev/null 2>&1; then
+  printf '%s\n' "$USBRULE" > "$WORK/90-hub-usb.rules"
+  check "udevadm verify: the stick's rule" udevadm verify --no-style "$WORK/90-hub-usb.rules"
+fi
 check "machine-id is empty (made at first boot)" test -z "$(cat_ /etc/machine-id)"
 # The setup Wi-Fi's captive DNS answer: written by root on the hub's flag, never by
 # the hub, since dnsmasq runs as root (review R-26).
@@ -127,6 +172,31 @@ check "hub-captive.path watches the flag" sh -c "debugfs -R 'cat /etc/systemd/sy
 check "hub-captive.path is enabled" exists /etc/systemd/system/paths.target.wants/hub-captive.path
 check "hub-captive.service clears a stale line before NetworkManager" sh -c "debugfs -R 'cat /etc/systemd/system/hub-captive.service' '$R' 2>/dev/null | grep -qx 'Before=NetworkManager.service'"
 check "hub-captive.service runs at each start" exists /etc/systemd/system/multi-user.target.wants/hub-captive.service
+
+# A damaged boot partition does not stop the start (review R-31).
+check "fstab: the boot partition is nofail" sh -c "awk '\$2 == \"/boot/firmware\" && \$4 ~ /(^|,)nofail(,|\$)/ {f = 1} END {exit !f}' <<'X'
+$FSTAB
+X"
+debugfs -R "rdump /etc/systemd/system $WORK" "$R" >/dev/null 2>&1
+# Only load-test mode's units, in an image built with LOADTEST=1, may need it.
+needs_boot() {
+  grep -rlE '^(RequiresMountsFor=.*/boot/firmware|Requires=.*boot-firmware\.mount|BindsTo=.*boot-firmware\.mount)' "$WORK/system" |
+    if [ "$LOADTEST" = 1 ]; then grep -vE '/(hub-loadtest\.service|loadtest\.conf)$'; else cat; fi
+}
+check "units read from the image" test -f "$WORK/system/hub.service"
+NEEDS=$(needs_boot | xargs -r -n1 basename | tr '\n' ' ')
+[ -z "$NEEDS" ] && ok "no unit the hub needs requires the boot partition" || bad "units that require the boot partition: $NEEDS"
+DIAG=$(cat_ /usr/local/sbin/hub-diag)
+check "hub-diag writes only to a mounted boot partition" grep -qF 'mountpoint -q /boot/firmware' <<<"$DIAG"
+check "hub-diag syncs its new file before the rename" grep -qF 'sync "$out.tmp"' <<<"$DIAG"
+
+# The clock for a Pi without RTC (docs/NO-RTC.md).
+check "hub-clock.service is enabled" exists /etc/systemd/system/multi-user.target.wants/hub-clock.service
+check "hub-clock.service touches systemd's saved time" sh -c "debugfs -R 'cat /etc/systemd/system/hub-clock.service' '$R' 2>/dev/null | grep -q '^ExecStop=/usr/bin/touch /var/lib/systemd/timesync/clock'"
+installed systemd-timesyncd && bad "systemd-timesyncd is installed: hub-clock is not needed" || ok "systemd-timesyncd is not installed (chrony): hub-clock keeps the saved time"
+
+# Unattended upgrades cover Raspberry Pi's archive (kernel, firmware).
+check "unattended upgrades: Raspberry Pi's archive" sh -c "debugfs -R 'cat /etc/apt/apt.conf.d/52hub-raspberrypi-origin' '$R' 2>/dev/null | grep -q 'origin=Raspberry Pi Foundation,codename=\${distro_codename},label=Raspberry Pi Foundation'"
 
 echo
 if [ "$FAILS" -gt 0 ]; then echo "$FAILS checks failed"; exit 1; fi

@@ -1,0 +1,18 @@
+# A Pi without a battery-backed clock starts at the time systemd takes as its
+# earliest: the later of its build date and the time stamp of
+# /var/lib/systemd/timesync/clock (docs/NO-RTC.md). Nothing updates that file on this
+# image (chrony replaced systemd-timesyncd), so a Pi 4 started at the base image's
+# date after every power cut without network. This touches it every 15 minutes and at
+# shutdown: the clock then starts behind by at most the power cut and 15 minutes.
+# One service with a loop instead of a timer and a separate unit for shutdown.
+[Unit]
+Description=Facility hub: keep the time for the next start (no RTC)
+After=local-fs.target
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p /var/lib/systemd/timesync
+ExecStart=/bin/sh -c 'while :; do touch /var/lib/systemd/timesync/clock; sleep 900; done'
+ExecStop=/usr/bin/touch /var/lib/systemd/timesync/clock
+
+[Install]
+WantedBy=multi-user.target

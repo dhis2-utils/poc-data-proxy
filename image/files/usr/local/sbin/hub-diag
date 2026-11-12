@@ -4,23 +4,64 @@
 # Run by hub-diag.timer 3 minutes after each start and every 30 minutes. The hub's own
 # log lines hold templates and parameter names, no patient data or passwords.
 out=/boot/firmware/hub-diag.txt
+# The boot partition is optional (nofail in /etc/fstab): without it, write nothing,
+# rather than into the empty folder on the system partition.
+mountpoint -q /boot/firmware || { echo "/boot/firmware is not mounted"; exit 0; }
 {
   echo "== $(date -Is), up $(cut -d' ' -f1 /proc/uptime) s, $(tr -d '\0' < /proc/device-tree/model)"
   # As the hub's user, who owns the binary: root never runs a file the hub can replace
   # (review R-26).
   echo "== hub $(setpriv --reuid=hub --regid=hub --clear-groups --no-new-privs /usr/local/lib/hub/hub version 2>&1)"
   systemctl status hub.service --no-pager -l 2>&1 | head -12
-  [ -f /boot/firmware/hub-loadtest.txt ] && { echo; echo "== load-test mode"; systemctl status hub-loadtest.service --no-pager -l 2>&1 | head -12; }
+  [ -e /etc/systemd/system/hub-loadtest.service ] && { echo; echo "== load-test mode (an image built with LOADTEST=1)"; systemctl status hub-loadtest.service --no-pager -l 2>&1 | head -12; }
   echo; echo "== failed units"; systemctl --failed --no-pager 2>&1
   echo; echo "== hub log, this start"; journalctl -b -u hub.service --no-pager -n 150 2>&1
   echo; echo "== memory"; free -m 2>&1; cat /proc/swaps 2>&1; echo "pressure:"; cat /proc/pressure/memory 2>&1
   echo; echo "== hub log, previous start (last lines)"; journalctl -b -1 -u hub.service --no-pager -n 60 2>&1
   echo; echo "== kernel, previous start: memory and hangs"; journalctl -b -1 -k --no-pager 2>&1 | grep -iE "out of memory|oom|killed process|hung task|watchdog" | tail -20
   echo; echo "== network"; nmcli -t device 2>&1; nmcli -t radio 2>&1; rfkill list 2>&1; ip -br addr 2>&1
-  echo; echo "== USB stick"; lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINTS 2>&1
+  echo; echo "== USB stick"; lsblk -o NAME,SIZE,FSTYPE,LABEL,PARTUUID,MOUNTPOINTS 2>&1
   findmnt /media/hub-usb 2>&1 || echo "/media/hub-usb: not mounted"
+  # What the stick's rule (90-hub-usb.rules) sees: the system disk's partitions must
+  # not be mounted there.
+  for d in /sys/class/block/sd*; do
+    [ -e "$d" ] || continue
+    echo "$(basename "$d"): $(udevadm info --query=property --name="$(basename "$d")" 2>&1 | grep -E '^(ID_BUS|DEVTYPE|ID_FS_TYPE|ID_PART_ENTRY_UUID)=' | tr '\n' ' ')"
+  done
+  grep -E 'ID_PART_ENTRY_UUID|systemd-mount' /etc/udev/rules.d/90-hub-usb.rules 2>&1
   echo; echo "== disk"; df -h / /var/lib/hub 2>&1
+  echo; echo "== hub sandbox (deploy/hub.service)"
+  systemctl show hub.service -p ProtectSystem -p ProtectHome -p ReadWritePaths -p RuntimeDirectory -p StateDirectory -p MemorySwapMax -p NoNewPrivileges -p PrivateTmp -p UMask -p LimitCORE -p RequiresMountsFor 2>&1
+  echo "memory.swap.max $(cat /sys/fs/cgroup/system.slice/hub.service/memory.swap.max 2>&1), memory.swap.current $(cat /sys/fs/cgroup/system.slice/hub.service/memory.swap.current 2>&1)"
+  pid=$(systemctl show -p MainPID --value hub.service)
+  if [ "${pid:-0}" != 0 ]; then
+    echo "as the hub sees them (ro: read-only):"
+    for p in / /etc /usr/local/lib/hub /var/lib/hub /run/hub /media/hub-usb /home; do
+      echo "  $p: $(findmnt --task "$pid" -T "$p" -no TARGET,OPTIONS 2>&1 | cut -d, -f1)"
+    done
+  fi
+  echo; echo "== NetworkManager actions the hub may take (polkit, 50-hub-network.rules)"
+  setpriv --reuid=hub --regid=hub --clear-groups --no-new-privs nmcli general permissions 2>&1
+  echo "rules mentioning NetworkManager or netdev:"; grep -lE 'NetworkManager|netdev' /etc/polkit-1/rules.d/* /usr/share/polkit-1/rules.d/* 2>&1
+  echo; echo "== setup Wi-Fi's captive DNS answer (hub-captive)"
+  systemctl is-active hub-captive.path 2>&1
+  ls -la /run/hub/ /etc/NetworkManager/dnsmasq-shared.d/ 2>&1
+  journalctl -b -u hub-captive.service --no-pager -n 6 -o short-iso 2>&1
+  echo; echo "== clock"
+  echo "now $(date -Is); saved $(date -Is -r /var/lib/systemd/timesync/clock 2>&1); hub-clock $(systemctl is-active hub-clock.service 2>&1)"
+  journalctl -b --no-pager -o short-monotonic 2>&1 | grep -iE 'system time|advanc.*clock|clock.*epoch' | head -3
+  chronyc -n tracking 2>&1 | grep -E 'Reference ID|System time|Leap status'
+  echo; echo "== boot partition"
+  grep -E '[[:space:]]/boot/firmware[[:space:]]' /etc/fstab 2>&1
+  systemctl show boot-firmware.mount -p RequiredBy -p WantedBy 2>&1
+  echo; echo "== unattended upgrades"
+  apt-config dump Unattended-Upgrade::Origins-Pattern 2>&1
+  apt-cache policy 2>&1 | grep -E '^ +release ' | sort -u
+  grep -E 'Allowed origins|Packages that will be upgraded|No packages found' /var/log/unattended-upgrades/unattended-upgrades.log 2>&1 | tail -n 4
   echo; echo "== warnings and errors, this start"; journalctl -b -p warning --no-pager -n 100 2>&1
 } > "$out.tmp" 2>&1
+# A power cut while this runs leaves at worst a half-written hub-diag.txt.tmp: the
+# new file is on the card before it replaces the old one.
+sync "$out.tmp"
 mv "$out.tmp" "$out"
 sync

@@ -26,8 +26,23 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=yes
 PrivateTmp=yes
 LimitCORE=0
-# /run/hub: the setup Wi-Fi's captive flag (internal/netsetup, hub-captive.path).
+# Nor swap: the data key and decrypted records stay in memory (review R-26).
+MemorySwapMax=0
+# The file system is read-only for the hub, except the folders below (review R-26).
+# These are every place the hub writes on the image; a data_dir or usb_dir moved
+# elsewhere must be added here. Writable without a line here: /var/lib/hub
+# (StateDirectory: the data, the downloaded releases in bin/, SQLite's tmp/, hub.log)
+# and /run/hub (RuntimeDirectory: the setup Wi-Fi's captive flag, internal/netsetup).
+ProtectSystem=strict
+ProtectHome=yes
 RuntimeDirectory=hub
+# Self-upgrade writes the new binary next to the running one and renames it into
+# place; a rollback copies hub.prev back (internal/upgrade).
+ReadWritePaths=/usr/local/lib/hub
+# The box's USB stick, usb_dir in hub.yaml: the setup code, then the copy a new disk
+# is restored from (internal/stick). The image ships the empty folder; "-" starts the
+# hub anyway if it is gone. A stick mounted later shows up here, writable.
+ReadWritePaths=-/media/hub-usb
 
 [Install]
 WantedBy=multi-user.target

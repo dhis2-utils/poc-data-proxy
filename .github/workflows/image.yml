@@ -18,6 +18,12 @@ on:
   # By hand, a test image: the version is VERSION as a pre-release of the run
   # (0.1.5-ci.42), so there is nothing to type.
   workflow_dispatch:
+    inputs:
+      loadtest:
+        description: Add load-test mode (a test machine, never a facility's hub)
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -30,7 +36,10 @@ jobs:
       - name: Version
         env:
           INPUT_VERSION: ${{ inputs.version }}
-        run: echo "VERSION=${INPUT_VERSION:-$(cat VERSION)-ci.$GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          LOADTEST: ${{ inputs.loadtest && '1' || '' }}
+        run: |
+          VERSION=${INPUT_VERSION:-$(cat VERSION)-ci.$GITHUB_RUN_NUMBER}
+          { echo "VERSION=$VERSION"; echo "LOADTEST=$LOADTEST"; echo "NAME=dhis2-hub-$VERSION${LOADTEST:+-loadtest}-arm64"; } >> "$GITHUB_ENV"
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         if: inputs.binaries == ''
         with:
@@ -53,15 +62,15 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=$VERSION -X github.com/dhis2/facility-hub/internal/upgrade.ReleaseKey=$RELEASE_PUBLIC_KEY" \
             -o bin/hub-linux-arm64 ./cmd/hub
       - name: Build the image
-        run: sudo image/build.sh bin/hub-linux-arm64 "$VERSION" out
+        run: sudo env LOADTEST="$LOADTEST" image/build.sh bin/hub-linux-arm64 "$VERSION" out
       - name: Check the image
-        run: sudo image/check.sh "out/dhis2-hub-$VERSION-arm64.img.xz"
+        run: sudo env LOADTEST="$LOADTEST" image/check.sh "out/$NAME.img.xz"
       # Named after the image, with its version: GitHub offers it as a zip of that
       # name (the release fetches it by the same name, in the same run, and publishes
       # it with the release). Kept 3 days: test images filled the artifact storage.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: dhis2-hub-${{ env.VERSION }}-arm64.img
-          path: out/dhis2-hub-${{ env.VERSION }}-arm64.img.xz
+          name: ${{ env.NAME }}.img
+          path: out/${{ env.NAME }}.img.xz
           compression-level: 0
           retention-days: 3

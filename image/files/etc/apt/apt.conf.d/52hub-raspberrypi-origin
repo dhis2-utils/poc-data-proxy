@@ -1,0 +1,8 @@
+// Unattended upgrades from Raspberry Pi's archive too (archive.raspberrypi.com): the
+// kernel and the firmware come from there, not from Debian's archive, which the
+// default list in 50unattended-upgrades covers alone (review R-31). The origin and
+// label are those of Pi OS bookworm's archive; check them on the Pi in hub-diag.txt
+// ("unattended upgrades": apt-cache policy, o= and l=).
+Unattended-Upgrade::Origins-Pattern {
+        "origin=Raspberry Pi Foundation,codename=${distro_codename},label=Raspberry Pi Foundation";
+};
