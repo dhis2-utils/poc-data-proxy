@@ -14,6 +14,8 @@ sudo image/build.sh hub-linux-arm64 0.3.0 out/      # root, on an arm64 host; ab
 sudo image/check.sh out/dhis2-hub-0.3.0-arm64.img.xz
 ```
 
+On a Mac with Apple silicon, `image/test-build.sh` does all three in one go (the build and check in Docker), with a throwaway release key instead of `release.pub`: for testing only ("Checks on a Pi after an image change", step 1).
+
 `LOADTEST=1` before both commands builds and checks an image with load-test mode, `dhis2-hub-0.3.0-loadtest-arm64.img.xz` (below).
 
 `check.sh` reads the finished image without booting it. It checks:
