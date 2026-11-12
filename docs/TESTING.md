@@ -81,9 +81,18 @@ Scripted Capture web runs (Playwright) and Android Capture runs (adb and the UI 
 | `HUB_MANIFEST=manifest.json HUB_REPORT=oracle.json go test ./internal/live/` | the live suite against that instance |
 | `HUB_MANIFEST=manifest.json go test ./internal/adversarial/` | the adversarial scenarios ([ADVERSARIAL-TESTING.md](ADVERSARIAL-TESTING.md)) against that instance; those that show a finding not fixed skip unless `HUB_FINDINGS=1` |
 
-On GitHub, `.github/workflows/test.yml` runs `go vet`, every Go test, and the race detector on `internal/e2e`, `internal/live`, `internal/tracker` and `internal/store`, with `swtpm` for the TPM tests; `windows.yml` and `macos.yml` add those systems. All three run by hand only (`gh workflow run test.yml --ref <branch>`), as the organisation's Actions spending is limited: run them before merging to main.
+On GitHub, `.github/workflows/test.yml` runs on a push to any branch but main, when Go code, test data, the app or the workflow changed:
+- `go vet` and every Go test, with `swtpm` for the TPM tests;
+- the Facility Hub app's tests, lint and type check.
 
-The Facility Hub app (`apps/facility-hub`) has its own tests: `pnpm test` there (the codes, sealing and approval steps against the values the hub's Go tests pin, flags, who sees which hub), and `pnpm exec eslint src` and `pnpm exec tsc --noEmit`.
+Main only gets commits that already ran on their branch, so each change runs once. Docs-only pushes run nothing. Started by hand (`gh workflow run test.yml --ref <branch>`), the workflow also runs the race detector on `internal/e2e`, `internal/live`, `internal/tracker` and `internal/store`. The organisation's Actions spending is limited. So `windows.yml`, `macos.yml` and `image.yml` stay by hand: run them before merging a change that touches those systems.
+
+The Facility Hub app (`apps/facility-hub`) has its own tests. `pnpm test` there checks:
+- the codes, sealing and approval steps, against the values the hub's Go tests pin;
+- flags;
+- who sees which hub.
+
+`pnpm lint` (eslint and Prettier) and `pnpm exec tsc --noEmit` check the rest.
 
 Live runs change their instance: use a disposable one, and restore it (or a fresh demo database) before running again.
 

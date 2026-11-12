@@ -105,7 +105,11 @@ const Refusals = () => {
     )
     const rows = useMemo(() => groupRefusals(hubs ?? []), [hubs])
     const reach = confirming
-        ? reachOf(confirming.group, hubs ?? [], me ? scopeOf(me, hubs ?? []) : [])
+        ? reachOf(
+              confirming.group,
+              hubs ?? [],
+              me ? scopeOf(me, hubs ?? []) : []
+          )
         : { saves: 0, hubs: 0, uncounted: 0 }
     const partly = useMemo(() => partlyReported(hubs ?? []), [hubs])
     const names = new Map(programs.list.map((p) => [p.id, p.displayName]))

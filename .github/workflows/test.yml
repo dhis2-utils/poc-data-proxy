@@ -1,14 +1,35 @@
-# The hub's tests on Linux, run by hand (AGENTS.md, "Before committing"): vet, every
-# test, and the race detector on the packages where goroutines meet. swtpm lets
-# internal/devkey test the TPM code against a software TPM.
+# The hub's and the Facility Hub app's tests (AGENTS.md, "Before committing"): go vet,
+# every Go test, and the app's tests, lint and type check (review R-32,
+# KISS-2026-11-12 T1 and T2). The Pi image, Windows and macOS workflows stay by hand.
+#
+# The organisation's Actions spending is limited, so this runs once per change:
+# - on a push to any branch but main, when Go code, the app or this file changed
+#   (main only gets commits that already ran here on their branch);
+# - by hand (gh workflow run test.yml --ref <branch>), which also runs the race
+#   detector (over 10 minutes).
+# swtpm lets internal/devkey test the TPM code against a software TPM.
 name: Tests
 
-# By hand only (gh workflow run): the organisation's Actions spending is limited.
 on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - '**.go'
+      - go.mod
+      - go.sum
+      - 'testdata/**'
+      - 'internal/**/testdata/**'
+      - 'apps/facility-hub/**'
+      - .github/workflows/test.yml
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# A newer push to the same branch cancels the run it replaces.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   go:
@@ -26,4 +47,29 @@ jobs:
       - name: Tests
         run: go test ./...
       - name: Race detector
+        if: github.event_name == 'workflow_dispatch'
         run: go test -race -timeout 40m ./internal/e2e ./internal/live ./internal/tracker ./internal/store
+
+  app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/facility-hub
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0, the version from package.json
+        with:
+          package_json_file: apps/facility-hub/package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: apps/facility-hub/pnpm-lock.yaml
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Tests
+        run: pnpm test --watchAll=false
+      - name: Lint
+        run: pnpm lint
+      - name: Type check
+        run: pnpm exec tsc --noEmit
