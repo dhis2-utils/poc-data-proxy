@@ -109,9 +109,15 @@ func checkOrder(collection, order string) *APIError {
 	return nil
 }
 
+// ignoredByCentral are parameters central ignores on its tracker lists, as it ignores
+// any name it does not know; the hub does the same for these, and refuses other
+// unknown names, which might filter what it would not. pageNumber: a client sent it
+// for page (Uganda, 13 November 2026); central answers page 1 (2.42.8 and 2.43.2.1).
+var ignoredByCentral = []string{"pageNumber"}
+
 func checkParams(collection string, q url.Values) *APIError {
 	for k := range q {
-		if !slices.Contains(allowed[collection], k) {
+		if !slices.Contains(allowed[collection], k) && !slices.Contains(ignoredByCentral, k) {
 			return unsupported(k)
 		}
 	}
