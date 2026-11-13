@@ -12,6 +12,7 @@ A small device on a facility LAN that caches the facility's DHIS2 tracker data a
 | Document | What it covers |
 |---|---|
 | [SPEC-facility-hub-poc.md](docs/SPEC-facility-hub-poc.md) | The original specification, as it was asked |
+| [SUPPORTED.md](docs/SUPPORTED.md) | What works offline through the hub, per app, and the endpoints and parameters it answers offline (generated from the code) |
 | [FINDINGS.md](docs/FINDINGS.md) | What we learned about DHIS2, the Capture apps and the spec: answers to its open questions, where it was wrong, what the tests found |
 | [TESTING.md](docs/TESTING.md) | How the hub is tested: profiles, the live suite against real DHIS2, the differential oracles, phases |
 | [PERFORMANCE.md](docs/PERFORMANCE.md) | How the hub scales: current results on Pi-class profiles, load on central, sizing, history |

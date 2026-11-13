@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -279,6 +280,11 @@ func splitTop(s string) []string {
 // FINDINGS "Shared metadata cache"). A user who never loaded them online gets "needs
 // connection" for them offline.
 var sharedPrefixes = []string{"loginConfig", "staticContent", "locales"}
+
+// SharedAnswers and LoginPaths: for the catalog of what works offline
+// (internal/catalog).
+func SharedAnswers() []string { return slices.Clone(sharedPrefixes) }
+func LoginPaths() []string    { return slices.Clone(loginPaths) }
 
 // shared reports whether a path's cached response may be served to any user: the
 // answers above, and the apps' static files.

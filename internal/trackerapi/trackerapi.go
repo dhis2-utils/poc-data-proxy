@@ -368,6 +368,14 @@ func (a *API) writeErr(w http.ResponseWriter, r *http.Request, err *tracker.APIE
 
 func (a *API) selfURL(r *http.Request) string { return proxy.Origin(r) + r.URL.RequestURI() }
 
+// importFlags are the parameters an offline import accepts (with the values checked
+// below: importStrategy, importMode, idScheme).
+var importFlags = []string{"async", "atomicMode", "flushMode", "idScheme", "importMode", "importStrategy",
+	"reportMode", "skipPatternValidation", "skipRuleEngine", "skipSideEffects", "validationMode"}
+
+// ImportFlags: for the catalog of what works offline (internal/catalog).
+func ImportFlags() []string { return slices.Clone(importFlags) }
+
 func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Session, v *tracker.Viewer, body []byte) {
 	q := r.URL.Query()
 	// Central defaults to async=true. Offline the hub imports synchronously either way
@@ -381,9 +389,8 @@ func (a *API) importLocal(w http.ResponseWriter, r *http.Request, sess *core.Ses
 		return
 	}
 	for k := range q {
-		switch k {
-		case "async", "importStrategy", "atomicMode", "reportMode", "validationMode", "skipRuleEngine",
-			"skipSideEffects", "skipPatternValidation", "flushMode", "importMode", "idScheme":
+		switch {
+		case slices.Contains(importFlags, k):
 		default:
 			a.H.WebError(w, 400, "not supported offline: "+k, "")
 			a.H.ReqLog.Unsupported(r.URL.Path, k)

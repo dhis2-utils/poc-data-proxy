@@ -41,6 +41,12 @@ func IsAggregatePath(p string) bool {
 	return false
 }
 
+// OfflineRoutes are what ServeHTTP answers offline itself (its switch below); every
+// other method and path here is "needs connection" offline. For the catalog
+// (internal/catalog); TestAggregateOfflineRoutes holds the two to the same list.
+var OfflineRoutes = []string{"GET /api/dataEntry/dataValues", "POST /api/dataValues", "DELETE /api/dataValues",
+	"POST /api/dataEntry/dataSetCompletion"}
+
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sess, f := a.Auth.Identify(r)
 	if f != nil {

@@ -3,9 +3,11 @@ package proxy
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +51,9 @@ var notReplayed = map[string]bool{
 	"validationResults": true, "dataAnalysis": true, "messageConversations": true, "interpretations": true,
 	"fileResources": true, "documents": true, "users": true, "userLookup": true, "apiToken": true, "ping": true,
 }
+
+// NotLoadedAtLogin lists notReplayed, sorted: for the catalog (internal/catalog).
+func NotLoadedAtLogin() []string { return slices.Sorted(maps.Keys(notReplayed)) }
 
 var versionRe = regexp.MustCompile(`^[0-9]{2}/`)
 
