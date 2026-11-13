@@ -111,9 +111,21 @@ func checkOrder(collection, order string) *APIError {
 
 // ignoredByCentral are parameters central ignores on its tracker lists, as it ignores
 // any name it does not know; the hub does the same for these, and refuses other
-// unknown names, which might filter what it would not. pageNumber: a client sent it
-// for page (Uganda, 13 November 2026); central answers page 1 (2.42.8 and 2.43.2.1).
+// unknown names, which might filter what it would not. pageNumber: Capture's search
+// by a unique ID sends pageNumber=1 (Uganda, 13 November 2026); central ignores it
+// and answers page 1 (2.42.8 and 2.43.2.1).
 var ignoredByCentral = []string{"pageNumber"}
+
+// OfflineParams lists the query parameters each tracker read accepts offline ("single"
+// is one object by UID), and those ignored as central ignores them: for the catalog
+// of what works offline (internal/catalog).
+func OfflineParams() (allowedParams map[string][]string, ignored []string) {
+	allowedParams = map[string][]string{}
+	for k, v := range allowed {
+		allowedParams[k] = slices.Sorted(slices.Values(v))
+	}
+	return allowedParams, slices.Clone(ignoredByCentral)
+}
 
 func checkParams(collection string, q url.Values) *APIError {
 	for k := range q {

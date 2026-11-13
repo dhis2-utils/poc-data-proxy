@@ -151,8 +151,8 @@ func TestNewUID(t *testing.T) {
 	}
 }
 
-// Central ignores parameters it does not know: pageNumber, sent by a client for page,
-// is answered page 1 (2.42.8, 2.43.2.1). The hub ignores it too; other unknown names,
+// Central ignores parameters it does not know: pageNumber, which Capture's search by
+// a unique ID sends, is answered page 1 (2.42.8, 2.43.2.1). The hub ignores it too; other unknown names,
 // which might filter, it refuses.
 func TestIgnoredParams(t *testing.T) {
 	for _, coll := range []string{"trackedEntities", "enrollments", "events"} {
