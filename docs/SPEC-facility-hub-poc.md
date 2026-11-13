@@ -277,7 +277,7 @@ Query parameters to support: `orgUnits`/`orgUnit`, `orgUnitMode` (SELECTED only;
 
 For `fields`, return the full stored object and then filter out nested objects the user cannot see. Do not implement field selection syntax in the POC beyond `*` and the nested collections (`enrollments`, `events`, `relationships`, `attributes`).
 
-Unsupported parameters return 400 with "not supported offline: <param>". Log every unsupported parameter so we can see what the Capture app needs.
+Unsupported parameters return 400 with "not supported offline: <param>". Log every unsupported parameter so we can see what the Capture app needs. A parameter central itself ignores is ignored offline too (`ignoredByCentral` in `internal/tracker/query.go`: `pageNumber`, since 2026-11-13).
 
 Response shape (pager, collection key, error format) must match the target version exactly. Build it from recorded fixtures (section 13).
 
