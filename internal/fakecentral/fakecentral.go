@@ -549,7 +549,10 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(`<html><meta name="dhis2-base-url" content="http://` + r.Host + `">global shell ` + p + "</html>"))
 		return
-	case strings.HasPrefix(p, "/dhis-web-login/"): // public
+	case p == "/dhis-web-login/" && strings.HasPrefix(c.Version, "2.43"): // 2.43 moved the login app
+		http.Redirect(w, r, "/login/", http.StatusMovedPermanently)
+		return
+	case strings.HasPrefix(p, "/dhis-web-login/") || strings.HasPrefix(p, "/login/"): // public
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte("<html>login app</html>"))
 		return

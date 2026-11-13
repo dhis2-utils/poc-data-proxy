@@ -3,6 +3,8 @@
 //   - the key file (hub.db): hub identity and mode (meta) and one key slot per user.
 //     It is plaintext, because it is read while the store is locked: a slot holds the
 //     data key (DK) wrapped under a key derived from the user's password.
+//   - the public file (hub.db.public): the login page's files and settings, which
+//     central gives anyone, in plain text so the login page works while locked.
 //   - the data file (hub.db.data): everything else, encrypted page by page with
 //     AES-256-XTS under a key derived from DK. It is open only while unlocked.
 //
@@ -44,6 +46,7 @@ var ErrLocked = errors.New("store is locked: a known user must log in")
 type Store struct {
 	Keys *sql.DB // the key file: meta and key slots
 	Path string
+	pub  *sql.DB // the public file: the login page's files and settings (public.go)
 
 	mu    sync.RWMutex
 	dk    hubcrypto.Key
@@ -281,6 +284,11 @@ func Open(path string) (*Store, error) {
 		keys.Close()
 		return nil, err
 	}
+	if s.pub, err = openPublic(PublicPath(path)); err != nil {
+		s.empty.Close()
+		keys.Close()
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -307,6 +315,7 @@ func emptyData() (*sql.DB, error) {
 func (s *Store) Close() error {
 	s.lock()
 	s.empty.Close()
+	s.pub.Close()
 	return s.Keys.Close()
 }
 
@@ -603,6 +612,9 @@ func (s *Store) Wipe() error {
 		return err
 	}
 	if _, err := s.Keys.Exec(`DELETE FROM meta; DELETE FROM key_slots`); err != nil {
+		return err
+	}
+	if _, err := s.pub.Exec(`DELETE FROM public_cache`); err != nil {
 		return err
 	}
 	return s.vacuumKeys()

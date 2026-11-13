@@ -306,19 +306,33 @@ func cacheUser(sess *core.Session) int64 {
 	return sess.UserID
 }
 
-// anonCacheable reports whether an answer to a request without a session may be
-// cached: what the login page needs offline, its files and its shared settings, and
-// not with a query string of the client's choosing. Anything more lets one device
-// fill the disk with copies, and stores central's redirects to the login page under
-// app files (review R-16, R-18).
-func anonCacheable(u *url.URL) bool {
+// loginPaths are where central serves the login page and what it loads without a
+// login: the login app (2.42 at /dhis-web-login/; 2.43 redirects there to /login/),
+// and the flag and logo images (checked on 2.42.8 and 2.43.2.1, 13 November 2026).
+var loginPaths = []string{"/dhis-web-login/", "/login/", "/dhis-web-commons/flags/", "/dhis-web-commons/security/"}
+
+// publicAnswer reports whether central answers u the same to anyone, logged in or
+// not: the login page, its files and images, and its shared settings, and not under a
+// query string of the client's choosing. Anything more lets one device fill the disk
+// with copies, and stores central's redirects to the login page under app files
+// (review R-16, R-18). These copies are kept in the public file, which the hub reads
+// while its store is locked: after a restart, staff log in through this page
+// (store/public.go).
+func publicAnswer(u *url.URL) bool {
 	if u.RawQuery != "" && u.RawQuery != "paging=false" {
 		return false
 	}
-	if strings.HasPrefix(u.Path, "/dhis-web-login/") {
-		return true
+	for _, p := range loginPaths {
+		if strings.HasPrefix(u.Path, p) && isStatic(u.Path) {
+			return true
+		}
 	}
 	return strings.HasPrefix(u.Path, "/api/") && !isStatic(u.Path) && shared(u.Path)
+}
+
+// isLoginPage: a page of the login app, which the hub never redirects to itself.
+func isLoginPage(p string) bool {
+	return strings.HasPrefix(p, "/dhis-web-login") || strings.HasPrefix(p, "/login/")
 }
 
 // isAppShell: /apps/<app>, the page 2.42+ opens an app at.
@@ -377,7 +391,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// nothing offline. Without a copy the hub could answer offline with, ask
 		// central for the full answer.
 		if r.Method == http.MethodGet && (r.Header.Get("If-None-Match") != "" || r.Header.Get("If-Modified-Since") != "") &&
-			p.H.Store.Unlocked() && !p.H.Store.HasCache(cacheUser(sess), sess != nil && shared(r.URL.Path), r.Method, r.URL.RequestURI()) {
+			(publicAnswer(r.URL) && !p.H.Store.HasPublic(r.URL.RequestURI()) ||
+				p.H.Store.Unlocked() && !p.H.Store.HasCache(cacheUser(sess), sess != nil && shared(r.URL.Path), r.Method, r.URL.RequestURI())) {
 			r = r.Clone(r.Context())
 			r.Header.Del("If-None-Match")
 			r.Header.Del("If-Modified-Since")
@@ -397,8 +412,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err == nil {
-			if r.Method == http.MethodGet && cacheable(r, res.Status) && len(res.Body) <= maxCacheBody && !validationRe.MatchString(r.URL.Path) &&
-				p.H.Store.Unlocked() && (cacheUser(sess) > 0 || sess == nil && anonCacheable(r.URL)) {
+			if r.Method == http.MethodGet && publicAnswer(r.URL) && res.Status != http.StatusNotFound && cacheable(r, res.Status) &&
+				len(res.Body) <= maxCacheBody {
+				if err := p.H.Store.PutPublic(r.URL.RequestURI(),
+					&store.CachedResponse{Status: res.Status, Header: res.Header, Body: res.Body}); err != nil {
+					slog.Warn("public cache write", "err", err)
+				}
+			} else if r.Method == http.MethodGet && cacheable(r, res.Status) && len(res.Body) <= maxCacheBody && !validationRe.MatchString(r.URL.Path) &&
+				p.H.Store.Unlocked() && cacheUser(sess) > 0 {
 				if err := p.H.Store.PutCache(cacheUser(sess), r.Method, r.URL.RequestURI(),
 					&store.CachedResponse{Status: res.Status, Header: res.Header, Body: res.Body}); err != nil {
 					slog.Warn("cache write", "err", err)
@@ -502,6 +523,12 @@ func (p *Proxy) serveOffline(w http.ResponseWriter, r *http.Request, sess *core.
 		p.H.NeedsConnection(w, r.Method+" "+r.URL.Path+" is not available offline")
 		return 503
 	}
+	// The login page and what it loads: from the public file, locked or not.
+	if publicAnswer(r.URL) {
+		if c, err := p.H.Store.GetPublic(r.URL.RequestURI()); err == nil && c != nil {
+			return p.writeCopy(w, r, c)
+		}
+	}
 	if !p.H.Store.Unlocked() {
 		if isStatic(r.URL.Path) {
 			p.H.NeedsConnection(w, "the hub is locked until a known user logs in")
@@ -523,7 +550,7 @@ func (p *Proxy) serveOffline(w http.ResponseWriter, r *http.Request, sess *core.
 	if err == nil && cached == nil && sess != nil && shared(r.URL.Path) {
 		cached, err = p.H.Store.GetCacheAnyUser(r.Method, uri)
 	}
-	if err == nil && cached == nil && sess == nil && isStatic(r.URL.Path) && !strings.HasPrefix(r.URL.Path, "/dhis-web-login") &&
+	if err == nil && cached == nil && sess == nil && isStatic(r.URL.Path) && !isLoginPage(r.URL.Path) &&
 		strings.Contains(r.Header.Get("Accept"), "text/html") {
 		http.Redirect(w, r, "/dhis-web-login/", http.StatusFound)
 		return 302
@@ -554,6 +581,11 @@ func (p *Proxy) serveOffline(w http.ResponseWriter, r *http.Request, sess *core.
 		p.H.NeedsConnection(w, r.URL.Path+" was not cached while online")
 		return 503
 	}
+	return p.writeCopy(w, r, cached)
+}
+
+// writeCopy answers offline with a copy kept online.
+func (p *Proxy) writeCopy(w http.ResponseWriter, r *http.Request, cached *store.CachedResponse) int {
 	res := p.Localize(r, &Result{Status: cached.Status, Header: cached.Header, Body: cached.Body})
 	res.Header.Set("X-Hub-Cache", "offline; fetched="+cached.FetchedAt)
 	if ts := store.ParseTime(cached.FetchedAt); !ts.IsZero() {
