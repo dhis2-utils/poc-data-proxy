@@ -245,6 +245,7 @@ func (a *App) Start(ctx context.Context) {
 	go a.Hub.Monitor.Run(ctx, a.Hub.Central.BaseURL)
 	go a.Worker.Run(ctx)
 	go a.Stick.Run(ctx)
+	go a.Proxy.RunLoginWarm(ctx)
 }
 
 func (a *App) Close() error {

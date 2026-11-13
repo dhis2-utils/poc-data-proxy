@@ -543,7 +543,7 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		c.login(w, r)
 		return
 	case p == "/api/loginConfig": // public, as on 2.41+
-		writeJSON(w, 200, map[string]any{"applicationTitle": "Fake central", "apiVersion": c.Version})
+		writeJSON(w, 200, map[string]any{"applicationTitle": "Fake central", "apiVersion": c.Version, "countryFlag": "sierra_leone"})
 		return
 	case strings.HasPrefix(p, "/apps/"):
 		w.Header().Set("Content-Type", "text/html")
@@ -553,8 +553,20 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login/", http.StatusMovedPermanently)
 		return
 	case strings.HasPrefix(p, "/dhis-web-login/") || strings.HasPrefix(p, "/login/"): // public
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte("<html>login app</html>"))
+		// The login app's files name each other by relative path, as central's do.
+		_, file, _ := strings.Cut(strings.TrimPrefix(p, "/"), "/")
+		body, ok := map[string]string{
+			"":                          `<html>login app<script src="./assets/main.js"></script></html>`,
+			"assets/main.js":            `import("./app.css")`,
+			"assets/app.css":            `@font-face{src:url(./fonts/roboto.woff2)}`,
+			"assets/fonts/roboto.woff2": "font",
+		}[file]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", map[bool]string{true: "text/html", false: "application/octet-stream"}[file == ""])
+		w.Write([]byte(body))
 		return
 	case p == "/" && c.user(r) == nil: // as central: anonymous, to the login app
 		http.Redirect(w, r, "/dhis-web-login/", http.StatusFound)
