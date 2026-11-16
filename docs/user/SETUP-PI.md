@@ -88,6 +88,7 @@ While the hub has internet:
 What to expect offline:
 - A screen or search the hub cannot answer offline shows as "An unknown error occurred (503)" in Capture web. It means "needs connection": note what you were doing and continue online.
 - Photos and files cannot be added offline.
+- A note added to an existing event or enrollment (the Notes box on the dashboard) needs a connection: Capture says "Could not save event note". A note typed in the event form when the event is first saved works offline.
 - An edit made offline can overwrite a newer change someone made on central meanwhile (the later save wins, as with the Android app).
 
 ## No cable: the setup Wi-Fi
