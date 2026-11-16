@@ -5,15 +5,15 @@ What links to central look like where hubs go, and what the hub's tests should m
 ## How to use this document
 
 - Test link conditions (`testkit.Netcut`, docs/PERFORMANCE.md, "A slow uplink") are set from the planning figures here and from field measurements, and this document says which.
-- A national average flatters a facility: the one field measurement the project has, St Joseph Buyege HC in Uganda (29 October 2026), was 31 KB/s, about 0.25 Mbps, against 10–23 Mbps for Uganda's operators.
+- A national average flatters a facility: the one field measurement the project has, a rural health centre (29 October 2026), was 31 KB/s, about 0.25 Mbps, against 10–23 Mbps for that country's operators.
 - Add field measurements to "Field measurements" as they come in.
 
 ## Field measurements
 
 | Where, when | What was measured | Source |
 |---|---|---|
-| St Joseph Buyege HC, Butambala, Uganda, 29 Oct 2026 | 31 KB/s download | Field visit notes |
-| Butaaka and St Joseph Buyege HC, 28–29 Oct 2026 | Registering a patient: about a minute, 3 minutes on a poor network | Field visit notes |
+| A rural health centre, 29 Oct 2026 | 31 KB/s download | Field visit notes |
+| Two rural health centres, 28–29 Oct 2026 | Registering a patient: about a minute, 3 minutes on a poor network | Field visit notes |
 
 ## Measurements: mobile networks in sub-Saharan Africa
 
@@ -199,7 +199,7 @@ These are less severe than for sub-Saharan Africa, but the sub-national evidence
 
 **Packet loss turns into stalls.** MedUX measures loss over UDP on an idle line. Over TCP, a lost packet is resent after a timeout, at least 200 ms on Linux and often a second, and the request waits for it; a loaded line loses more than an idle one. At 3–9 % loss, a screen of 15 requests is likely to have one stalled request. The test link does not model loss yet.
 
-**Throughput at a facility is far below national figures.** The planning figure of 1–5 Mbps is 4–20 times what Buyege measured. Many staff, a shared modem, a weak signal indoors and data bundles all reduce it. For the hub, plan for tens of KB/s, and check compression on central (FINDINGS.md, "The demo central does not compress its answers").
+**Throughput at a facility is far below national figures.** The planning figure of 1–5 Mbps is 4–20 times what the field site measured. Many staff, a shared modem, a weak signal indoors and data bundles all reduce it. For the hub, plan for tens of KB/s, and check compression on central (FINDINGS.md, "The demo central does not compress its answers").
 
 **Outages last hours or days.** The two field studies are old (2012, about 2014) and from GPRS times, but match what the hub is built for: work offline for days, then catch up.
 

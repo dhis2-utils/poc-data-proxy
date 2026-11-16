@@ -31,7 +31,7 @@ func TestEnrollmentFutureDates(t *testing.T) {
 	if err := s.Tx(context.Background(), func(tx *sql.Tx) error { return s.PutObject(tx, te.ToStore()) }); err != nil {
 		t.Fatal(err)
 	}
-	kampala, _ := time.LoadLocation("Africa/Kampala")
+	eat, _ := time.LoadLocation("Africa/Nairobi")
 	importer := func(now time.Time) *Importer {
 		acc := &access.List{Programs: map[string]access.Perm{}, TETs: map[string]access.Perm{tet: {Read: true, Write: true}}}
 		for id := range progs {
@@ -76,8 +76,8 @@ func TestEnrollmentFutureDates(t *testing.T) {
 		{"today, late in the day", "PrForbids01", "2026-11-04T23:59:00.000", noon},
 		{"a program that allows future dates", "PrAllows001", "2026-11-05", noon},
 		{"a catalog without the settings", "PrOldCat001", "2026-11-05", noon},
-		// 21:30 UTC is already 5 November in Kampala (UTC+3): central's today.
-		{"central's today in its own time zone", "PrForbids01", "2026-11-05", time.Date(2026, 11, 4, 21, 30, 0, 0, time.UTC).In(kampala)},
+		// 21:30 UTC is already 5 November in Nairobi (UTC+3): central's today.
+		{"central's today in its own time zone", "PrForbids01", "2026-11-05", time.Date(2026, 11, 4, 21, 30, 0, 0, time.UTC).In(eat)},
 	} {
 		if out := enroll(c.now, c.program, c.date, c.date); len(out.Errors) != 0 || len(out.Accepted) != 1 {
 			codes, _ := reports(out)

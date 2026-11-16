@@ -18,14 +18,14 @@ import (
 // which the hub refuses offline, as central does (E1020).
 func TestDeviceClockAheadWarns(t *testing.T) {
 	e := newEnv(t)
-	e.central.TimeZone = "Africa/Kampala" // UTC+3: device times read in central's zone
+	e.central.TimeZone = "Africa/Nairobi" // UTC+3: device times read in central's zone
 	e.setup()
 	right, hour, day := e.android("nurse_a"), e.android("nurse_b"), e.android("hub_admin")
 	for _, c := range []*client{right, hour, day} {
 		c.json("GET", "/api/me", nil, 200)
 	}
 	e.sync() // the hub learns central's zone
-	kampala, _ := time.LoadLocation(e.central.TimeZone)
+	eat, _ := time.LoadLocation(e.central.TimeZone)
 	n := 0
 	// upload sends one registration from a device whose clock is off by ahead, saved two
 	// minutes before it is sent. A device a day ahead dates it on its own today; the
@@ -34,7 +34,7 @@ func TestDeviceClockAheadWarns(t *testing.T) {
 		t.Helper()
 		n++
 		uid := func(p string) string { return p + strings.Repeat("0", 10-len(p)) + string(rune('a'+n)) }
-		device := time.Now().In(kampala).Add(ahead - 2*time.Minute)
+		device := time.Now().In(eat).Add(ahead - 2*time.Minute)
 		p := newPatient(uid("ClkTe"), uid("ClkEn"), "Clock", "", nil)
 		te := p["trackedEntities"].([]any)[0].(map[string]any)
 		enr := te["enrollments"].([]any)[0].(map[string]any)
@@ -42,7 +42,7 @@ func TestDeviceClockAheadWarns(t *testing.T) {
 		for _, o := range []map[string]any{te, enr} {
 			o["createdAtClient"], o["updatedAtClient"] = stamp, stamp
 		}
-		date := time.Now().In(kampala)
+		date := time.Now().In(eat)
 		if ahead >= 24*time.Hour {
 			date = device
 		}

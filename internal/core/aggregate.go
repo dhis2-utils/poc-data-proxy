@@ -77,7 +77,7 @@ func (h *Hub) RefreshAggAccess(ctx context.Context, userID int64, auth central.A
 	path := "/api/" + h.APIMinor() + "/dataEntry/metadata"
 	authorities, stamp := l.Authorities, accessStamp(l)
 	// Asked with the ETag of the copy the hub holds: unchanged, central answers 304
-	// with no body (3.5 MB a user an hour with Uganda's eRegisters forms otherwise;
+	// with no body (3.5 MB a user an hour with eRegisters' forms otherwise;
 	// PERFORMANCE.md, "Central's load from one facility"). A change to the forms
 	// changes the ETag; a change to the user's org units or groups does not, so the
 	// hub asks without it when those changed since the copy (accessStamp).

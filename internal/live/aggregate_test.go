@@ -84,7 +84,7 @@ func TestAggregateAccessRefreshed(t *testing.T) {
 }
 
 // The hourly refresh asks with the ETag of the copy it holds: unchanged forms cost
-// no body (central answers 304 with nothing; 3.5 MB a user an hour with Uganda's
+// no body (central answers 304 with nothing; 3.5 MB a user an hour with eRegisters'
 // eRegisters forms otherwise), and a change is fetched in full.
 func TestAggregateRefreshNotModified(t *testing.T) {
 	e, ag, nurse, _ := aggregateEnv(t)

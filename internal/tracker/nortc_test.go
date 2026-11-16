@@ -116,7 +116,7 @@ func TestNoRTCIncrementalSyncWindow(t *testing.T) {
 		}
 		return hubUpdated(stamp, floor)
 	}
-	kampala, _ := time.LoadLocation("Africa/Kampala") // UTC+3
+	eat, _ := time.LoadLocation("Africa/Nairobi") // UTC+3
 	for _, c := range []struct {
 		what   string
 		behind time.Duration
@@ -128,9 +128,9 @@ func TestNoRTCIncrementalSyncWindow(t *testing.T) {
 		{"26 hours behind, UTC", 26 * time.Hour, time.UTC, false},
 		{"36 hours behind, UTC", 36 * time.Hour, time.UTC, false},
 		{"40 hours behind, UTC", 40 * time.Hour, time.UTC, true},
-		{"34 hours behind, UTC+3", 34 * time.Hour, kampala, false},
-		{"37 hours behind, UTC+3", 37 * time.Hour, kampala, true},
-		{"four weeks behind, UTC+3", 4 * 7 * 24 * time.Hour, kampala, true},
+		{"34 hours behind, UTC+3", 34 * time.Hour, eat, false},
+		{"37 hours behind, UTC+3", 37 * time.Hour, eat, true},
+		{"four weeks behind, UTC+3", 4 * 7 * 24 * time.Hour, eat, true},
 	} {
 		if got := counted(c.behind, c.zone); got != c.want {
 			t.Errorf("%s: a write an hour after the watermark counted %v, want %v", c.what, got, c.want)

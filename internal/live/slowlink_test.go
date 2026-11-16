@@ -24,7 +24,7 @@ import (
 
 // TestSlowLinkPulls measures what a hub's pulls cost on a facility's uplink: the
 // first fill, a sync in which nothing changed and the weekly full pull, at full
-// speed, 3 000 KB/s and 31 KB/s (St Joseph Buyege HC, 29 October 2026), each slow
+// speed, 3 000 KB/s and 31 KB/s (a rural health centre, 29 October 2026), each slow
 // link with 200 ms latency per request. Run against the Sierra Leone database at
 // Ngelehun CHC (HUB_SLOWLINK=1, docs/PERFORMANCE.md, "A slow uplink"). One JSON line
 // per measurement goes to HUB_REPORT.
@@ -140,7 +140,7 @@ func callKind(path, query string) string {
 }
 
 // TestSlowLinkWorkflow times the requests behind the facility workflow seen on 28-29
-// October 2026 (Butaaka, Buyege): register a patient, find a returning one by name,
+// October 2026: register a patient, find a returning one by name,
 // open them, the working list, and the next room (another user) opening what the
 // first just saved. Through the hub online, each passes to central over the uplink;
 // answered by the hub (uplink off), none does: the case for serving local data while

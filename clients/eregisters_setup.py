@@ -7,7 +7,7 @@ usage: python3 -I eregisters_setup.py BASE_URL ADMIN:PASSWORD METADATA.json.gz A
 METADATA is the eRegisters configuration export ({"metadata": {...}, "dataStore":
 {"namespace", "entries"}}); APP is a build of github.com/HISP-Uganda/eregisters.
 Neither is in this repository. The script:
-- creates a small org unit tree with Uganda's level names: two facilities in one sub
+- creates a small org unit tree with a country's level names: two facilities in one sub
   county and one in another district;
 - imports the metadata with the program and data sets on those facilities, data
   sharing open, and references to what the export leaves out removed (org units on
@@ -63,7 +63,7 @@ def report(name, status, res):
 
 
 OU = {  # key: (uid, name, parent)
-    "nat": ("ErgOuNat001", "Uganda", None), "reg": ("ErgOuReg001", "Test Region", "nat"),
+    "nat": ("ErgOuNat001", "Test Country", None), "reg": ("ErgOuReg001", "Test Region", "nat"),
     "dis": ("ErgOuDis001", "Test District", "reg"), "dlg": ("ErgOuDlg001", "Test DLG", "dis"),
     "sub": ("ErgOuSub001", "Test Sub County", "dlg"),
     "fac": ("ErgOuFac001", "Test HC IV", "sub"), "sib": ("ErgOuFac002", "Test HC III", "sub"),

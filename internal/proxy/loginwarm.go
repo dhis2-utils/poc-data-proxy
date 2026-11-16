@@ -17,7 +17,7 @@ import (
 // The login page is kept as soon as the hub reaches central, not only once a device
 // has loaded it online: staff at a new hub, after a reset, or the one setting it up
 // may open it first offline, and a hub without it cannot be logged in to, or unlocked,
-// until the internet is back (FINDINGS.md, "The HISP Uganda demo"). The hub loads it
+// until the internet is back (FINDINGS.md, "The demo of 13 November 2026"). The hub loads it
 // as a browser does, without a login: the page, then what its HTML, scripts and styles
 // name by relative path under the login app's path, then the settings, logo and flag
 // the page asks the API for. About 1.1 MB on 2.42 and 2.43; once a day, so a new login

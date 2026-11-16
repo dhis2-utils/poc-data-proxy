@@ -1,6 +1,6 @@
 # Setting up a facility hub on a Raspberry Pi
 
-Step-by-step instructions for setting up and testing a hub on a Raspberry Pi 5, written for a country team testing the hub (the first is HISP Uganda, November 2026). The full design, and why each step is there, is in [DEPLOYMENT.md](../DEPLOYMENT.md), section 3.
+Step-by-step instructions for setting up and testing a hub on a Raspberry Pi 5, written for a country team testing the hub. The full design, and why each step is there, is in [DEPLOYMENT.md](../DEPLOYMENT.md), section 3.
 
 The hub is a test build. Set it up against your own DHIS2 test instance, not the general DHIS2 demo server and not production. Do not leave patient work depending on it yet.
 

@@ -112,7 +112,7 @@ func checkOrder(collection, order string) *APIError {
 // ignoredByCentral are parameters central ignores on its tracker lists, as it ignores
 // any name it does not know; the hub does the same for these, and refuses other
 // unknown names, which might filter what it would not. pageNumber: Capture's search
-// by a unique ID sends pageNumber=1 (Uganda, 13 November 2026); central ignores it
+// by a unique ID sends pageNumber=1 (the demo of 13 November 2026); central ignores it
 // and answers page 1 (2.42.8 and 2.43.2.1).
 var ignoredByCentral = []string{"pageNumber"}
 

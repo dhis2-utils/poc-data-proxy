@@ -214,7 +214,7 @@ Either way, **protect the namespaces**. By default any user can read and write a
 21. **`/api/me` offline.** Spec 7.1 says `GET /api/me` is cached from the last online login. Capture asks for many field variants (`me.json?fields=authorities`, `userCredentials[userRoles]`, `settings[keyUiLocale]`). The hub stores the user's full `/api/me` at online login and applies the top-level field selection itself, matching central's answers: unknown fields are dropped, so `userCredentials[userRoles]` gives `{}` on 2.42.
 22. **SQLite library.** The spec names `modernc.org/sqlite`. This build environment could reach GitHub but not `proxy.golang.org` or GitLab, where modernc's dependencies live, so the hub uses `github.com/ncruces/go-sqlite3`: also pure Go and no cgo, with SQLite compiled to Go. Only `internal/store` touches the driver (`database/sql` with driver name `sqlite3`). Switching back to modernc means changing the import and the driver name.
 
-23. **Spec 9.2's plaintext index was a confidentiality flaw.** "Index columns hold UIDs and timestamps only, no patient data" is not true in effect. Program, stage and owner org unit per tracked entity, with dates, say who is enrolled in which program (HIV, TB, ANC) at which facility and when they visited. UIDs are the same as central's and appear on printed records, URLs and exports, so they identify patients. Visibility and outbox rows say which staff see or entered whom, and SQLite keeps deleted rows in free pages. The store is now a plaintext key file (hub ID, mode, central URL, usernames and key slots) and a data file encrypted page by page with AES-256-XTS (WAL and temp files too), under a key derived from the data key; rows keep their AES-GCM sealing. The query index lives in the same encrypted file (docs/PERFORMANCE.md), so its columns are encrypted at rest too. Stores from before the split were moved on their first unlock until the migrations were squashed before the first release (2026-10-21). What still leaks from a stolen disk: usernames, the number and size of pages, and the fact that it is a hub. Since 13 November a third file, `hub.db.public`, holds in plain text what central gives anyone without a login (the login page, its settings and images), so the login page works while the store is locked ("The HISP Uganda demo", below).
+23. **Spec 9.2's plaintext index was a confidentiality flaw.** "Index columns hold UIDs and timestamps only, no patient data" is not true in effect. Program, stage and owner org unit per tracked entity, with dates, say who is enrolled in which program (HIV, TB, ANC) at which facility and when they visited. UIDs are the same as central's and appear on printed records, URLs and exports, so they identify patients. Visibility and outbox rows say which staff see or entered whom, and SQLite keeps deleted rows in free pages. The store is now a plaintext key file (hub ID, mode, central URL, usernames and key slots) and a data file encrypted page by page with AES-256-XTS (WAL and temp files too), under a key derived from the data key; rows keep their AES-GCM sealing. The query index lives in the same encrypted file (docs/PERFORMANCE.md), so its columns are encrypted at rest too. Stores from before the split were moved on their first unlock until the migrations were squashed before the first release (2026-10-21). What still leaks from a stolen disk: usernames, the number and size of pages, and the fact that it is a hub. Since 13 November a third file, `hub.db.public`, holds in plain text what central gives anyone without a login (the login page, its settings and images), so the login page works while the store is locked ("The demo of 13 November", below).
 24. **Spec 7.1/9.2 store a password hash next to the key slot.** Both are offline password verifiers for the user's central password. The hub keeps only the key slot, which verifies the password by opening, and removes slots unused for `key_slot_max_age`.
 25. **Spec 8.2's rule for local objects ignores search scope.** Program, stage and TET read plus facility ownership let a user with capture but not search scope at the facility see records central would hide. The hub also requires the facility in the user's effective search scope.
 26. **Spec 8.3 and revocation.** Fine-grained access cannot be re-checked offline, but a disabled account or a changed password can be detected cheaply while online. The hub re-checks cached Basic credentials with central every 5 minutes, ends all sessions of a user central refuses, and refuses that user offline until an online login succeeds. Sessions also expire (`session_idle`, `session_max`).
@@ -359,7 +359,7 @@ eRegisters (github.com/HISP-Uganda/eregisters, 1.1.7) is a DHIS2 web app that ke
 - **2.43 opens apps inside its global shell** (an iframe at `/apps/<app>`); a reopened PWA is served from its own service worker without the shell. Both work through the hub.
 - **Browser storage belongs to the address.** Moving a browser from central's address to the hub's starts the app with an empty local store: sync everything to central first (DEPLOYMENT.md, section 5).
 
-## The HISP Uganda demo (13 November 2026)
+## The demo of 13 November 2026
 
 On a Pi 5 against the demo central (2.43.2.1), with eRegisters and Capture web, one staff user.
 
@@ -633,7 +633,7 @@ Checked on 29 October on DHIS2 2.43.2 (the eRegisters instance), with a hub in f
   - Aggregate file values: the upload has no per-item catch, so a failure probably stops the whole aggregate upload. This is from the code, not run.
 
 **How often programmes use them:** rarely, as far as could be checked.
-- eRegisters (Uganda, the hub's first target): none of 5 218 data elements or 40 attributes is IMAGE or FILE_RESOURCE.
+- eRegisters (the hub's first target): none of 5 218 data elements or 40 attributes is IMAGE or FILE_RESOURCE.
 - The Sierra Leone demo (play, dev): 11 of 1 062 data elements are FILE_RESOURCE, 3 of them in tracker ("Birth certificate", "Documentation", "TB treatment card"). None is IMAGE, and no attribute is.
 - Laos was not checked.
 
@@ -654,7 +654,7 @@ Not measured: memory with several large downloads at once on a Pi (the 10 MB def
 
 ## A slow uplink and search filters
 
-From the field visits of 28–29 October 2026 (Butaaka and St Joseph Buyege HC, Uganda; notes shared 5 November) and the measurements that followed on 5 November (PERFORMANCE.md, "A slow uplink"). Staff enter data on paper first and type it in later. A registration took about a minute, 3 minutes on a poor network, and Buyege measured 31 KB/s.
+From the field visits of 28–29 October 2026 (two rural health centres; notes shared 5 November) and the measurements that followed on 5 November (PERFORMANCE.md, "A slow uplink"). Staff enter data on paper first and type it in later. A registration took about a minute, 3 minutes on a poor network, and one of them measured 31 KB/s.
 
 **Fixed, 5 November:**
 

@@ -10,7 +10,7 @@ import (
 // central's records (a UTC stamp looked three hours old on East Africa Time).
 func TestOfflineRecordsUseCentralTimeZone(t *testing.T) {
 	e := newEnv(t)
-	e.central.TimeZone = "Africa/Kampala" // UTC+3, no daylight saving
+	e.central.TimeZone = "Africa/Nairobi" // UTC+3, no daylight saving
 	e.setup()
 	nurse := e.web("nurse_a")
 	nurse.login()
@@ -22,9 +22,9 @@ func TestOfflineRecordsUseCentralTimeZone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createdAt %v: %v", te["createdAt"], err)
 	}
-	// Read as a wall-clock time, it should be Kampala's now, not UTC's.
-	kampala := time.Now().In(time.FixedZone("EAT", 3*3600))
-	wall := time.Date(kampala.Year(), kampala.Month(), kampala.Day(), kampala.Hour(), kampala.Minute(), kampala.Second(), 0, time.UTC)
+	// Read as a wall-clock time, it should be East Africa's now, not UTC's.
+	eat := time.Now().In(time.FixedZone("EAT", 3*3600))
+	wall := time.Date(eat.Year(), eat.Month(), eat.Day(), eat.Hour(), eat.Minute(), eat.Second(), 0, time.UTC)
 	if d := wall.Sub(created); d < -time.Minute || d > time.Minute {
 		t.Fatalf("createdAt %s is %s from central's time now (%s): not stamped in %s", te["createdAt"], d.Round(time.Second),
 			wall.Format(time.DateTime), e.central.TimeZone)
