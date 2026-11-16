@@ -1,6 +1,8 @@
-# Before a pilot
+# Pending
 
-What remains before a first pilot, as of 12 November 2026. It started as the last section of the KISS review of that day (`docs/reviews/KISS-2026-11-12.md`, in the private notes), which keeps the findings; this list is the one kept up to date. Item names such as S1 or C6 are that review's; R-26 and the like are REVIEW-FABLE5.2's.
+What is open: decisions to take, work to build or fix, things to run, and ideas under consideration. Fixed findings, with their tests, are in FINDINGS.md; this list is for what is not done yet. Remove an item once it is done, and add new ones at the end of their section.
+
+The list started on 12 November 2026 as what remained before a first pilot, from the last section of the KISS review of that day (`docs/reviews/KISS-2026-11-12.md`, in the private notes), which keeps the findings. Item names such as S1 or C6 are that review's; R-26 and the like are REVIEW-FABLE5.2's. Item numbers are kept when items are added or removed, since other documents refer to them.
 
 Olav's answers on 12 November are marked **Answered**. On the same day the branch `pilot-prep` turned on CI for branch pushes that change code (T1, T2), fixed C6, documented item 3 in DEPLOYMENT.md and fixed the Pi image items of item 6, pending the checks on a Pi.
 
