@@ -1125,7 +1125,7 @@ func TestM1FullPullKeepsSavedVisible(t *testing.T) {
 	}
 }
 
-// The open soak item (FINDINGS.md, "Open", M1): the soak's last full pull "removed
+// The open soak item (the session records (private notes, docs/sessions/FINDINGS-SESSIONS.md), M1): the soak's last full pull "removed
 // visibility" of 51 objects for its three users, though its writers were thought to
 // have stopped. A probe: the soak's work in miniature (the three writers online,
 // offline, online again, with updates), two syncs, then a full pull with nothing
