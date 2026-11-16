@@ -46,8 +46,11 @@ done
 check "the data folder is taken over before anything in it runs" python3 - "$HERE/installer.nsi" <<'PY'
 import sys
 s = open(sys.argv[1]).read()
-own, run = s.find("/setowner *S-1-5-32-544"), s.find('"$HubExe" version')
-sys.exit(0 if 0 <= own < run else 1)
+# The first file read from the folder, and the first run of the installed hub.exe
+# (the installer never runs it to learn its version: review R-27).
+own = s.find("/setowner *S-1-5-32-544")
+uses = [s.find('FileOpen $R1 "$DataDir\\version"'), s.find("'\"$HubExe\" ")]
+sys.exit(0 if own >= 0 and all(own < u for u in uses) and min(uses) >= 0 else 1)
 PY
 check "the per-user move reads the user's own folder" grep -q 'UserAppDataLocal' <<<"$STR"
 # Review GLM5-F1: the user's own folder is theirs to change, so its hub.exe must not
