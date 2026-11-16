@@ -17,12 +17,12 @@ A small device on a facility LAN that caches the facility's DHIS2 tracker data a
 | [TESTING.md](docs/TESTING.md) | How the hub is tested: profiles, the live suite against real DHIS2, the differential oracles, phases |
 | [PERFORMANCE.md](docs/PERFORMANCE.md) | How the hub scales: current results on Pi-class profiles, load on central, sizing, history |
 | [HARDWARE-TESTING.md](docs/HARDWARE-TESTING.md) | Testing on real Raspberry Pis (Pi 4 1 GB, Pi 5 4 GB, SD card and SSD): set-up, calibration, ladder, full downloads, bytes written, power cuts |
-| [ADVERSARIAL-TESTING.md](docs/ADVERSARIAL-TESTING.md) | Worst cases run against a real DHIS2 (central, network, power, users changing under offline work): the plan and its results |
+| [ADVERSARIAL-TESTING.md](docs/ADVERSARIAL-TESTING.md) | Worst cases run against a real DHIS2 (central, network, power, users changing under offline work): each scenario and what must hold; results in FINDINGS.md |
 | [INCREMENTAL-SYNC-FIX.md](docs/INCREMENTAL-SYNC-FIX.md) | Incremental syncs under load: the measured problem and its fix (built 23 Oct 2026) |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Rolling out hubs: hardware, image, setup at the facility, networks, reaching the hub securely, running the fleet; options under consideration |
 | [FACILITY-HUB-APP.md](docs/FACILITY-HUB-APP.md) | The Facility Hub app on central: its screens, and what it must match on the hub's side (approving a hub's own account, move codes) |
 | [RECOVERY.md](docs/RECOVERY.md) | Keeping unsynced data safe: backup and recovery options (ideas, not decisions) |
-| [docs/reviews/](docs/reviews/README.md) | Dated independent reviews (security, confidentiality, data loss, KISS), and the names the code cites them by |
+| docs/reviews/ | Dated independent reviews (security, confidentiality, data loss, KISS), and the names the code cites them by. Kept in the private notes repository `dhis2-utils/poc-data-proxy-notes`, under the same paths. |
 | [AGENTS.md](AGENTS.md) | How to change the code: keep the structure, guards, checks before committing |
 
 ## Layout

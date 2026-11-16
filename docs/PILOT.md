@@ -1,6 +1,6 @@
 # Before a pilot
 
-What remains before a first pilot, as of 12 November 2026. It started as the last section of the KISS review of that day ([reviews/KISS-2026-11-12.md](reviews/KISS-2026-11-12.md)), which keeps the findings; this list is the one kept up to date. Item names such as S1 or C6 are that review's; R-26 and the like are REVIEW-FABLE5.2's.
+What remains before a first pilot, as of 12 November 2026. It started as the last section of the KISS review of that day (`docs/reviews/KISS-2026-11-12.md`, in the private notes), which keeps the findings; this list is the one kept up to date. Item names such as S1 or C6 are that review's; R-26 and the like are REVIEW-FABLE5.2's.
 
 Olav's answers on 12 November are marked **Answered**. On the same day the branch `pilot-prep` turned on CI for branch pushes that change code (T1, T2), fixed C6, documented item 3 in DEPLOYMENT.md and fixed the Pi image items of item 6, pending the checks on a Pi.
 

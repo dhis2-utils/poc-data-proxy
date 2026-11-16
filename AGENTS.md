@@ -19,6 +19,10 @@ When an offline sync question has no clear answer (conflicts, refused changes, d
 
 Claims about what DHIS2 does are checked on a live instance before they go into a plan or a finding (for example, that a deleted record cannot be restored: checked on 2.42 and 2.43, 4 November 2026).
 
+## Private notes
+
+Reviews (`docs/reviews/`) and the full adversarial plan with its results (`docs/ADVERSARIAL-TESTING.md`) are kept in the private notes repository (`dhis2-utils/poc-data-proxy-notes`), under the same paths, not here. Where it is cloned at `notes/` in this folder (excluded from git locally), edit and commit it there. A new review or session result goes there; a fixed finding still goes into `docs/FINDINGS.md` with its test. The public `docs/ADVERSARIAL-TESTING.md` lists each scenario and what must hold, without status or results.
+
 ## Before committing
 
 - `go vet ./...` and `go test ./...`; `go test -race -timeout 40m` on `internal/e2e`, `internal/live`, `internal/tracker`, `internal/store` (with the race detector `internal/live` takes just over go test's default 10 minutes on 4 cores).
