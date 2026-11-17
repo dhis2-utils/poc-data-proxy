@@ -1,0 +1,150 @@
+{
+  "hsl_admin": {
+    "match": 21,
+    "refused": 100
+  },
+  "hsl_clerk": {
+    "match": 41,
+    "refused": 79
+  },
+  "hsl_district": {
+    "match": 22,
+    "refused": 100
+  },
+  "hsl_mx00": {
+    "match": 4,
+    "refused": 122
+  },
+  "hsl_mx01": {
+    "match": 45,
+    "refused": 79
+  },
+  "hsl_mx02": {
+    "match": 61,
+    "refused": 56
+  },
+  "hsl_mx03": {
+    "match": 42,
+    "refused": 78
+  },
+  "hsl_mx04": {
+    "match": 24,
+    "refused": 101
+  },
+  "hsl_mx05": {
+    "match": 25,
+    "refused": 101
+  },
+  "hsl_mx06": {
+    "match": 4,
+    "refused": 122
+  },
+  "hsl_mx07": {
+    "match": 22,
+    "refused": 100
+  },
+  "hsl_mx08": {
+    "match": 4,
+    "refused": 122
+  },
+  "hsl_mx09": {
+    "match": 4,
+    "refused": 122
+  },
+  "hsl_mx10": {
+    "match": 0,
+    "refused": 126
+  },
+  "hsl_mx11": {
+    "match": 0,
+    "refused": 126
+  },
+  "hsl_mx12": {
+    "match": 0,
+    "refused": 126
+  },
+  "hsl_mx13": {
+    "match": 0,
+    "refused": 126
+  },
+  "hsl_mx14": {
+    "match": 0,
+    "refused": 126
+  },
+  "hsl_mx15": {
+    "match": 43,
+    "refused": 77
+  },
+  "hsl_mx16": {
+    "match": 43,
+    "refused": 79
+  },
+  "hsl_mx17": {
+    "match": 4,
+    "refused": 122
+  },
+  "hsl_mx18": {
+    "match": 24,
+    "refused": 101
+  },
+  "hsl_mx19": {
+    "match": 4,
+    "refused": 122
+  },
+  "hsl_mx20": {
+    "match": 4,
+    "refused": 122
+  },
+  "hsl_mx21": {
+    "match": 4,
+    "refused": 122
+  },
+  "hsl_mx22": {
+    "match": 44,
+    "refused": 78
+  },
+  "hsl_mx23": {
+    "match": 4,
+    "refused": 122
+  },
+  "hsl_mx24": {
+    "match": 4,
+    "refused": 122
+  },
+  "hsl_mx25": {
+    "match": 4,
+    "refused": 122
+  },
+  "hsl_mx26": {
+    "match": 4,
+    "refused": 122
+  },
+  "hsl_mx27": {
+    "match": 43,
+    "refused": 79
+  },
+  "hsl_mx28": {
+    "match": 43,
+    "refused": 79
+  },
+  "hsl_nurse": {
+    "match": 111,
+    "refused": 3
+  },
+  "hsl_nurse_twin": {
+    "match": 111,
+    "refused": 3
+  },
+  "hsl_outsider": {
+    "match": 0,
+    "refused": 126
+  },
+  "hsl_restricted": {
+    "match": 110,
+    "refused": 4
+  },
+  "hsl_searchless": {
+    "match": 110,
+    "refused": 4
+  }
+}
