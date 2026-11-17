@@ -32,7 +32,7 @@ The list below is what remains, from the KISS review, REVIEW-FABLE5.2 section 13
 
    **On Windows** the hub uses the PC's own TPM through TPM Base Services (`devkey/open_windows.go`), with no board to fit. Windows 11 requires TPM 2.0, so a laptop or PC sold with Windows 11 (most since late 2021) has one, built into the processor (Intel PTT or AMD fTPM). Many Windows 10 PCs from 2016 on have one too, sometimes switched off in the firmware. TESTING.md step 10 for a PC with a TPM has not been run yet.
 
-   **Answered 17 November:** a TPM is recommended and used where there is one, never required: Pi kits without a board and PCs without a TPM are supported. A real account obtained by softer means is the more likely way to the data. Open: the docs' wording, and the runs on a board and on a PC.
+   **Answered 17 November:** a TPM is recommended and used where there is one, never required: Pi kits without a board and PCs without a TPM are supported. A real account obtained by softer means is the more likely way to the data. DEPLOYMENT.md says so, and the Facility Hub app shows per hub whether its keys are sealed. Open: the runs on a board (HARDWARE-TESTING.md, step 7, on a Pi 4 and a Pi 5, with a drill that removes the board from a set-up hub and restores it from its stick) and on a PC (item 15).
 
 **Build or fix**
 

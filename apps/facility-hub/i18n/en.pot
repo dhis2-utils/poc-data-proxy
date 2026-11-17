@@ -5,8 +5,8 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1)\n"
-"POT-Creation-Date: 2026-11-11T12:33:10.114Z\n"
-"PO-Revision-Date: 2026-11-11T12:33:10.114Z\n"
+"POT-Creation-Date: 2026-11-17T11:50:26.866Z\n"
+"PO-Revision-Date: 2026-11-17T11:50:26.870Z\n"
 
 msgid "Your session has expired. Reload the page and log in again."
 msgstr "Your session has expired. Reload the page and log in again."
@@ -540,6 +540,15 @@ msgstr "Version"
 
 msgid "(central DHIS2 {{- v}})"
 msgstr "(central DHIS2 {{- v}})"
+
+msgid "TPM"
+msgstr "TPM"
+
+msgid "keys sealed with the TPM"
+msgstr "keys sealed with the TPM"
+
+msgid "none, so staff passwords alone protect a stolen hub"
+msgstr "none, so staff passwords alone protect a stolen hub"
 
 msgid "Addresses"
 msgstr "Addresses"

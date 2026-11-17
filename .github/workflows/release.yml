@@ -59,6 +59,8 @@ jobs:
         with:
           go-version: '1.26'  # the newest 1.26 patch, not go.mod's 1.26.0 (review R-48)
           check-latest: true
+      - name: Tools
+        run: sudo apt-get update -q && sudo apt-get install -y -q swtpm  # the TPM tests, which skip without it
       - name: Test
         run: go vet ./... && go test ./...
       - name: Build

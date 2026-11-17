@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/core"
+	"github.com/dhis2/facility-hub/internal/devkey"
 	"github.com/dhis2/facility-hub/internal/hubtls"
 	"github.com/dhis2/facility-hub/internal/store"
 )
@@ -66,6 +67,9 @@ func Status(h *core.Hub) map[string]any {
 		// a screen nobody opened online), since the hub started: the 10 most frequent,
 		// by endpoint (identifiers as {uid}, parameter names without values).
 		"offlineMisses": misses, "offlineMissesTotal": missTotal,
+		// Whether the hub's keys are sealed with a TPM (docs/DEPLOYMENT.md, "TPM"): a
+		// country sees which hubs rely on staff passwords alone.
+		"deviceKey": devkey.Key() != nil,
 		// The USB stick (docs/RECOVERY.md, C2): central sees a hub without a working one.
 		"usb": usbStatus(h),
 		// How devices reach the hub (docs/DEPLOYMENT.md, "Reaching the hub securely"): its

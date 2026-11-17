@@ -191,6 +191,16 @@ export const HubPage = () => {
                                 v: hb.serverVersion,
                             })}
                     </dd>
+                    <dt>{i18n.t('TPM')}</dt>
+                    <dd>
+                        {hb?.deviceKey === undefined
+                            ? '—'
+                            : hb.deviceKey
+                              ? i18n.t('keys sealed with the TPM')
+                              : i18n.t(
+                                    'none, so staff passwords alone protect a stolen hub'
+                                )}
+                    </dd>
                     <dt>{i18n.t('Addresses')}</dt>
                     <dd>
                         {hb?.addresses?.length

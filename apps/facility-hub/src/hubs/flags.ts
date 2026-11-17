@@ -9,6 +9,8 @@ export type Heartbeat = {
     lastPush?: string
     /** When the oldest save still waiting to be pushed was made ("" when none waits). */
     oldestPending?: string
+    /** The hub's keys are sealed with a TPM (missing: a hub before 0.1.6). */
+    deviceKey?: boolean
     lastPull?: string
     lastSync?: string
     lastError?: string
