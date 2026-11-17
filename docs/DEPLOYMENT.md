@@ -512,7 +512,9 @@ It is not specific to the hub. Android Capture on its own does the same: its SDK
 
 What to tell staff and districts: while a facility's hub is offline, do not edit that facility's records on central. Where someone must, check the record once the hub has pushed. The hub's page shows when that was.
 
-Options, if the pilot shows the case is common (not built):
+**How often it happens is counted** (built 17 November 2026, telemetry only; nothing is held back). For each offline save that edits a record the hub held as central's, the hub keeps central's `updatedAt` of the copy edited. Before pushing one such save in ten, it reads central's current `updatedAt` of those records with the author's token, and counts the save if central changed the record since. The Facility Hub app shows the count and the recent cases on the hub's page (record, author, when it was saved, when central changed it; no values). Registrations, new events and edits of records made on the hub cost nothing. Measured on 2.42.7.1 with a token: a read 65 to 94 ms, the push of a one-event save 133 ms, so reading for every save would add about half again to central's work for updates, and one in ten about 5 %. A country turns the count off on every hub with `facility-hub-config/overwrites` = `{"off": true}`, signed as the app writes its settings. After some months the count decides whether to keep it, remove it (store/overwrites.go says how), or build one of the options below.
+
+Options, if the count shows the case is common (not built):
 - Before pushing, read central's `updatedAt` for the records in each batch, one request per batch. Where central's version is newer than the one the edit started from, hold the edit as a refusal ("changed on central meanwhile"). It then appears on the Refusals page, with Resend and Discard as for any refusal.
 - Send only the values that changed, so only an edit of the same field replaces a newer one. First check on 2.42 and 2.43 that central keeps the attributes and data values an update leaves out.
 

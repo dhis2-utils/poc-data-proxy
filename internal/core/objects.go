@@ -351,8 +351,10 @@ func (h *Hub) PersistImport(userID int64, out *tracker.ImportOutcome, params str
 				return err
 			}
 		}
-		seq, err = h.Store.AppendOutbox(tx, userID, payload, params, out.Refs, dep)
-		return err
+		if seq, err = h.Store.AppendOutbox(tx, userID, payload, params, out.Refs, dep); err != nil {
+			return err
+		}
+		return h.Store.AddOutboxBases(tx, seq, out.Bases, out.Refs) // the overwrite count (sync/overwrites.go)
 	})
 	if err != nil {
 		return 0, err

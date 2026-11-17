@@ -31,6 +31,9 @@ type Worker struct {
 	// pushAnswered: central answered a push in the current Push (under pushMu).
 	pushAnswered bool
 	skipped      atomic.Pointer[string] // why the last cycle was skipped; nil after one ran
+	// OverwriteSample: one outbox entry in this many is checked for overwrites
+	// (overwrites.go); 0 for OverwriteSample.
+	OverwriteSample int
 
 	lastRefresh time.Time // last access and catalog refresh (Config.AccessRefreshInterval)
 	lastBeat    time.Time // last heartbeat sent (Config.HeartbeatInterval)

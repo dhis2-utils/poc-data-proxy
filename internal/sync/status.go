@@ -70,6 +70,9 @@ func Status(h *core.Hub) map[string]any {
 		// Whether the hub's keys are sealed with a TPM (docs/DEPLOYMENT.md, "TPM"): a
 		// country sees which hubs rely on staff passwords alone.
 		"deviceKey": devkey.Key() != nil,
+		// Offline saves that replaced a newer change on central, among the update
+		// entries checked: one in overwritesSampled (sync/overwrites.go).
+		"overwrites": h.Store.Overwrites(), "overwritesSampled": OverwriteSample,
 		// The USB stick (docs/RECOVERY.md, C2): central sees a hub without a working one.
 		"usb": usbStatus(h),
 		// How devices reach the hub (docs/DEPLOYMENT.md, "Reaching the hub securely"): its

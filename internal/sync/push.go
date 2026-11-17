@@ -174,6 +174,7 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 		h.Store.NoteAttempt(e.Seq, err.Error())
 		return pushResult{userBlocked: true}, nil
 	}
+	w.countOverwrites(ctx, e, auth) // telemetry (sync/overwrites.go)
 	path := "/api/tracker?async=false&atomicMode=OBJECT&importStrategy=CREATE_AND_UPDATE"
 	if e.Params != "" {
 		path += "&" + e.Params

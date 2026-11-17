@@ -53,6 +53,9 @@ type ImportOutcome struct {
 	Parents []string
 	// Atomic is set when atomicMode=ALL rejected everything because of an error.
 	Atomic bool
+	// Bases are central's updatedAt of the copies these saves edit, by UID, for objects
+	// the hub held as central's: the overwrite count (sync/overwrites.go).
+	Bases map[string]string
 }
 
 func (o *ImportOutcome) Stats() (total Stats, byType map[string]Stats) {
@@ -126,6 +129,13 @@ func (im *Importer) Import(payload M) *ImportOutcome {
 			continue
 		}
 		res.Created = created
+		if prev := im.Ix.Get(obj.UID); prev != nil && im.pending[obj.UID] == nil && prev.Origin == store.OriginCentral &&
+			prev.SyncState == store.SyncSynced && prev.UpdatedAt != "" && obj.Kind != store.KindRelationship {
+			if im.outcome.Bases == nil {
+				im.outcome.Bases = map[string]string{}
+			}
+			im.outcome.Bases[obj.UID] = prev.UpdatedAt // the overwrite count (sync/overwrites.go)
+		}
 		im.pending[obj.UID] = obj
 		im.outcome.Accepted = append(im.outcome.Accepted, obj)
 		im.outcome.Refs = append(im.outcome.Refs, store.OutboxRef{UID: obj.UID, Kind: obj.Kind, Created: created})

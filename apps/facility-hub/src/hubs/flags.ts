@@ -11,6 +11,24 @@ export type Heartbeat = {
     oldestPending?: string
     /** The hub's keys are sealed with a TPM (missing: a hub before 0.1.6). */
     deviceKey?: boolean
+    /**
+     * Offline saves that replaced a newer change on central, among the update saves
+     * the hub checked: one in overwritesSampled (sync/overwrites.go). No values.
+     */
+    overwrites?: {
+        count: number
+        recent: {
+            uid: string
+            kind: string
+            program?: string
+            user: string
+            base: string
+            central: string
+            saved: string
+            pushed: string
+        }[]
+    }
+    overwritesSampled?: number
     lastPull?: string
     lastSync?: string
     lastError?: string
