@@ -17,6 +17,9 @@ func perMinute(calls []tk.Call, at []time.Time, start time.Time) ([]int, string)
 	var n []int
 	paths := map[int]map[string]int{}
 	for i, c := range calls {
+		if at[i].Before(start) {
+			continue
+		}
 		m := int(at[i].Sub(start) / time.Minute)
 		for len(n) <= m {
 			n = append(n, 0)
@@ -60,6 +63,9 @@ func TestH1CentralDownForMaintenance(t *testing.T) {
 	r.e.StopCentral()
 	stopped := time.Now()
 	r.p.WaitFor("offline", 2*time.Minute, tk.Offline)
+	// I7 counts from here: until the probe notices, requests go to central as when
+	// online (how long that takes is logged here).
+	offline := time.Now()
 	t.Logf("central stopped in %s; the hub offline %s after the stop began, %s after it ended",
 		stopped.Sub(down).Round(time.Second), time.Since(down).Round(time.Second), time.Since(stopped).Round(100*time.Millisecond))
 
@@ -76,7 +82,7 @@ func TestH1CentralDownForMaintenance(t *testing.T) {
 		time.Sleep(time.Second)
 	}
 	collect()
-	byMinute, busiest := perMinute(calls, at, stopped)
+	byMinute, busiest := perMinute(calls, at, offline)
 	t.Logf("central down %s: saves waited %s; reads %s, %d not 200", outage, r.waits(stopped, time.Now()), durStats(reads), failedReads)
 	t.Logf("requests to central per minute while down: %v; busiest minute: %s", byMinute, busiest)
 	t.Logf("hub status while down: %v", r.p.Status())
@@ -192,6 +198,7 @@ func (r *netRun) pulls(n int) {
 func (r *netRun) centralPerson(v string) netSave {
 	r.t.Helper()
 	pr := r.e.M.NewPerson(r.prog, "Zqcen"+strings.ToLower(tk.UID()[:6]))
+	r.e.CentralComplete(r.prog, pr) // generated values the program requires, from central
 	s := netSave{TE: pr.TE, Enr: pr.Enrollment, Event: tk.UID(), Value: v, At: time.Now()}
 	te := pr.Payload["trackedEntities"].([]any)[0].(map[string]any)
 	te["enrollments"].([]any)[0].(map[string]any)["events"] = []any{r.event(s)}
