@@ -204,6 +204,8 @@ func cacheable(r *http.Request, status int) bool {
 
 var meRe = regexp.MustCompile(`^/api/([0-9]{2}/)?me(\.json)?$`)
 
+var systemInfoRe = regexp.MustCompile(`^/api/([0-9]{2}/)?system/info(\.json)?$`)
+
 // validationRe: central's validation of data the hub may have changed since
 // (validation/dataSet/<ds>, run by the Data Entry app). An online answer replayed
 // offline could say "no alerts" for values that break a rule, so it is not cached
@@ -572,6 +574,16 @@ func (p *Proxy) serveOffline(w http.ResponseWriter, r *http.Request, sess *core.
 			w.Header().Set("Content-Type", "application/json;charset=UTF-8")
 			w.Header().Set("X-Hub-Cache", "offline; me")
 			body, _ := selectFields(me.Body, r.URL.Query().Get("fields")) // offline: the best it has
+			w.Write(body)
+			return 200
+		}
+	}
+	if err == nil && cached == nil && sess != nil && systemInfoRe.MatchString(r.URL.Path) {
+		// The hub's own copy, cut to what any staff member gets (core.PrivateSystemInfo).
+		if info := p.H.Store.Private(core.PrivateSystemInfo); info != "" {
+			w.Header().Set("Content-Type", "application/json;charset=UTF-8")
+			w.Header().Set("X-Hub-Cache", "offline; system info")
+			body, _ := selectFields([]byte(info), r.URL.Query().Get("fields"))
 			w.Write(body)
 			return 200
 		}

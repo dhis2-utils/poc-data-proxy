@@ -564,7 +564,6 @@ func TestPerUserMetadataNotShared(t *testing.T) {
 		"/api/42/organisationUnits?fields=id&withinUserHierarchy=true",
 		"/api/organisationUnits/" + fc.Facility + "?fields=id,displayName",
 		"/api/programs?fields=id,displayName&paging=false",
-		"/api/system/info?fields=version",
 	}
 	for _, p := range perUser {
 		a.do("GET", p, nil)
@@ -864,5 +863,42 @@ func TestPoolFilledBeforeFirstPull(t *testing.T) {
 	e.offline()
 	if st, body := a.do("GET", "/api/trackedEntityAttributes/"+fc.AttrTBID+"/generate", nil); st != 200 {
 		t.Errorf("a generated value offline after a cycle cut in its pull: %d %s", st, body)
+	}
+}
+
+// T3 (PENDING.md, item 32): a staff member with no copy of /api/system/info, as on a
+// first Android login offline, gets the hub's own copy, cut to the fields any staff
+// member gets; Android otherwise said "The URL provided is not a DHIS2 server". Not
+// before a login: an anonymous request gets the login answer, as for other metadata.
+func TestSystemInfoOfflineForAnyStaff(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.sync()
+	b := e.android("nurse_b") // never asked for system/info
+	if st, _ := b.do("GET", "/api/me", nil); st != 200 {
+		t.Fatalf("nurse_b online: %d", st)
+	}
+	e.offline()
+	for _, p := range []string{"/api/system/info?fields=version,contextPath,revision", "/api/42/system/info"} {
+		st, body := b.do("GET", p, nil)
+		var info map[string]any
+		json.Unmarshal(body, &info)
+		if st != 200 || info["version"] == nil {
+			t.Errorf("nurse_b offline, %s: %d %s", p, st, body)
+		}
+		for _, k := range []string{"javaVersion", "osName", "memoryInfo", "userAgent"} {
+			if _, ok := info[k]; ok {
+				t.Errorf("%s offline carries %s", p, k)
+			}
+		}
+	}
+	req, _ := http.NewRequest("GET", e.srv.URL+"/api/system/info", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode == 200 {
+		t.Error("system/info offline without a login")
 	}
 }

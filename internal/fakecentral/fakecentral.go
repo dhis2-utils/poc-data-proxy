@@ -620,7 +620,12 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		c.mu.Unlock()
 		writeJSON(w, 200, out)
 	case p == "/api/system/info":
-		writeJSON(w, 200, map[string]any{"version": c.Version, "revision": "fake", "serverTimeZoneId": c.zone().String()})
+		info := map[string]any{"version": c.Version, "revision": "fake", "serverTimeZoneId": c.zone().String(),
+			"userAgent": r.UserAgent(), "databaseInfo": map[string]any{"spatialSupport": true, "time": time.Now().Format("2006-01-02T15:04:05.000")}}
+		if u != nil && slices.Contains(u.Authorities, "ALL") { // the server's own details, as 2.42 gives a superuser
+			info["javaVersion"], info["osName"], info["memoryInfo"] = "17.0.13", "Linux", "Mem Total in JVM: 3072 Mb"
+		}
+		writeJSON(w, 200, info)
 	case p == "/api/me":
 		ous := []any{}
 		for _, ou := range u.OrgUnits {

@@ -362,14 +362,48 @@ func (h *Hub) CreatePAT(ctx context.Context, with central.Auth, exp time.Time) (
 	return uid, key, err
 }
 
+// PrivateSystemInfo holds central's /api/system/info as the hub last read it, cut to
+// systemInfoFields: served offline to a logged-in user with no copy of their own
+// (proxy.serveOffline). Android's first login offline otherwise said "not a DHIS2
+// server" (PENDING.md, item 32, T3).
+const PrivateSystemInfo = "system_info"
+
+// systemInfoFields are the fields central gives a user who is not a superuser
+// (2.42.7.1, 17 November 2026): nothing about that user. A superuser's answer adds
+// the server's own details (operating system, Java, memory, node), which are not
+// kept, whoever's answer this was.
+var systemInfoFields = []string{"buildTime", "calendar", "contextPath", "databaseInfo", "dateFormat",
+	"emailConfigured", "encryption", "intervalSinceLastAnalyticsTablePartitionSuccess",
+	"intervalSinceLastAnalyticsTableSuccess", "isMetadataVersionEnabled", "lastAnalyticsTablePartitionRuntime",
+	"lastAnalyticsTablePartitionSuccess", "lastAnalyticsTableRuntime", "lastAnalyticsTableSuccess",
+	"lastMetadataVersionSyncAttempt", "lastSystemMonitoringSuccess", "redisEnabled", "revision", "serverDate",
+	"serverTimeZoneDisplayName", "serverTimeZoneId", "systemId", "systemMetadataVersion", "systemName", "version"}
+
 // RefreshServerVersion reads central's version (spec 6.2 step 5, refreshed on sync).
 func (h *Hub) RefreshServerVersion(ctx context.Context, auth central.Auth) (string, error) {
+	var raw map[string]json.RawMessage
+	if err := h.Central.JSON(ctx, "GET", "/api/system/info", nil, auth, &raw); err != nil {
+		return "", err
+	}
 	var info struct {
 		Version  string `json:"version"`
 		TimeZone string `json:"serverTimeZoneId"`
 	}
-	if err := h.Central.JSON(ctx, "GET", "/api/system/info", nil, auth, &info); err != nil {
-		return "", err
+	json.Unmarshal(raw["version"], &info.Version)
+	json.Unmarshal(raw["serverTimeZoneId"], &info.TimeZone)
+	if info.Version != "" && h.Store.Unlocked() {
+		kept := map[string]json.RawMessage{}
+		for _, f := range systemInfoFields {
+			if v, ok := raw[f]; ok {
+				kept[f] = v
+			}
+		}
+		if db, ok := kept["databaseInfo"]; ok { // a superuser's holds the database's name and URL
+			var d map[string]json.RawMessage
+			json.Unmarshal(db, &d)
+			kept["databaseInfo"] = mustJSON(map[string]json.RawMessage{"spatialSupport": d["spatialSupport"], "time": d["time"]})
+		}
+		h.Store.SetPrivate(PrivateSystemInfo, string(mustJSON(kept)))
 	}
 	if info.Version != "" {
 		h.Store.SetMeta(MetaServerVersion, info.Version)
