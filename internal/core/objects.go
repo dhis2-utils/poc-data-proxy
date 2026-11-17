@@ -118,6 +118,14 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 	stubbed := h.stubOld(items, get)
 	skipped := map[string]bool{}
 	var supersede []string // refused objects whose refusal central's version supersedes now
+	// Objects written on this hub that central's copy now replaces: pushed, and listed
+	// by this user's pull first. As local objects every user the hub's rules allow
+	// could read them; as central's, only users whose pull listed them. Pulls run per
+	// access group, so the author's own may come later in the cycle, and until then
+	// she was refused her own record (M2, PENDING.md item 30). They are shared by the
+	// rules once stored, as an online save is (ShareByRules); each user's own full
+	// pull then settles what central shows them.
+	var wasLocal []string
 	var objs []*tracker.Obj
 	for _, it := range items {
 		if !tracker.ValidUID(it.UID) {
@@ -248,6 +256,9 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 				o.Data["createdAt"] = now
 			}
 		}
+		if old != nil && old.Origin == store.OriginLocal {
+			wasLocal = append(wasLocal, it.UID)
+		}
 		batch[it.UID] = o
 		objs = append(objs, o)
 	}
@@ -294,6 +305,10 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 			h.Index.Put(o)
 		}
 		uids = append(uids, o.UID)
+	}
+	wasLocal = slices.DeleteFunc(wasLocal, func(uid string) bool { return batch[uid].Kind == "visibility-only" })
+	if len(wasLocal) > 0 {
+		h.ShareByRules(wasLocal)
 	}
 	return uids, nil
 }
