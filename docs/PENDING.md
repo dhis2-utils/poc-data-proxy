@@ -55,7 +55,7 @@ The list below is what remains, from the KISS review, REVIEW-FABLE5.2 section 13
     - the Pi 5 reported "online" under a firewall block without pushing, and the Windows hub showed "online" for a few seconds after a start while the internet was blocked (session B, once item 33). The hub starts offline (`central.NewMonitor`) and goes online after one probe that succeeds, so a probe got through in both;
     - two USB sticks in at once.
 
-    The journal now stays on disk, so the next occurrence can be read.
+    The journal now stays on disk, so the next occurrence can be read. Since 17 November the hub logs why it skips a cycle and why its connectivity changed, and `hub-diag.txt` keeps a day of those lines, power and swap (HARDWARE-TESTING.md, "When something unexplained happens"). A cycle has no overall time limit, so one request that hangs would stop every later cycle; a limit waits until the log shows that was the cause.
 15. **Windows on a real facility PC.** Run TESTING.md's Windows steps, including step 10 (the PC's TPM). Check the installer's privilege boundaries (R-27) and the service start timeout after a cut (event 7009, FINDINGS session B).
 16. **Two hubs on neighbouring facilities** (TESTING.md phase 6), if the pilot district has neighbours that share patients.
 17. **Report the two DHIS2 bugs** from REVIEW-FABLE5.2 section 13, and J1, C2, I8c and J4. Each needs a reproduction without the hub first. FINDINGS.md and the private ADVERSARIAL-TESTING.md disagree on J4 (refused at push, or completed on central with a rule broken). I8c is the hub's offline check, not a DHIS2 bug: central's refusal is right.

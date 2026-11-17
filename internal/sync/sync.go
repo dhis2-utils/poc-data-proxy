@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 	stdsync "sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/central"
@@ -29,6 +30,7 @@ type Worker struct {
 	pushMu stdsync.Mutex // one push at a time: Cycle, the upgrade drain and reset all push
 	// pushAnswered: central answered a push in the current Push (under pushMu).
 	pushAnswered bool
+	skipped      atomic.Pointer[string] // why the last cycle was skipped; nil after one ran
 
 	lastRefresh time.Time // last access and catalog refresh (Config.AccessRefreshInterval)
 	lastBeat    time.Time // last heartbeat sent (Config.HeartbeatInterval)
@@ -111,15 +113,38 @@ func (w *Worker) refreshAccess(ctx context.Context, errs *[]error) error {
 	return nil
 }
 
+// skipReason says why no cycle can run now; "" when one can.
+func skipReason(h *core.Hub) string {
+	switch {
+	case !h.Online():
+		return "offline"
+	case !h.Store.Unlocked():
+		return "store locked: no staff login since the start"
+	case h.Mode() != core.ModeActive:
+		return "not set up"
+	case h.Runtime() == nil:
+		return "no runtime settings"
+	case h.Revoked():
+		return "revoked on central"
+	}
+	return ""
+}
+
 // Cycle runs one full sync if the hub is online, unlocked and set up.
 func (w *Worker) Cycle(ctx context.Context) error {
 	h := w.H
 	if !h.Online() && h.Store.Unlocked() && h.Mode() == core.ModeActive {
 		h.TryCentralMove(ctx) // central may have moved (docs/DEPLOYMENT.md, section 6)
 	}
-	if !h.Online() || !h.Store.Unlocked() || h.Mode() != core.ModeActive || h.Runtime() == nil || h.Revoked() {
+	if why := skipReason(h); why != "" {
+		// Once per change of reason: a night without cycles left nothing in the log to
+		// say why (PENDING.md, item 14).
+		if prev := w.skipped.Swap(&why); prev == nil || *prev != why {
+			slog.Info("sync cycle skipped", "why", why)
+		}
 		return nil
 	}
+	w.skipped.Store(nil)
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	start := time.Now()

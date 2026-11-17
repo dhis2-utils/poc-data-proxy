@@ -175,6 +175,21 @@ An Infineon SLB 9670 board on SPI (the image enables its overlay):
 3. Take the TPM board off: the start page says the security chip is missing, and nothing else is served. Put it back: the hub works again.
 4. Without a board, the image boots as before, with no TPM driver errors beyond the probe.
 
+### When something unexplained happens
+
+A restart, a night without sync cycles, or "online" while nothing is pushed (PENDING.md, item 14): keep the disk as it is and read what the hub left.
+
+- `hub-diag.txt` on the boot partition, written 3 minutes after each start and every 30 minutes, has the sync cycles and connectivity changes of the last 26 hours with the reason for each ("sync cycle skipped" and why, "connectivity" with the probe's answer), the previous start's last 300 log lines, undervoltage and throttling (`vcgencmd get_throttled`), and where swap goes.
+- The whole journal is on the disk (`/var/log/journal`, at most 50 MB). On a Linux computer, with the hub's disk attached and its root partition mounted read-only at `/mnt`:
+
+  ```sh
+  journalctl -D /mnt/var/log/journal/*/ --list-boots
+  journalctl -D /mnt/var/log/journal/*/ -b -1 -u hub.service -o short-iso   # the start before the last
+  journalctl -D /mnt/var/log/journal/*/ -b -1 -k | grep -iE 'voltage|watchdog|oom'
+  ```
+
+  A Mac cannot mount the root partition (ext4) without extra software; use a Linux computer or a second Pi.
+
 ## Results
 
 Keep results under `perf/results/<board>-<storage>-…`, and add a summary to PERFORMANCE.md:
