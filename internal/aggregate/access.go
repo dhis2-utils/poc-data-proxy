@@ -2,12 +2,12 @@ package aggregate
 
 import (
 	"encoding/json"
-	"math"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dhis2/facility-hub/internal/valuetype"
 )
 
 // Access is what one user may enter, from central's dataEntry/metadata: the data sets
@@ -255,36 +255,10 @@ func (a *Access) Key() string {
 // (E2030 otherwise). Types the hub does not check are accepted: central decides on
 // push.
 func ValidValue(valueType, v string) bool {
-	num := func() (float64, bool) {
-		f, err := strconv.ParseFloat(v, 64)
-		return f, err == nil && !math.IsInf(f, 0) && !math.IsNaN(f)
-	}
-	integer := func() (int64, bool) {
-		i, err := strconv.ParseInt(v, 10, 64)
-		return i, err == nil
+	if valuetype.Numeric(valueType) {
+		return valuetype.Valid(valueType, v) // as central (I8c)
 	}
 	switch valueType {
-	case "NUMBER":
-		_, ok := num()
-		return ok
-	case "UNIT_INTERVAL":
-		f, ok := num()
-		return ok && f >= 0 && f <= 1
-	case "PERCENTAGE":
-		f, ok := num()
-		return ok && f >= 0 && f <= 100
-	case "INTEGER":
-		_, ok := integer()
-		return ok
-	case "INTEGER_POSITIVE":
-		i, ok := integer()
-		return ok && i > 0
-	case "INTEGER_NEGATIVE":
-		i, ok := integer()
-		return ok && i < 0
-	case "INTEGER_ZERO_OR_POSITIVE":
-		i, ok := integer()
-		return ok && i >= 0
 	case "BOOLEAN":
 		return v == "true" || v == "false"
 	case "TRUE_ONLY":
