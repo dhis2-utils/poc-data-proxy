@@ -905,18 +905,32 @@ func TestSystemInfoOfflineForAnyStaff(t *testing.T) {
 
 // H5: in the seconds after the link drops, before the probe notices, a request for a
 // generated value fails on its way to central; the hub then answers from its pool, as
-// it does offline, instead of "needs connection".
+// it does offline, instead of "needs connection". Never from the proxy's cache: a
+// value central gave online is used, and the same value again is refused at the push
+// (E1064; adversarial E1 on Sierra Leone 2.43, 17 November 2026).
 func TestGeneratedFromPoolWhenCentralJustWentAway(t *testing.T) {
 	e := newEnv(t)
 	e.setup()
 	a := e.web("nurse_a")
 	a.login()
 	e.sync() // fills the pool
+	path := "/api/trackedEntityAttributes/" + fc.AttrTBID + "/generateAndReserve?numberToReserve=1"
+	st, online := a.do("GET", path, nil)
+	if st != 200 {
+		t.Fatalf("online: %d %s", st, online)
+	}
 	e.central.SetDown(true)
 	if !e.app.Hub.Online() {
 		t.Fatal("the hub noticed already")
 	}
 	if st, body := a.do("GET", "/api/trackedEntityAttributes/"+fc.AttrTBID+"/generate", nil); st != 200 {
 		t.Errorf("a generated value while central has just gone: %d %s", st, body)
+	}
+	st, again := a.do("GET", path, nil)
+	if st != 200 {
+		t.Errorf("the same request while central has just gone: %d %s", st, again)
+	}
+	if string(again) == string(online) {
+		t.Errorf("the value central gave online, handed out again: %s", again)
 	}
 }
