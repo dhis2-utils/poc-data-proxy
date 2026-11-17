@@ -34,6 +34,7 @@ func (w *Worker) Push(ctx context.Context) error {
 	w.pushMu.Lock()
 	defer w.pushMu.Unlock()
 	h := w.H
+	w.pushAnswered = false
 	if h.Upgrading.Load() {
 		return nil
 	}
@@ -73,7 +74,10 @@ func (w *Worker) Push(ctx context.Context) error {
 	if err := w.closeMoot(ctx); err != nil {
 		return fmt.Errorf("closing refusals of what central deleted: %w", err)
 	}
-	if h.Store.CountOutbox(store.OutboxPending) == 0 || len(entries) > 0 {
+	// The last push is when central last answered one: not when the outbox was found
+	// empty, or held only entries refused or kept without asking central (PENDING.md,
+	// item 35). How long saves have waited is the heartbeat's oldestPending.
+	if w.pushAnswered {
 		now := store.Now()
 		h.Stats.Set(func(s *core.SyncStats) { s.LastPush = now })
 		h.Store.SetPrivate("last_push", now)
@@ -179,6 +183,7 @@ func (w *Worker) pushEntry(ctx context.Context, e *store.OutboxEntry) (pushResul
 		h.Store.NoteAttempt(e.Seq, err.Error())
 		return pushResult{stop: true}, err // network: retry next cycle
 	}
+	w.pushAnswered = true
 	rb, rerr := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	refusedAt := "" // central's clock, for telling a later change on central apart

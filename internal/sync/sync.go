@@ -27,6 +27,8 @@ type Worker struct {
 
 	mu     stdsync.Mutex // one cycle at a time
 	pushMu stdsync.Mutex // one push at a time: Cycle, the upgrade drain and reset all push
+	// pushAnswered: central answered a push in the current Push (under pushMu).
+	pushAnswered bool
 
 	lastRefresh time.Time // last access and catalog refresh (Config.AccessRefreshInterval)
 	lastBeat    time.Time // last heartbeat sent (Config.HeartbeatInterval)

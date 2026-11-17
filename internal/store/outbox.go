@@ -275,6 +275,14 @@ func (s *Store) CountOutbox(state string) int {
 	return n
 }
 
+// OldestPendingOutbox is when the oldest save still waiting to be pushed was made,
+// "" when none waits.
+func (s *Store) OldestPendingOutbox() string {
+	var t sql.NullString
+	s.DB().QueryRow(`SELECT min(created_at) FROM outbox WHERE state=?`, OutboxPending).Scan(&t)
+	return t.String
+}
+
 // Requeue sends refused saves again (a retry from the Facility Hub app): the refused
 // objects go back to pending, and so do the refused or partly refused outbox entries
 // holding them, or named by seq (aggregate edits). A userID other than 0 makes those

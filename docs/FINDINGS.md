@@ -750,6 +750,8 @@ Found on 2026-10-27 by the adversarial scenarios (`internal/adversarial`), run a
 
 37. **No generated values offline after a user's first login, until a cycle finished its pull** (hardware sessions). A user's programs join the catalog at their login, but the pool was refilled at the end of the cycle, after the pull, which on a user's first day can take many minutes; a link that dropped during it left their generated attributes with no values. The pool is now refilled before the pull (`TestPoolFilledBeforeFirstPull`).
 
+38. **"Last push" moved whenever the outbox was empty** (hardware sessions). It was set at every push that found nothing to send, or sent nothing because every entry was blocked or refused without asking central, so the hub's page and heartbeat could show a recent push from a hub that had not reached central. It now moves only when central answered a push. The Facility Hub app's "pending" flag, which relied on it, now reads the heartbeat's `oldestPending`, the time of the oldest waiting save (`TestLastPushOnlyWhenCentralAnswers`, `flags.test.ts`).
+
 **Accepted** (decided 2026-10-28):
 
 - **Central restored from a backup** (H4): what central accepted after the backup is lost from central, and the hub does not send it again. Decided 2026-10-28, not a hub bug: once central has accepted data, its backup and recovery are central's; the hub answers for what central has not seen. Saves the hub had not sent when central was restored still reach it (`TestH4CentralRestoredFromBackup`). After its next full pull the hub hides offline the people central no longer has, as for any deletion; an edit made on central and lost in the restore stays on the hub until the record changes again (RECOVERY.md, "Central restored from a backup").

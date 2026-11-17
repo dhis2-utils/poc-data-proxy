@@ -43,8 +43,10 @@ func Status(h *core.Hub) map[string]any {
 		"hubId": h.HubID(), "facility": h.Facility(), "version": h.Version, "serverVersion": h.ServerVersion(),
 		"uptimeSeconds": int(time.Since(h.Started).Seconds()), "lastPush": lastPush, "lastPull": lastPull,
 		"lastSync": lastSync, "lastError": lastErr, "pending": h.Store.CountObjects(store.SyncPending),
+		// oldestPending: when the oldest waiting save was made (the app's "pending" flag).
 		"rejected": h.Store.CountObjects(store.SyncRejected), "pendingOutbox": h.Store.CountOutbox(store.OutboxPending),
-		"stuckOutbox": h.StuckOutbox(), "retired": h.Retired(), "superseded": h.Store.CountObjects(store.SyncSuperseded),
+		"oldestPending": h.Store.OldestPendingOutbox(), "stuckOutbox": h.StuckOutbox(),
+		"retired": h.Retired(), "superseded": h.Store.CountObjects(store.SyncSuperseded),
 		"issues": h.Store.CountIssues(), "diskFreeBytes": diskfree.Free(h.Cfg.DataDir), "lastUpgrade": upgrade,
 		"needsUpgrade": h.API() == nil && h.ServerVersion() != "", "time": time.Now().UTC().Format(time.RFC3339),
 		// Whose token the hub's housekeeping uses, so the Facility Hub app can list the

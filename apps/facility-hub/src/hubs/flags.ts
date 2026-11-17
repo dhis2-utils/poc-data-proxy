@@ -7,6 +7,8 @@ export type Heartbeat = {
     serverVersion?: string
     time?: string
     lastPush?: string
+    /** When the oldest save still waiting to be pushed was made ("" when none waits). */
+    oldestPending?: string
     lastPull?: string
     lastSync?: string
     lastError?: string
@@ -117,7 +119,9 @@ export const flags = (hb: Heartbeat | undefined, now: Date): Flag[] => {
     add(
         'pending',
         ((hb.pendingOutbox ?? 0) > 0 &&
-            older(hb.lastPush, now, pendingAfter)) ||
+            // Hubs from before 0.1.6 send no oldestPending; their lastPush moved
+            // whenever the outbox was empty, so it stood for the same thing.
+            older(hb.oldestPending ?? hb.lastPush, now, pendingAfter)) ||
             (hb.stuckOutbox ?? 0) > 0
     )
     add('refused', (hb.issues ?? 0) > 0)
