@@ -217,8 +217,28 @@ func TestJ3SameCellOfflineAndOnCentral(t *testing.T) {
 			t.Errorf("%s: central has %q by %q, want the last write to arrive, %v", c.de, v, by, c.last)
 		}
 		audit := a.audit(a.pe, c.de)
+		if !strings.HasPrefix(a.M.DHIS2Version, "2.42") {
+			for _, w := range c.writes {
+				if !slices.Contains(audit, w) {
+					t.Errorf("I4: %s: the write %v is not in central's audit %v", c.de, w, audit)
+				}
+			}
+			continue
+		}
+		// 2.42 audits an update with the value it replaced (2.43 with the new one;
+		// both checked on 17 November 2026): each write left an entry by its author
+		// holding one of the cell's values, and each value replaced is audited.
+		vals := map[string]bool{}
 		for _, w := range c.writes {
-			if !slices.Contains(audit, w) {
+			vals[w.value] = true
+		}
+		for _, w := range c.writes {
+			by, replaced := false, w == c.last
+			for _, x := range audit {
+				by = by || x.by == w.by && vals[x.value]
+				replaced = replaced || x.value == w.value
+			}
+			if !by || !replaced {
 				t.Errorf("I4: %s: the write %v is not in central's audit %v", c.de, w, audit)
 			}
 		}
@@ -239,7 +259,8 @@ func (a *aggScene) audit(pe, de string) []cellWrite {
 			Created, ModifiedBy, AuditType, Value string
 		} `json:"dataValueAudits"`
 	}
-	q := url.Values{"ds": {a.ag.DataSet}, "pe": {pe}, "ou": {a.M.Facility.ID}, "de": {de}, "co": {a.ag.COC}, "pageSize": {"20"}}
+	// Not by data set: with ds, 2.42 lists every element of the set and ignores de.
+	q := url.Values{"pe": {pe}, "ou": {a.M.Facility.ID}, "de": {de}, "co": {a.ag.COC}, "pageSize": {"20"}}
 	if err := a.Central.JSON("GET", "/api/audits/dataValue?"+q.Encode(), nil, &res); err != nil {
 		a.t.Fatal(err)
 	}
