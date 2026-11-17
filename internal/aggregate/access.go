@@ -24,13 +24,16 @@ type Access struct {
 }
 
 type DataSet struct {
-	ID                           string            `json:"id"`
-	Name                         string            `json:"name"`
-	PeriodType                   string            `json:"periodType"`
-	CategoryCombo                string            `json:"categoryCombo"`
-	ExpiryDays                   float64           `json:"expiryDays"`
-	OpenFuturePeriods            int               `json:"openFuturePeriods"`
-	InputPeriods                 []InputPeriod     `json:"inputPeriods,omitempty"`
+	ID                string        `json:"id"`
+	Name              string        `json:"name"`
+	PeriodType        string        `json:"periodType"`
+	CategoryCombo     string        `json:"categoryCombo"`
+	ExpiryDays        float64       `json:"expiryDays"`
+	OpenFuturePeriods int           `json:"openFuturePeriods"`
+	InputPeriods      []InputPeriod `json:"inputPeriods,omitempty"`
+	// InputByMoment: central compares data input periods with the moment, not the day
+	// (2.43; see InputOpen). Set by the hub from central's version.
+	InputByMoment                bool              `json:"inputByMoment,omitempty"`
 	ValidCompleteOnly            bool              `json:"validCompleteOnly"`
 	CompulsoryFieldsCompleteOnly bool              `json:"compulsoryFieldsCompleteOnly"`
 	Compulsory                   []Operand         `json:"compulsory,omitempty"`

@@ -118,6 +118,11 @@ func (h *Hub) RefreshAggAccess(ctx context.Context, userID int64, auth central.A
 		if a, err = aggregate.ParseMetadata(b, authorities); err != nil {
 			return fmt.Errorf("dataEntry/metadata: %w", err)
 		}
+		if h.APIMinor() >= "43" { // central compares data input periods with the moment
+			for _, ds := range a.DataSets {
+				ds.InputByMoment = true
+			}
+		}
 		if err := h.fillAttributeCombos(ctx, a, auth); err != nil {
 			return err
 		}
