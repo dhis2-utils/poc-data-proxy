@@ -58,6 +58,8 @@ func (w *Worker) Push(ctx context.Context) error {
 		var res pushResult
 		if e.Kind == store.OutboxAggregate {
 			res, err = w.pushAggregate(ctx, e)
+		} else if e.Kind == store.OutboxNote {
+			res, err = w.pushNote(ctx, e)
 		} else {
 			res, err = w.pushEntry(ctx, e)
 		}

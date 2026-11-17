@@ -352,6 +352,18 @@ func (a *API) serveLocal(w http.ResponseWriter, r *http.Request, sess *core.Sess
 		}
 		defer a.H.EndLocalWrite()
 		a.importLocal(w, r, sess, v, body)
+	case r.Method == http.MethodPost && noteRe.MatchString(r.URL.Path):
+		if _, err := a.H.UpstreamAuth(sess.UserID); err != nil {
+			a.H.NeedsConnection(w, "the hub holds no token for this user; changes need a connection")
+			return
+		}
+		if !a.H.BeginLocalWrite() {
+			a.H.UpgradingError(w)
+			return
+		}
+		defer a.H.EndLocalWrite()
+		m := noteRe.FindStringSubmatch(r.URL.Path)
+		a.serveNote(w, sess, v, m[1], m[2], body)
 	case r.Method == http.MethodGet && coll == "jobs":
 		a.serveJob(w, r, sess)
 	default:

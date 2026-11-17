@@ -168,6 +168,8 @@ type Central struct {
 	AggExpiryDays float64 // expiry days of AggDataSet
 	// OnAggWrite runs as an aggregate write arrives, before it is handled (tests).
 	OnAggWrite func()
+	// NoteRequests are the records notes were added to with the note request, in order.
+	NoteRequests []string
 	// CompactValueSets answers dataValueSets as 2.43 does: fields every value shares
 	// (orgUnit, attributeOptionCombo, period) once at the top, not on each value.
 	CompactValueSets bool
@@ -731,6 +733,9 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		if uid := strings.TrimPrefix(p, "/api/tracker/trackedEntities/"); !c.gen.getTE(w, r, uid) {
 			c.getTE(w, r, u, uid)
 		}
+	case r.Method == "POST" && strings.HasSuffix(p, "/note") && (strings.HasPrefix(p, "/api/tracker/events/") ||
+		strings.HasPrefix(p, "/api/tracker/enrollments/")):
+		c.addNote(w, r, u, strings.Split(strings.TrimPrefix(p, "/api/tracker/"), "/")[1])
 	case strings.HasPrefix(p, "/api/tracker/events/") && r.Method == "GET":
 		c.getEvent(w, u, strings.TrimPrefix(p, "/api/tracker/events/"))
 	case p == "/api/tracker/ownership/transfer" && r.Method == "PUT":
@@ -1338,4 +1343,37 @@ func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
 		delete(c.public, id)
 		writeJSON(w, 200, map[string]any{"status": "OK"})
 	}
+}
+
+// addNote is POST /api/tracker/{events|enrollments}/{uid}/note as 2.42.7.1 and 2.43.2.1
+// answer it: the note is added with central's time and the user as its author, the
+// record is not otherwise changed (not even updatedAt), a note UID the record has is
+// refused with 400 E1003, and a record central does not have gets 404 E1005.
+func (c *Central) addNote(w http.ResponseWriter, r *http.Request, u *User, uid string) {
+	var in struct {
+		Note  string `json:"note"`
+		Value string `json:"value"`
+	}
+	json.NewDecoder(r.Body).Decode(&in)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	o := c.objects[uid]
+	if o == nil || o["deleted"] == true {
+		webMessage(w, 404, "Event with id "+uid+" could not be found.", "E1005")
+		return
+	}
+	if in.Note == "" {
+		in.Note = tracker.NewUID()
+	}
+	notes, _ := o["notes"].([]any)
+	for _, n := range notes {
+		if m, _ := n.(map[string]any); m != nil && m["note"] == in.Note {
+			webMessage(w, 400, "Note `"+in.Note+"` already exists.", "E1003")
+			return
+		}
+	}
+	o["notes"] = append(notes, map[string]any{"note": in.Note, "value": in.Value, "storedAt": c.now(), "storedBy": u.Username,
+		"createdBy": map[string]any{"uid": u.UID, "username": u.Username}})
+	c.NoteRequests = append(c.NoteRequests, uid)
+	writeJSON(w, 200, map[string]any{"note": in.Note, "value": in.Value})
 }

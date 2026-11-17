@@ -250,8 +250,9 @@ func (s *Store) RecordHasRejected(record string) bool {
 
 // sqlIssueOpen is the condition that the issue aliased i is still open; its arguments
 // are OutboxAggregate, OutboxRejected, OutboxPartial, SyncRejected. A superseded object's
-// refusal is open too: it waits for a hub manager.
-const sqlIssueOpen = `((i.kind = ? AND EXISTS (SELECT 1 FROM outbox o WHERE o.seq = i.outbox_seq AND o.state IN (?, ?)))
+// refusal is open too: it waits for a hub manager. An aggregate edit's or a note's is
+// open while its outbox entry is refused.
+const sqlIssueOpen = `((i.kind IN (?, '` + OutboxNote + `') AND EXISTS (SELECT 1 FROM outbox o WHERE o.seq = i.outbox_seq AND o.state IN (?, ?)))
  OR EXISTS (SELECT 1 FROM objects ob WHERE ob.uid = i.object_uid AND ob.sync_state IN (?, '` + SyncSuperseded + `')))`
 
 // ResolvedIssues lists the issues no longer open, and whether each was reported to
