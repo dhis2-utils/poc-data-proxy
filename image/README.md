@@ -24,7 +24,7 @@ On a Mac with Apple silicon, `image/test-build.sh` does all three in one go (the
 - the hub binary, its user, its service and `hub.yaml`;
 - the host name, packages, users and firewall;
 - the polkit rule, the watchdog, the USB stick mount and the machine ID;
-- the hub's sandbox (`ProtectSystem=strict`, its writable folders, no swap), the captive DNS answer written by root, the boot partition as `nofail`, the saved clock, the polkit rule for the time zone, the Raspberry Pi archive in unattended upgrades, and no load-test mode.
+- the hub's sandbox (`ProtectSystem=strict`, its writable folders, `MemorySwapMax=0`, which the Raspberry Pi kernel does not enforce: PENDING.md item 26), the captive DNS answer written by root, the boot partition as `nofail`, the saved clock, the polkit rule for the time zone, the Raspberry Pi archive in unattended upgrades, and no load-test mode.
 
 What only a Pi can show (booting, Wi-Fi, the watchdog, the clock, the stick) is in docs/DEPLOYMENT.md, section 2, and in "Checks on a Pi after an image change" below.
 
@@ -56,7 +56,7 @@ What you need: a Pi 5 that starts from a USB SSD; a Pi 4 without an RTC on a mic
    - "hub log, this start" and "warnings and errors" hold no "Read-only file system", "permission denied" or "Not authorized".
 4. **The sandbox** (`deploy/hub.service`). In "hub sandbox":
    - `ProtectSystem=strict`, `ProtectHome=yes`, `RuntimeDirectory=hub`, `ReadWritePaths=/usr/local/lib/hub -/media/hub-usb`, `MemorySwapMax=0`.
-   - `memory.swap.max 0` and `memory.swap.current 0`. "No such file" there means the kernel has no swap control for the hub: note it.
+   - `memory.swap.max 0` and `memory.swap.current 0`. "No such file" there means the kernel has no swap control for the hub (the Pi 4 on 16 November). Then, under "memory", record where swap goes: `swapon --show`, zram's `backing_dev` (`none` keeps swapped pages in memory), what `losetup -l` shows behind a loop device, and the `rpi-swap` units (PENDING.md, item 26).
    - Under "as the hub sees them", `/` and `/etc` start with `ro`; `/usr/local/lib/hub`, `/var/lib/hub`, `/run/hub` and `/media/hub-usb` (with the stick in) start with `rw`.
 5. **Self-upgrade.** On the Mac, keeping the address it had in step 1: `cd image/out/test/srv && python3 -m http.server 8000`. On central, in the Facility Hub app's version page, type the repository's `VERSION` (such as `0.1.5`) for this hub. Within one sync cycle (15 minutes), plus the download, the Mac's server logs `release.json`, `release.json.sig` and `hub-linux-arm64`, and the hub's admin page shows the new version, as does the first line of `hub-diag.txt` ("== hub"). Its log has "upgrading" and no "binary swap failed" or "saving previous binary". The binary folder is the one the sandbox must leave writable.
 6. **The stick: copy and restore.** On the hub's admin page the stick shows a recent copy. Then restore it as in RECOVERY.md, C2: a second SSD flashed with this image, the same stick. The restored hub shows the facility and its data.
