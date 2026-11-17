@@ -581,6 +581,7 @@ func TestN6TwoReleasesAtOnce(t *testing.T) {
 	}
 	atSibling := func(name string) string {
 		pr := e2.M.NewPerson(r.prog, name)
+		n.Complete(r.prog, pr) // generated values the program requires, from the sibling's hub
 		te := pr.Payload["trackedEntities"].([]any)[0].(map[string]any)
 		te["orgUnit"] = sib
 		for _, en := range te["enrollments"].([]any) {
@@ -798,7 +799,9 @@ func TestG7RetiredHubAggregate(t *testing.T) {
 	s.Offline()
 	nurse := s.AndroidUser(s.M.Users[tk.RoleNurse].Username)
 	pr := s.M.NewPerson(s.M.Primary(), "Zqretagg")
-	nurse.Complete(s.M.Primary(), pr)
+	// Generated values from central: the replaced hub rightly refuses to reserve them
+	// (503), and the registration is to test its refusal of the save itself.
+	s.CentralComplete(s.M.Primary(), pr)
 	tst, tb := nurse.Do("POST", tk.SyncImport, pr.Payload)
 	ast, ab := s.aggValue(web, s.M.Aggregate.Number, month(0), "5")
 	t.Logf("the replaced hub offline: a registration %d %.150s; an aggregate value %d %s", tst, tb, ast, ab)

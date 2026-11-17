@@ -153,9 +153,48 @@ func newRun(t *testing.T, e *tk.Env) *netRun {
 		}
 	}
 	if r.de == "" {
+		r.stage, r.de = numericElement(t, e, r.prog)
+	}
+	if r.de == "" {
 		t.Skip("the primary program has no stage with a numeric value to save")
 	}
 	return r
+}
+
+// numericElement is an optional number data element of one of p's stages on central,
+// for a program whose required event values hold no number (Sierra Leone's); "" when
+// there is none.
+func numericElement(t *testing.T, e *tk.Env, p tk.Program) (stage, de string) {
+	t.Helper()
+	if !e.Live() {
+		return "", ""
+	}
+	for _, st := range p.Stages {
+		if st == p.RestrictedStage {
+			continue
+		}
+		var res struct {
+			PSDEs []struct {
+				Compulsory  bool
+				DataElement struct {
+					ID, ValueType string
+					OptionSet     *struct{ ID string }
+				}
+			} `json:"programStageDataElements"`
+		}
+		if err := e.Central.JSON("GET", "/api/programStages/"+st+
+			"?fields=programStageDataElements[compulsory,dataElement[id,valueType,optionSet[id]]]", nil, &res); err != nil {
+			t.Fatal(err)
+		}
+		for _, x := range res.PSDEs {
+			d := x.DataElement
+			if !x.Compulsory && d.OptionSet == nil && slices.Contains([]string{"NUMBER", "INTEGER", "INTEGER_POSITIVE",
+				"INTEGER_ZERO_OR_POSITIVE"}, d.ValueType) {
+				return st, d.ID
+			}
+		}
+	}
+	return "", ""
 }
 
 // netWriter is one client saving in a loop: new registrations, and updates of the
@@ -216,6 +255,18 @@ func (w *netWriter) once() {
 	} else {
 		pr := r.e.M.NewPerson(r.prog, r.tag+strings.ToLower(tk.UID()[:5]))
 		s.TE, s.Enr, s.Event = pr.TE, pr.Enrollment, tk.UID()
+		// Generated values the program requires (Sierra Leone's case ID), reserved
+		// through the hub as the apps do; a reservation that fails is the save's failure.
+		for _, attr := range r.prog.MandatoryGenerated {
+			st, _, b, err := w.c.Try("GET", "/api/trackedEntityAttributes/"+attr+"/generate", nil)
+			var v struct{ Value string }
+			if json.Unmarshal(b, &v); err != nil || st != 200 || v.Value == "" {
+				s.Status, s.Dur, s.Err = st, time.Since(s.At), fmt.Sprintf("reserving %s: %d %v %.200s", attr, st, err, b)
+				r.ledger.add(s)
+				return
+			}
+			pr.SetAttr(attr, v.Value)
+		}
 		te := pr.Payload["trackedEntities"].([]any)[0].(map[string]any)
 		te["enrollments"].([]any)[0].(map[string]any)["events"] = []any{r.event(s)}
 		payload = pr.Payload
@@ -244,12 +295,11 @@ func (w *netWriter) post(payload map[string]any) (int, string, []byte, error) {
 }
 
 func (r *netRun) event(s netSave) map[string]any {
-	dvs := []any{}
+	dvs := []any{map[string]any{"dataElement": r.de, "value": s.Value}}
 	for de, v := range r.prog.EventValues[r.stage] {
-		if de == r.de {
-			v = s.Value
+		if de != r.de {
+			dvs = append(dvs, map[string]any{"dataElement": de, "value": v})
 		}
-		dvs = append(dvs, map[string]any{"dataElement": de, "value": v})
 	}
 	return map[string]any{"event": s.Event, "enrollment": s.Enr, "program": r.prog.ID, "programStage": r.stage,
 		"orgUnit": r.e.M.Facility.ID, "occurredAt": s.At.UTC().Format("2006-01-02"), "status": "ACTIVE", "dataValues": dvs}

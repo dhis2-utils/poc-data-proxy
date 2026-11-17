@@ -386,6 +386,14 @@ func TestH6FuturePeriodsFollowed(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() { set(was.OpenFuturePeriods) })
+	// The scenario writes two months ahead: from a data set where that is already open
+	// (Sierra Leone's Child Health has 10 open future periods), it starts closed.
+	base := was.OpenFuturePeriods
+	if base >= 2 {
+		base = 0
+		set(base)
+		s.Sync()
+	}
 	web := s.Web(tk.RoleNurse)
 	web.Login()
 	ahead := month(2)
@@ -396,7 +404,7 @@ func TestH6FuturePeriodsFollowed(t *testing.T) {
 		t.Logf("%s: a value for %s offline: %d %s", when, ahead, st, b)
 		return st
 	}
-	before := try(fmt.Sprintf("open future periods %d", was.OpenFuturePeriods))
+	before := try(fmt.Sprintf("open future periods %d", base))
 	set(3)
 	s.Sync()
 	opened := try("3 after one sync")
@@ -407,9 +415,9 @@ func TestH6FuturePeriodsFollowed(t *testing.T) {
 		t.Errorf("I1: the value the hub accepted while the period was open is not on central")
 	}
 	s.DeleteCentralDataValue(s.M.Aggregate.DataSet, ahead, s.M.Aggregate.Number, s.M.Aggregate.COC)
-	set(was.OpenFuturePeriods)
+	set(base)
 	s.Sync()
-	closed := try(fmt.Sprintf("back to %d after one sync", was.OpenFuturePeriods))
+	closed := try(fmt.Sprintf("back to %d after one sync", base))
 	if before/100 == 2 || opened/100 != 2 || closed/100 == 2 {
 		t.Errorf("the hub does not follow open future periods at the next sync: %d, %d, %d", before, opened, closed)
 	}

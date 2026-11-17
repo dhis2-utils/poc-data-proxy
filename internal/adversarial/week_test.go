@@ -2,7 +2,9 @@ package adversarial
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -51,11 +53,23 @@ func TestWeekAndroidSyncGetsTheLastDay(t *testing.T) {
 	back(recent, 3*time.Hour)
 	watermark := h.CentralTime(time.Now().Add(-time.Hour))
 	last := register("Zqwklast")
-	q := url.Values{"program": {p.ID}, "orgUnit": {e.M.Facility.ID}, "orgUnitMode": {"DESCENDANTS"},
-		"updatedAfter": {watermark}, "pageSize": {"50"}, "page": {"1"}, "fields": {"trackedEntity"}}
-	st, b := a.Do("GET", "/api/tracker/trackedEntities?"+q.Encode(), nil)
-	if st != 200 {
-		t.Fatalf("incremental sync: %d %.300s", st, b)
+	// Every page, as Android reads them: a facility with people updated on central in
+	// the last day (Sierra Leone's) fills more than the first.
+	var b []byte
+	for page := 1; ; page++ {
+		q := url.Values{"program": {p.ID}, "orgUnit": {e.M.Facility.ID}, "orgUnitMode": {"DESCENDANTS"},
+			"updatedAfter": {watermark}, "pageSize": {"50"}, "page": {strconv.Itoa(page)}, "fields": {"trackedEntity"}}
+		st, pb := a.Do("GET", "/api/tracker/trackedEntities?"+q.Encode(), nil)
+		if st != 200 {
+			t.Fatalf("incremental sync, page %d: %d %.300s", page, st, pb)
+		}
+		b = append(b, pb...)
+		var r struct {
+			Pager struct{ NextPage string } `json:"pager"`
+		}
+		if json.Unmarshal(pb, &r); r.Pager.NextPage == "" || page >= 100 {
+			break
+		}
 	}
 	if !bytes.Contains(b, []byte(recent)) || !bytes.Contains(b, []byte(last)) {
 		t.Errorf("an incremental sync did not get the 2 people written in the day before its watermark: %.500s", b)

@@ -26,7 +26,7 @@ func TestA14ProgramRulesChange(t *testing.T) {
 	stage := p.Stages[0]
 	var assignDE, hideDE string
 	for _, el := range s.stageElements(stage) {
-		if _, filled := p.EventValues[stage][el.ID]; filled || el.Compulsory || el.OptionSet != "" {
+		if _, filled := p.EventValues[stage][el.ID]; filled || el.Compulsory || !el.takesDigits() {
 			continue
 		}
 		if assignDE == "" {

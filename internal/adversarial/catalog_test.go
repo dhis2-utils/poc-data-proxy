@@ -382,10 +382,21 @@ func TestA16LargeImportDuringPull(t *testing.T) {
 	}
 	payload := map[string]any{"dataElements": des}
 	t.Cleanup(func() {
+		// In batches: one delete of all 2000 outlasts the client's timeout on a large
+		// central (Sierra Leone's).
 		start := time.Now()
-		st, b, err := s.Central.Do("POST", "/api/metadata?importStrategy=DELETE", payload)
-		if err != nil || st/100 != 2 {
-			t.Errorf("NOT UNDONE on central: %d imported data elements: %d %v %.300s", n, st, err, b)
+		for i := 0; i < n; i += 200 {
+			batch := map[string]any{"dataElements": des[i:min(i+200, n)]}
+			if st, b, err := s.Central.Do("POST", "/api/metadata?importStrategy=DELETE", batch); err != nil || st/100 != 2 {
+				t.Errorf("NOT UNDONE on central: imported data elements %d to %d: %d %v %.300s", i, i+200, st, err, b)
+			}
+		}
+		var left struct {
+			DataElements []struct{ ID string } `json:"dataElements"`
+		}
+		q := url.Values{"filter": {"name:like:Adversarial A16 " + tag + " "}, "fields": {"id"}, "paging": {"false"}}
+		if err := s.Central.JSON("GET", "/api/dataElements?"+q.Encode(), nil, &left); err != nil || len(left.DataElements) > 0 {
+			t.Errorf("NOT UNDONE on central: %d imported data elements left (%v)", len(left.DataElements), err)
 		}
 		t.Logf("the %d data elements deleted in %s", n, time.Since(start).Round(time.Second))
 	})

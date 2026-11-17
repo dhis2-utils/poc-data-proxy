@@ -353,11 +353,16 @@ func TestN1UpgradeWithEveryKindOfRecord(t *testing.T) {
 	if n := p.Grep("upgrade result=ok"); n != 1 {
 		t.Errorf("the log says upgrade result=ok %d times", n)
 	}
-	if s["hubId"] != hubID || s["locked"] != false || s["stuckOutbox"] != float64(1) || s["rejected"] != float64(1) {
+	// The refused edit of the event deleted on central: a release since 4 November
+	// closes such a refusal itself and drops the record ("refused change closed: deleted
+	// on central", decided 4 November; docs/design/2026-11-04-refused-changes.md), so
+	// after the upgrade it may be closed (0) or, from an older release, still kept (1).
+	if s["hubId"] != hubID || s["locked"] != false || s["stuckOutbox"] != float64(1) ||
+		(s["rejected"] != float64(1) && s["rejected"] != float64(0)) {
 		t.Errorf("not carried over: hub %v (was %s), locked %v, stuck %v, rejected %v", s["hubId"], hubID, s["locked"], s["stuckOutbox"], s["rejected"])
 	}
 	after := r.offlineRead()
-	if m := missingFrom(before, after); len(m) > 0 {
+	if m := slices.DeleteFunc(missingFrom(before, after), func(k string) bool { return k == "event "+deleted }); len(m) > 0 {
 		t.Errorf("I1: %d records held before the upgrade are gone offline after it: %v", len(m), first(m))
 	}
 	t.Logf("held offline: %d before, %d after", len(before), len(after))
