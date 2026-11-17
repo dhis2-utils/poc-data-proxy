@@ -67,7 +67,7 @@ The list below is what remains, from the KISS review, REVIEW-FABLE5.2 section 13
 20. The hub groups named in the app.
 21. Retention set.
 22. A password policy.
-23. The installation card, the kits with their USB sticks, training and the support line.
+23. The installation card, the kits with their USB sticks, training and the support line. Training covers the hub's page, where staff see their own refused changes (item 27), and what "An unknown error occurred (503)" means in Capture (item 7).
 
 **From the Pi 4 test of 16 November** (image `0.1.5-rc.1`, Capture 107.3.1 on 2.43.2.1, setup over Wi-Fi). Set-up, offline login after a power cut offline, registration and the push afterwards worked. Open:
 
@@ -77,6 +77,6 @@ The list below is what remains, from the KISS review, REVIEW-FABLE5.2 section 13
 
 **Open findings from testing** (moved from FINDINGS.md on 16 November; the sessions' details are in the private notes, `docs/sessions/FINDINGS-SESSIONS.md`). Also from testing, and listed above: an offline edit overwriting a newer value on central (item 3), the stock Android app and the hub's certificate (item 2), "needs connection" shown as an unknown error (item 7), the unexplained hardware findings (item 14) and the Windows service start timeout (item 15).
 
-27. **Refused changes: the author is not told in Capture** (session A). Since 4 November the hub closes "already deleted" refusals itself, a hub manager can Resend or Discard in the Facility Hub app, and a user sees their own refusals on the hub's page. Open: nothing reaches the author inside Capture, and which refusal codes none of these closes is not listed. **Answered 17 November:** no new mechanism in the hub; the hub's page goes into the installation card and training, the codes are audited, and the app teams are asked for a way to show a hub's refusals (FINDINGS.md, "How should rejected data be shown to the user who entered it?").
+27. **Refused changes: the author is not told in Capture** (session A). Since 4 November the hub closes "already deleted" refusals itself, a hub manager can Resend or Discard in the Facility Hub app, and a user sees their own refusals on the hub's page. **Answered 17 November:** no new mechanism in the hub; the hub's page goes into the installation card and training (item 23), and the app teams are asked for a way to show a hub's refusals (item 17). Audited the same day: every code the hub has met has a way to close (the table in `docs/design/2026-11-04-refused-changes.md`, "Refusals by who can fix them"). One gap remains: Discard reads central's version as the change's author, so a record central no longer shows that author (moved to another facility, access removed) stays refused, and a manager's only way out is Resend as another user, which sends the change. A Discard as another user would close it; not built until the pilot shows it.
 28. **F4 again on the tablet**: an enrollment dated after central's today, offline, now refused at the save by the hub. Run on Android Capture to see what the app shows (`TestFutureEnrollmentDates` covers the hub).
 36. **A sync cycle that gets past the push before the clock is set** (F1, after a start without network): untested on hardware. DEPLOYMENT.md, appendix A predicts minor effects (a token five weeks short, a heartbeat dated at the image's date), corrected by later cycles.
