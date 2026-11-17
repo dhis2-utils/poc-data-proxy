@@ -66,6 +66,17 @@ func (c *Central) aggregate(w http.ResponseWriter, r *http.Request, u *User) boo
 		hook()
 	}
 	switch p {
+	case "/api/dataSets":
+		// The data sets assigned to an org unit, ids only, as the hub asks for them.
+		var out []any
+		c.mu.Lock()
+		for _, id := range []string{AggDataSet, AggValidDS, AggDonorDS} {
+			if r.URL.Query().Get("filter") == "organisationUnits.id:eq:"+Facility && !c.AggUnassigned[id] {
+				out = append(out, map[string]any{"id": id})
+			}
+		}
+		c.mu.Unlock()
+		writeJSON(w, 200, map[string]any{"dataSets": orEmpty(out)})
 	case "/api/dataEntry/metadata":
 		if !enters {
 			writeJSON(w, 200, map[string]any{"dataSets": []any{}, "dataElements": []any{}, "categoryCombos": []any{},
@@ -154,6 +165,9 @@ func (c *Central) aggMetadata(opts []string) map[string]any {
 			"dataSetElements": dse(AggDeNum, AggDeInt, AggDeReq), "organisationUnits": []any{Facility}}
 		for k, v := range extra {
 			m[k] = v
+		}
+		if c.AggUnassigned[id] {
+			m["organisationUnits"] = []any{}
 		}
 		return m
 	}

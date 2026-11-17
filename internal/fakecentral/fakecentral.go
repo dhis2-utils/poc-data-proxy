@@ -141,6 +141,10 @@ type Central struct {
 	// AggETag, when set, is dataEntry/metadata's ETag whatever the answer holds: as
 	// on 2.43.2.1, where a user's new org units change the answer, not the ETag.
 	AggETag string
+	// AggUnassigned are data sets taken off the facility: dataEntry/metadata lists them
+	// without it (with AggETag set, under the same ETag, as 2.43.2.1 does), and so does
+	// the data set listing by org unit.
+	AggUnassigned map[string]bool
 	// AggMetadataNotModified counts dataEntry/metadata requests answered 304.
 	AggMetadataNotModified int
 	// GeneratedPattern replaces the generated attribute's pattern when set.
