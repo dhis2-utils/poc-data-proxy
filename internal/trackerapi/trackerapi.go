@@ -7,7 +7,9 @@ import (
 	"cmp"
 	"encoding/json"
 	"log/slog"
+	"maps"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strconv"
@@ -516,8 +518,19 @@ func (a *API) ServeGenerated(w http.ResponseWriter, r *http.Request) {
 	}
 	attr, op := parts[2], parts[3]
 	if a.H.Online() {
-		a.Proxy.ServeHTTP(w, r)
-		return
+		// Central's answer, unless the request failed on the way: then the proxy has
+		// fallen back to its cache, which holds no generated values, and the pool
+		// answers, as it would once the probe notices central is gone (H5: a
+		// registration in the seconds after the link dropped got no ID). The answers
+		// are small: buffered to choose.
+		rec := httptest.NewRecorder()
+		a.Proxy.ServeHTTP(rec, r)
+		if !(rec.Code == http.StatusServiceUnavailable && rec.Header().Get(core.NeedsConnectionHeader) != "") {
+			maps.Copy(w.Header(), rec.Header())
+			w.WriteHeader(rec.Code)
+			w.Write(rec.Body.Bytes())
+			return
+		}
 	}
 	sess, f := a.Auth.Identify(r)
 	if f != nil {

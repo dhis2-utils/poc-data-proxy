@@ -902,3 +902,21 @@ func TestSystemInfoOfflineForAnyStaff(t *testing.T) {
 		t.Error("system/info offline without a login")
 	}
 }
+
+// H5: in the seconds after the link drops, before the probe notices, a request for a
+// generated value fails on its way to central; the hub then answers from its pool, as
+// it does offline, instead of "needs connection".
+func TestGeneratedFromPoolWhenCentralJustWentAway(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.sync() // fills the pool
+	e.central.SetDown(true)
+	if !e.app.Hub.Online() {
+		t.Fatal("the hub noticed already")
+	}
+	if st, body := a.do("GET", "/api/trackedEntityAttributes/"+fc.AttrTBID+"/generate", nil); st != 200 {
+		t.Errorf("a generated value while central has just gone: %d %s", st, body)
+	}
+}
