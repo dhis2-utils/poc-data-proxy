@@ -47,7 +47,7 @@ The list below is what remains, from the KISS review, REVIEW-FABLE5.2 section 13
 
 10. **A release from `main`**: v0.1.6. v0.1.5 was published on 16 November with the review fixes, and no Go code has changed since, so v0.1.6 carries the fixes made from this list. Every step of the workflow is run by hand first (tags are protected); the app's job is new since v0.1.5 and has not run in a release.
 11. **A soak on that image on a Pi**, with `hubdrive check`. Much changed on 10 and 11 November: signed instructions, input checks at the boundary, the throttle, the pull overlap.
-12. **The live suite on Sierra Leone and Laos** for the R-03 baselines. The adversarial suite was not run in review FABLE5.2.
+12. **The live suite on Sierra Leone and Laos** for the R-03 baselines. Sierra Leone 2.43.2.1 done on 17 November (live suite passes; baseline committed). Still to do: Sierra Leone 2.42 and Laos. The adversarial suite on Sierra Leone 2.43 failed 26 scenarios, the same on main: each needs reading against that profile's metadata before it counts as a finding (private notes, `docs/sessions/SL-2.43-2026-11-17.md`).
 13. **The Facility Hub app on the demo central** with the new groups, signed instructions and Revoke, as a hub manager who is not a superuser.
 14. **The unexplained hardware findings:**
     - the Pi 4 restarted on its own on 30 October;
