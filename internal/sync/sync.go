@@ -213,6 +213,16 @@ func (w *Worker) cycle(ctx context.Context) error {
 	if err := w.ReportIssues(ctx); err != nil {
 		errs = append(errs, err)
 	}
+	// The pool before the pull: a user's first pull can take many minutes, and their
+	// programs' generated attributes, new to the catalog at their login, would have no
+	// values offline if the link dropped during it (PENDING.md, item 31). One request
+	// per attribute below its watermark, none otherwise.
+	if err := w.RefillPool(ctx); err != nil {
+		if central.IsNetwork(err) {
+			return err
+		}
+		errs = append(errs, err)
+	}
 	if err := w.Pull(ctx); err != nil {
 		if central.IsNetwork(err) {
 			return err
@@ -234,9 +244,6 @@ func (w *Worker) cycle(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("tracker retention: %w", err))
 	} else if s+d > 0 {
 		slog.Info("retention pruned tracker", "stubbed", s, "deleted", d)
-	}
-	if err := w.RefillPool(ctx); err != nil {
-		errs = append(errs, err)
 	}
 	if _, err := h.Store.PruneCache(30 * 24 * time.Hour); err != nil {
 		errs = append(errs, fmt.Errorf("cache: %w", err))

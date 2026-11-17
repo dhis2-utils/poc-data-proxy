@@ -842,3 +842,27 @@ func TestReservedPoolPatternChange(t *testing.T) {
 		t.Errorf("new pattern unchanged since: pool %d after the sync, want %d kept", have, full-1)
 	}
 }
+
+// A user whose programs join the catalog at their login has generated values offline
+// as soon as the next cycle has reached central, though the cycle's pull, long on a
+// user's first day, did not finish (PENDING.md, item 31): the pool is refilled before
+// the pull, not after it.
+func TestPoolFilledBeforeFirstPull(t *testing.T) {
+	e := newEnv(t)
+	e.central.Users["hub_admin"].NoProgramMeta = true
+	e.setup()
+	a := e.web("nurse_a")
+	a.login() // the program joins the catalog; its pool is empty
+	// The link drops during the pull.
+	e.central.StallResponse = map[string]int{"GET /api/tracker/trackedEntities": 1000}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := e.app.Worker.Cycle(ctx)
+	if err == nil {
+		t.Fatal("the cycle's pull went through")
+	}
+	e.offline()
+	if st, body := a.do("GET", "/api/trackedEntityAttributes/"+fc.AttrTBID+"/generate", nil); st != 200 {
+		t.Errorf("a generated value offline after a cycle cut in its pull: %d %s", st, body)
+	}
+}
