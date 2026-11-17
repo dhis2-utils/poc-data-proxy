@@ -16,7 +16,7 @@ A small device on a facility's network that keeps working copies of the facility
 
 - **On a Raspberry Pi:** [docs/user/SETUP-PI.md](docs/user/SETUP-PI.md), step by step, from flashing the image to testing offline.
 - **On a Windows PC:** [docs/WINDOWS-INSTALL.md](docs/WINDOWS-INSTALL.md).
-- **On central:** the Facility Hub app (`apps/facility-hub`) lists the hubs, approves their accounts and chooses their version ([FACILITY-HUB-APP.md](docs/FACILITY-HUB-APP.md)).
+- **On central:** the Facility Hub app (`facility-hub-<version>.zip` in each release, installed in App Management) lists the hubs, approves their accounts and chooses their version ([FACILITY-HUB-APP.md](docs/FACILITY-HUB-APP.md)).
 
 ## How it works
 

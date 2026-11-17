@@ -105,6 +105,41 @@ jobs:
           path: bin/
           retention-days: 1
 
+  # The Facility Hub app for central, built at the release's version: it matches the
+  # hub's account and move codes and signs the instructions hubs act on, so the two
+  # are released together.
+  app:
+    needs: version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/facility-hub
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0, the version from package.json
+        with:
+          package_json_file: apps/facility-hub/package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: apps/facility-hub/pnpm-lock.yaml
+      - name: Test and build
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm test --watchAll=false
+          npm pkg set version="$VERSION"
+          pnpm build
+          mkdir -p ../../app-out
+          cp "build/bundle/facility-hub-$VERSION.zip" ../../app-out/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: app
+          path: app-out/
+          retention-days: 1
+
   # The image holds the release's own linux/arm64 binary, the one release.json lists.
   image:
     needs: [version, binaries]
@@ -114,7 +149,7 @@ jobs:
       binaries: binaries
 
   publish:
-    needs: [version, binaries, image]
+    needs: [version, binaries, image, app]
     runs-on: ubuntu-latest
     # A tag push enters the environment here (waiting for its reviewer, if one is set).
     # A dry run enters no environment ('' is none) and so cannot read it.
@@ -130,6 +165,10 @@ jobs:
         with:
           name: dhis2-hub-${{ needs.version.outputs.version }}-arm64.img
           path: img
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: app
+          path: app
       - name: Sign the release
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -147,8 +186,9 @@ jobs:
             linux/arm64=bin/hub-linux-arm64 linux/amd64=bin/hub-linux-amd64 windows/amd64=bin/hub-windows-amd64.exe \
             darwin/arm64=bin/hub-darwin-arm64 darwin/amd64=bin/hub-darwin-amd64
           if [ -e "bin/dhis2-hub-$VERSION-setup.exe" ]; then cp "bin/dhis2-hub-$VERSION-setup.exe" out/; fi
+          cp "app/facility-hub-$VERSION.zip" out/
           ls -l out
-          for f in release.json release.json.sig hub-linux-arm64 hub-linux-amd64 hub-windows-amd64.exe hub-darwin-arm64 hub-darwin-amd64 "dhis2-hub-$VERSION-arm64.img.xz"; do
+          for f in release.json release.json.sig hub-linux-arm64 hub-linux-amd64 hub-windows-amd64.exe hub-darwin-arm64 hub-darwin-amd64 "dhis2-hub-$VERSION-arm64.img.xz" "facility-hub-$VERSION.zip"; do
             test -s "out/$f" || { echo "missing out/$f"; exit 1; }
           done
       - name: Publish

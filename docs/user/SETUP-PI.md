@@ -22,7 +22,7 @@ The hub is a test build. Set it up against your own DHIS2 test instance, not the
 
 Do this once on your test instance. Later hubs on the same instance skip it.
 
-1. Install the Facility Hub app zip (from the DHIS2 team) in App Management.
+1. Install the Facility Hub app (`facility-hub-<version>.zip`, from the same release as the image) in App Management.
 2. Give the authority `M_facilityhub` (the app) to the roles of the people who manage hubs.
 3. Create three user groups, for example "Hub owners", "Hub managers" and "Hub accounts", and a user role for the hubs' own accounts.
 4. As a superuser, open the Facility Hub app, Settings, and name the groups and the role. Save. A hub refuses set-up until the hub owners group is named.
