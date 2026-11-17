@@ -369,15 +369,16 @@ func (h *Hub) CreatePAT(ctx context.Context, with central.Auth, exp time.Time) (
 const PrivateSystemInfo = "system_info"
 
 // systemInfoFields are the fields central gives a user who is not a superuser
-// (2.42.7.1, 17 November 2026): nothing about that user. A superuser's answer adds
+// (2.42.7.1 and 2.43.2.1, 17 November 2026; 2.43 adds capability and sessionTimeout,
+// server settings): nothing about that user. A superuser's answer adds
 // the server's own details (operating system, Java, memory, node), which are not
 // kept, whoever's answer this was.
-var systemInfoFields = []string{"buildTime", "calendar", "contextPath", "databaseInfo", "dateFormat",
+var systemInfoFields = []string{"buildTime", "calendar", "capability", "contextPath", "databaseInfo", "dateFormat",
 	"emailConfigured", "encryption", "intervalSinceLastAnalyticsTablePartitionSuccess",
 	"intervalSinceLastAnalyticsTableSuccess", "isMetadataVersionEnabled", "lastAnalyticsTablePartitionRuntime",
 	"lastAnalyticsTablePartitionSuccess", "lastAnalyticsTableRuntime", "lastAnalyticsTableSuccess",
 	"lastMetadataVersionSyncAttempt", "lastSystemMonitoringSuccess", "redisEnabled", "revision", "serverDate",
-	"serverTimeZoneDisplayName", "serverTimeZoneId", "systemId", "systemMetadataVersion", "systemName", "version"}
+	"serverTimeZoneDisplayName", "serverTimeZoneId", "sessionTimeout", "systemId", "systemMetadataVersion", "systemName", "version"}
 
 // RefreshServerVersion reads central's version (spec 6.2 step 5, refreshed on sync).
 func (h *Hub) RefreshServerVersion(ctx context.Context, auth central.Auth) (string, error) {
