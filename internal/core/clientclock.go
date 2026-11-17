@@ -55,7 +55,7 @@ func (h *Hub) NoteClientClock(userID int64, payload tracker.M) {
 // ahead at their latest upload, the furthest ahead first.
 func (h *Hub) ClientClocksAhead() []ClientClock {
 	if h.ClockBehind() > 0 {
-		return nil // every device would look ahead (docs/NO-RTC.md)
+		return nil // every device would look ahead (docs/DEPLOYMENT.md, appendix A)
 	}
 	h.clocks.mu.Lock()
 	defer h.clocks.mu.Unlock()

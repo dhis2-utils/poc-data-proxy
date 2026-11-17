@@ -52,7 +52,7 @@ func (h *Hub) loadSeen() {
 
 // ClockBehind reports how far the hub's clock is behind the newest time central has
 // shown it, when by more than ten minutes, and zero otherwise. A Pi without an RTC
-// starts at its image's date after a power cut with no network (docs/NO-RTC.md);
+// starts at its image's date after a power cut with no network (docs/DEPLOYMENT.md, appendix A);
 // checks that judge "today" by the hub's clock then let central decide at push.
 func (h *Hub) ClockBehind() time.Duration {
 	h.seen.mu.Lock()

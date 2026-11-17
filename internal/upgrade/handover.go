@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// The data key across a Windows upgrade (docs/superpowers/specs/2026-10-20-windows-
+// The data key across a Windows upgrade (docs/design/2026-10-20-windows-
 // service-design.md). A service cannot re-exec itself in place, so the old version
 // seals the key for the new one in a file: sealed so only the hub's account opens it,
 // read once, refused when older than handoverLife. Without it the new version starts

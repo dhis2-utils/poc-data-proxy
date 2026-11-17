@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// The hub dates its own server certificate by its clock, an hour back (docs/NO-RTC.md).
+// The hub dates its own server certificate by its clock, an hour back (docs/DEPLOYMENT.md, appendix A).
 // Devices check it by theirs. Issued while the hub's clock is ahead by more than an
 // hour, the certificate is not yet valid for devices with the right time, and the hub
 // keeps serving it after its clock is set right: it is renewed only near its end, or

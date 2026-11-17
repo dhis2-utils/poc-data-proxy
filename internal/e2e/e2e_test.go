@@ -1060,7 +1060,7 @@ func issueID(issues []*store.Issue, uid string) string {
 }
 
 // testMoveKey is the move key tests give the hub, as an approval would: instructions
-// on central count only signed with it (docs/superpowers/specs/
+// on central count only signed with it (docs/design/
 // 2026-11-11-signed-instructions.md).
 var testMoveKey = bytes.Repeat([]byte{7}, 32)
 

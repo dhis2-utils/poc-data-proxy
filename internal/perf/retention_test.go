@@ -12,7 +12,7 @@ import (
 )
 
 // TestTrackerRetention fills a hub at HUB_PERF_SCALE without retention and another
-// with a 12-month window on every program (docs/superpowers/specs/2026-10-16-tracker-
+// with a 12-month window on every program (docs/design/2026-10-16-tracker-
 // retention-design.md): the first fill's time, objects, disk and requests to central;
 // on the second, a full pull after pruning, which must fetch no one again; on the
 // first, the time to prune it to the same window.

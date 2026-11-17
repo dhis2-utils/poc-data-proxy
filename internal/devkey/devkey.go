@@ -1,5 +1,5 @@
 // Package devkey keeps the hub's device key: 32 random bytes sealed by the machine's
-// TPM 2.0, where it has one (docs/superpowers/specs/2026-10-20-hardening-and-settings-
+// TPM 2.0, where it has one (docs/design/2026-10-20-hardening-and-settings-
 // design.md, section 1). The sealed copy is device.key in the data folder; it opens only
 // on the same TPM. The key protects what the hub needs before anyone logs in (its TLS
 // keys, the setup code, the Wi-Fi files) and binds the password key slots on the disk,

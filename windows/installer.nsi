@@ -1,4 +1,4 @@
-; The DHIS2 Facility Hub on a Windows PC (docs/superpowers/specs/2026-10-20-windows-service-design.md).
+; The DHIS2 Facility Hub on a Windows PC (docs/design/2026-10-20-windows-service-design.md).
 ; One installer for every country. It installs either for the whole PC (a Windows service;
 ; needs administrator rights) or for the current user (runs while they are logged in).
 ; Silent: setup.exe /S /AllUsers   or   setup.exe /S /CurrentUser

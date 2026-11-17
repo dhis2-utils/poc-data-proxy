@@ -2,7 +2,7 @@
 # Builds the hub's Raspberry Pi image from Raspberry Pi OS Lite, without loop devices or
 # mounts (none in many CI containers): the root file system is extracted with debugfs,
 # customised in a chroot and rebuilt with mkfs.ext4 -d; the boot partition is edited with
-# mtools (docs/superpowers/specs/2026-10-19-pi-image-design.md). Run as root on arm64.
+# mtools (docs/design/2026-10-19-pi-image-design.md). Run as root on arm64.
 #
 #   sudo image/build.sh <hub binary, linux/arm64> <version> <output folder>
 #

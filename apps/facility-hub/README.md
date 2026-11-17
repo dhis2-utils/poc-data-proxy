@@ -3,7 +3,7 @@
 The DHIS2 app on central for the facility hubs: their state, approving their own
 accounts, and central moves. What it must match on the hub's side is in
 [docs/FACILITY-HUB-APP.md](../../docs/FACILITY-HUB-APP.md); the design is
-`docs/superpowers/specs/2026-10-18-facility-hub-app-design.md`.
+`docs/design/2026-10-18-facility-hub-app-design.md`.
 
 ```sh
 pnpm install

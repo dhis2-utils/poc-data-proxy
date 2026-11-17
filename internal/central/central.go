@@ -49,7 +49,7 @@ type Client struct {
 	Monitor *Monitor
 	// SawDate, when set, gets central's clock from the Date header of each answer:
 	// the hub's lower bound for the true time when its own clock is wrong (no RTC,
-	// docs/NO-RTC.md).
+	// docs/DEPLOYMENT.md, appendix A).
 	SawDate func(time.Time)
 }
 

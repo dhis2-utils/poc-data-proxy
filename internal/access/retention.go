@@ -7,7 +7,7 @@ import "time"
 // entry uses the default. Event and tracker programs use it (by occurredAt for events
 // of event programs, by an enrollment's last change for tracker programs); tracked
 // entity types have windows of their own, with no default
-// (docs/superpowers/specs/2026-10-16-tracker-retention-design.md).
+// (docs/design/2026-10-16-tracker-retention-design.md).
 type Retention struct {
 	DefaultMonths      int            `json:"defaultMonths"`
 	Programs           map[string]int `json:"programs"`

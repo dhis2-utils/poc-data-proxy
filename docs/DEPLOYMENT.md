@@ -41,7 +41,7 @@ One kit per facility, assembled and flashed at a central depot.
 | Board | Raspberry Pi 5, 4 GB (a Pi 4 works for smaller facilities; Compute Module boards under "Options under consideration") | The hub itself needs a few hundred MB at most; the rest of the RAM caches the data file, which decides speed once the file outgrows it (about 2.5 GB at 100 000 people; docs/PERFORMANCE.md). |
 | Storage | 128 GB NVMe SSD on an M.2 HAT (Pi 5) or a USB 3 SSD (Pi 4). Not an SD card. | The store writes on every sync. SD cards wear out and corrupt on power loss. A Pi 4 on its SD card ran 72 hours offline in session B (PERFORMANCE.md), which says nothing yet about wear over years. |
 | Power | Official power supply, connected to a UPS. Budget one where the facility has none: no small UPS for the kit has proven good enough yet (below) | Power cuts are common. A clean shutdown protects the store, and a UPS keeps the LAN up during short cuts. |
-| Clock | Required: the Pi 5's RTC with its battery; a Pi 4 has no RTC and needs an add-on RTC module | TLS and PAT expiry need the right time after a power cut with no internet, and offline the hub's clock decides which aggregate period is current and when a period expires: a board restarting at its last saved time would answer a new month's form as locked until it reaches a time server. (The hub's pulls follow central's clock, not its own.) Without one, the Pi image starts at its base image's date after a power cut with no network, not at its last saved time: NO-RTC.md. |
+| Clock | Required: the Pi 5's RTC with its battery; a Pi 4 has no RTC and needs an add-on RTC module | TLS and PAT expiry need the right time after a power cut with no internet, and offline the hub's clock decides which aggregate period is current and when a period expires: a board restarting at its last saved time would answer a new month's form as locked until it reaches a time server. (The hub's pulls follow central's clock, not its own.) Without one, the Pi image starts at its base image's date after a power cut with no network, not at its last saved time: appendix A. |
 | USB stick | An industrial USB stick, in the box | Two jobs, one stick (built; `usb_dir`): before set-up it carries the hub's setup code (below); after set-up it holds what a restore needs: every pending save, the key file and the hub's state, copied each minute (RECOVERY.md, option C2), so a dead disk loses at most a minute of saves; the cached data comes back from central. |
 | Case | Wall-mountable; being tested: a passive-cooled metal case for the Pi 4, a fan (active cooler or fan case) for the Pi 5 | Heat and dust. A fanless case has no fan to fail; the Pi 5 may need one to avoid throttling. Chosen after the tests (HARDWARE-TESTING.md). |
 | Network | Ethernet cable; optional USB 4G modem for facilities with no uplink | See section 4. |
@@ -60,7 +60,7 @@ One generic image per release (built 2026-10-19: `image/`, see image/README.md).
   - NetworkManager for every connection, with a polkit rule that lets the hub take only the actions its `nmcli` calls need (start and stop a connection, share a Wi-Fi with a password, scan, and add, change or delete its connections);
   - its built-in DHCP and DNS for the hub's own Wi-Fi (section 4);
   - `avahi-daemon` for `dhis2.local`, with the host name `dhis2`.
-- **Time:** `chrony` with public NTP pools, falling back to the RTC. Without an RTC, `hub-clock.service` saves the time every 15 minutes and at shutdown, and the next start begins there (NO-RTC.md).
+- **Time:** `chrony` with public NTP pools, falling back to the RTC. Without an RTC, `hub-clock.service` saves the time every 15 minutes and at shutdown, and the next start begins there (appendix A).
 - **Firewall** (`nftables`): from private addresses only, ports 80 and 443 and mDNS, plus DHCP and DNS on the hub's own Wi-Fi.
 - **Updates:** `unattended-upgrades` for OS fixes from Debian's and Raspberry Pi's archives (kernel and firmware come from the latter), rebooting at 03:00 when needed, in central's time zone: the hub sets the Pi's zone to central's (`serverTimeZoneId`), so the reboot falls in the facility's night. A central that runs on UTC leaves the Pi on UTC. The hub binary upgrades itself from the supplier's GitHub releases, to the version the country chose on central (section 6, "Upgrades").
 - **Watchdog:** the hardware watchdog (`RuntimeWatchdogSec=15`), plus `Restart=always` in systemd.
@@ -139,7 +139,7 @@ Ideas for hardware and the image, recorded with what they would imply for the hu
 
 ## The hub on a Windows PC (built 2026-10-20; run on a Windows VM in sessions A and B, FINDINGS.md)
 
-For facilities without a Pi kit: the same hub on a PC they already have. That can be a records-room desktop or laptop staff use for their work, or a small server already there for another programme (OpenMRS for ART, say). The design is docs/superpowers/specs/2026-10-20-windows-service-design.md; the guide for the person at the PC is [WINDOWS-INSTALL.md](WINDOWS-INSTALL.md).
+For facilities without a Pi kit: the same hub on a PC they already have. That can be a records-room desktop or laptop staff use for their work, or a small server already there for another programme (OpenMRS for ART, say). The design is docs/design/2026-10-20-windows-service-design.md; the guide for the person at the PC is [WINDOWS-INSTALL.md](WINDOWS-INSTALL.md).
 
 - **Expectations.** Choose a PC that stays on while staff work. When it is off anyway, staff work online, from the apps' own offline cache, or on paper: degraded service, as for a Pi without power.
 - **One signed installer for every country** (`windows/`, NSIS, built and signed on Linux), from GitHub with the release or carried on a USB stick. It installs either way:
@@ -469,7 +469,7 @@ The hourly check does not see deletions (central lists them only to superusers),
 
 ### Central's time zone
 
-Set central's server time zone to the facilities' own. In a country with several zones, use the easternmost, so that central's date is never behind a facility's. Central refuses an enrollment or incident date "in the future" (E1020, E1021) by its own date, while staff date records by their devices'. With central in a zone to the west, every registration dated today is refused between local midnight and central's: in the Pi 5 soak, with central on UTC and the clients on UTC+1, 398 saves in one hour each night (the session records (private notes, docs/sessions/FINDINGS-SESSIONS.md), central's time zone). Online the staff member sees central's refusal at once. Offline, or while the hub still has a backlog to push, the hub refuses the same dates itself, by its own clock in central's time zone, with central's code and text. So the staff member sees the refusal at the save in both cases. A hub whose clock is behind the newest time central has shown it (a Pi 4 without an RTC after a power cut with no network) leaves these dates to central, which judges them at the push, and its page says its clock is behind. A hub whose clock is ahead lets such a date through, and central refuses it at push. The required RTC keeps this rare (NO-RTC.md).
+Set central's server time zone to the facilities' own. In a country with several zones, use the easternmost, so that central's date is never behind a facility's. Central refuses an enrollment or incident date "in the future" (E1020, E1021) by its own date, while staff date records by their devices'. With central in a zone to the west, every registration dated today is refused between local midnight and central's: in the Pi 5 soak, with central on UTC and the clients on UTC+1, 398 saves in one hour each night (the session records (private notes, docs/sessions/FINDINGS-SESSIONS.md), central's time zone). Online the staff member sees central's refusal at once. Offline, or while the hub still has a backlog to push, the hub refuses the same dates itself, by its own clock in central's time zone, with central's code and text. So the staff member sees the refusal at the save in both cases. A hub whose clock is behind the newest time central has shown it (a Pi 4 without an RTC after a power cut with no network) leaves these dates to central, which judges them at the push, and its page says its clock is behind. A hub whose clock is ahead lets such a date through, and central refuses it at push. The required RTC keeps this rare (appendix A).
 
 A device whose clock or time zone is ahead of central's dates its records in central's future. The hub's page lists each user whose device clock ran more than half an hour ahead of central's at their latest upload, and the heartbeat counts them (`clientClocksAhead`). Set the date, time and time zone of those devices to central's. The hub reads the device time that Android Capture sends with each record (`createdAtClient`, `updatedAtClient`). Capture web sends no device time, so the hub cannot check a browser's clock. A clock behind is not listed: it looks the same as records saved earlier and sent late. The list is kept in memory, so it is empty after a restart until each device sends again.
 
@@ -510,7 +510,7 @@ Options, if the pilot shows the case is common (not built):
   - **The "hub owners" group.** The hub writes these namespaces with the token of a staff member: whoever set it up, or took it over. So share write access on them with one user group, the hub owners, and nobody else. The national team or the districts add the facility focal points (and whoever else may run a hub) to it. Membership is then the list of the people who own hubs.
   - Set-up and take-over check it: someone outside the group is refused with "ask the national team or the district to add you to the hub owners group". The hub is left as it was, with no half-done set-up and no lost token.
   - Weaker than "admins only": any group member could write any hub's entries. A dedicated hub account per hub would restore "admins only" (below).
-  - **Signed instructions** (built 2026-11-11, review R-07; [the design](superpowers/specs/2026-11-11-signed-instructions.md)). Sharing cannot tell the app's writes from those of a user who created a missing entry first and shared it read-only for everyone else, which passes a check of public access (measured on 2.42). So the Facility Hub app adds to each instruction it writes a code per approved hub, made with that hub's move key, and an approved hub acts on `central-move`, `retries`, `release`, `accounts`, the `facility-hub-config` settings and the revocation in its registry entry only with a valid code for itself, no older than the last one it took of that kind. It ignores the rest, and names them in its heartbeat (`unsigned`), on its admin page and as a flag in the app (`TestHeartbeatReportsUnsignedEntries`, `TestSignedInstructions`). A hub not yet approved has no key: it ignores `central-move`, `retries` and the settings (it uses the built-in defaults, so a first pull before approval uses the default retention), and reads `release` and `accounts` on their sharing. Retention and pool sizes from `facility-hub-config` are kept within the app's limits.
+  - **Signed instructions** (built 2026-11-11, review R-07; [the design](design/2026-11-11-signed-instructions.md)). Sharing cannot tell the app's writes from those of a user who created a missing entry first and shared it read-only for everyone else, which passes a check of public access (measured on 2.42). So the Facility Hub app adds to each instruction it writes a code per approved hub, made with that hub's move key, and an approved hub acts on `central-move`, `retries`, `release`, `accounts`, the `facility-hub-config` settings and the revocation in its registry entry only with a valid code for itself, no older than the last one it took of that kind. It ignores the rest, and names them in its heartbeat (`unsigned`), on its admin page and as a flag in the app (`TestHeartbeatReportsUnsignedEntries`, `TestSignedInstructions`). A hub not yet approved has no key: it ignores `central-move`, `retries` and the settings (it uses the built-in defaults, so a first pull before approval uses the default retention), and reads `release` and `accounts` on their sharing. Retention and pool sizes from `facility-hub-config` are kept within the app's limits.
   - Each hub still checks, with its heartbeat, the sharing of the entries it acts on (`facility-hub-admin/accounts`, `central-move`, `release`, `retries`, and its own registry entry). Those any user may write are listed in the heartbeat (`unprotected`), on the hub's admin page and as a flag in the Facility Hub app (`TestHeartbeatReportsUnprotectedEntries`): "retired" in the registry, and what a hub reads before its approval, still rest on sharing. A hub shares its own registry entry, which it creates and owns, as readable by all and writable by the hub owners, hub accounts and hub managers groups named in the app's Settings, at set-up (or at its next heartbeat, should the entry be open again). Set-up and take-over are refused until a hub owners group is named (`TestHubProtectsItsRegistryEntry`).
 - **The hub's own account.** For its housekeeping (heartbeat, issue reports, registry, programme list, retention settings, reserving generated IDs, upgrade checks) the hub uses a personal access token of whoever set it up, renewed every `pat_expiry_days` with itself. If that person is disabled on central, the hub goes silent, and offline registrations that need generated IDs fail once its pool runs out; if they move elsewhere, the hub keeps their credentials unnoticed. Patient data is not affected: it goes with each user's own token.
   - *Interim* (built): any member of the hub owners group assigned to the facility can take the hub over on its admin page ("Use my account", with their password): the hub swaps to a token of theirs and deletes the old one. On a hub with its own account, a take-over is refused while central still accepts that account ("This hub has its own account on central, which still works. A hub manager must revoke it first"). Once a hub manager has revoked it (Revoke disables the hub's user), a take-over sets the account aside (the hub forgets its password; it keeps its move key) and the hub asks for an account again, which the national team approves as below; the page says so (`TestTakeOverSetsTheOwnAccountAside`). The heartbeat reports whose token the hub uses and when it expires (`hubTokenOwner`, `hubTokenExpires`), so the Facility Hub app can list the hubs that depend on a user being disabled; a hub whose token no longer works stops sending heartbeats, which the app flags after 2 days.
@@ -575,3 +575,201 @@ Not planned for now. Some countries put wards or departments below the facility 
 ### Longer term
 
 The client-side fallback in the shared app-runtime would remove most of section 5. Devices would keep central as their server and use the facility's hub automatically when central is unreachable (spec 5.1 and open question in spec 14). Discovery could use the hub's address and key, published in the registry for the user's facility. With that in place, tablets that move between facilities would also work.
+
+## Appendix A. Running without a real-time clock
+
+A study of what the hub does when its own clock is wrong, written 4 November 2026 on the `ready2` branch (491b1ad, with the future-date check F4 and the device-clock warning). DEPLOYMENT.md ("Clock") requires an RTC. This is what going without one implies. Nothing here changes the hub; the fixes at the end are proposals.
+
+### Where the clock starts
+
+A Pi 4 has no RTC. A Pi 5 without its battery is the same. After a power cut with no network, a Pi on the hub's image does not start at the time it last saved. It starts at a fixed date, 6 October 2026, 00:27 UTC, whatever the date is.
+
+This comes from reading the 22 October image's root file system, not from a Pi:
+
+- `fake-hwclock` is not installed.
+- Installing `chrony` (image/customize.sh) removed `systemd-timesyncd` (dpkg: "deinstall ok config-files"). Nothing therefore updates `/var/lib/systemd/timesync/clock`.
+- At boot, systemd 257 moves a clock that is earlier than an epoch up to that epoch. The epoch is the later of its build date and the time stamp of `/var/lib/systemd/timesync/clock` (both names are in `libsystemd-shared-257.so`). In the image that file is dated 6 October 2026 00:27:36 UTC, the base image's date (`BASE_DATE` in image/build.sh).
+- chrony runs with `-F 1` and `makestep 1 3`, without `-s`. It does not set the clock from its drift file. It steps the clock at its first measurement once it reaches `pool.ntp.org` over UDP port 123.
+
+So "behind" on this image is not the length of the outage. On 7 November it is 32 days. It grows by a day each day the image is in use. A new image moves the date to its own base. F1 on Saturday 7 November checks this (windows/out/session-b/SESSION-B.md, part 4).
+
+A clock ahead does not happen on a Pi after a power cut. It happens on a PC with a wrong clock (the Windows hub), or when someone sets a clock by hand.
+
+### In short
+
+Each row is one group of uses of the hub's own clock in `internal/` and `cmd/hub`. The outcome classes are: harmless; wrong answer shown (to staff or managers); wrong value on central; data not sent (lost to central, or held until someone acts); locked out (staff cannot do the task offline). "Online" in the fifth column means once the hub reaches central and NTP has set its clock.
+
+| Group | Behind by hours | Behind by days to weeks | Ahead | Corrects itself online | How sure |
+|---|---|---|---|---|---|
+| Offline login and key unlock | harmless | harmless | harmless | n/a | code |
+| Sessions, login throttle, sync and probe timers, heartbeat interval, stick copy cadence | harmless | harmless | harmless, also across the jump when NTP arrives | n/a | code (Go's monotonic clock) |
+| The hub's own TLS certificate | harmless | harmless (renewed earlier); with the epoch over 397 days back, a new certificate is already expired for devices | locked out, if issued while ahead by more than an hour | no: kept until its renewal or a new address; an authority made ahead stays invalid until the true time passes its start | test |
+| Reaching central (verifying central's certificate) | harmless, unless central's certificate is younger than the offset | data not sent: the hub stays offline while its clock is before central's certificate's start | data not sent, past the certificate's end | yes, once chrony reaches NTP; never if UDP 123 is blocked | test; hardware for the order of events |
+| PAT and hub token expiry | harmless | wrong value on central: a token made while behind expires that much earlier; with a token life under the offset it is born expired and its user must log in online | harmless: renewed at once after the jump | yes, at the next renewal | code; hardware |
+| Aggregate periods and expiry (`CentralNow`) | wrong answer, only within hours of a period's start or expiry | locked out of the current month's form; expired periods open, and central refuses their values at push (data not sent) | locked out of periods that expire early; next period open early, refused at push | yes, at the next pull; a pull with the clock wrong drops the right forms until then | test |
+| Tracker program expiry (E1047) | as aggregate | edits of expired events taken, refused at push (data not sent) | locked out: edits central would take are refused | yes | test |
+| Future-date check (F4, `checkEnrollmentDates`) | harmless since the fix below: more than 10 minutes behind the newest time central has shown, the check leaves dates to central at push; under that, today's registrations refused in the minutes after midnight | harmless since the fix (before it: every registration dated today refused, E1020 and E1021) | future dates let through, refused by central at push | yes | test |
+| Device-clock warning (`NoteClientClock`) | harmless since the fix below: off while the hub's clock is behind central's newest time, and the hub's page says its own clock is behind | as hours | wrong answer: devices ahead not listed | at each device's next upload | test |
+| Android incremental syncs (W1: `hubClockBehind`, `updatedFloor`) | harmless | wrong answer between 1 day and about 1.5 days behind: other devices miss the newest offline records; beyond that, harmless (everything written on the hub is re-sent) | harmless (more re-sent) | only after the records are pushed and pulled back; after the jump, records stamped while behind are left out until then | test |
+| Refusal times | tracker: harmless (central's `Date` header) | aggregate: data not sent, a manager's resend of a refused edit can close as "replaced by a later change" unsent | aggregate: wrong value on central, a resend can undo a later change on central | no: the edit keeps its time | code |
+| Reserved values | harmless | data not sent, rarely: a value whose reservation central let go can be given to another device, and one save is refused as a duplicate | locked out over 60 days ahead: the whole pool is dropped; under that, values wasted | yes, the pool refills | test |
+| Retention and pruning (tracker retention, offline page cache 30 days, key slots 90 days, sent outbox 30 days) | harmless | harmless (keeps more) | harmless by days; over 30 or 90 days, an online cycle deletes the offline page cache or key slots, and in the next outage screens and offline logins are missing | the page cache refills screen by screen, key slots at each online login | code |
+| Outbox order and waits (`failing_since` 24 hours, `loginWait` 7 days) | harmless | harmless; a jump forward after a stamp shortens the wait | harmless | n/a | code |
+| Stored intervals (weekly full pull, daily aggregate full pull, hourly ownership check) | harmless | harmless: run at once after the jump | harmless: postponed by the offset | yes | code |
+| Heartbeat, hub page, logs, history, stick copy times | wrong answer | wrong answer: the Facility Hub app shows the hub as silent until its next heartbeat, up to an hour after the jump | wrong answer: a silent hub not flagged | for new entries; old ones keep their times | code; hardware |
+| Offline copies' `createdAt` and `updatedAt` | wrong answer (offline only) | wrong answer (offline only) | wrong answer (offline only) | yes: central's times come back with the pull; the push sends the client's payload, not the hub's times | code |
+| Upgrades | harmless | harmless (downloads need TLS, as central) | harmless | n/a | code; Windows: a clock jump within the 2-minute handover leaves the hub locked until someone logs in |
+| Central move (`central_next_from`) | harmless | harmless: an announced move waits | harmless: moves early, only after the old address is silent for an hour | yes | code |
+
+The tests are `TestNoRTC*` in `internal/tracker`, `internal/aggregate`, `internal/hubtls`, `internal/central`, `internal/core` and `internal/store`. They pass on today's code and describe its behaviour, so a fix changes them. Each injects time where the code takes it: the importer's `Now`, the period functions' `now`, the certificate code's `env.now`, a reserved-value cut-off. Where the code reads `time.Now()` itself, the test moves the other side instead: central's certificate starts in the future, the device's times run ahead, the watermark runs ahead. Go ignores libfaketime and the sandbox has no root for time namespaces, so no test runs a whole hub with a wrong clock.
+
+DEPLOYMENT.md ("Central's time zone") and FINDINGS.md (central's time zone, "Reversed 4 November") said that a hub clock behind central's lets a future date through and a clock ahead refuses a correct date. The code does the opposite (`TestNoRTCEnrollmentDateCheck`): behind refuses correct dates, ahead lets future dates through. The decision of 3 November had it the right way. Both texts are corrected in this commit. DEPLOYMENT.md ("Clock") also names PAT expiry as needing the right time after a power cut. Central decides a PAT's expiry by its own clock; the hub's clock only sets how long a new one lasts.
+
+### The cases that matter most
+
+#### Registrations refused while the hub is behind
+
+The future-date check came in on 4 November. It compares an enrollment date with the hub's today, in central's time zone. With the hub's clock on 6 October, every registration dated 7 November is "in the future" and refused at the save with E1020 and E1021. This applies to every program that does not allow future dates. That is DHIS2's default, and Child Programme on the demo central is one. Staff cannot register anyone offline until the network returns and NTP sets the hub's clock. Hours behind gives the same refusals between midnight and the hub's midnight. Before F4 the hub took these saves and central accepted them at push, so on a board without an RTC this check turns harmless saves into refusals.
+
+Recommendation: fix, before F4 reaches a hub without an RTC. The hub can tell that its clock is wrong without root: its today is earlier than the newest time central has shown it (the `Date` header of central's answers, which the push already reads). When that holds, the check lets the date through and central decides at push, as before F4. The same comparison can drive a line on the hub's page ("the hub's clock is behind central's last answer") and keep the device-clock warning from listing every tablet. This is one stored time and one comparison. The measured problem is `TestNoRTCEnrollmentDateCheck`.
+
+Fixed 4 November, before the check reached main: central's answers report their `Date` header to the hub (`central.Client.SawDate`), which keeps the newest (`MetaCentralDateSeen`, stored at most every 10 minutes, so it survives a restart without network). When the hub's clock is more than 10 minutes behind it (`Hub.ClockBehind`), the future-date check leaves the dates to central, the device-clock warning is off, and the hub's page says "The hub's clock is behind". Guards: `TestEnrollmentFutureDatesClockBehind` and `TestHubClockBehindLeavesDatesToCentral` (central three days ahead of the hub; fails without the fix). The aggregate window (below) does not use it yet. The opposite case, the hub's clock more than 10 minutes ahead of the `Date` of central's latest answer (`Hub.ClockAhead`), does not happen on a Pi without an RTC, but a Windows PC's clock can be set ahead by hand: the hub's page then says "The hub's clock is ahead". Saves through the hub carry its time until the next pull, which replaces a held record whenever central's `updatedAt` differs from the copy's (`TestHubClockAheadPullRefreshes`).
+
+#### The clock starts at the image's date
+
+Every case in the table that depends on the size of the offset is worse with a fixed epoch than with a saved clock. With the epoch, a Pi 4 hub one month after its image's base date starts a month behind after every power cut without network. With a saved clock it starts behind by the length of the power cut.
+
+Recommendation: fix, in the image only. A root timer that runs `touch /var/lib/systemd/timesync/clock` every 15 minutes, and once at shutdown, gives systemd's existing epoch check a recent time. No hub code changes. This needs F1 on hardware first, to confirm the epoch, and once more after the change. The touched file is on the system partition. If the system partition becomes read-only (DEPLOYMENT.md, "Options under consideration"), it must move to the data partition, as that section already says.
+
+Done 12 November in the image, not yet run on a Pi (image/README.md, "Checks on a Pi after an image change"): `hub-clock.service` touches the file every 15 minutes and when it stops at shutdown. It is one service with a loop, not a timer, since a timer cannot also run at shutdown without a second unit. The mechanism applies with chrony: the epoch check is systemd's own at boot (PID 1), not systemd-timesyncd's, and nothing else updates the file now that timesyncd is removed.
+
+#### The month's aggregate form offline
+
+Offline, the hub's clock decides which periods are open (`aggregate.Window`). With the clock on 6 October and the true date 4 November, a monthly data set with 10 expiry days offers September, which central has locked, and not October, which staff need to report (`TestNoRTCAggregateWindow`). Values entered for September are refused at push. A sync cycle that runs between the network's return and chrony's step also pulls by the wrong window and drops the stored October forms until the next cycle.
+
+Recommendation: with the saved clock above, the offset is the outage, and this happens only across a month's end. Then warn: the hub's page and the Data Entry app's lock already show "locked". With the comparison from the first case, the hub can also use central's last time as a lower bound for its own when it decides periods. That keeps the forms right whenever the hub is behind the last time it was online.
+
+#### No NTP, no central
+
+The hub verifies central's certificate by its own clock. Let's Encrypt certificates last 90 days and are renewed after about 60. A hub behind the start of central's current certificate cannot complete a TLS handshake, so it stays offline: nothing is pushed or pulled (`TestNoRTCProbeFailsOnCertificateNotYetValid`). chrony steps the clock at its first answer from NTP; how soon that comes after the network returns is for F1 to show. Where the facility's network blocks UDP port 123, or the uplink drops NTP, the clock is never set and the hub never comes online. The log says why, once a minute: `central still unreachable probe="… x509: certificate has expired or is not yet valid: current time … is before …"`. The demo central's current certificate ends 19 December, so it started about 20 September, and a hub at 6 October still reaches it until the certificate is renewed in late November.
+
+Recommendation: warn, and add a requirement. DEPLOYMENT.md should say that the hub needs NTP (UDP 123 to `pool.ntp.org`, or a local server in `chrony` sources) from the facility's network. The hub's page and heartbeat should say "the hub's clock is wrong" when the probe fails with this x509 error, so support sees the cause without the log. The hub cannot set the clock itself: it runs without `CAP_SYS_TIME`, and should stay that way.
+
+#### The hub's certificate issued while ahead
+
+The hub dates its server certificate an hour before its own now. A PC whose clock is two days ahead, restarting on a new address, issues a certificate that every device with the right time refuses as not yet valid. Once the PC's clock is right, the hub keeps that certificate: it renews only 60 days before the end or on a change of names or addresses (`TestNoRTCCertificateIssuedAhead`). Every device is locked out of the hub until the true time passes the certificate's start. An authority made at first boot with the clock ahead has the same problem, and no new server certificate helps (`TestNoRTCAuthorityMadeAhead`).
+
+Recommendation: fix the server certificate, accept the authority. One more condition in `Certs.fits`: a certificate whose start is more than an hour after now is replaced. The check runs every 30 seconds, so the hub serves a valid certificate within a minute of its clock being right. The authority is made at first boot, at the depot with a network, so an authority made ahead is rare. Replacing it would make every device install a new one, so leave it.
+
+#### Others
+
+- Aggregate refusals: `aggregateReplaced` compares central's `lastUpdated` with the edit's time on the hub's clock. The tracker side uses central's `Date` header for the same question (`changedSinceRefused`). Proposal: record central's `Date` header with an aggregate refusal too (`AddIssue` gets it for tracker refusals already), and compare with that. This belongs with the refused-changes plan.
+- Android incremental syncs between 1 day and about 1.5 days behind leave out the newest offline records for other devices (`TestNoRTCIncrementalSyncWindow`). With the image's epoch the offset is weeks, so this window is rarely hit today. With a saved clock it becomes the length of a power cut of that size. Accept; with the lower bound from the first case, the hub could stamp its writes with the later of its clock and central's last time.
+- Reserved values and pruning go wrong only with a clock more than 30 to 90 days ahead. Accept.
+
+### What only hardware can tell
+
+- Whether the Pi 4 starts at 6 October 00:27 UTC, as read from the image, or at some saved time.
+- How long chrony takes to set the clock after the uplink returns, against how long the hub takes to go online (one probe every 15 seconds) and to run a sync cycle (within a random 5 minutes, or the 15-minute timer). If the hub syncs first, the cycle runs with the clock a month behind: tokens renewed with early expiry, the heartbeat dated 6 October, aggregate forms pulled by September's window.
+- Whether e2fsck at boot, seeing the last mount time in the future, adds to the boot time on the SD card.
+
+F1 on the Pi 4, 10 November (the session records, private notes, docs/sessions/FINDINGS-SESSIONS.md, "F1, the Pi 4 started without network, passes"): it starts at 6 October 00:27 UTC, as read from the image. The hub was online about 10 s after the uplink returned, and chrony stepped the clock 4½ minutes after it, by 3 066 521 s. The hub's first cycle was still pushing 3 400 waiting objects at the step, so the cycle effects above were not seen; with a small backlog they would be. The boot time was not measured (power-on not noted).
+- What the Data Entry app and Android Capture show for the refusals above, on a tablet. Session B has no tablet; F4 with the hub behind needs an image built from `ready2`, and session B's image is built from dad9c4d, before F4.
+- On Windows, whether the Windows Time service steps a clock days off, and how fast (F2, session B part 2.3).
+
+## Appendix B. Two-factor login
+
+A study of two-factor authentication (2FA) for the hub, written 4 November 2026 on the `study-2fa` branch (base f70c7d5, the same tree as `ready-all` 601519e). The question was whether supporting it would be difficult. Nothing here changes the hub. The options at the end are proposals, and the decisions marked "Olav" are open.
+
+Everything in the first two tables was checked on DHIS2 2.42.7.1 and 2.43.2.1 (broker instances from the Sierra Leone seeds), on Android Capture 3.5.0 on the Samsung tablet, and with Chromium against central and against a hub running the live test kit. Screenshots are in `windows/out/2fa/` in the shared repo. Rows marked "source" come from reading Capture 3.5.0 and its SDK 1.15.0, because neither instance nor the demo central has the setting that turns that path on.
+
+### Central
+
+| | 2.42.7 | 2.43.2 |
+|---|---|---|
+| Kinds of 2FA | TOTP (authenticator app) and email. TOTP is on by default; email needs `login.security.email_2fa.enabled = on` in dhis.conf, a mail server and a verified address. Email answered 409 "Email based 2FA is not enabled" (E3045) here. `GET /api/configuration/twoFactorMethods` says which are on. | same |
+| How a user enrols | Profile app, or `POST /api/2fa/enrollTOTP2FA`, `GET /api/2fa/qrCodeJson` (the secret, only while enrolling), `POST /api/2fa/enabled` with a code. An admin can turn it off for a user: `POST /api/users/{uid}/twoFA/disabled`. Central cannot require 2FA of a user or a role. | same |
+| `/api/auth/login`, no code or a wrong code | 200 `{"loginStatus":"INCORRECT_TWO_FACTOR_CODE_TOTP"}`, no cookie | same |
+| `/api/auth/login`, wrong password (with any code) | 401 "Bad credentials" | same |
+| `/api/auth/login`, right code | 200 SUCCESS and a session cookie. The cookie works for reads and tracker writes; it lasts `system.session.timeout`, 1 hour by default. | same |
+| Basic auth on `/api/me` | 401 | same |
+| A PAT made after 2FA was turned on | Made without error, then refused on every request: 401 "The API token is disabled, locked or 2FA is enabled." | same |
+| A PAT made and used before 2FA was turned on | not tested | kept working after 2FA was turned on: 200 for 34 minutes, then 401 after a restart of central, so a cache on central. A PAT made before but first used after was refused. |
+| Wrong codes in a row | no lockout: 7 wrong codes, then the right one, logged in, also with `keyLockMultipleFailedLogins` on | same |
+
+Two things follow for any client. The answer to a right password is different from a wrong one (200 against 401), so the code is the only thing between a known password and the account. And nothing on central slows down guessing of codes.
+
+### Clients
+
+| | Android Capture 3.5.0 | Capture web, against central | Capture web, through the hub today |
+|---|---|---|---|
+| Online login of a 2FA user | Fails: "The username or password are incorrect". It sends Basic auth, central answers 401. Same on 2.42 and 2.43 (screenshots `a42-01`, `a43-01`). | Asks for the code after the password ("Two-factor authentication", `web42-central-2`), then logs in. | The login screen asks for the code (the hub passes central's answer on, `web42-hub-2`) and the login succeeds. The next request fails: the hub sends the user's PAT upstream, and central refuses it (401, `web42-hub-3`). |
+| The hub's own page (`/hub/login`) | n/a | n/a | "Login failed (HTTP 200)": the form has no code field. |
+| Offline login | Password only, checked against a hash on the tablet. A user who turned 2FA on after an online login still logged in offline with the password alone (`a42-04`), then failed online (`a42-05`). | n/a | Password only, until the hub's first sync cycle with that user's PAT. The cycle gets 401 and marks the user "needs login". After that the hub refuses the user offline ("needs connection"), and every online login clears the mark until the next cycle sets it again. |
+| Changes made offline | Basic auth on sync (a 2FA user cannot get this far). | n/a | Never reach central: the push uses the refused PAT. They wait for an online login that does not help, and are refused after 7 days (`loginWait`). |
+| Wrong codes | n/a | not limited by central | not limited by the hub either: the throttle counts only 401, and wrong codes answer 200 (14 in a row passed). This is F2 of the 27 October review, still open. |
+| 2FA with OAuth2 (source) | On 2.43 and later, if central runs its own authorization server (`oauth2.server.enabled = on`, off by default), Capture enrols the device once in the browser (`/api/auth/enrollDevice`, then RFC 7591 registration with a key kept in the Android keystore). It logs in through central's own login page, which asks for the code, and gets an access token and a 30-day rotating refresh token. Offline it asks for a 4-digit offline code or biometrics, not the 2FA code. Capture's own 2FA settings screen is only shown for these accounts. | n/a | n/a |
+
+So FINDINGS item 13 is out of date in one point. It says web 2FA users log in offline with the password alone. That holds only until the first sync cycle; after it a 2FA user cannot use the hub at all, online or offline.
+
+Android is the reference here, and on its own it gives no 2FA offline either. With Basic it cannot log in a 2FA user at all. With OAuth2 the second factor offline is the enrolled device plus a short code, and the 2FA code is asked only online, by central.
+
+### Options
+
+The options below are for offline login. Each of them first needs one change, because today a 2FA user is locked out of the hub.
+
+**Needed first: a credential that central accepts.** For 2FA users the hub cannot use a PAT, online or for pushes. The hub already reads `/api/me` at login; `twoFactorType` (`TOTP_ENABLED`, `EMAIL_ENABLED`) tells it.
+
+- Online, use the session's central cookie for that user instead of the PAT (`proxy.Upstream`, `core.UpstreamAuth`). The cookie works for reads and writes; checked by hand on 2.42.
+- Make no PAT for these users, so the sync cycle does not mark them "needs login".
+- Pull their data with the cookie while they have a session, and otherwise with the hub token where it is enough.
+- Push their offline changes only with the cookie of their next online login. The cookie lives 1 hour by default, so the push must start at the login. The refusal text says "log in online to send".
+- Count `INCORRECT_TWO_FACTOR_CODE_*` as a failed login in the throttle (F2).
+
+Cost: one more credential kind in the push and pull paths, with its tests on 2.42 and 2.43. Staff: nothing new. It fails when the user does not log in online for 7 days: the changes are refused, and a manager can resend them as another user, as now.
+
+**(a) A TOTP of the hub's own.** At the first online login the hub shows a QR code and keeps a secret per user. Offline it answers the login screen with `INCORRECT_TWO_FACTOR_CODE_TOTP`, so the stock login app asks for the code without a new screen.
+- Store: a secret per user. Offline login must check it before the store is unlocked, so it lives in the key file, sealed with the device key where there is one. It cannot be bound into the key slot, as a code changes every 30 seconds and the slot needs a fixed secret.
+- Code: an enrolment screen, a check in `loginOffline`, a reset on the hub page, the throttle on codes.
+- Staff: a second authenticator entry, "Facility hub", next to central's. Central's secret cannot be reused: central shows it only while the user enrols, and staff enrol in the profile app, not through the hub.
+- Failure: a lost or new phone locks the user out offline until a hub manager resets the hub's secret (online, as hub admin). A phone without a clock that the hub trusts (appendix A) refuses right codes.
+- Android: no gain. Android cannot log in a 2FA user at all.
+
+**(b) A registered browser.** At an online login with the code, the hub sets a long-lived device cookie and keeps its hash. Offline it asks for the password and that cookie.
+- Store: a table of (user, device hash, first and last use), with a list and a "forget" button on the hub page.
+- Code: about the size of the refusal pages. No new screen for staff; the offline refusal says "log in once online from this browser".
+- Staff: nothing new.
+- Failure: a new tablet, another browser or cleared site data locks the user out offline until the next online login. On a PC shared by all staff the factor means "this PC", which offline login at the facility already implies.
+- This is Android's own model under OAuth2: device enrolled online, short check offline.
+
+**(c) Accept the gap and document it.** Do the change in "Needed first", and keep offline login password-only for 2FA users. Write it in DEPLOYMENT.md: a country that relies on 2FA gets password-only logins offline at the facility.
+
+**(d) 2FA users online only.** At login, a user with 2FA gets no key slot and no PAT. The hub passes them to central with their session cookie, as it does already for users who are not facility staff ("pass-through only", REVIEW-2 F5). Offline the hub refuses them, as it refuses any user it does not know.
+- Code: a check in `registerOnline` and a test; the online path exists. The throttle fix is part of it.
+- Staff: a 2FA user who must work offline needs an account without 2FA. The country decides who that is.
+- Failure: none beyond today's pass-through; 2FA keeps its full meaning.
+
+**(e) OAuth2 like Android.** Where central runs its authorization server, the hub enrols itself once, and each user logs in through central's login page in the browser. The hub keeps that user's 30-day refresh token, sealed under the data key, and pushes with it. Offline login stays as in (b) or (c). This is the only option that sends a 2FA user's offline changes days later as that user. It needs dhis.conf changes on central (`server.base.url`, `oauth2.server.enabled`, a signing keystore), which neither test instance nor the demo central has. It is also the only way to support 2FA users on Android through the hub. That would mean the hub answers Capture's OAuth2 discovery and passes the browser steps to central. Untested; months, not days.
+
+### Online Android through the hub
+
+No separate fix is possible today. Capture 3.5.0 has no code prompt for Basic accounts, so a 2FA user fails directly against central exactly as through the hub (tested on the tablet against 2.42 and 2.43). Android 2FA works only through OAuth2 (option (e)).
+
+### Recommendation
+
+Do (d) now: 2FA users online only, with the throttle counting wrong codes. It is small, it ends today's lock-out, and it keeps 2FA whole on the hub. If a country needs 2FA staff offline, add (b) on top. It costs staff nothing, matches Android's model, and fails in a way an online login repairs. Leave (a) out: a second authenticator entry and a manager reset for each lost phone are a high price for a code the hub alone checks. Keep (e) in view for the day a country turns on central's authorization server.
+
+Decisions for Olav:
+
+1. Are 2FA accounts online only on the hub (d), or offline with the password alone (c)?
+2. If 2FA staff must work offline: is password plus a registered browser (b) enough?
+3. Is Android 2FA through the hub out of scope until central's OAuth2 is in use (e)?
+4. Correct FINDINGS item 13 once these are decided.
+
+### Not confirmed
+
+- The OAuth2 path of Android (enrolment, browser login with the code, offline code, refresh tokens) is from source and DHIS2's documentation only. No instance available had `oauth2.server.enabled`. The documentation also says the device enrolment was backported to 2.42 (DHIS2-19948), but SDK 1.15.0 uses OAuth2 only from 2.43.
+- Email 2FA was not tried; it needs dhis.conf and a mail server. Central's login answers for it (`INCORRECT_TWO_FACTOR_CODE_EMAIL`, a sent code) are not checked.
+- How long a PAT used before 2FA keeps working on 2.43 without a restart (over 34 minutes) was not followed to the end; the hub should not rely on it.
+- The session-cookie credential in "Needed first" and option (d) are not built. Only the cookie's reads and writes were checked by hand.
+- How Android's sync behaves when its user turns 2FA on while logged in: the next sync reported success, but whether it reached central (with a central session cookie from the login) was not checked.

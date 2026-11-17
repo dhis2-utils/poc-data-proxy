@@ -74,7 +74,7 @@ const (
 	caDonor      = "SynCaDonor1"
 	ccDonor      = "SynCcDonor1"
 
-	// Aggregate (docs/superpowers/specs/2026-10-15-aggregate-data-entry-design.md).
+	// Aggregate (docs/design/2026-10-15-aggregate-data-entry-design.md).
 	deAggNum   = "SynDeAggNm1"
 	deAggInt   = "SynDeAggIn1"
 	deAggReq   = "SynDeAggRq1"

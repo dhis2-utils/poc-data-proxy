@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks a built hub image without booting or mounting it (docs/superpowers/specs/
+# Checks a built hub image without booting or mounting it (docs/design/
 # 2026-10-19-pi-image-design.md, "Testing"). Run as root (debugfs reads the files).
 #
 #   sudo image/check.sh dhis2-hub-0.3.0-arm64.img.xz
@@ -194,7 +194,7 @@ DIAG=$(cat_ /usr/local/sbin/hub-diag)
 check "hub-diag writes only to a mounted boot partition" grep -qF 'mountpoint -q /boot/firmware' <<<"$DIAG"
 check "hub-diag syncs its new file before the rename" grep -qF 'sync "$out.tmp"' <<<"$DIAG"
 
-# The clock for a Pi without RTC (docs/NO-RTC.md).
+# The clock for a Pi without RTC (docs/DEPLOYMENT.md, appendix A).
 check "hub-clock.service is enabled" exists /etc/systemd/system/multi-user.target.wants/hub-clock.service
 check "hub-clock.service touches systemd's saved time" sh -c "debugfs -R 'cat /etc/systemd/system/hub-clock.service' '$R' 2>/dev/null | grep -q '^ExecStop=/usr/bin/touch /var/lib/systemd/timesync/clock'"
 installed systemd-timesyncd && bad "systemd-timesyncd is installed: hub-clock is not needed" || ok "systemd-timesyncd is not installed (chrony): hub-clock keeps the saved time"

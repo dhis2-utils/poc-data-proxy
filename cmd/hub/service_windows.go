@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
-// service is `hub service run|install|uninstall` (docs/superpowers/specs/2026-10-20-
+// service is `hub service run|install|uninstall` (docs/design/2026-10-20-
 // windows-service-design.md): the Windows installer installs and removes the service;
 // the service manager runs `hub service run`.
 func service(args []string) error {

@@ -15,7 +15,7 @@ import (
 )
 
 // Instructions in central's dataStore count only with a code made with this hub's move
-// key (docs/superpowers/specs/2026-11-11-signed-instructions.md, review R-07): sharing
+// key (docs/design/2026-11-11-signed-instructions.md, review R-07): sharing
 // cannot tell the Facility Hub app's writes from those of any DHIS2 user who created
 // the entry first. A hub without a move key (not approved) cannot check codes; each
 // caller says what it does then.

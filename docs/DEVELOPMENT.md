@@ -1,6 +1,6 @@
 # Developing the hub
 
-For people changing the code. How to change it (keep the structure, guards, checks before committing) is in [AGENTS.md](../AGENTS.md); how it is tested, in [TESTING.md](TESTING.md). Settings are in [CONFIGURATION.md](CONFIGURATION.md), releases in [RELEASES.md](RELEASES.md).
+For people changing the code. How to change it (keep the structure, guards, checks before committing) is in [AGENTS.md](../AGENTS.md); how it is tested, in [TESTING.md](TESTING.md). The hub's settings and its releases are the last two sections.
 
 ## Layout
 
@@ -120,3 +120,77 @@ go run ./cmd/hubtest matrix -profiles synthetic,sierra-leone,laos -versions 42  
 - **`internal/compat`** checks the 2.42 response shapes against the recorded fixtures.
 - **Live DHIS2**, the oracles and the real Capture apps: [TESTING.md](TESTING.md). Results so far: [FINDINGS.md](FINDINGS.md).
 - **Performance:** [PERFORMANCE.md](PERFORMANCE.md).
+
+## Configuration
+
+The hub has no facility-specific configuration. It reads one small image-defaults file, the same for every hub in a country (spec 6.1). See [`deploy/hub.example.yaml`](../deploy/hub.example.yaml):
+
+| Key | Meaning |
+|---|---|
+| `central_url` | Central DHIS2 base URL; optional. Without it (the generic image), set-up asks for central's address and the setup code first (in `facility-hub/hub.txt` on the USB stick, or `data_dir/setup-token`), checks the server (https, a trusted certificate) and shows its name before anyone logs in. With it and without `central_hosts`, set-up always uses it |
+| `central_hosts` | Hosts setup may point a hub at (`hmis.example.org, *.hmis.example.org`); setup then asks for an `https://` URL on them. With neither key, setup needs the token in `data_dir/setup-token` (printed on the label) |
+| `network` | `networkmanager` (the Pi image): the hub manages its network through NetworkManager, with the setup Wi-Fi and case C (`internal/netsetup`). Empty (default): the machine's network as it is |
+| `mdns` | `true`: the hub answers `dhis2.local` itself (Windows, macOS; the Pi image has avahi). Default `false` |
+| `setup_local_only` | `true`: set-up only from the machine itself, and no setup code (Windows, macOS: being at the PC proves presence at the facility). Default `false` |
+| `uplink_switch` | `true`: "Simulate uplink cut" on the admin page, for demonstrations. Default `false`: in the field a hub that looks offline lets staff type in a new central |
+| `tpm` | Seal the hub's device key with the machine's TPM 2.0 where it has one (`internal/devkey`). Default `true`. `false` keeps a new hub off a TPM that misbehaves; it cannot take a hub that already has `device.key` off its TPM, whose sealed files then cannot be opened |
+| `password_fallback` | Store a user's central password, sealed, when a PAT cannot be created (spec 7.1). Default `false` |
+| `listen` | Listen address, e.g. `:8443`; `:443` on the image, for `https://dhis2.local` |
+| `http_listen` | Plain-HTTP address for the start page and the hub's certificate (`:80` on the image, for `http://dhis2.local`); off when empty (the default). Every other request there gets the start page, which moves on to HTTPS once the device trusts the hub |
+| `data_dir` | Store (`hub.db` key file, `hub.db.data` encrypted data file), TLS certificates (the hub's authority `ca.crt` for devices, also served at `/hub/ca.crt`, with its key `ca.key`; the server's `tls.crt` and `tls.key`, renewed by the hub), request log, upgrade files |
+| `sync_interval`, `ping_interval`, `ping_timeout` | Sync cadence (default 15m, with ±10 % jitter) and connectivity probe (15s while offline, 60s while online; 5s timeout; spec 5.2) |
+| `reconnect_delay` | After an outage, wait up to this long at random before syncing, so hubs do not reach central together (default 5m). Until the outbox is pushed, the hub keeps answering tracker and aggregate requests itself |
+| Retention by program and tracked entity type | Central's dataStore key `facility-hub-config/retention`, read by every hub: `{"defaultMonths": 0, "programs": {"<program>": 12}, "trackedEntityTypes": {"<type>": 6}}`. Months of data kept, 0 or no entry keeps everything. Event programs keep events by event date. Tracker programs keep active enrollments in full and closed ones until their last change is older than the window, then as hidden stubs (for the "enrol once" check). Tracked entity types have no default: people are kept unless their type is named; an entity of a type with a window goes when it is old and has nothing left in full |
+| `access_refresh_interval` | How often each user's access list is re-read from central, besides at login (default 1h) |
+| `pat_expiry_days` | Lifetime of the personal access tokens the hub creates |
+| `tls` | `true` (default): at first boot the hub creates a CA limited to its own names and private addresses, issues its server certificate, and keeps the CA's key (`ca.key`) to renew it; both private keys are sealed with the device key where the machine has a TPM. `false`: plain HTTP for development |
+| `reserved_pool_size` | Default reserved values kept per generated attribute (default 500); the Facility Hub app can override it per attribute in `facility-hub-config/reserved` (an explicit 0 there turns an attribute's offline pool off). At most 5000 per attribute, here and in the app. A pool refills only when it falls below a quarter of its target |
+| `usb_dir` | Where the box's USB stick is mounted (none by default; the image uses `/media/hub-usb`). Before set-up the hub writes its setup code there; after, each minute, what a restore needs: the pending saves, the key file and the hub's state (docs/RECOVERY.md, C2). Used only when it is a mount point |
+| `full_pull_interval` | How often a full, non-incremental pull runs per access group (default 168h, a week). A changed access list gives a full pull at the next sync anyway |
+| `ownership_check_interval` | How often the hub checks which of its people the facility still owns, to catch transfers out (default 1h) |
+| `offline_search_facility` | Answer offline searches with `orgUnitMode=ACCESSIBLE` from the facility's data instead of refusing them (default `true`; FINDINGS.md) |
+| `log_requests` | Log every request (method, path with IDs replaced, parameter names, status, time) to `hub.log` and append it to `data_dir/requests.log` (spec 13.1). No parameter values: they can name a patient |
+| `hub_hosts` | Extra host names clients may use for the hub (comma separated; no wildcard). The hub answers 421 to any other `Host`; its own names and addresses are always accepted |
+| `session_idle`, `session_max` | End a hub session after this long without requests (default 1h) or after login (default 12h) |
+| `key_slot_max_age` | Remove the key slot of a user who has not logged in for this long (default 2160h, 90 days); the three most recently used slots are always kept |
+
+## Releases and self-upgrade
+
+Releases come from the supplier's GitHub releases (`dhis2-utils/poc-data-proxy`, tag `v<version>`), signed with an ed25519 key. The release source and the public key are built into the binary, not set in `hub.yaml`:
+
+```bash
+./hub keygen -out release        # release.key (the release workflow's secret), release.pub
+go build -ldflags "-X github.com/dhis2/facility-hub/internal/upgrade.ReleaseKey=$(cat release.pub)" ./cmd/hub
+./hub release -key release.key -dir out -version 0.3.0 [-image dhis2-hub-0.3.0-arm64.img.xz] \
+    linux/arm64=hub-linux-arm64 linux/amd64=hub-linux-amd64 windows/amd64=hub-windows-amd64.exe
+```
+
+**The version** is in `VERSION`: the next release, like an app's `package.json`. Every build reads it:
+- a release is `VERSION` itself, tagged `v<VERSION>`; the release workflow refuses any other tag;
+- CI builds (the Windows installer, macOS, a Pi image run by hand) are `<VERSION>-ci.<run number>`, which sort above the previous release and below this one, so each installs over the one before;
+- a plain `go build` is `0.0.0-dev`, older than all of them.
+
+After a release, the next commit raises `VERSION`.
+
+**On GitHub**, `.github/workflows/release.yml` does this for a tag `v<version>` on a commit of the default branch (a tag elsewhere is refused):
+1. tests;
+2. builds `linux/arm64` and `linux/amd64` (`windows/amd64` joins with the Windows service);
+3. builds and checks the Pi image (`image.yml`);
+4. enters the GitHub environment `release` (tags `v*` only), and signs with its secret `RELEASE_SIGNING_KEY`;
+5. publishes the release.
+
+The signing key is a secret of the environment `release`, not of the repository, so a workflow on another branch cannot read it; only the publish job of a tag push enters that environment. The public key is the repository variable `RELEASE_PUBLIC_KEY`. Tags cannot be moved or deleted, so run the workflow by hand first: a dry run on the same commit, which publishes nothing and signs with a throwaway key (and the Windows installer with the test certificate), whatever secrets are set. Actions in the workflows are pinned by commit; to update one, take the commit of its new tag from `git ls-remote --tags https://github.com/actions/<name>`. The workflows build with the newest Go 1.26 patch (`go-version: '1.26'`, `check-latest`), not the 1.26.0 that `go.mod` names as the least version; a move to Go 1.27 changes both.
+
+`out/` holds the release's assets: the binaries (`hub-linux-arm64`, …), the image if given, `release.json` (version, file names and SHA-256 per platform, the image) and `release.json.sig`. A build without a key never upgrades.
+
+Each country chooses the version on central, in the Facility Hub app's "Hub version" page, which writes `facility-hub-admin/release`: `{"version": "0.3.0", "pilotHubs": [...], "percent": 10}`. After each online sync cycle a hub reads it; if the version is newer than its own, has not failed here before, and the hub is a pilot hub or its ID hashes under the percentage, it fetches that release's signed `release.json`, then:
+
+1. downloads the binary in the background, beside the sync cycle, and verifies it against `release.json`;
+2. at a later cycle, once the binary is there: pushes its outbox;
+3. blocks tracker writes;
+4. runs the new binary's migrations on a copy of the store;
+5. swaps binary and store;
+6. re-execs in place, handing the in-memory data key over a pipe so the store stays unlocked;
+7. health-checks itself: the store and `/hub/status` (not central, so a slow or unreachable central does not roll a good release back).
+
+If the health check fails, it restores the previous binary and store and re-execs again. The result (`ok`, `failed` or `ignored`) goes into the heartbeat as `lastUpgrade`.

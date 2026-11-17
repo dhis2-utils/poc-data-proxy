@@ -1,7 +1,7 @@
 // Package aggregate holds what the hub needs to answer the Aggregate Data Entry app
 // offline: periods, windows and locks, the access central gives each user
 // (dataEntry/metadata), and edits as they are queued and pushed. It knows nothing of
-// the store or of HTTP (docs/superpowers/specs/2026-10-15-aggregate-data-entry-design.md).
+// the store or of HTTP (docs/design/2026-10-15-aggregate-data-entry-design.md).
 package aggregate
 
 import (

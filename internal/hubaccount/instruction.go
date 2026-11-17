@@ -11,7 +11,7 @@ import (
 )
 
 // Instructions the Facility Hub app writes in central's dataStore carry a code per
-// approved hub, made with that hub's move key (docs/superpowers/specs/
+// approved hub, made with that hub's move key (docs/design/
 // 2026-11-11-signed-instructions.md). The app computes the same (codes.ts);
 // TestInstructionCodeVector holds a value both must give.
 

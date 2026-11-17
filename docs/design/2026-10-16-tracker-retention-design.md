@@ -1,12 +1,12 @@
 # Retention for tracker programs and tracked entity types
 
-Status: implemented 2026-10-16 (docs/superpowers/plans/2026-10-16-tracker-retention.md). What central does: docs/FINDINGS.md. Measured: docs/PERFORMANCE.md. The first fill did not get smaller on central where people had recent activity in other programs (see there).
+Status: implemented 2026-10-16 (docs/plans/2026-10-16-tracker-retention.md in the private notes). What central does: docs/FINDINGS.md. Measured: docs/PERFORMANCE.md. The first fill did not get smaller on central where people had recent activity in other programs (see there).
 
 ## Goal
 
 A hub keeps each tracker program's data for a window the country sets, not five years of everything, so its data file and first fill fit Pi-class storage (docs/PERFORMANCE.md: the busy HC IV sizing is 3.1 million events with everything kept, 1.2 million with retention by programme). People are kept, so search and duplicate checks work offline. Optionally, tracked entities of other types (lab samples, commodities) are not kept forever.
 
-Event programs already have retention (docs/superpowers/specs/2026-10-15-event-programs-design.md); this extends the same table and the same pattern (a window in the pull, plus pruning) to tracker programs and tracked entity types.
+Event programs already have retention (docs/design/2026-10-15-event-programs-design.md); this extends the same table and the same pattern (a window in the pull, plus pruning) to tracker programs and tracked entity types.
 
 ## Decisions (from the conversation)
 

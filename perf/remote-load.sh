@@ -25,7 +25,7 @@
 # incrementally like Android or eRegisters devices. The default, 0.95, makes 3 of 60
 # users such devices: Android Capture is on hold for hubs, and a facility has a few
 # eRegisters browsers at most. The first VM run used hubload's default of 0.7 (18 of
-# 60), and their offline syncs exhausted the hub's memory (docs/INCREMENTAL-SYNC-FIX.md).
+# 60), and their offline syncs exhausted the hub's memory (docs/PERFORMANCE.md, "On a Windows PC").
 #
 # CHANGED is the share of active enrollments, with their people, that the fake central
 # says changed now; the rest changed earlier. The default, 0, means all: every

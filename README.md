@@ -29,24 +29,43 @@ The design and the choices behind it: [DEPLOYMENT.md](docs/DEPLOYMENT.md). What 
 
 ## Documents
 
+**For country teams**
+
 | Document | What it covers |
 |---|---|
-| [SPEC-facility-hub-poc.md](docs/SPEC-facility-hub-poc.md) | The original specification, as it was asked |
-| [SUPPORTED.md](docs/SUPPORTED.md) | What works offline through the hub, per app, and the endpoints and parameters it answers offline (generated from the code) |
-| [FINDINGS.md](docs/FINDINGS.md) | What we learned about DHIS2, the Capture apps and the spec: answers to its open questions, where it was wrong, what the tests found |
-| [PENDING.md](docs/PENDING.md) | What is open: decisions, work to build or fix, runs on hardware and against DHIS2, and ideas under consideration |
-| [TESTING.md](docs/TESTING.md) | How the hub is tested: profiles, the live suite against real DHIS2, the differential oracles, phases |
-| [PERFORMANCE.md](docs/PERFORMANCE.md) | How the hub scales: current results on Pi-class profiles, load on central, sizing, history |
-| [HARDWARE-TESTING.md](docs/HARDWARE-TESTING.md) | Testing on real Raspberry Pis (Pi 4 1 GB, Pi 5 4 GB, SD card and SSD): set-up, calibration, ladder, full downloads, bytes written, power cuts |
-| [ADVERSARIAL-TESTING.md](docs/ADVERSARIAL-TESTING.md) | Worst cases run against a real DHIS2 (central, network, power, users changing under offline work): each scenario and what must hold; results in FINDINGS.md |
-| [INCREMENTAL-SYNC-FIX.md](docs/INCREMENTAL-SYNC-FIX.md) | Incremental syncs under load: the measured problem and its fix (built 23 Oct 2026) |
-| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Rolling out hubs: hardware, image, setup at the facility, networks, reaching the hub securely, running the fleet; options under consideration |
-| [FACILITY-HUB-APP.md](docs/FACILITY-HUB-APP.md) | The Facility Hub app on central: its screens, and what it must match on the hub's side (approving a hub's own account, move codes) |
-| [RECOVERY.md](docs/RECOVERY.md) | Keeping unsynced data safe: backup and recovery options (ideas, not decisions) |
-| [AGENTS.md](AGENTS.md) | How to change the code: keep the structure, guards, checks before committing. Reviews (`docs/reviews/`), which the code cites by name, are kept in a private notes repository |
-| [CONFIGURATION.md](docs/CONFIGURATION.md) | The hub's settings (`hub.yaml`) and the dataStore keys it reads on central |
-| [RELEASES.md](docs/RELEASES.md) | Versions, the release workflow, signing, and how a hub upgrades itself |
-| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | The code's layout, building, running and testing |
+| [user/SETUP-PI.md](docs/user/SETUP-PI.md) | Setting up and testing a hub on a Raspberry Pi, step by step |
+| [WINDOWS-INSTALL.md](docs/WINDOWS-INSTALL.md) | Installing the hub on a Windows PC |
+| [SUPPORTED.md](docs/SUPPORTED.md) | What works offline, per app, and what needs a connection |
+| [FACILITY-HUB-APP.md](docs/FACILITY-HUB-APP.md) | The Facility Hub app on central |
+
+**The design**
+
+| Document | What it covers |
+|---|---|
+| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Rolling out hubs: hardware, the image, set-up, networks, reaching the hub securely, running the fleet; a hub without a real-time clock and two-factor login (appendices) |
+| [RECOVERY.md](docs/RECOVERY.md) | Keeping unsent data safe: backup and recovery |
+| [CONNECTIVITY.md](docs/CONNECTIVITY.md) | How facilities are connected, and what that means for the hub |
+| [design/](docs/design/) | The design of each larger feature, as built (the code cites them) |
+
+**What we learned, and what is open**
+
+| Document | What it covers |
+|---|---|
+| [FINDINGS.md](docs/FINDINGS.md) | What building and testing the hub taught us about DHIS2 and the Capture apps, and the hub's bugs found and fixed |
+| [PENDING.md](docs/PENDING.md) | What is open: decisions, work, runs, known weaknesses, ideas under consideration |
+| [PERFORMANCE.md](docs/PERFORMANCE.md) | How the hub scales, the load on central, and sizing |
+
+**Testing and development**
+
+| Document | What it covers |
+|---|---|
+| [TESTING.md](docs/TESTING.md) | How the hub is tested: profiles, the live suite against real DHIS2, the oracles |
+| [ADVERSARIAL-TESTING.md](docs/ADVERSARIAL-TESTING.md) | The worst cases tested, and what must hold in each |
+| [HARDWARE-TESTING.md](docs/HARDWARE-TESTING.md) | Testing on Raspberry Pis |
+| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | The code's layout, building, running, testing, the settings, and releases |
+| [AGENTS.md](AGENTS.md) | How to change the code: keep the structure, guards, checks before committing |
+
+The original brief is [SPEC-facility-hub-poc.md](docs/SPEC-facility-hub-poc.md); code comments cite its sections ("spec 9.2"), and FINDINGS.md says where it turned out wrong. Reviews (`docs/reviews/`), which the code also cites, and the test sessions' records are kept in a private notes repository.
 
 ## Building and testing
 

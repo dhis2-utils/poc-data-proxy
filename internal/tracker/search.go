@@ -601,7 +601,7 @@ func (ix *Index) searchTEs(v *Viewer, q url.Values, program string) (*plan, *API
 	// Changed people are found once and checked in SQL, on the person's identifier in
 	// the index the search walks, so the rows of people who did not change are never
 	// read: on a hard disk an incremental sync read every enrollment of the program
-	// (docs/INCREMENTAL-SYNC-FIX.md). One JSON list, whatever its size.
+	// (docs/PERFORMANCE.md, "On a Windows PC"). One JSON list, whatever its size.
 	floor, apiErr := updatedFloor(q)
 	if apiErr != nil {
 		return nil, apiErr
@@ -794,7 +794,7 @@ var (
 // read newest first, with only the columns the check needs after the facility,
 // deleted and stub conditions in SQL, and reading stops at the first the user may
 // read: an incremental sync checks every changed person, and reading all their
-// children ran a small PC out of memory (docs/INCREMENTAL-SYNC-FIX.md).
+// children ran a small PC out of memory (docs/PERFORMANCE.md, "On a Windows PC").
 func (ix *Index) newestChild(v *Viewer, te string) (local bool, hub, newest string, apiErr *APIError) {
 	if ix.store == nil || !ix.store.Unlocked() {
 		return false, "", "", nil

@@ -327,7 +327,7 @@ type Viewer struct {
 	// so tombstones are read too, marked deleted. Otherwise they are not there.
 	IncludeDeleted bool
 	// Ctx is the request's: a search stops when its client has gone, so abandoned
-	// searches do not pile up on a slow machine (docs/INCREMENTAL-SYNC-FIX.md).
+	// searches do not pile up on a slow machine (docs/PERFORMANCE.md, "On a Windows PC").
 	Ctx context.Context
 
 	payloads map[string]M      // full payloads loaded for this request (prefetch)

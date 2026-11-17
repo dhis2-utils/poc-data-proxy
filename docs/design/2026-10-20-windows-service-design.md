@@ -1,6 +1,6 @@
 # The hub on a Windows PC (design)
 
-Status: from the conversation of 2026-10-19/20. The Pi image work (`docs/superpowers/specs/2026-10-19-pi-image-design.md`) is done; this is the next deployment target. No Windows machine is available yet: everything is built and tested as far as Linux allows (cross-compiled, unit-tested, packaged and signed here), and run on Windows when the user has a VM.
+Status: from the conversation of 2026-10-19/20. The Pi image work (`docs/design/2026-10-19-pi-image-design.md`) is done; this is the next deployment target. No Windows machine is available yet: everything is built and tested as far as Linux allows (cross-compiled, unit-tested, packaged and signed here), and run on Windows when the user has a VM.
 
 ## Intent
 

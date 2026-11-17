@@ -104,7 +104,7 @@ const older = (iso: string | undefined | null, now: Date, ms: number) => {
 }
 
 /**
- * The flags of a hub, from its heartbeat and the time (docs/superpowers/specs/
+ * The flags of a hub, from its heartbeat and the time (docs/design/
  * 2026-10-18-facility-hub-app-design.md, "Flags"). The thresholds are fixed.
  */
 export const flags = (hb: Heartbeat | undefined, now: Date): Flag[] => {

@@ -156,7 +156,7 @@ export const fromBase64 = (s: string): Uint8Array =>
         : new Uint8Array(0)
 
 /**
- * A hub's code for an instruction (docs/superpowers/specs/2026-11-11-signed-instructions.md):
+ * A hub's code for an instruction (docs/design/2026-11-11-signed-instructions.md):
  * base64 of the first 16 bytes of HMAC-SHA256(moveKey, "facility-hub instruction" 0
  * hubID 0 kind 0 canonical(obj without codes)). kind is "<namespace>/<key>" of the entry.
  */

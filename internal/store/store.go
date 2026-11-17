@@ -107,7 +107,7 @@ var dataMigrations = []string{
 	//
 	// outbox.params: the import flags a client sent with an offline write, sent along
 	// on push. agg_forms: central's answer per aggregate form
-	// (docs/superpowers/specs/2026-10-15-aggregate-data-entry-design.md).
+	// (docs/design/2026-10-15-aggregate-data-entry-design.md).
 	// users.stick_slot: each user's key slot with the password alone, for the USB
 	// stick's copy of the key file, whose own slots are bound to the device key
 	// (internal/devkey).

@@ -1,6 +1,6 @@
 # Facility Hub app, first version (design)
 
-Status: agreed in conversation 2026-10-17/18, scope "A. Operations core". Changed 2026-10-19: hub managers, not only superusers, approve hubs and make move codes (see "Hub managers" below). The contract with the hubs is [docs/FACILITY-HUB-APP.md](../../FACILITY-HUB-APP.md); the app's other duties, left for later, are in DEPLOYMENT.md section 6.
+Status: agreed in conversation 2026-10-17/18, scope "A. Operations core". Changed 2026-10-19: hub managers, not only superusers, approve hubs and make move codes (see "Hub managers" below). The contract with the hubs is [docs/FACILITY-HUB-APP.md](../FACILITY-HUB-APP.md); the app's other duties, left for later, are in DEPLOYMENT.md section 6.
 
 ## Purpose and users
 

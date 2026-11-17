@@ -1,5 +1,5 @@
 # A release: the hub binaries, the Pi image and the signed release.json, published as
-# the GitHub release v<version> that hubs upgrade from (docs/RELEASES.md).
+# the GitHub release v<version> that hubs upgrade from (docs/DEVELOPMENT.md, "Releases and self-upgrade").
 # Tags cannot be moved or deleted in this organisation: run this
 # workflow by hand (a dry run, nothing published) on the exact commit before tagging.
 #

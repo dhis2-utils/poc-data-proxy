@@ -496,7 +496,7 @@ var TestMoveKey = bytes.Repeat([]byte{7}, 32)
 
 // PutSigned writes obj (JSON) to central's entry kind ("<namespace>/<key>") as the
 // Facility Hub app does: with a code for this hub, which gets a move key first if it
-// has none (docs/superpowers/specs/2026-11-11-signed-instructions.md). Hubs ignore an
+// has none (docs/design/2026-11-11-signed-instructions.md). Hubs ignore an
 // entry without one.
 func (e *Env) PutSigned(kind, obj string) {
 	e.T.Helper()

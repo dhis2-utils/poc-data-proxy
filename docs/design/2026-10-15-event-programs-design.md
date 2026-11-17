@@ -1,6 +1,6 @@
 # Event programs through the hub, and retention by program
 
-Status: implemented 2026-10-15 (plan: docs/superpowers/plans/2026-10-15-event-programs.md; results in docs/FINDINGS.md, "Event programs through the hub").
+Status: implemented 2026-10-15 (plan: docs/plans/2026-10-15-event-programs.md in the private notes; results in docs/FINDINGS.md, "Event programs through the hub").
 
 ## Goal
 

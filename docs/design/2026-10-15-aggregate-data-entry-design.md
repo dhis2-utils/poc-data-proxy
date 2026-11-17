@@ -1,6 +1,6 @@
 # Aggregate data entry through the hub
 
-Status: implemented 2026-10-15 (plan: docs/superpowers/plans/2026-10-15-aggregate-data-entry.md; results in docs/FINDINGS.md, "Aggregate Data Entry through the hub"). Event programs (without registration) get a spec of their own.
+Status: implemented 2026-10-15 (plan: docs/plans/2026-10-15-aggregate-data-entry.md in the private notes; results in docs/FINDINGS.md, "Aggregate Data Entry through the hub"). Event programs (without registration) get a spec of their own.
 
 ## Goal
 

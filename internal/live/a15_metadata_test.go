@@ -15,7 +15,7 @@ import (
 	tk "github.com/dhis2/facility-hub/internal/testkit"
 )
 
-// A15, measured (docs/superpowers/plans/2026-10-30-open-findings.md, "Measure first"):
+// A15, measured (docs/design/2026-10-30-open-findings.md, "Measure first"):
 // cached metadata replayed offline after central changed it. First find out whether
 // Capture web and Android reload metadata offline at all, as a scenario with the real
 // apps; fix only if a client is shown a stale form.

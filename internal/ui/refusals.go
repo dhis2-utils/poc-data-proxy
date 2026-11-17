@@ -11,7 +11,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/tracker"
 )
 
-// The three answers to "what closes it" (docs/superpowers/plans/2026-11-04-refused-
+// The three answers to "what closes it" (docs/design/2026-11-04-refused-
 // changes.md, "Refusals by who can fix them").
 const (
 	ClosedByAuthor  = "Fixed by the author"

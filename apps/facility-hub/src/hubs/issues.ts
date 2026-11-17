@@ -1,7 +1,7 @@
 import i18n from '@dhis2/d2-i18n'
 
 /**
- * Who closes a refused change, by error code (docs/superpowers/plans/
+ * Who closes a refused change, by error code (docs/design/
  * 2026-11-04-refused-changes.md, "Refusals by who can fix them"): the author by editing
  * again; a supervisor or admin on central; or nobody, because central has deleted the
  * target. A change blocked by a refused parent (E5000, "blocked by") closes with it.

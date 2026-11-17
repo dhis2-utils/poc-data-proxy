@@ -1,7 +1,7 @@
 // Package mdns answers one name, dhis2.local, with the machine's private IPv4
 // addresses, where nothing else announces it: on Windows (the Pi has avahi). It answers
 // A queries for that name and nothing else, and stays silent while another device on
-// the network answers the same name with a different address (docs/superpowers/specs/
+// the network answers the same name with a different address (docs/design/
 // 2026-10-20-windows-service-design.md).
 package mdns
 

@@ -87,7 +87,7 @@ func TestEnrollmentFutureDates(t *testing.T) {
 }
 
 // With the hub's clock behind central's, the future-date check leaves the dates to
-// central (docs/NO-RTC.md).
+// central (docs/DEPLOYMENT.md, appendix A).
 func TestEnrollmentFutureDatesClockBehind(t *testing.T) {
 	no := false
 	pm := &access.ProgramMeta{SelectEnrollmentDatesInFuture: &no, SelectIncidentDatesInFuture: &no}

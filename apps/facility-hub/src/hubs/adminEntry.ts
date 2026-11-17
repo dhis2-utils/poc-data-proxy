@@ -28,7 +28,7 @@ export const readMoveKeys = async (api: Api) => {
 /**
  * value as the hubs take it from the entry kind ("<namespace>/<key>"): with the time
  * it is issued and a code for each hub in keys, made with that hub's move key
- * (docs/superpowers/specs/2026-11-11-signed-instructions.md). A hub acts on an entry
+ * (docs/design/2026-11-11-signed-instructions.md). A hub acts on an entry
  * only with a valid code for itself, no older than the last one it took.
  */
 export const signedValue = (
