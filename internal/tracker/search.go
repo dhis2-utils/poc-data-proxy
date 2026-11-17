@@ -914,7 +914,7 @@ func (ix *Index) searchEvents(v *Viewer, q url.Values, program string) (*plan, *
 	byValue := len(filters) > 0
 	for _, p := range splitList(q.Get("order")) {
 		f, _, _ := strings.Cut(p, ":")
-		byValue = byValue || ValidUID(f)
+		byValue = byValue || valueOrder(f)
 	}
 	var finish func([]*Obj) ([]*Obj, *APIError)
 	if byValue {

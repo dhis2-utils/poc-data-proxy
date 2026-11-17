@@ -80,6 +80,22 @@ var orderable = map[string]struct {
 	"relationships": {[]string{"createdAt", "createdAtClient"}, ""},
 }
 
+// valueOrder reports whether an order key names a data element or attribute: a UID
+// that is not a field central orders by. "scheduledAt" and "completedAt" have a UID's
+// shape (a letter and ten letters or digits) and were taken for data elements, so the
+// order was ignored (the oracle on Sierra Leone 2.42, 17 November 2026).
+func valueOrder(f string) bool { return ValidUID(f) && !orderFields[f] }
+
+var orderFields = map[string]bool{}
+
+func init() {
+	for _, o := range orderable {
+		for _, f := range o.fields {
+			orderFields[f] = true
+		}
+	}
+}
+
 // checkOrder refuses an order central refuses (400, its texts), rather than ignoring
 // it (review R-51).
 func checkOrder(collection, order string) *APIError {
@@ -332,7 +348,7 @@ func sortObjs(objs []*Obj, order string, attrKey func(*Obj, string) string) {
 			switch {
 			case k.field == "uid":
 				vals[j] = o.UID
-			case ValidUID(k.field) && attrKey != nil:
+			case valueOrder(k.field) && attrKey != nil:
 				vals[j] = attrKey(o, k.field)
 			default:
 				vals[j] = Str(o.Data, k.field)
@@ -342,7 +358,16 @@ func sortObjs(objs []*Obj, order string, attrKey func(*Obj, string) string) {
 	}
 	slices.SortStableFunc(rows, func(a, b row) int {
 		for j, k := range keys {
-			if c := strings.Compare(a.vals[j], b.vals[j]); c != 0 {
+			c := strings.Compare(a.vals[j], b.vals[j])
+			if (a.vals[j] == "") != (b.vals[j] == "") {
+				// No value sorts as central's database sorts NULL: after every value,
+				// so last ascending and first descending.
+				c = 1
+				if b.vals[j] == "" {
+					c = -1
+				}
+			}
+			if c != 0 {
 				if k.desc {
 					return -c
 				}
