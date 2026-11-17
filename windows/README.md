@@ -31,6 +31,8 @@ The installer:
 - never puts an older `hub.exe` over a newer one;
 - when installing for the whole PC, offers to move the installing user's own hub, so it keeps its ID, approval and authority.
 
-Uninstalling (Windows' Apps list) removes the service, the firewall rules, the authority and the `hosts` line. It keeps the data unless "Remove the hub's data" is ticked.
+Uninstalling (Windows' Apps list) removes the service, the firewall rules, the authority and the `hosts` line. It keeps the data unless "Remove the hub's data" is ticked, and the data folder holds the program (`bin\hub.exe`), since the hub upgrades itself there. An install over kept data never puts an older program over a newer one, which may have migrated the store: it keeps the newer program, says so in `install.log`, and shows that version in the Apps list.
+
+No elevated step runs the program in the data folder, which the service's account may change (review R-27): the installer uses its own copy, and the uninstaller stops and removes the service with Windows' own tools.
 
 Untested until a Windows machine runs it: see docs/TESTING.md, "Windows".

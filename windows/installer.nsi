@@ -62,6 +62,7 @@ Var LogFile
 !macroend
 Var Url
 Var CAName
+Var ShownVersion ; the version in Windows' Apps list: of the hub.exe in place
 
 !define MUI_WELCOMEPAGE_TEXT "The facility hub keeps DHIS2 working at this facility while the internet is down. Staff devices open it at dhis2.local.$\r$\n$\r$\nInstall it for the whole PC (recommended: it runs whether or not anyone is logged in; needs administrator rights) or for yourself only (it runs while you are logged in).$\r$\n$\r$\nChoose a PC that stays on while staff work."
 !insertmacro MUI_PAGE_WELCOME
@@ -188,6 +189,11 @@ Section "!The hub" SecHub
   ; installer recorded (a hub from before that file).
   StrCpy $1 "install"
   StrCpy $2 ""
+  StrCpy $ShownVersion "${VERSION}"
+  ; This installer's hub.exe, for every elevated step below: never the installed one,
+  ; which the service's account may change (review R-27).
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\hub-new.exe" "${HUBEXE}"
   ${If} ${FileExists} "$HubExe"
     ClearErrors
     FileOpen $R1 "$DataDir\version" r
@@ -203,15 +209,17 @@ Section "!The hub" SecHub
   ${If} $2 != ""
     ; The new hub.exe compares, by release precedence: NSIS's VersionCompare reads
     ; dotted numbers only, and would take 0.2.0 for older than 0.2.0-ci.57.
-    InitPluginsDir
-    File "/oname=$PLUGINSDIR\hub-new.exe" "${HUBEXE}"
     nsExec::ExecToStack '"$PLUGINSDIR\hub-new.exe" version "$2"'
     Pop $0
     Pop $3
     ${WordFind} "$3" "$\n" "+1" $3
     ${If} $3 == "older"
+      ; Recorded for support, not asked of whoever runs this: there is nothing for them
+      ; to do. The Apps list shows the version that runs (PENDING.md, item 34).
       DetailPrint "Keeping the newer hub $2 already installed."
+      FileWrite $LogFile "Kept the newer hub $2 already installed; this installer's ${VERSION} was not put in.$\r$\n"
       StrCpy $1 "keep"
+      StrCpy $ShownVersion "$2"
     ${EndIf}
   ${EndIf}
   SetOutPath "$DataDir\bin"
@@ -219,11 +227,12 @@ Section "!The hub" SecHub
     File "/oname=hub.exe" "${HUBEXE}"
   ${EndIf}
 
-  ; Settings, ports and the hub's certificate authority (hub init keeps existing ones).
+  ; Settings, ports and the hub's certificate authority (hub init keeps existing ones),
+  ; by this installer's hub.exe, also where a newer one was kept.
   ${If} $MultiUser.InstallMode == "AllUsers"
-    !insertmacro Run '"$HubExe" init -data "$DataDir"'
+    !insertmacro Run '"$PLUGINSDIR\hub-new.exe" init -data "$DataDir"'
   ${Else}
-    !insertmacro Run '"$HubExe" init -data "$DataDir" -per-user'
+    !insertmacro Run '"$PLUGINSDIR\hub-new.exe" init -data "$DataDir" -per-user'
   ${EndIf}
   Pop $0
   ${If} $0 != 0
@@ -273,7 +282,7 @@ Section "!The hub" SecHub
   SetOutPath "$INSTDIR"
   WriteUninstaller "$INSTDIR\uninstall.exe"
   WriteRegStr SHCTX "${UNINSTKEY}" "DisplayName" "${NAME}"
-  WriteRegStr SHCTX "${UNINSTKEY}" "DisplayVersion" "${VERSION}"
+  WriteRegStr SHCTX "${UNINSTKEY}" "DisplayVersion" "$ShownVersion"
   WriteRegStr SHCTX "${UNINSTKEY}" "Publisher" "HISP / DHIS2"
   WriteRegStr SHCTX "${UNINSTKEY}" "UninstallString" '"$INSTDIR\uninstall.exe" /$MultiUser.InstallMode'
   WriteRegStr SHCTX "${UNINSTKEY}" "QuietUninstallString" '"$INSTDIR\uninstall.exe" /$MultiUser.InstallMode /S'
@@ -338,7 +347,11 @@ Section "un.The hub" UnSecHub
   ${If} $MultiUser.InstallMode == "AllUsers"
     ; Stopping ends the hub cleanly; saves still waiting stay in its data folder
     ; (kept unless removed below) and go to central with the next hub installed here.
-    nsExec::ExecToLog '"$HubExe" service uninstall'
+    ; Windows' own tools, not the installed hub.exe, which the service's account may
+    ; change while this runs elevated (review R-27). Stop-Service waits for the stop.
+    nsExec::ExecToLog `powershell -NoProfile -NonInteractive -Command "Stop-Service -Name '${SERVICE}' -ErrorAction SilentlyContinue"`
+    Pop $0
+    nsExec::ExecToLog 'sc delete ${SERVICE}'
     Pop $0
     nsExec::Exec 'netsh advfirewall firewall delete rule name="${NAME}"'
     Pop $0

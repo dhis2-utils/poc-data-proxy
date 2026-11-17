@@ -78,6 +78,18 @@ check "the whole PC is the default for a user who can elevate" sh -c "! grep -q 
 $STR
 X"
 check "the uninstaller keeps hosts if putting the new one in place fails" grep -qF 'Rename "$6.hub-old" $6' <<<"$STR"
+# Review R-27: the installed hub.exe is in a folder the service's account may change,
+# so no elevated step runs it (the per-user install runs it as the user, not elevated).
+check "no elevated step runs the installed hub.exe" python3 - "$HERE/installer.nsi" <<'PY'
+import re, sys
+bad = [l for l in open(sys.argv[1]) if re.search(r"(Run|nsExec::\w+)\s+'\"\$HubExe\"", l)]
+sys.exit(1 if bad else 0)
+PY
+check "a kept newer hub is logged and shown in the Apps list" sh -c "grep -q 'Kept the newer hub' <<'X' && grep -qF '\"DisplayVersion\" \"\$ShownVersion\"' <<'X2'
+$STR
+X
+$STR
+X2"
 echo
 if [ "$FAILS" -gt 0 ]; then echo "$FAILS checks failed"; exit 1; fi
 echo "all checks passed"
