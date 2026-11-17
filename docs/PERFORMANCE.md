@@ -2,50 +2,19 @@
 
 Question: can a hub on Raspberry Pi-class hardware serve **60 users working offline at once** at a busy urban HC IV, **300 000 people, about 0.5 million enrollments and 1.2 million events** (the sizing below, with retention by programme), and how far towards the pessimistic **700 000 people, 1.2 million enrollments and 3.1 million events** does it go? And what does a fleet of hubs ask of central?
 
-## Where we stand (2026-10-14)
+## Summary
 
-**Results** (`perf/pi.sh ladder`, the container profiles below; 60 users, 18 of them Android with 500 people per program; latencies offline, p50 / p95):
+Where things stand (mid-November 2026); the measurements are in the sections below.
 
-| | `pi5` (4 GB, 1.6 CPU), 100 k people | `pi5`, HC IV (300 k) | `pi4` (1 GB, 0.8 CPU, SD card), 30 k | `pi4`, 100 k |
-|---|---|---|---|---|
-| First pull, 60 users | 4 min | 15 min | 12 min | 48 min |
-| Working list | 12 ms / 1.4 s | 13 ms / 7.8 s | 12 ms / 1.4 s | 0.5 s / 20 s |
-| Dashboard, person | 5 ms / 2.4 s | 6 ms / 11 s | 5 ms / 2.2 s | 0.6 s / 19 s |
-| New event | 8 ms / 1.0 s | 9 ms / 9 s | 9 ms / 1.4 s | 0.6 s / 26 s |
-| Peak memory (mostly file cache) | 2.7 GB | 3.4 GB | 0.8 GB | 0.8 GB |
-| Errors | none | none | none | none (hammer run could not start) |
+- **Which board, for speed.** Up to about 60 000 people, a Pi 4 with 1 GB, even on a good SD card. Up to 300 000 (a busy HC IV), a Pi 5 with 4 GB, best on an SSD; a Pi 4 with 1 GB on an SSD is a cheaper option for mostly web use. For the field, every kit has an SSD anyway: cards wear out and corrupt on power loss (DEPLOYMENT.md, section 1). A Pi 4 under load needs a fan or a ventilated case ("On Raspberry Pis"). A small Windows PC (2 CPUs, 4 GB) serves 100 000 people for web users ("On a Windows PC").
+- **Speed.** On those boards, web pages take tens of milliseconds at the median and about a second at the 95th percentile on a Pi 4's card; a few tenths of a second on a Pi 5. The disk sets the tails and the first pull; the board sets the rest.
+- **The first pull** of a new hub takes minutes to under an hour, by size and disk (13 minutes at 100 000 people on a Pi 5, 40 at 300 000), and writes about five times the data folder, once. 18 Android first downloads at once take about a minute.
+- **Memory** stays bounded: the hub holds about 20 MB of its own, plus the working memory of requests in flight (up to 600–660 MB on a Pi 4 at 300 000 people with slow Android syncs overlapping). The rest of RAM serves as file cache.
+- **Long runs stay flat.** Three days on a Pi 5 against a real central, with daily outages and power cuts, and three days offline on a Pi 4's card: memory, disk and answers flat, and every confirmed save on central. A week offline at HC IV size drains over 4G in about 45 minutes ("A week offline at HC IV size").
+- **Load on central.** About 9 400 requests a day per hub with shared listings (54 a second for 500 hubs; "Load on central"). Measured as central's database work ("Central's load from one facility, three ways"): with Capture web, a hub that answers from its copies cuts central's work to about a third; with eRegisters, which already works from its own copy, a hub adds some. The hourly access refresh is the largest of the hub's own costs.
+- **Slow links.** Pushes are one save per request, so the link's latency sets the drain rate ("Push over a slow uplink", "A slow uplink").
 
-The p95s in these runs come from 18 Android first downloads at once at the start of the run; outside that window answers take milliseconds. The ladder's realistic run now models a working day (devices downloaded before) and keeps the all-at-once downloads for the hammer run.
-
-**Second ladder (2026-10-14).** `pi5` ran out of memory at 100 k and HC IV in the working-day run: with no first downloads, Android incremental syncs started at once, and their `updatedAfter` check decoded every enrollment and event of every candidate person and kept them for the request (History). Fixed, not yet re-run on the ladder. `pi4` (1 GB, SD card limits) with 20 users:
-
-| `pi4`, 20 users | 10 k | 30 k | 60 k |
-|---|---|---|---|
-| First pull | 1 min 45 s | 5 min 54 s | 17 min |
-| Working day: dashboard, person (p50 / p95 / p99) | 3 ms / 9 ms / 36 ms | 4 ms / 45 ms / 67 ms | 4 ms / 319 ms / 9.2 s |
-| Working day: working list | 6 ms / 61 ms / 77 ms | 9 ms / 291 ms / 340 ms | 11 ms / 172 ms / 3.9 s |
-| Working day: Android incremental sync (p50) | 7.7 s | 29 s | 1 min 37 s |
-| Hammer: web pages (p50 / p95) | 70–100 ms / 120–290 ms | 75–100 ms / 160–290 ms | 75–100 ms / 125–280 ms |
-| Peak memory | 227 MB | 478 MB | 866 MB |
-
-The 1 GB knee is between 30 k and 60 k people; the incremental syncs at 60 k ran with the memory problem above.
-
-**Conclusions so far**
-
-- **Hub memory is solved.** The hub holds about 20 MB of its own whatever the data size; RAM serves as file cache. One path held records in proportion to the facility, Android's `updatedAfter` check, until 2026-10-14 (History).
-- **Speed depends on whether the data file fits in RAM, or the disk is fast.** At 100 k people the file is about 2.5 GB, at the HC IV size 6–7 GB (about 3.3 KB per object). A Pi 5 with 4 GB serves 100 k people well and the HC IV size for normal use, with little headroom under heavy load. A 1 GB device with an SD card serves small facilities (30 k people worked well; the knee between 30 k and 100 k is still to find) but not 100 k.
-- **Android first downloads are the heaviest load**: 18 at once saturate a Pi 5 for a minute or more. Pages are cheaper now (History, 2026-10-14); a deployment can spread first downloads.
-- **Load on central** fell from about 214 000 requests a day per hub to about 9 400 (best case), about 54 requests a second for 500 hubs (section "Load on central").
-- **Correctness** held: on 2.42 the oracles pass on all three profiles with every change through 2026-10-14 (shared listings, the type pull, the `updatedAfter` fix): no LEAK or DIFFERS in reads (MATCH 937 synthetic, 627 Sierra Leone, 776 Laos), and no DENIED in writes (OVER-REJECT only where the hub refuses offline what central would accept: 5 synthetic, 8 Sierra Leone events in an enrollment the sibling facility owns, by design).
-
-**Open**
-
-- The ladder again with the `updatedAfter` fix: `pi5` at 100 k and HC IV; `pi4` at 60 k.
-- The HC IV size with 8 GB (`MEM=8g`), to confirm that RAM limits the hammer run there.
-- A smaller data file (about twice the in-memory design's) and a faster first fill on SD cards (a larger cache during pulls, fewer indexes).
-- The paced run: writes and reads at the per-hour rates below (peak 5 × average), with bytes written per day for SD card wear.
-- Calibration on a real Pi (`perf/pi.sh bench`).
-- Tracker retention on `pi5` (measured in process at 100 k and at the HC IV size: "Retention for tracker programs" below).
+The history of the measurements and fixes, and the reports of the long runs, are in the private notes (`docs/sessions/PERFORMANCE-RUNS.md`).
 
 ## On a Windows PC (2026-10-22)
 
@@ -64,7 +33,7 @@ The hub as a Windows program, on a small PC: a Windows 11 VM with **2 CPUs and 4
 | Data folder | 0.3 GB | 0.7 GB | 2.2 GB |
 | Errors, warnings in the hub's log | none | none | none |
 
-The 10 k column ran before the index on unsynced objects (History, 2026-10-22); its reconnect includes the slow status count. Against `pi4` (1 GB, the ladder above) the VM is about the same in the first pull, a little slower at the median and faster at the tail; it serves 100 k people well for web users. As on the Pis, Android incremental syncs are the slow part from 30 k on (open above).
+The 10 k column ran before the index on unsynced objects (the history, in the private notes); its reconnect includes the slow status count. Against `pi4` (1 GB, the ladder of 14 October, in the private notes) the VM is about the same in the first pull, a little slower at the median and faster at the tail; it serves 100 k people well for web users. As on the Pis, Android incremental syncs are the slow part from 30 k on (open above).
 
 **Power cuts on Windows** (2026-10-22): `perf/windows/powercut.ps1` on the same VM with `powercut-host.sh` on the Mac, which cut the VM 4–8 minutes after each start, 10 times (8 times UTM's "Force kill" of the VM's process, twice "Force shut down"), while 20 users saved offline with no pauses. At each start-up every save the hub had confirmed so far was read back, offline, as its author: **9 759 confirmed saves, none missing**, in every one of the 10 verifies. The log of confirmed saves stayed on the VM's own disk, written through with each save (on the Mac's shared folder a killed VM lost what it had last written there). A VM's cut is milder than a real one: what the Mac had already received from the VM survives it. Real power cuts are for the Pis and a physical PC (HARDWARE-TESTING.md, "Power cuts").
 
@@ -80,10 +49,9 @@ The 10 k column ran before the index on unsynced objects (History, 2026-10-22); 
 | Peak memory of `hub.exe` (working set) | 440 MB | 498 MB | 1.7 GB | 2.3 GB |
 | Confirmed saves read back | all | all | all | — |
 
-With 18 Android users and every person changed (the worst case), the old build reached 7.7 GB and exited (docs/PERFORMANCE.md, "On a Windows PC"); the build with that fix stayed under 760 MB. Two causes of the slow working days were then found and fixed (History, 2026-10-26): every incremental sync read every enrollment of the program, and each save made online was shared with each user in a transaction of its own; saves stalled for up to 85 s after each reconnect, never while offline. Both cost disk reads or flushes, which a hard disk makes 10–100 times dearer than flash.
+With 18 Android users and every person changed (the worst case), the old build reached 7.7 GB and exited (docs/PERFORMANCE.md, "On a Windows PC"); the build with that fix stayed under 760 MB. Two causes of the slow working days were then found and fixed (the history, in the private notes): every incremental sync read every enrollment of the program, and each save made online was shared with each user in a transaction of its own; saves stalled for up to 85 s after each reconnect, never while offline. Both cost disk reads or flushes, which a hard disk makes 10–100 times dearer than flash.
 
 The hub needs flash storage: an SSD, eMMC or a good SD card. On a hard disk with 4 GB it serves web users at 100 k with slow tails, and its first pull takes hours from 300 k.
-
 
 ## On Raspberry Pis (2026-10-26)
 
@@ -133,7 +101,7 @@ Every confirmed save was read back (2 614–2 707 a run); one request failed in 
 - **A Pi 4 with 1 GB on an SSD serves 300 k for web users**, with Android syncs of 12 s. At 500 k it is at its edge: syncs of 19 s (p95 27 s), the hub near a full core, 70 MB of memory free.
 - **The hub's memory rose to 620–660 MB in the working day from 300 k on**, against 130–230 MB below, and fell back afterwards: slower Android syncs overlap, each with its working memory. It is what leaves a 1 GB board short.
 - **A heatsink is not enough for a Pi 4 under load**: 76–78 °C at 20 °C, 2 °C below throttling at 500 k. It needs a fan or a well-ventilated case. The Pi 5 stayed under 60 °C.
-- **Writes.** A first pull writes about five times the data folder (11 GB at 100 k, 55 GB at 500 k), once per hub. In the working day the hub wrote 9 MB a minute while offline and 235–272 MB a minute while online, at every size: it stored every object of every online read anew, changed or not. Fixed (History, 2026-10-27).
+- **Writes.** A first pull writes about five times the data folder (11 GB at 100 k, 55 GB at 500 k), once per hub. In the working day the hub wrote 9 MB a minute while offline and 235–272 MB a minute while online, at every size: it stored every object of every online read anew, changed or not. Fixed (the history, in the private notes).
 
 **What to deploy, from these runs.** Up to about 60 k people, a Pi 4 with 1 GB on a good SD card. Up to 300 k (a busy HC IV), a Pi 5 with 4 GB, on an SSD for the best tails and first pull or on a card if that is what is available; a Pi 4 with 1 GB on an SSD as a cheaper option for mostly web use. Above 300 k, a Pi 5. Every Pi 4 with active cooling or a ventilated case.
 
@@ -157,7 +125,7 @@ eRegisters downloads every person of every program, 50 per page, with no limit (
 | 100 k | 3 342 | 22 ms | 160 ms | 310 ms | 8 min 40 s |
 | 300 k (`hc4`) | 10 002 | 25 ms | 450 ms | 0.9 s | 1 h 14 min |
 
-Each page read every row before it (page *n* reads *n* × 50 matches, since visibility is decided in Go row by row), so a download grew with the square of the facility. The hub now remembers, per user and query, the last row of the page it served, and reads the next page on from that row's creation key (`pagePositions`, History 2026-10-15):
+Each page read every row before it (page *n* reads *n* × 50 matches, since visibility is decided in Go row by row), so a download grew with the square of the facility. The hub now remembers, per user and query, the last row of the page it served, and reads the next page on from that row's creation key (`pagePositions`; the history, in the private notes):
 
 | People | Before: one device's download | After | Every page |
 |---|---|---|---|
@@ -443,63 +411,6 @@ Patient data alone helped only the dashboard: each screen also asks for the user
 
 **Name searches.** The hub's own answer to a name search was the slowest step: 174 ms. A filter that few people match read every enrollment of the program and checked each, so the time grew with the facility (`internal/perf.TestQueries`, "nobody (full scan)": 7.5 ms at 20 000 generated people, 151 ms at 100 000). Common names were fast because the first page filled early. Now the matches are looked up first in a covering index on the lowercased value (`te_attrs_lc`, migration 6), and up to 1 000 of them drive the search; the filter itself is unchanged. At 100 000 people: nobody 151 → 20 ms, a common name 1.7 → 2.0 ms, first and last name 4.8 → 21.5 ms (each filter reads its attribute's index entries). On the Sierra Leone setup every variant took 6–11 ms, from 170. The migration took 5.4 s on 2.4 million attribute values (`internal/store.TestAttrIndexMigrationOnFullStore`, `HUB_PERF_ATTRS`, the hc4-5y size).
 
-## Ten hours in the sandbox (2026-10-29)
-
-Question: does a hub stay flat over hours of work with outages and power cuts, and does every confirmed save reach central? This is the sandbox part of M1 (docs/ADVERSARIAL-TESTING.md). The 72 hours on the Pi 5 follow in the next section.
-
-`internal/adversarial.TestM1Soak` (`HUB_SOAK=10h`), from 21:41 on 28 October. It ran a hub of this tree as its own process against `agent-adv-network-42` (DHIS2 2.42.7, synthetic profile, a fresh instance). Three clients saved through it: the nurse and the restricted user in Capture web, and the nurse on Android. Each saved every 5–15 s, about 0.30 saves a second, two in three a registration (person, enrollment, event) and one in three an update of an event. That is about 4 times a busy HC IV's rate (3 000 saves over a 12-hour day, "Sizing"). A reader asked every 3 s for a working list or a person the nurse had saved, about half the HC IV's average read rate. The hub's housekeeping ran at shortened intervals: sync every 5 minutes, access refresh and ownership check every 15, a full pull every 2 hours, sessions at most 3 hours, `reconnect_delay` 1 minute, and retention of 12 months for every program. The token lifetime on central was switched between 7 and 365 days at 1 h 30, 4 h, 6 h 30 and 9 h, so the hub had to renew its token each time.
-
-Faults: the uplink was cut at 1 h 01 for 14 minutes, at 2 h 51 for 21, at 4 h 57 for 23, at 7 h 02 for 11 and at 9 h 02 for 16. The hub was killed (`kill -9`, 20 s down, then a login) at 2 h 00 and 8 h 04 while online, and at 5 h 04 during an outage. Every 15 minutes the test sampled the process, the data folder, the outbox, the clients' latencies, the requests to central and the API tokens in central's database. The sandbox was shared with two other agents' DHIS2 instances and test suites. The load average was 4–10 on 4 CPUs, and by the morning the Docker VM's memory and swap were full. Online latencies below include that.
-
-**Saves.** 10 634 saves, 10 211 confirmed: 9 027 answered by central through the hub, 1 184 by the hub while offline. Central held all 7 100 registrations as the ledger expects: none lost, partial, duplicated or with a wrong value or author. Of the 423 saves not confirmed, 18 were cut by the kills and 8 met an expired session and were made again. The other 397 were refused with "needs connection: this hub was replaced". A side test of mine had set up a second hub for the same facility on the same central at 4 h 22. The soak's hub then retired itself, as designed (G7), until I set its registry entry back to active (5 h 20). So the third outage and the kill during it ran with nothing in the outbox.
-
-| Measure | First hour | Last hour | Trend |
-|---|---|---|---|
-| Hub memory (RSS), working | 34–42 MB | 59–85 MB | 21–101 MB throughout; 152, 217, 280 and 303 MB just after each start, then down |
-| Live heap after a collection | 2.6–3.2 MB | 7.1–7.5 MB | grows after each start to about 7.5 MB, the payload cache's 4 096 entries, then flat |
-| Goroutines, open files, threads | 20, 23–26, 9–10 | 20–21, 26, 11 | flat (13–14 goroutines while offline) |
-| Hub CPU, share of one core | 0.6–0.7 % | 1.1–3.1 % | follows the pulls (below) |
-| Data folder | 3.7 → 13.8 MB | 68.9 → 76.1 MB | +6.6 MB an hour, with the data: 7 100 people, 21 000 objects |
-| Save, online (p50 / p90) | 53–70 / 107–134 ms | 75–143 / 143–572 ms | follows central and the machine |
-| Save, offline (p50) | 9 ms | 15 ms | flat |
-| Working list, online / offline (p50) | 35–50 / 20 ms | 82–155 / 20 ms | online follows central |
-| Person, online / offline (p50) | 84–105 / 4 ms | 130–234 / 9 ms | online follows central |
-| Requests to central per 15 minutes | 748–788 | 706–919 | flat: 363 tracker reads, 272 saves passed on, 60 pings |
-
-**Memory, disk and the outbox stayed flat.** The live heap stopped at the payload cache's bound, and RSS stayed under 105 MB between starts. The goroutines and open files did not grow. The data folder grew with the data only: the WAL stayed under 9 MB, `requests.log` reached 2.1 MB (it rotates at 10 MB) and the hub's log 4.7 MB. After each outage the hub was online 7–15 s after the uplink returned. Its outbox (481–876 objects) was empty 31 s–1 min 26 s later, `reconnect_delay` included. After each kill the first login unlocked the store within 2 s. There were 125 sync cycles with no errors, no ERROR lines and 18 warnings: the unprotected registry entry, the requests cut by kills and outages, and the retirement above.
-
-**What crept, and why.** Online answers rose from about 60 to about 140 ms over the night. Central's own answers and the machine's load rose with them. At 01:52 the same working list took 98 ms through the hub and 87 ms from central directly. Answers the hub gave itself stayed at 1–3 ms in its log. Sync cycles went from 1.9 s to 4–8 s. Most of a cycle is three users each pulling back the 240–370 objects saved through the hub in the last 5 minutes; that follows the save rate and central's speed. The full pull grew with the program, as it must. Every 2 hours it took 33 s at 2 h, 49 s at 4 h, 70 s at 6 h and 86 s at 8 h (about 1 600–5 700 people in the program, three users), and 217 s while the final check read central. In the field it runs weekly.
-
-**Housekeeping.** The hub renewed its own token 4 times and deleted the old token each time. Retention ran in every cycle and pruned nothing, since all data was younger than 12 months. The ownership check listed the facility's people 177 times. Two things were found (the session records (private notes, docs/sessions/FINDINGS-SESSIONS.md) from the soak; tests in `internal/adversarial/soak_test.go`, gated with `HUB_FINDINGS`):
-
-- **Concurrent logins leave tokens on central.** After the 2 h restart the nurse's clients all logged in again within the same second (the web writer, the reader and the restart's login). The hub created two tokens; it keeps one, and the other stays on central until it expires. The other token is missing from the hub's registry entry, so the Facility Hub app cannot revoke it. `core.EnsurePAT`, called from `auth.registerOnline`, reads the user and creates a token with no lock per user. `TestM1ConcurrentLoginsMakeOneToken`: 4 concurrent logins made 2 tokens, twice out of two.
-- **A person saved during a full pull is hidden from its author offline until the next pull.** Each full pull "removed visibility" of objects for each user: 6 at the 2 h restart, then 11, 16 and 17. A save passed on to central while a full pull lists the program is marked visible to its author. It is missing from the listing, which was taken before the save. `RemoveVisibilityExcept` (`sync.pullGroup`) then removes it. `TestM1SaveDuringFullPullStaysVisible`: 6 of 107 people registered during a full pull were 503 offline afterwards, and all were visible after the next pull. With nothing saved during the full pull (`TestM1FullPullKeepsSavedVisible`, the soak's three writers, online and offline) none was hidden. In the field this lasts up to a sync interval after each weekly full pull. The last full pull removed 51 objects (14, 12 and 25 for the three users) while the writers were still saving: the VM was suspended for 20 minutes during the night, so the test's 10 hours (monotonic) ended at 08:01 wall time, after that pull (the session records (private notes, docs/sessions/FINDINGS-SESSIONS.md) from the soak, explained 3 November).
-
-Raw data: `testresults/soak/20261028-2141-Zqadvjz6vfl/` (git-ignored): samples, ledger, reads, events, the hub's log and the summary. `HUB_SOAK_CHECK=<folder>` checks a ledger against central again.
-
-## 72 hours on the Pi 5 (2026-10-30 to 11-02)
-
-Question: does a hub on real hardware stay flat for three days of work, with an outage and a power cut a day, and does every confirmed save reach a real central? This is the hardware part of M1 (docs/ADVERSARIAL-TESTING.md).
-
-**Set-up.** `rpi5` (Pi 5, 4 GB, SATA SSD over USB) with image `0.1.5-local.e3e956e` (main with the W1 fix), set up as Ngelehun CHC on the demo central (2.43.2). `cmd/hubdrive` on a server on the same LAN saved as 3 staff × Capture web and Android, one save per client every 40 s: about 13 000 saves a day, 4 times a busy HC IV. Outages were Firewalla blocking the Pi's internet (new connections refused). A soak-only sampler, added to the image for this run, recorded the hub once a minute. Housekeeping ran at its normal intervals.
-
-| | Day 1 (from 10:41) | Day 2 | Day 3 | Day 4 (to 07:05) |
-|---|---|---|---|---|
-| Hub memory (RSS), median; largest | 79 MB; 364 MB | 80; 218 MB | 84; 226 MB | 83; 150 MB |
-| Hub CPU, mean share of one core | 0.5 % | 0.4 % | 0.5 % | 0.4 % |
-| Data folder at the end of the day | 111 MB | 198 MB | 285 MB | 307 MB |
-| Hottest | 50 °C | 52 °C | 50 °C | 50 °C |
-
-Never throttled. The data folder grew by the data, about 87 MB a day. The disk took 18 GB of writes in 69 hours, **6.2 GB a day** at 4 times an HC IV's day.
-
-**Outages and power cuts.** 4 outages (3, 30, 60 and 29 minutes) and 5 power cuts, each pulled for about a minute. After each cut the hub answered locked after 50 s, or 2 min 10 s once, and the driver's logins unlocked it 20–28 s later. At 3 of the 4 outages the hub went back online briefly before staying offline (2 s, 1 min and 12 s), as in D6, fixed since (FINDINGS.md, "Found by adversarial testing" 30; this image predates the fix). After each outage the backlog reached central within the reconnect wait (up to 5 minutes, `ReconnectDelay`) plus a minute: 139 objects pending at 10:56 on day 1, none at 10:57.
-
-**Every save on central.** 36 757 saves in the ledger, 35 801 confirmed. `hubdrive check` read 29 769 records on central: none lost, partial, duplicated or wrong, and nothing left pending or refused on the hub. Of the 956 saves not confirmed, 398 were refused by central between midnight and 1 a.m. on the driver's clock: the driver dates registrations by its own clock (UTC+1), and central (UTC) refused the next day's dates as in the future (E1020), with the registrations' events after them (E5000). A central hosted in another time zone than its facilities does the same to real clients near midnight: an open follow-up (the session records (private notes, docs/sessions/FINDINGS-SESSIONS.md), central's time zone). The rest were 401s and dropped connections while the hub was down or locked. A first check stopped on one 500 from central ("Could not commit JPA transaction"), which the same read answered 200 right after; `hubdrive check` now tries a 5xx again.
-
-Raw data: `windows/out/soak/` (git-ignored): the driver's log and ledger, the check, `soak-samples.csv` and `hub-diag.txt`.
-
-**The Pi 4's card in the same days (run A, not completed).** The same image in load-test mode on `rpi4` (1 GB, microSD), a fake central at 60 k people and `hubload -paced -duration 3h` from the Mac: one busy HC IV day spread over 3 hours, offline. The first pull took 18 min 48 s and wrote **6.3 GB** to the card. The paced load then wrote 133 MB in 42 minutes (about 190 MB an hour) until the Pi restarted on its own, 46 minutes in, at 48 °C and not throttled. After the restart, load-test mode started a fresh hub, and the rest of the run got 401 and 429 answers, so its latencies and its bytes per day do not count. The cause of the restart is not known. The hub's memory was not sampled (the sampler read `hub.service`, which load-test mode does not use), and the system log from before the restart was lost. Bytes written per day on a card are still to measure: rerun with the sampler fixed.
-
 ## Android syncs on the Pi 4's card (2026-11-03)
 
 Question: in the 72-hour run on `rpi4` (1 GB, microSD) from 3 November 13:49, each of the 6 Android incremental syncs got 220 people and took about 58 s, six hours into the outage. All six ended in the same second. Where does the time go, and does it grow with the people a sync gets?
@@ -529,24 +440,6 @@ Question: in the 72-hour run on `rpi4` (1 GB, microSD) from 3 November 13:49, ea
 **The six ending together.** Each device waits 5 minutes after its sync ends before the next one. Six syncs that once overlap and end together therefore stay in step for the rest of the run. Here, six that start together end within 0.1–2.7 s of each other. What first put them in step on the Pi is not known from here.
 
 Rerun: `fakecentral -tes 60000 -enrollments 100000 -events 240000 -users 20` (add `-changed 0.0001` for central's changes over a day old); `hubload -setup -fill -users 20 -paced -reconnect=false -duration 5m -day-people 140 -day-events 650 -day-reads 2000`; then `hubload -users 6 -web 0 -android-first none -android-sync 1m -reconnect=false -duration 5m` logs each sync's people and time.
-
-## 72 hours offline on the Pi 4's card (2026-11-03 to 11-06)
-
-The run of windows/out/pi4-week/RUN.md: `rpi4` (1 GB, microSD), image 0.1.5-local.dad9c4d in load-test mode, a fake central at 60 000 people, 100 000 enrollments and 240 000 events, 20 users. The uplink was cut on 3 November at 13:49 for exactly 72 hours, under three busy HC IV days at field rate (`hubload -paced`: 1 680 registrations, 7 800 events and 81 000 working lists), with 6 Android devices syncing every 5 minutes from a second `hubload`.
-
-| | |
-|---|---|
-| Restarts | none (the Pi 4 restarted on its own on 30 October; not again) |
-| Hub memory | 285 MB at most, during the first pull; 77–145 MB offline. Least free memory 470 MB |
-| Temperature | 65.7 °C at most, never throttled |
-| Written to the card | 6.8 GB by the first pull (60 000 people in 25 minutes); then **1.1–1.3 GB a day** offline (1 105, 1 278 and 1 288 MB) |
-| Answers offline | working list 27 ms median, 41 ms p95; new event 56 ms; new person 87 ms |
-| Errors | 1 connection error in 7 800 events, 7 in 81 000 working lists |
-| Reconnect | online 6 s after the uplink came back; 15 593 pending objects pushed in 3 min 57 s, none refused |
-
-**Long waits.** One new event waited 44 s and one working list 60 s. The card's own counters show 10-second intervals in which writes queued for 30–43 s in total, spread over all three days: the card stalling now and then. Single requests cannot be matched to them, as load-test mode does not log each request. At 1.1–1.3 GB a day, a card rated for 100 TB written lasts far longer than the board; what the stalls mean for staff is an answer that occasionally takes tens of seconds.
-
-**Not answered: W1 on hardware.** Whether Android's incremental syncs levelled off at a day's work after the first day of the outage (section "Android syncs on the Pi 4's card"). The Android `hubload`'s log was not in RUN.md's list of files to copy and was deleted with the server's run folder. The fix is checked in the sandbox (`TestWeekAndroidSyncGetsTheLastDay`). Nor could every confirmed save be checked on central: the run's `confirmed.tsv` is empty. The push's count (none refused, the outbox empty) is the evidence.
 
 ## A week offline at HC IV size (2026-10-29)
 
@@ -636,7 +529,7 @@ An effective catchment of about 250 000 people, 250 working days a year, a 5-yea
 | Laboratory | 400 requests | 50 000 | 80 000 | 250 000 | 400 000 |
 | **Total** | ~2 700 contacts (~1 500 unique clients) | ~230 000 | ~570 000 → 650 000 | ~1.2 M | ~3.1 M |
 
-- **Backlogs:** ART and NCD start with existing patients, and their visits grow each year. **Pharmacy** is folded into the other programs. **Episodes:** OPD, HIV testing and the laboratory enrol per episode. **Peak day:** summing the per-program peaks is deliberately pessimistic. **Comparison:** the busiest HC IV in the 27 September use report (Butenga) averaged 175 clients per recorded day, so these bounds are 5–10 times what eRegisters shows today.
+- **Backlogs:** ART and NCD start with existing patients, and their visits grow each year. **Pharmacy** is folded into the other programs. **Episodes:** OPD, HIV testing and the laboratory enrol per episode. **Peak day:** summing the per-program peaks is deliberately pessimistic. **Comparison:** the busiest HC IV in a use report of 27 September averaged 175 clients per recorded day, so these bounds are 5–10 times what eRegisters shows today.
 - **People:** 300 000 (catchment plus migration, lightly duplicated) and 700 000 (systematic duplication of OPD walk-ins). Duplication changes only the number of people (a duplicate is a second person with the same visits); retention only the enrollments and events.
 - **Load per hour,** dividing the daily volumes over 9–15 core hours: about 240–560 new people, 920 enrollments and 2 600 events a day, and about 27 000 reads (10 per contact); about one request a second on average, perhaps five in a morning peak, and 72 Android incremental syncs an hour. The realistic run (about 10 requests a second) and the hammer run are stress tests above that.
 
@@ -735,35 +628,3 @@ Sent outbox entries are deleted 30 days after central accepted them (docs/DEPLOY
 | Retention of 12 months: 198 000 events pruned | 13 s (one transaction) | 16 s, in transactions of 1 000 rows (offline writes wait for one at most) |
 
 Each page read and sorted the program's events; `objects_events` (creation order, Android's download) and `objects_events_occurred` (event date, newest first, read on by key) let a page read only itself. Per cycle and access group, an event program costs one listing of the events changed since the last pull.
-
-## History
-
-- **2026-10-08, in-memory design.** At 10 % of the first target (10 000 people, 50 users) the hub used about 1 GB and the first pull took 12 minutes, both growing with users × objects. The redesign: visibility as per-user bitmaps, ID-list pulls, a slim in-memory index; then a fixed set-up hub that kept every payload in memory, batched payload reads, paged results kept for a minute, cheaper sorts, and a garbage-collector limit at 70 % of RAM. The first container ladder still ran out of memory at 50 % of the first target.
-- **2026-10-08, sizing.** The busy HC IV sizing above, with retention by programme and a SQLite query index as the two changes it called for.
-- **2026-10-09, SQLite index.** A prototype answered the same pages as the in-memory index at 100 % of the first target with a working list in 0.03 ms instead of 57 ms and 4 MB of heap instead of 1.2 GB; the index was then moved into the store. Fixes found on the way: two indexes the planner did not use, statements prepared per object (twice the write cost), a full scan per user in each first pull, people fetched twice by the type pull, and "database is locked" under load.
-- **2026-10-10, load on central.** Measured and reduced 23 times, as in the table above.
-- **2026-10-13, ladder.** The results above; Android first downloads and a data file larger than RAM set the limits.
-- **2026-10-14, pages.** Rendering copied each object through JSON; decoded payloads are now kept by version. An Android page of 50 people: 20 ms → 7 ms when cached; a working list 3.2 → 1.6 ms (in process, 10 % of the first target).
-- **2026-10-14, later pages.** Only page 1 stopped reading at a full page; later pages read the whole program, and a one-minute cache of results hid it. Every page now stops at its end and the cache is gone. At 100 000 people, Android page 10 (the last with the 500 limit): 1.03 s the first time, 13 ms cached → 36 ms the first time, 9 ms after; a working list's page 3: 606 ms → 2 ms. A download without the limit costs more per page the deeper it goes (page 251: 141 ms).
-- **2026-10-14, incremental syncs.** The second ladder's working-day run put `pi5` out of memory at 100 k: Android's `updatedAfter` check decoded every enrollment and event of each candidate person, kept for the whole request, and with the fake central's data (every object updated at its start) every person of a program is a candidate. The check now reads the stored update times only. Locally at 100 k, 60 users: peak memory 2.7 GB → 260 MB, incremental sync 44 s → 25 s (p50), Android page 7.8 s → 4.0 s. What remains of the 25 s is each page checking every candidate, which real data, with update times spread over years, makes far fewer.
-- **2026-10-15, full downloads.** eRegisters downloads every person per program (Android stops at 500): one device's download grew with the square of the facility, 1 h 14 min at HC IV size in process. The hub now keeps, per user and query, the last row of the page it served for ten minutes, and the next page reads on from that row's creation key (`pagePositions`): 4 min 10 s at HC IV size, every page 17–36 ms. A first try kept the SQL row offset instead; SQLite still stepped through the skipped rows (3 min 35 s at 100 k instead of 1 min 2 s). `TestQueryPlansUseIndexes` checks that reading on keeps the index's order.
-- **2026-10-15, aggregate data.** The Aggregate Data Entry app offline: a store of forms per data set window, pulled per access group (the numbers above).
-- **2026-10-15, event programs.** Held offline with retention by program; two indexes for event lists (the numbers above).
-- **2026-10-16, tracker retention.** Old closed enrollments are kept as stubs, with windows by program and by tracked entity type. With a 12-month window, at the HC IV size kept for five years, the data file went from 16.2 to 6.5 GB and the first fill from 35 to 20 minutes. Central's bytes did not shrink on this data, where nearly everyone had a recent enrollment somewhere.
-- **2026-10-17, migrations at the HC IV size.** Rebuilding an index over 4.6 million objects at upgrade ran out of SQLite's memory; the retention migration builds a partial index instead (5.8 s).
-- **2026-10-22, Windows; counting unsynced objects.** The ladder on a 2-CPU Windows VM (section "On a Windows PC"). It found the status page, the heartbeat and each sync cycle counting pending and refused objects by reading every object: at 30 k a `/hub/status` took 9–15 s here and about a minute on the VM, and the data folder reached 1.8 GB, probably a write-ahead log that the long reads kept from being checkpointed (not checked). A partial index of the unsynced objects: 1–8 ms, the 30 k first pull 5 min 48 s → 4 min, the data folder 0.7 GB; built at the HC IV size in 15 s.
-- **2026-10-23, incremental syncs again.** On the 2-CPU Windows VM at 100 k, with 18 Android users, memory grew to 7.7 GB and the hub exited: each incremental sync read every child of every changed person, and searches whose clients had given up kept running. The check now reads central's children newest first, five columns, and stops at the first the user may read; searches stop when their client has gone (docs/PERFORMANCE.md, "On a Windows PC"). In the sandbox, one core per hub: the check's allocations 7.6 GB → 1.6 GB in 3 minutes, incremental sync 1 min 19 s → 34 s (p50), Android page 10.6 s → 5.2 s.
-- **2026-10-26, incremental syncs on a hard disk; online saves.** At 300 k on the hard-disk VM (above) incremental syncs took 12 minutes and starved everything else. The list of changed people narrowed nothing: SQLite walked every enrollment of the program and read each one's row and its person's before checking the list. The list is now one JSON value checked on the person's identifier in the index the search walks, at any size (the switch at 500 people and its check in Go are gone). Saves made online were shared with each user in a transaction of its own, each flushed to disk, and stalled for up to 85 s after reconnects; now one transaction. In the sandbox at 100 k, 18 Android users, one core: incremental sync 3.9 s → 0.33 s (p50, about 330 people changed) and 3.9 s → 0.72 s (about 1 000), the hub's CPU 25–37 s → 11 s in 2 minutes; an online save with 60 users 12.6 ms → 4.3 ms.
-- **2026-10-26, Raspberry Pis.** The first runs on the boards (section "On Raspberry Pis"): a Pi 5 with an SSD at 100 k and 300 k, a Pi 4 with 1 GB and an SD card at 10 k, 30 k and 60 k, with this day's fixes. Both served every size; the Pi 4's SD card makes its saves' tails ten times the Pi 5's.
-- **2026-10-27, writes while online.** The Pis' second round counted bytes: while online the hub wrote 235–272 MB a minute, against 9 MB offline, because it stored every object of every online read anew, changed or not (section "On Raspberry Pis"). An object whose merged data equals what the hub holds is now left as it is; only the user's visibility is recorded. In the sandbox at 100 k, 60 users of whom 18 Android, online: 233 MB → 66 MB a minute over the same 9 minutes.
-- **2026-10-28, push over a slow uplink.** One request per save, one at a time: 7 entries a second over a 4G-like link (100 ms), 2.8 over a poor one (300 ms), 37 unlimited; latency, not bandwidth, sets the rate (section "Push over a slow uplink"). With saves at 2 a second the hub keeps up over 4G but runs sync cycles back to back and never passes saves through again; a change is proposed there. The backlog that grew in the hardware session fits the 5-minute `reconnect_delay`.
-- **2026-10-29, ten hours in the sandbox.** M1's sandbox part (section "Ten hours in the sandbox"): 10 211 confirmed saves through five outages and three kills, none lost or duplicated on central; memory, open files and the outbox flat, the data folder growing with the data only. Found: concurrent logins of one user leave extra tokens on central, and a person saved during a full pull is hidden from its author offline until the next pull.
-- **2026-10-29, a week offline at HC IV size.** 21 000 saves offline at 300 000 people: memory 150–210 MB, answers flat; drained in 43 minutes over 4G and 49 s unlimited; every save on central, and on a real DHIS2 21 020 saves in a 12.5-minute cycle (section "A week offline at HC IV size"). Found: Android incremental syncs re-downloaded every person written during the outage (fixed 30 October).
-- **2026-10-30 to 11-02, 72 hours on the Pi 5.** 36 757 saves at 4 times an HC IV's rate, 4 outages and 5 power cuts: memory median 80 MB, the data folder 87 MB a day, 6.2 GB written a day; every confirmed save on central (section "72 hours on the Pi 5").
-- **2026-11-03, Android syncs on the Pi 4's card.** Incremental syncs of 220 people took 58 s on `rpi4`: the fake central's people, dated at its start, were candidates for 24 hours, and each was checked by reading its children. `changedTEs` now leaves out people with nothing written on the hub whose newest row is older than `updatedAfter`. In the sandbox at 60 k: 5.4 s → 0.37 s alone, 8.2 → 0.9 s six at once (section "Android syncs on the Pi 4's card").
-- **2026-11-05, a slow uplink; name searches.** At Ngelehun CHC size (20 000 people) the weekly full pull took 2 minutes at 31 KB/s compressed and 6 minutes uncompressed; single requests through to central took about 0.3 s, answered by the hub 1–4 ms (section "A slow uplink"). A name search that few people match read every enrollment of the program: 151 ms at 100 000 people. Its matches now drive the search from an index: 20 ms.
-- **2026-11-05, app files from the hub's copy.** A browser with an empty cache downloaded Capture's 6.9 MB bundle through the uplink although the hub held a copy: 77 s for the app's start at 31 KB/s. The hub now serves its copy once central confirms it is current: 6.4 s.
-- **2026-11-06, 72 hours offline on the Pi 4's card.** No restart; memory 285 MB at most; 1.1–1.3 GB written to the card a day; 15 593 objects pushed in 4 minutes at reconnect, none refused. W1 not confirmed on hardware: the Android log was lost (section "72 hours offline on the Pi 4's card").
-- **2026-11-06, answering staff from the hub while online.** On a typical rural link (31 KB/s, 1 s per request, 3 % loss) Capture's dashboard took 4.4 s through to central and 0.12 s from the hub, its start 19 s and 4.8 s; a setting per programme (section "A slow uplink").
-- **2026-11-09, central's load from one facility.** Central's database work and server time per unit, on 2.43 with the eRegisters configuration, added up to a facility-day: with Capture web, a hub answering from its copies takes central from 82 s of DB time and 1 163 s of server time a day to 28 s and 177 s; with eRegisters, which works from its own copy, a hub adds about 10 % of time and nearly doubles the rows, and its hourly per-user refresh of `dataEntry/metadata` fetches 39 MB each time (section "Central's load from one facility, three ways"). Found: with local reads, Capture does not open a person it has just registered, and eRegisters does not start.
-- **2026-11-11, pulls keep a local save stored since their read** (review R-33). Inside its write, a pull now checks whether the object has a local save pending, stored since the pull read it: one lookup per written object. At the 100 k size (667 004 objects, 5 users), median of 3 runs before and after: first fill 166.7 s → 170.7 s (+2.4 %, within the runs' spread of 166.6–175.1 s before; 250 → 256 µs per written object), incremental sync 3.83 → 3.68 s and full pull 20.5 → 19.9 s (noise). The lookup alone takes 10 µs per written object; objects the pull does not write pay nothing. Measured in the sandbox (4 shared cores in a Docker VM, load 1.3–2.2), not on a Pi.

@@ -4,6 +4,18 @@ How the hub in this repository could be rolled out to hundreds of facilities on 
 
 This is a proposal built on what the POC showed (see [FINDINGS.md](FINDINGS.md)). Items marked **(to build)** do not exist in the POC yet.
 
+## In short
+
+- **Who gets a hub** (section 0): facilities where patients pass between staff on different devices, staff work in the browser, and outages are frequent or long. Most small facilities do not need one.
+- **The kit** (section 1): a Raspberry Pi 5 with 4 GB, an SSD (not an SD card), its real-time clock with a battery, a USB stick that stays in the box, on a UPS. Or the facility's own Windows PC, with the installer.
+- **One image for every country** (section 2): no user, no SSH, nothing country-specific. It updates its own program from GitHub releases, signed, at the version each country chooses on central.
+- **Set-up by facility staff** (section 3): flash, plug in, open `http://dhis2.local`, type central's address and the setup code from the USB stick, log in. About an hour; no IT visit.
+- **Networks** (section 4): on the facility's router (most common), on a MiFi, or the hub as the facility's Wi-Fi. Devices reach it at `https://dhis2.local` and trust its own certificate authority, installed once per device.
+- **Running the fleet** (section 6): the Facility Hub app on central shows each hub's hourly report, its flags and the changes central refused, approves each hub's own account and chooses the version. A hub with a problem writes `hub-diag.txt` to its boot partition, for support.
+- **Rollout** (section 7): national preparation, a pilot of 5–10 facilities in one district, then about 50 across a few districts, then district by district.
+
+Appendix A is a hub without a real-time clock (the Pi 4); appendix B, two-factor login.
+
 ## Principles
 
 1. **One image per country, no per-facility configuration.** Every hub is flashed with the same image. A hub learns its facility, programs and users from central when a setup user logs in (spec 6.2). A box can go to any facility, and a spare can replace any hub.
@@ -252,7 +264,7 @@ These small devices often have no Ethernet port and frequently isolate clients.
 - Hubs made the facility's Wi-Fi before 2026-10-27, under a name and password an admin chose, keep them until an admin makes a new password; the Wi-Fi then takes the hub's name too. Their password is in neither the admin page nor `hub.txt`.
 - Its uplink: the Ethernet port to a modem or router, or a USB 4G stick of the one kind the hub supports ("USB modems" below).
 
-### Setup Wi-Fi: a hub with no screen or keyboard (built 2026-10-19, untested on hardware)
+### Setup Wi-Fi: a hub with no screen or keyboard (built 2026-10-19; set-up through it run on a Pi 4, 16 November 2026)
 
 A hub with no network cannot be configured over one, and has no screen. So it provides one for the purpose:
 
