@@ -75,7 +75,7 @@ Use the browser: Capture web, Data Entry, eRegisters. The Android Capture app do
 While the hub has internet:
 
 1. Each staff member logs in through the hub (`https://dhis2.local`), on the device they will use. Only users who have done this can log in offline.
-2. Still online, they open each app they will use, and in it each program, each working list and each data entry form, once. In Capture, also open one person's record (the enrollment dashboard) in each program. A screen nobody opened online through the hub does not work offline: an enrollment dashboard never opened online makes Capture show a "TypeError" crash offline, not "needs connection". What one staff member opens reaches the others at their next online login.
+2. Still online, they open each app they will use, and in it each program, each working list and each data entry form, once. A screen nobody opened online through the hub does not work offline. What one staff member opens reaches the others at their next online login.
 3. Wait for the first download to finish (the admin page shows "last pull" with a time).
 
 ## 7. Test offline

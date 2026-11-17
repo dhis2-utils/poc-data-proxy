@@ -107,3 +107,28 @@ func TestReplayAtLogin(t *testing.T) {
 }
 
 func pathOf(uri string) string { p, _, _ := strings.Cut(uri, "?"); return p }
+
+// Capture's layout entry is loaded at every user's browser login, though no one was
+// seen asking for it: only the enrollment dashboard reads it, and Capture 107 crashes
+// offline without it (PENDING.md, item 25). Once a day, as the rest of the replay.
+func TestReplayLoadsCaptureLayout(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	layout := "/api/42/dataStore/capture?fields=."
+	b := e.web("nurse_b")
+	b.login() // online; no dashboard opened by anyone
+	e.app.Proxy.WaitReplays()
+	loaded := e.central.RequestCount("GET /api/42/dataStore/capture")
+	if loaded != 1 {
+		t.Errorf("the layout entry was asked %d times at the login, want 1", loaded)
+	}
+	b.login() // the same day: not again
+	e.app.Proxy.WaitReplays()
+	if n := e.central.RequestCount("GET /api/42/dataStore/capture"); n != loaded {
+		t.Errorf("a second login the same day loaded it again: %d requests, %d before", n, loaded)
+	}
+	e.offline()
+	if st, body := b.do("GET", layout, nil); st != 200 {
+		t.Errorf("nurse_b offline, %s: %d %s", layout, st, body)
+	}
+}

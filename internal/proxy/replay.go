@@ -130,6 +130,22 @@ func (p *Proxy) stopped() bool {
 	return p.replay.closed
 }
 
+// loadedAtLogin are requests the replay makes for every user, whether or not anyone
+// was seen making them. Each answers a failure measured offline, and each costs one
+// request per user per day at a browser login, so the list stays short:
+//   - Capture's layout entry (PENDING.md, item 25; the Pi 4 test of 16 November 2026).
+//     The enrollment dashboard alone reads it, and Capture 107 renders the dashboard
+//     without a layout and crashes when the read fails, so a facility where nobody
+//     opened a dashboard online could open none offline. The apps send their server's
+//     version in the path, and cache keys are exact URIs.
+func (p *Proxy) loadedAtLogin() []string {
+	v := p.H.APIMinor()
+	if v == "" {
+		return nil
+	}
+	return []string{"/api/" + v + "/dataStore/capture?fields=."}
+}
+
 // replayFor loads the requests for userID with a; it returns how many answers it
 // stored and their size in kB.
 func (p *Proxy) replayFor(userID int64, a central.Auth) (n, kb int, err error) {
@@ -138,9 +154,21 @@ func (p *Proxy) replayFor(userID int64, a central.Auth) (n, kb int, err error) {
 	if cut := p.H.MetadataCutoff(userID); cut.After(fresh) {
 		fresh = cut
 	}
-	uris, err := p.H.Store.ReplaySources(userID, now.Add(-replaySeen), fresh)
+	seen, err := p.H.Store.ReplaySources(userID, now.Add(-replaySeen), fresh)
 	if err != nil {
 		return 0, 0, err
+	}
+	var uris []string
+	for _, uri := range p.loadedAtLogin() {
+		if c, err := p.H.Store.GetCache(userID, http.MethodGet, uri); err == nil && c != nil && !store.ParseTime(c.FetchedAt).Before(fresh) {
+			continue // a copy of the day, or newer than the last change
+		}
+		uris = append(uris, uri)
+	}
+	for _, uri := range seen {
+		if !slices.Contains(uris, uri) {
+			uris = append(uris, uri)
+		}
 	}
 	users, err := p.H.Store.Users()
 	if err != nil {

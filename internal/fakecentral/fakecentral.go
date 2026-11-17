@@ -777,7 +777,7 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		c.shareToken(w, r, u)
 	case p == "/api/sharing" && r.URL.Query().Get("type") == "dataStore":
 		c.shareEntry(w, r, u)
-	case strings.HasPrefix(p, "/api/dataStore/"):
+	case strings.HasPrefix(p, "/api/dataStore/"), strings.HasPrefix(p, "/api/42/dataStore/"), strings.HasPrefix(p, "/api/43/dataStore/"):
 		c.dataStore(w, r, u)
 	case strings.HasPrefix(p, "/api/validation/dataSet/") || strings.HasPrefix(p, "/api/42/validation/dataSet/"):
 		// The Data Entry app's "Run validation": no rules here, so no violations.
@@ -1227,7 +1227,8 @@ func orEmptyErr(e []errReport) []errReport {
 }
 
 func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/dataStore/"), "/")
+	_, rest, _ := strings.Cut(r.URL.Path, "/dataStore/") // with or without the apps' version segment
+	parts := strings.Split(rest, "/")
 	ns := parts[0]
 	c.mu.Lock()
 	defer c.mu.Unlock()
