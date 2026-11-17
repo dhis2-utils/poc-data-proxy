@@ -1,6 +1,6 @@
 # A release: the hub binaries, the Pi image and the signed release.json, published as
-# the GitHub release v<version> that hubs upgrade from (README, "Releases and
-# self-upgrade"). Tags cannot be moved or deleted in this organisation: run this
+# the GitHub release v<version> that hubs upgrade from (docs/RELEASES.md).
+# Tags cannot be moved or deleted in this organisation: run this
 # workflow by hand (a dry run, nothing published) on the exact commit before tagging.
 #
 # The release signing key is what every hub trusts before it replaces its own binary
@@ -116,7 +116,7 @@ jobs:
   publish:
     needs: [version, binaries, image]
     runs-on: ubuntu-latest
-    # A tag push waits here for a reviewer of the environment, which holds the key.
+    # A tag push enters the environment here (waiting for its reviewer, if one is set).
     # A dry run enters no environment ('' is none) and so cannot read it.
     environment: ${{ github.event_name == 'push' && 'release' || '' }}
     permissions:
