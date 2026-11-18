@@ -64,7 +64,9 @@ func TestH1CentralDownForMaintenance(t *testing.T) {
 	stopped := time.Now()
 	r.p.WaitFor("offline", 2*time.Minute, tk.Offline)
 	// I7 counts from here: until the probe notices, requests go to central as when
-	// online (how long that takes is logged here).
+	// online (how long that takes is logged here). Calls are timed when collected:
+	// those made so far are collected now, before the moment counting starts.
+	collect()
 	offline := time.Now()
 	t.Logf("central stopped in %s; the hub offline %s after the stop began, %s after it ended",
 		stopped.Sub(down).Round(time.Second), time.Since(down).Round(time.Second), time.Since(stopped).Round(100*time.Millisecond))

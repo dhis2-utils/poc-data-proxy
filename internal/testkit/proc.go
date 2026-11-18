@@ -53,7 +53,8 @@ func BuildHub(t testing.TB, src, out, ldflags string) {
 	t.Helper()
 	if src != "" {
 		if _, err := os.Stat(filepath.Join(src, "go.work")); err != nil {
-			if w, _ := exec.Command("go", "env", "GOWORK").Output(); len(strings.TrimSpace(string(w))) > 0 {
+			// GOWORK=off (workspaces turned off) names no file.
+			if w, _ := exec.Command("go", "env", "GOWORK").Output(); len(strings.TrimSpace(string(w))) > 0 && strings.TrimSpace(string(w)) != "off" {
 				b, err := os.ReadFile(strings.TrimSpace(string(w)))
 				if err != nil || os.WriteFile(filepath.Join(src, "go.work"), b, 0o644) != nil {
 					t.Fatalf("copying %s: %v", w, err)

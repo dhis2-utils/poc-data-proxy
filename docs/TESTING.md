@@ -79,7 +79,7 @@ Scripted Capture web runs (Playwright) and Android Capture runs (adb and the UI 
 | `go test ./...` | unit tests, fake-central end-to-end tests, and the live suite against the fake |
 | `go run ./cmd/hubtest provision -profile laos -url https://dhis2.example.org -admin user:password -out manifest.json` | turn a DHIS2 instance into a profile's shape and write its manifest. `synthetic` needs an empty instance; `sierra-leone` and `laos` need the matching demo database |
 | `HUB_MANIFEST=manifest.json HUB_REPORT=oracle.json go test ./internal/live/` | the live suite against that instance |
-| `HUB_MANIFEST=manifest.json go test ./internal/adversarial/` | the adversarial scenarios ([ADVERSARIAL-TESTING.md](ADVERSARIAL-TESTING.md)) against that instance; those that show a finding not fixed skip unless `HUB_FINDINGS=1` |
+| `HUB_MANIFEST=manifest.json go test ./internal/adversarial/` | the adversarial scenarios ([ADVERSARIAL-TESTING.md](ADVERSARIAL-TESTING.md)) against that instance; those that show a finding not fixed skip unless `HUB_FINDINGS=1`. Run `TestD6DNSFails` and `TestD8BadCertificate` on their own (`-run`): they set `HOSTALIASES` and `SSL_CERT_FILE`, which Go reads once per process, so after other scenarios they fail at setup |
 
 On GitHub, `.github/workflows/test.yml` runs on a push to any branch but main, when Go code, test data, the app or the workflow changed:
 - `go vet` and every Go test, with `swtpm` for the TPM tests;
