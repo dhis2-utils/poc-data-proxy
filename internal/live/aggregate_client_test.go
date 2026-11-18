@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -87,11 +88,22 @@ func newDataEntry(t *testing.T, fixedAddr bool) *dataEntry {
 }
 
 // openForm starts from an open, incomplete form: earlier runs may have completed it.
+// Only a complete form is marked incomplete: 2.43.2.1 refuses even that with E7605
+// while a compulsory field is empty (seen 17 November 2026).
 func (d *dataEntry) openForm(t *testing.T, ds string) {
 	t.Helper()
-	if err := d.e.Central.JSON("POST", "/api/dataEntry/dataSetCompletion", map[string]any{"dataSet": ds,
-		"period": d.pe, "orgUnit": d.e.M.Facility.ID, "completed": false}, nil); err != nil {
+	var form struct {
+		CompleteStatus struct{ Complete bool } `json:"completeStatus"`
+	}
+	q := url.Values{"ds": {ds}, "pe": {d.pe}, "ou": {d.e.M.Facility.ID}}
+	if err := d.e.Central.JSON("GET", "/api/dataEntry/dataValues?"+q.Encode(), nil, &form); err != nil {
 		t.Fatal(err)
+	}
+	if form.CompleteStatus.Complete {
+		if err := d.e.Central.JSON("POST", "/api/dataEntry/dataSetCompletion", map[string]any{"dataSet": ds,
+			"period": d.pe, "orgUnit": d.e.M.Facility.ID, "completed": false}, nil); err != nil {
+			t.Fatal(err)
+		}
 	}
 	d.e.Sync() // the hub learns changes made on central at its next sync
 }
@@ -187,6 +199,14 @@ func TestAggregateDataEntryApp(t *testing.T) {
 	}
 	run := func(ds, name string) (aggClientResult, string) {
 		t.Helper()
+		if ag.Required != "" {
+			// The compulsory field filled on central, so that completing waits only on
+			// what the scenario enters (on a fresh instance nothing has filled it).
+			q := url.Values{"ds": {ds}, "de": {ag.Required}, "pe": {d.pe}, "ou": {d.e.M.Facility.ID}, "co": {ag.COC}, "value": {"1"}}
+			if st, b, err := d.e.Central.Do("POST", "/api/dataValues?"+q.Encode(), nil); err != nil || st/100 != 2 {
+				t.Fatalf("the compulsory value on central: %d %v %.300s", st, err, b)
+			}
+		}
 		d.openForm(t, ds)
 		va, vb := value(), value()
 		res, out := d.run(t, "complete", ds, name, va, vb)

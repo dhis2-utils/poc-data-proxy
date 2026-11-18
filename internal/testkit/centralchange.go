@@ -201,19 +201,25 @@ func (e *Env) NewUserLike(role string) User {
 	e.centralDo("POST", "/api/users", cur)
 	made := time.Now().Add(-5 * time.Minute) // a margin for central's clock
 	e.T.Cleanup(func() {
-		st, b, err := e.Central.Do("DELETE", "/api/users/"+u.UID, nil)
-		if err == nil && st == 409 && strings.Contains(string(b), "programmessage") {
-			// Central (2.42) refuses to delete a user named as the last updater of the
-			// program messages its notifications sent for their enrollments (Sierra
-			// Leone's primary program sends one on enrollment): those go first.
-			e.dropProgramMessages(u.UID, made)
-			st, b, err = e.Central.Do("DELETE", "/api/users/"+u.UID, nil)
-		}
+		st, b, err := e.deleteCentralUser(u.UID, made)
 		if err != nil || (st/100 != 2 && st != 404) {
 			e.T.Errorf("NOT UNDONE on central: user %s: %d %v %.300s", u.Username, st, err, b)
 		}
 	})
 	return u
+}
+
+// deleteCentralUser deletes a user on central. Central (2.42) refuses to delete a user
+// named as the last updater of the program messages its notifications sent for their
+// enrollments (Sierra Leone's primary program sends one on enrollment): those, for
+// enrollments updated since, go first.
+func (e *Env) deleteCentralUser(uid string, since time.Time) (int, []byte, error) {
+	st, b, err := e.Central.Do("DELETE", "/api/users/"+uid, nil)
+	if err == nil && st == 409 && strings.Contains(string(b), "programmessage") {
+		e.dropProgramMessages(uid, since)
+		st, b, err = e.Central.Do("DELETE", "/api/users/"+uid, nil)
+	}
+	return st, b, err
 }
 
 // dropProgramMessages deletes the program messages user last updated, for enrollments
@@ -303,7 +309,9 @@ func (e *Env) DeleteUser(u User) {
 		delete(e.Fake.Users, u.Username)
 		return
 	}
-	e.centralDo("DELETE", "/api/users/"+u.UID, nil)
+	if st, b, err := e.deleteCentralUser(u.UID, time.Now().Add(-24*time.Hour)); err != nil || st/100 != 2 {
+		e.T.Fatalf("central DELETE /api/users/%s: %d %v %.300s", u.UID, st, err, b)
+	}
 }
 
 // RemoveSharing removes a user's or a user group's access to a metadata object (kind

@@ -123,7 +123,7 @@ func eventsWithWeight(t *testing.T, e *tk.Env, enr, value string) []string {
 			DataValues []struct{ Value string }  `json:"dataValues"`
 		} `json:"events"`
 	}
-	if err := e.Central.JSON("GET", "/api/tracker/events?paging=false&enrollments="+enr+"&fields=event,createdBy,dataValues[value]", nil, &evs); err != nil {
+	if err := e.Central.JSON("GET", enrollmentEventsPath(t, e, enr), nil, &evs); err != nil {
 		t.Fatal(err)
 	}
 	var found []string
@@ -137,16 +137,30 @@ func eventsWithWeight(t *testing.T, e *tk.Env, enr, value string) []string {
 	return found
 }
 
+// enrollmentEventsPath reads an enrollment's events from central with the enrollment's
+// program: 2.43.2.1 answers a bare HTTP 400 to events?enrollments= without one (2.42
+// answers it; seen 17 November 2026).
+func enrollmentEventsPath(t *testing.T, e *tk.Env, enr string) string {
+	t.Helper()
+	var en struct{ Program string }
+	if err := e.Central.JSON("GET", "/api/tracker/enrollments/"+enr+"?fields=program", nil, &en); err != nil {
+		t.Fatal(err)
+	}
+	return "/api/tracker/events?paging=false&program=" + en.Program + "&enrollments=" + enr + "&fields=event,createdBy,dataValues[value]"
+}
+
 func str(v any) string { s, _ := v.(string); return s }
 
 func num(v any) int { f, _ := v.(float64); return int(f) }
 
 // TestCaptureWebRefusals (I1c): what Capture web shows for each way the hub refuses a
-// save offline, with a screenshot of each (I8): "needs connection" (a note on the
-// enrollment, which the hub cannot take offline), "upgrading" (local writes frozen as
+// save offline, with a screenshot of each (I8): "upgrading" (local writes frozen as
 // during an upgrade) and a refusal by the hub's own validation (central made the stage
 // non-repeatable after Capture cached its metadata: E1039). After each, the dashboard
 // is opened again: nothing may appear saved that is not on central after the sync.
+// First, a note on the enrollment, which until 17 November 2026 needed a connection:
+// taken offline, shown when the dashboard is opened again, on central once, by the
+// nurse, after the sync.
 func TestCaptureWebRefusals(t *testing.T) {
 	e := startCapture(t)
 	m := e.M
@@ -208,20 +222,37 @@ func TestCaptureWebRefusals(t *testing.T) {
 	e.Sync()
 	// What reached central, against what Capture showed after opening the page again.
 	var notes struct {
-		Notes []struct{ Value string } `json:"notes"`
+		Notes []struct {
+			Value     string
+			CreatedBy struct{ Username string } `json:"createdBy"`
+		} `json:"notes"`
 	}
-	e.Central.JSON("GET", "/api/tracker/enrollments/"+enr+"?fields=notes[value]", nil, &notes)
-	noteOnCentral := 0
+	e.Central.JSON("GET", "/api/tracker/enrollments/"+enr+"?fields=notes[value,createdBy]", nil, &notes)
+	var noteBy []string
 	for _, n := range notes.Notes {
 		if n.Value == note {
-			noteOnCentral++
+			noteBy = append(noteBy, n.CreatedBy.Username)
 		}
+	}
+	s := res.Steps["note-offline"]
+	t.Logf("note offline: the hub answered %d %.200s; Capture's alert: %v; on central after the sync, by: %v",
+		num(s["status"]), str(s["answer"]), s["alerts"], noteBy)
+	if num(s["status"])/100 != 2 {
+		t.Errorf("a note offline: the hub answered %d %.300s", num(s["status"]), str(s["answer"]))
+	}
+	if alerts, _ := s["alerts"].([]any); len(alerts) > 0 {
+		t.Errorf("a note offline: Capture showed an alert: %v", alerts)
+	}
+	if !strings.Contains(str(s["reopened"]), note) {
+		t.Errorf("a note offline: not shown when the dashboard is opened again offline")
+	}
+	if len(noteBy) != 1 || noteBy[0] != nurse {
+		t.Errorf("a note offline: on central %d times, by %v; want once, by %s", len(noteBy), noteBy, nurse)
 	}
 	for _, c := range []struct {
 		step, value, want string
 		onCentral         int
 	}{
-		{"needs-connection", note, "needs connection", noteOnCentral},
 		{"upgrading", wUp, "upgrading", len(eventsWithWeight(t, e, enr, wUp))},
 		{"refused", wRef, "E1039", len(eventsWithWeight(t, e, enr, wRef))},
 	} {
@@ -229,11 +260,8 @@ func TestCaptureWebRefusals(t *testing.T) {
 		status, answer := num(s["status"]), str(s["answer"])
 		// Shown as saved after opening the page again: the note's text, or one more
 		// event in the stage than before the save (the stage's table shows no values).
-		shown := strings.Contains(str(s["reopened"]), c.value)
-		if c.step != "needs-connection" {
-			shown = num(s["events-reopened"]) > num(s["events-before"])
-			t.Logf("%s: events in the stage before the save %d, opened again %d", c.step, num(s["events-before"]), num(s["events-reopened"]))
-		}
+		shown := num(s["events-reopened"]) > num(s["events-before"])
+		t.Logf("%s: events in the stage before the save %d, opened again %d", c.step, num(s["events-before"]), num(s["events-reopened"]))
 		t.Logf("%s: the hub answered %d %.200s", c.step, status, answer)
 		t.Logf("%s: opened again, Capture shows %q: %v; on central after the sync: %d", c.step, c.value, shown, c.onCentral)
 		alerts, _ := s["alerts"].([]any)
