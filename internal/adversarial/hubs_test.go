@@ -686,10 +686,15 @@ func TestG8TwoHubsPersonMoves(t *testing.T) {
 	}
 	stage := ""
 	for _, st := range p.Stages {
-		if st != p.RestrictedStage && len(p.EventValues[st]) > 0 {
-			stage = st
-			break
+		if st != p.RestrictedStage && (stage == "" || len(p.EventValues[st]) > 0) {
+			stage = st // the first with values, else the first (Laos: none has any)
+			if len(p.EventValues[st]) > 0 {
+				break
+			}
 		}
+	}
+	if stage == "" {
+		t.Skip("no stage of the protected program the nurse may write")
 	}
 	sib := s.M.Sibling.ID
 	nurseA := s.connect(s.M.Users[tk.RoleNurse].Username)

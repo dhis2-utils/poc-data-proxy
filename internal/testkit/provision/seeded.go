@@ -244,7 +244,12 @@ func Seeded(c *testkit.Central, o SeededOptions) (*testkit.Manifest, error) {
 				}
 			case ta.Unique:
 				if mp.UniqueAttr == "" || a.Mandatory {
+					if mp.UniqueAttr != "" {
+						mp.OtherUnique = append(mp.OtherUnique, mp.UniqueAttr)
+					}
 					mp.UniqueAttr = ta.ID
+				} else {
+					mp.OtherUnique = append(mp.OtherUnique, ta.ID)
 				}
 			case a.Searchable && ta.OptionSet == nil && (ta.ValueType == "TEXT" || ta.ValueType == "LONG_TEXT") && mp.SearchAttr == "":
 				mp.SearchAttr = ta.ID

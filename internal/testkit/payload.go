@@ -31,6 +31,9 @@ func (m *Manifest) NewPerson(p Program, name string, stages ...string) *Person {
 		pr.Unique = "T-" + UID()
 		values[p.UniqueAttr] = pr.Unique
 	}
+	for _, a := range p.OtherUnique {
+		values[a] = "T-" + UID()
+	}
 	attrs := []any{}
 	for a, v := range values {
 		attrs = append(attrs, map[string]any{"attribute": a, "value": v})

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dhis2/facility-hub/internal/aggregate"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
@@ -19,6 +20,7 @@ type aggScene struct {
 	*scene
 	ag      *tk.Aggregate
 	pe, old string
+	peEnd   time.Time // when pe ends: after now if it is the current period
 	values  string
 }
 
@@ -43,16 +45,17 @@ func beginAggregate(t *testing.T, roles ...string) *aggScene {
 	ds := acc.DataSets[a.ag.DataSet]
 	now := s.App.Hub.CentralNow()
 	cur, _ := aggregate.Current(ds.PeriodType, now)
-	var open []string
+	var open []aggregate.Period
 	for _, p := range aggregate.Window(ds, now, s.App.Hub.AggRetention().For(ds.ID)) {
 		if !p.Start.After(cur.Start) {
-			open = append(open, p.ID)
+			open = append(open, p)
 		}
 	}
 	if len(open) < 2 {
 		t.Skipf("%s has fewer than two open periods: %v", a.ag.DataSet, open)
 	}
-	a.pe, a.old = open[len(open)-1], open[len(open)-2]
+	a.pe, a.old = open[len(open)-1].ID, open[len(open)-2].ID
+	a.peEnd = open[len(open)-1].End
 	return a
 }
 

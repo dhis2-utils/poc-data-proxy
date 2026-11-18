@@ -210,6 +210,11 @@ func releaseStart(t *testing.T, old string) *netRun {
 // upgraded waits for the hub to run version, logging what it did meanwhile.
 func (r *netRun) upgraded(version string, timeout time.Duration) map[string]any {
 	r.t.Helper()
+	// The hub upgrades with its outbox empty; at the writers' test pace the queue never
+	// empties (N2 on Laos: about 20 waiting for 10 minutes), so they slow down as they
+	// do while the outbox drains (waitDrained).
+	was := r.pace.Swap(int64(drainPause))
+	defer r.pace.Store(was)
 	start := time.Now()
 	s := r.p.WaitFor("version "+version, timeout, func(s map[string]any) bool { return s["version"] == version })
 	r.t.Logf("on %s after %s: %v", version, time.Since(start).Round(time.Second), s)
