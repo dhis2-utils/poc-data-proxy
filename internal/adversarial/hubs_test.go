@@ -163,7 +163,7 @@ func TestG11AllKeySlotsLost(t *testing.T) {
 		t.Errorf("I6: the hub cannot be unlocked by any staff member: %v objects wait; RECOVERY.md has no step for it", queued)
 		return
 	}
-	r.p.WaitFor("drained", 5*time.Minute, tk.Drained)
+	r.waitDrained("drained", 5*time.Minute)
 	// The new password binds the slot again at the next online login.
 	st, b = login(web(), newPassword)
 	t.Logf("the nurse with the new password, online, after the unlock: %d %s", st, b)

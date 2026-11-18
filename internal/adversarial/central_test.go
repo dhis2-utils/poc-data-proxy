@@ -263,12 +263,12 @@ func TestH4CentralRestoredFromBackup(t *testing.T) {
 	t.Logf("backup taken from %s to %s", t0.Format("15:04:05"), time.Now().Format("15:04:05"))
 	r.outage(20 * time.Second)
 	r.e.Net.SetDown(false)
-	r.p.WaitFor("drained", 3*time.Minute, tk.Drained)
+	r.waitDrained("drained", 3*time.Minute)
 	time.Sleep(10 * time.Second) // saves pass through to central
 	r.centralEdit(a, "42")
 	r.pulls(2)
 	stop()
-	r.p.WaitFor("drained", 3*time.Minute, tk.Drained)
+	r.waitDrained("drained", 3*time.Minute)
 	t.Logf("before the restore, the hub offline shows a %v", r.offlineValues(a.Event))
 
 	// Saves the hub has not sent when central is restored: they are the hub's to deliver.
@@ -282,7 +282,7 @@ func TestH4CentralRestoredFromBackup(t *testing.T) {
 	queue()
 	r.e.Net.SetDown(false)
 	r.p.WaitFor("online", 3*time.Minute, tk.Online)
-	r.p.WaitFor("drained", 3*time.Minute, tk.Drained)
+	r.waitDrained("drained", 3*time.Minute)
 	r.centralEdit(b, "43")
 	r.pulls(2)
 	t.Logf("ledger: %s", r.ledger.summary())

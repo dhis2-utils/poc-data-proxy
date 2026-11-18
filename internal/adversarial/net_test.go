@@ -111,7 +111,7 @@ func TestD2OnlineSaveAnswerLost(t *testing.T) {
 		time.Sleep(5 * time.Second)
 		stop()
 		// Back to passing saves through: the hub went offline on the lost answer.
-		r.p.WaitFor("drained", 2*time.Minute, tk.Drained)
+		r.waitDrained("drained", 2*time.Minute)
 	}
 	c := r.finish(3 * time.Minute)
 	t.Logf("uplink: %s", callStats(r.e.Net.Calls(), time.Since(start)))

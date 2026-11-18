@@ -130,7 +130,7 @@ func TestD6DNSFails(t *testing.T) {
 		fault.restore()
 		r.p.WaitFor("online", 3*time.Minute, tk.Online)
 		t.Logf("%s: online %s after the fault ended", fault.what, time.Since(back).Round(100*time.Millisecond))
-		r.p.WaitFor("drained", 5*time.Minute, tk.Drained)
+		r.waitDrained("drained", 5*time.Minute)
 		t.Logf("%s: drained %s after the fault ended", fault.what, time.Since(back).Round(time.Second))
 		if r.p.Grep(fault.says) == says {
 			t.Errorf("%s: the hub's log never says %q", fault.what, fault.says)
@@ -212,7 +212,7 @@ func TestD7CaptivePortal(t *testing.T) {
 		back := time.Now()
 		r.e.Net.SetPortal("")
 		r.p.WaitFor("online", 2*time.Minute, tk.Online)
-		r.p.WaitFor("drained", 5*time.Minute, tk.Drained)
+		r.waitDrained("drained", 5*time.Minute)
 		t.Logf("portal %q: drained %s after the portal went", kind, time.Since(back).Round(time.Second))
 	}
 	time.Sleep(5 * time.Second)
@@ -339,7 +339,7 @@ func TestD8BadCertificate(t *testing.T) {
 		back := time.Now()
 		front.SetCert(good)
 		r.p.WaitFor("online", 2*time.Minute, tk.Online)
-		r.p.WaitFor("drained", 5*time.Minute, tk.Drained)
+		r.waitDrained("drained", 5*time.Minute)
 		t.Logf("certificate %s: drained %s after the good certificate was back", bad.what, time.Since(back).Round(time.Second))
 	}
 	time.Sleep(5 * time.Second)

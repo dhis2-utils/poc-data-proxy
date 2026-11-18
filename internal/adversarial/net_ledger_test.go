@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -94,6 +95,24 @@ type netRun struct {
 	de     string // the data element each save sets
 	tag    string // in every person's name, to find them on central
 	ledger *netLedger
+	// pace is the writers' pause between saves (write sets it; waitDrained slows it).
+	pace atomic.Int64
+}
+
+// drainPause is each writer's pause while the outbox drains: the three writers then
+// save about once a second together, above a busy facility's peak. During a fault they
+// write as fast as write's pause says, to build a large backlog; holding that rate
+// through the drain measured the host's speed instead (about 10 saves a second, as
+// fast as the hub pushes against central on 2.42; 17 November 2026).
+const drainPause = 3 * time.Second
+
+// waitDrained waits for the outbox to drain with the writers at drainPause, and
+// restores their pace after.
+func (r *netRun) waitDrained(what string, limit time.Duration) {
+	r.t.Helper()
+	was := r.pace.Swap(int64(drainPause))
+	defer r.pace.Store(was)
+	r.p.WaitFor(what, limit, tk.Drained)
 }
 
 // netStart sets a hub up for the facility in HUB_MANIFEST, logs the writers in once
@@ -222,6 +241,7 @@ func (r *netRun) writers() []*netWriter {
 
 // write starts the writers; the returned function stops them and waits.
 func (r *netRun) write(pause time.Duration) (stop func()) {
+	r.pace.Store(int64(pause))
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	for _, w := range r.writers() {
@@ -235,7 +255,7 @@ func (r *netRun) write(pause time.Duration) (stop func()) {
 				default:
 				}
 				w.once()
-				time.Sleep(pause)
+				time.Sleep(time.Duration(r.pace.Load()))
 			}
 		}()
 	}
@@ -500,7 +520,7 @@ func value(ev map[string]any, de string) string {
 func (r *netRun) finish(drain time.Duration) netCheck {
 	r.t.Helper()
 	start := time.Now()
-	r.p.WaitFor("the outbox to drain", drain, tk.Drained)
+	r.waitDrained("the outbox to drain", drain)
 	r.t.Logf("drained %s after the fault ended", time.Since(start).Round(time.Second))
 	r.t.Logf("ledger: %s", r.ledger.summary())
 	seen := map[string]bool{}
