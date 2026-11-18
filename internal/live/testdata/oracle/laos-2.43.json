@@ -1,0 +1,150 @@
+{
+  "hla_admin": {
+    "match": 28,
+    "refused": 85
+  },
+  "hla_clerk": {
+    "match": 48,
+    "refused": 63
+  },
+  "hla_district": {
+    "match": 29,
+    "refused": 85
+  },
+  "hla_mx00": {
+    "match": 4,
+    "refused": 112
+  },
+  "hla_mx01": {
+    "match": 54,
+    "refused": 60
+  },
+  "hla_mx02": {
+    "match": 73,
+    "refused": 36
+  },
+  "hla_mx03": {
+    "match": 49,
+    "refused": 62
+  },
+  "hla_mx04": {
+    "match": 28,
+    "refused": 86
+  },
+  "hla_mx05": {
+    "match": 29,
+    "refused": 86
+  },
+  "hla_mx06": {
+    "match": 4,
+    "refused": 112
+  },
+  "hla_mx07": {
+    "match": 29,
+    "refused": 85
+  },
+  "hla_mx08": {
+    "match": 4,
+    "refused": 112
+  },
+  "hla_mx09": {
+    "match": 4,
+    "refused": 112
+  },
+  "hla_mx10": {
+    "match": 0,
+    "refused": 116
+  },
+  "hla_mx11": {
+    "match": 0,
+    "refused": 116
+  },
+  "hla_mx12": {
+    "match": 0,
+    "refused": 116
+  },
+  "hla_mx13": {
+    "match": 0,
+    "refused": 116
+  },
+  "hla_mx14": {
+    "match": 0,
+    "refused": 116
+  },
+  "hla_mx15": {
+    "match": 55,
+    "refused": 58
+  },
+  "hla_mx16": {
+    "match": 50,
+    "refused": 63
+  },
+  "hla_mx17": {
+    "match": 4,
+    "refused": 112
+  },
+  "hla_mx18": {
+    "match": 28,
+    "refused": 86
+  },
+  "hla_mx19": {
+    "match": 4,
+    "refused": 112
+  },
+  "hla_mx20": {
+    "match": 4,
+    "refused": 112
+  },
+  "hla_mx21": {
+    "match": 4,
+    "refused": 112
+  },
+  "hla_mx22": {
+    "match": 51,
+    "refused": 62
+  },
+  "hla_mx23": {
+    "match": 4,
+    "refused": 112
+  },
+  "hla_mx24": {
+    "match": 4,
+    "refused": 112
+  },
+  "hla_mx25": {
+    "match": 4,
+    "refused": 112
+  },
+  "hla_mx26": {
+    "match": 4,
+    "refused": 112
+  },
+  "hla_mx27": {
+    "match": 50,
+    "refused": 63
+  },
+  "hla_mx28": {
+    "match": 50,
+    "refused": 63
+  },
+  "hla_nurse": {
+    "match": 97,
+    "refused": 4
+  },
+  "hla_nurse_twin": {
+    "match": 97,
+    "refused": 4
+  },
+  "hla_outsider": {
+    "match": 0,
+    "refused": 116
+  },
+  "hla_restricted": {
+    "match": 96,
+    "refused": 5
+  },
+  "hla_searchless": {
+    "match": 96,
+    "refused": 5
+  }
+}

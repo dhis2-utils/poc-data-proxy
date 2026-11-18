@@ -158,7 +158,7 @@ func TestC7RelationshipToPersonNotHeld(t *testing.T) {
 	t.Logf("online through the hub, to a person not held: before the push %d %v; after it %d %v; central then answers the nurse %d for it",
 		stQ, errorCodes(bQ), stO, errorCodes(bO), cst)
 	s.expect(nil, tk.OnCentral)
-	for uid, want := range map[string]bool{toX: stX == 200, toB: true, onlineToX: stO == 200, queuedToX: stQ == 200} {
+	for uid, want := range map[string]bool{toX: stX == 200, toB: stB == 200, onlineToX: stO == 200, queuedToX: stQ == 200} {
 		on := s.CentralObject("relationships", uid) != nil
 		t.Logf("relationship %s on central: %v (taken: %v)", uid, on, want)
 		if on != want {

@@ -803,14 +803,14 @@ func TestG7RetiredHubAggregate(t *testing.T) {
 	// (503), and the registration is to test its refusal of the save itself.
 	s.CentralComplete(s.M.Primary(), pr)
 	tst, tb := nurse.Do("POST", tk.SyncImport, pr.Payload)
-	ast, ab := s.aggValue(web, s.M.Aggregate.Number, month(0), "5")
+	ast, ab := s.aggValue(web, s.M.Aggregate.Number, month(-1), "5")
 	t.Logf("the replaced hub offline: a registration %d %.150s; an aggregate value %d %s", tst, tb, ast, ab)
 	if ast/100 == 2 { // fixed 29 October: refused as tracker saves are
 		t.Errorf("the replaced hub takes an aggregate value offline (%d), while it refuses tracker saves (%d)", ast, tst)
 	}
 	s.Online()
 	s.Sync()
-	s.DeleteCentralDataValue(s.M.Aggregate.DataSet, month(0), s.M.Aggregate.Number, s.M.Aggregate.COC)
+	s.DeleteCentralDataValue(s.M.Aggregate.DataSet, month(-1), s.M.Aggregate.Number, s.M.Aggregate.COC)
 }
 
 // dropEntries deletes a hub's registry entry and heartbeat when the test ends, before

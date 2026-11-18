@@ -458,7 +458,7 @@ func TestN16CatalogFollowsMetadata(t *testing.T) {
 	without["dataSetElements"] = kept
 	web := s.Web(tk.RoleNurse)
 	web.Login()
-	pe := month(0)
+	pe := month(-1) // last month: a seeded data set may have no open future periods (Laos)
 	try := func(when, v string) int {
 		s.Offline()
 		defer s.Online()

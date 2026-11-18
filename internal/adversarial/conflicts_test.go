@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -108,7 +109,8 @@ func TestC1EditedOnCentralAndOffline(t *testing.T) {
 	stage, de := "", ""
 	for st, vals := range p.EventValues {
 		for d, v := range vals {
-			if _, err := fmt.Sscan(v, new(float64)); err == nil && stage == "" {
+			// The whole value is a number: Sscan would read 1990 out of a date.
+			if _, err := strconv.ParseFloat(v, 64); err == nil && stage == "" {
 				stage, de = st, d
 			}
 		}

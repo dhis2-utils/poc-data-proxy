@@ -89,6 +89,10 @@ func Seeded(c *testkit.Central, o SeededOptions) (*testkit.Manifest, error) {
 	for i := range res.Programs {
 		byID[res.Programs[i].ID] = &res.Programs[i]
 	}
+	mandatory, err := ruleMandatory(c)
+	if err != nil {
+		return nil, err
+	}
 
 	// Where is the data? Count tracked entities per owning org unit and program from a
 	// sample of each program.
@@ -225,7 +229,7 @@ func Seeded(c *testkit.Central, o SeededOptions) (*testkit.Manifest, error) {
 			mp.Stages = append(mp.Stages, st.ID)
 			vals := map[string]string{}
 			for _, de := range st.ProgramStageDataElements {
-				if de.Compulsory {
+				if de.Compulsory || mandatory[de.DataElement.ID] {
 					vals[de.DataElement.ID] = sampleValue(de.DataElement, facility)
 				}
 			}
@@ -290,6 +294,26 @@ func Seeded(c *testkit.Central, o SeededOptions) (*testkit.Manifest, error) {
 		m.EventPrograms = append(m.EventPrograms, ep)
 	}
 
+	// Relationship types between two people of the programs' types, granted as the
+	// types are: the tests relate people (C7), and a seed may share them with nobody
+	// (Laos).
+	var rts struct {
+		Types []struct {
+			ID                           string
+			FromConstraint, ToConstraint struct {
+				TrackedEntityType *struct{ ID string } `json:"trackedEntityType"`
+			}
+		} `json:"relationshipTypes"`
+	}
+	if err := c.JSON("GET", "/api/relationshipTypes?paging=false&fields=id,fromConstraint[trackedEntityType[id]],toConstraint[trackedEntityType[id]]", nil, &rts); err != nil {
+		return nil, err
+	}
+	for _, rt := range rts.Types {
+		f, to := rt.FromConstraint.TrackedEntityType, rt.ToConstraint.TrackedEntityType
+		if f != nil && to != nil && slices.Contains(l.tets(), f.ID) && slices.Contains(l.tets(), to.ID) {
+			l.RelationshipTypes = append(l.RelationshipTypes, rt.ID)
+		}
+	}
 	acc := buildAccess(l)
 	m.SetupGroup, m.Users, m.Matrix = acc.Setup, acc.Roles, acc.Matrix
 	m.AccountsGroup, m.AccountsRole = acc.AccountsGroup, acc.AccountsRole
@@ -308,6 +332,9 @@ func Seeded(c *testkit.Central, o SeededOptions) (*testkit.Manifest, error) {
 		for _, s := range p.Stages {
 			types[s] = "programStage"
 		}
+	}
+	for _, rt := range l.RelationshipTypes {
+		types[rt] = "relationshipType"
 	}
 	for id, grants := range acc.Sharing {
 		if err := addSharing(c, types[id], id, grants, !o.KeepPublic); err != nil {
@@ -365,6 +392,30 @@ func addSharing(c *testkit.Central, typ, id string, g *sharing, restrictPublic b
 }
 
 // sampleValue is a valid value for a mandatory attribute or compulsory data element.
+// ruleMandatory lists the data elements a program rule makes mandatory
+// (SETMANDATORYFIELD). Central enforces these on completed events when the rule's
+// condition holds, and the tests' sample values can make it hold (Laos: E1301), so
+// the tests' events fill them as they fill compulsory ones.
+func ruleMandatory(c *testkit.Central) (map[string]bool, error) {
+	var res struct {
+		Actions []struct {
+			DataElement *struct {
+				ID string `json:"id"`
+			} `json:"dataElement"`
+		} `json:"programRuleActions"`
+	}
+	if err := c.JSON("GET", "/api/programRuleActions?paging=false&filter=programRuleActionType:eq:SETMANDATORYFIELD&fields=dataElement[id]", nil, &res); err != nil {
+		return nil, err
+	}
+	m := map[string]bool{}
+	for _, a := range res.Actions {
+		if a.DataElement != nil {
+			m[a.DataElement.ID] = true
+		}
+	}
+	return m, nil
+}
+
 func sampleValue(a seedAttr, facility string) string {
 	if a.OptionSet != nil && len(a.OptionSet.Options) > 0 {
 		return a.OptionSet.Options[0].Code
@@ -550,6 +601,10 @@ func seededEventPrograms(c *testkit.Central, facility string) ([]testkit.Program
 		facility+"&fields="+url.QueryEscape(fields), nil, &res); err != nil {
 		return nil, err
 	}
+	mandatory, err := ruleMandatory(c)
+	if err != nil {
+		return nil, err
+	}
 	type cand struct {
 		p     testkit.Program
 		n     int
@@ -571,7 +626,7 @@ func seededEventPrograms(c *testkit.Central, facility string) ([]testkit.Program
 			tp.Stages = append(tp.Stages, st.ID)
 			vals := map[string]string{}
 			for _, de := range st.ProgramStageDataElements {
-				if de.Compulsory {
+				if de.Compulsory || mandatory[de.DataElement.ID] {
 					vals[de.DataElement.ID] = sampleValue(de.DataElement, facility)
 				}
 			}
