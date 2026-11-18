@@ -4,7 +4,7 @@
     "refused": 100
   },
   "hsl_clerk": {
-    "match": 41,
+    "match": 42,
     "refused": 79
   },
   "hsl_district": {
@@ -16,23 +16,23 @@
     "refused": 122
   },
   "hsl_mx01": {
-    "match": 43,
+    "match": 44,
     "refused": 79
   },
   "hsl_mx02": {
-    "match": 61,
+    "match": 62,
     "refused": 56
   },
   "hsl_mx03": {
-    "match": 42,
+    "match": 43,
     "refused": 78
   },
   "hsl_mx04": {
-    "match": 22,
+    "match": 23,
     "refused": 101
   },
   "hsl_mx05": {
-    "match": 23,
+    "match": 24,
     "refused": 101
   },
   "hsl_mx06": {
@@ -76,7 +76,7 @@
     "refused": 77
   },
   "hsl_mx16": {
-    "match": 43,
+    "match": 44,
     "refused": 79
   },
   "hsl_mx17": {
@@ -84,7 +84,7 @@
     "refused": 122
   },
   "hsl_mx18": {
-    "match": 22,
+    "match": 23,
     "refused": 101
   },
   "hsl_mx19": {
@@ -100,7 +100,7 @@
     "refused": 122
   },
   "hsl_mx22": {
-    "match": 44,
+    "match": 45,
     "refused": 78
   },
   "hsl_mx23": {
@@ -120,19 +120,19 @@
     "refused": 122
   },
   "hsl_mx27": {
-    "match": 43,
+    "match": 44,
     "refused": 79
   },
   "hsl_mx28": {
-    "match": 43,
+    "match": 44,
     "refused": 79
   },
   "hsl_nurse": {
-    "match": 107,
+    "match": 108,
     "refused": 3
   },
   "hsl_nurse_twin": {
-    "match": 107,
+    "match": 108,
     "refused": 3
   },
   "hsl_outsider": {
@@ -140,11 +140,11 @@
     "refused": 126
   },
   "hsl_restricted": {
-    "match": 106,
+    "match": 107,
     "refused": 4
   },
   "hsl_searchless": {
-    "match": 106,
+    "match": 107,
     "refused": 4
   }
 }
