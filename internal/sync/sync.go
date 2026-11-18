@@ -4,6 +4,7 @@
 package sync
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -352,6 +353,14 @@ const metaRegistryTokens = "registry_tokens" // the token IDs last listed in the
 // reserve between 1 and 1000 values"): a bigger pool fills over several cycles.
 const maxReservePerRequest = 1000
 
+// notEnoughLeft reports whether central refused a reservation because the pattern has
+// fewer values left than asked for (2.42 and 2.43: 409 "Could not reserve value: Not
+// enough values left to reserve N values.", no error code).
+func notEnoughLeft(err error) bool {
+	var he *central.HTTPError
+	return errors.As(err, &he) && he.Status == 409 && bytes.Contains(he.Body, []byte("Not enough values left"))
+}
+
 // poolLowWatermark is the fraction of a pool's target below which it is refilled:
 // above it, no request goes to central, so a nearly full pool does not cost a small
 // top-up every cycle (T2/T4, decided 2026-10-30). The comparison multiplies instead
@@ -395,10 +404,32 @@ func (w *Worker) RefillPool(ctx context.Context) error {
 		if strings.Contains(a.Pattern, "ORG_UNIT_CODE") {
 			code = rt.FacilityCode
 		}
+		// A short pattern (Laos: ORG_UNIT_CODE + RANDOM(###), 1000 values per facility)
+		// runs out: central refuses a request for more than are left, so ask for half
+		// as many, down to one. A pool still below its watermark after that is reported:
+		// the error shows on the hub page as the last sync error.
 		var vals []json.RawMessage
-		if err := h.Central.JSON(ctx, "GET", h.API().ReservePath(a.ID, need, code), nil, h.HubAuth(), &vals); err != nil {
+		var err error
+		short := false
+		for {
+			err = h.Central.JSON(ctx, "GET", h.API().ReservePath(a.ID, need, code), nil, h.HubAuth(), &vals)
+			if err == nil || !notEnoughLeft(err) {
+				break
+			}
+			short = true
+			if need == 1 {
+				err = nil
+				break
+			}
+			need /= 2
+		}
+		if err != nil {
 			errs = append(errs, fmt.Errorf("reserve %s: %w", a.ID, err))
 			continue
+		}
+		if short && (have+len(vals))*poolLowWatermark < target {
+			errs = append(errs, fmt.Errorf("reserved values for %s (pattern %s): central has too few left, the pool holds %d of %d",
+				a.ID, a.Pattern, have+len(vals), target))
 		}
 		var rvs []store.ReservedValue
 		for _, v := range vals {

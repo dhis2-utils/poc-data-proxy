@@ -132,7 +132,12 @@ type Central struct {
 	order          []string
 	DataStore      map[string]map[string]json.RawMessage
 	reserved       int
-	down           atomic.Bool
+	// LimitReserved makes generateAndReserve answer as central does when a pattern
+	// runs short: ReserveLeft values remain, and a request for more is refused with
+	// 409 "Not enough values left" (a short pattern such as RANDOM(###); tests).
+	LimitReserved bool
+	ReserveLeft   int
+	down          atomic.Bool
 	Version        string
 	// FutureEnrollmentDates and FutureIncidentDates are the TB program's
 	// selectEnrollmentDatesInFuture and selectIncidentDatesInFuture. False, as on a new
@@ -763,6 +768,14 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		attr := strings.Split(p, "/")[3]
 		var out []any
 		c.mu.Lock()
+		if c.LimitReserved {
+			if max(n, 1) > c.ReserveLeft {
+				c.mu.Unlock()
+				webMessage(w, 409, fmt.Sprintf("Could not reserve value: Not enough values left to reserve %d values.", n), "")
+				return
+			}
+			c.ReserveLeft -= max(n, 1)
+		}
 		for i := 0; i < max(n, 1); i++ {
 			c.reserved++
 			out = append(out, map[string]any{"ownerObject": "TRACKEDENTITYATTRIBUTE", "ownerUid": attr, "key": "RANDOM(##########)",

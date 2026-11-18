@@ -183,7 +183,8 @@ Not for facilities. `macos/install.sh` runs the same hub on a Mac, so the core t
 1. The national team installs the Facility Hub app on central.
 2. A superuser names, in the app's Settings, the hub owners group, the hub accounts group and its role, and the hub managers group (section 6, "Protect the data store namespaces" and "The hub's own account"). A hub refuses set-up, and take-over, until a hub owners group is named: "A superuser must name the hub owners group in the Facility Hub app (Settings) first." It is left as it was. Saving the groups also gives the hub owners and hub managers groups read access to the hub accounts group: a hub shares its registry entry with that group as whoever set it up, and DHIS2 (2.42, 2.43) silently drops a group the sender cannot see. A hub whose sharing lost a group says so on its page and in its heartbeat (`registryDropped`), and shares the entry again at each heartbeat until the group is kept.
 3. The national team or the districts add the facility focal points, and whoever else may set a hub up or take one over, to the hub owners group.
-4. Then the facilities set their hubs up (below).
+4. Check the generated ID patterns of the programmes hubs will serve. Each hub keeps a pool of reserved IDs per generated attribute (500 by default, set per attribute in the app), and reserved IDs stay taken for 60 days. A short pattern has few values: `ORG_UNIT_CODE + "/" + RANDOM(###)` (Laos) allows 1000 per facility, shared by the hub and every tablet there. Set such an attribute's pool well below that, about a week of the facility's registrations. When central has too few left, the hub takes what remains and says so on its page ("central has too few left").
+5. Then the facilities set their hubs up (below).
 
 ### At the depot (bulk)
 

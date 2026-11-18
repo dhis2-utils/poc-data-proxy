@@ -934,3 +934,31 @@ func TestGeneratedFromPoolWhenCentralJustWentAway(t *testing.T) {
 		t.Errorf("the value central gave online, handed out again: %s", again)
 	}
 }
+
+// A generated attribute whose pattern runs short on central (Laos: ORG_UNIT_CODE +
+// RANDOM(###), 1000 values per facility): central refuses a request for more values
+// than are left. Must hold: the hub takes what is left, asking for half as many each
+// time; a pool still below its low watermark is reported as a sync error, which the hub
+// page shows; the sync goes on.
+func TestPoolWhenPatternRunsShort(t *testing.T) {
+	e := newEnv(t)
+	e.central.LimitReserved, e.central.ReserveLeft = true, 3
+	e.setup() // asks for 5, refused; then 2
+	now := func() string { return e.app.Hub.CentralTime(time.Now()) }
+	if have := e.app.Hub.Store.CountReservedValues(fc.AttrTBID, now()); have != 2 {
+		t.Fatalf("pool after the first sync: %d values, want the 2 asked for after the refusal", have)
+	}
+	if _, err := e.app.Hub.Store.DropReservedValues(fc.AttrTBID); err != nil {
+		t.Fatal(err)
+	}
+	err := e.app.Worker.Cycle(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "central has too few left, the pool holds 1 of 5") {
+		t.Fatalf("a pool central cannot fill: sync error %v", err)
+	}
+	if left := e.central.ReserveLeft; left != 0 {
+		t.Errorf("central has %d values left that the hub did not ask for", left)
+	}
+	if !e.app.Hub.Online() {
+		t.Error("the hub went offline over a short pattern")
+	}
+}
