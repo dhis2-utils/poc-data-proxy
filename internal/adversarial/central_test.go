@@ -304,7 +304,8 @@ func TestH4CentralRestoredFromBackup(t *testing.T) {
 }
 
 // missing is the events of registrations confirmed but not on central: confirmed before
-// t0, after it by the hub (from its outbox), and after it by central (passed through).
+// t0, after it by the hub (from its outbox), and after it by central (passed through;
+// also a save under way at t0).
 type missing struct{ before, queuedBefore, byHub, passed []string }
 
 func (l missing) String() string {
@@ -319,9 +320,12 @@ func (r *netRun) lostSince(t0 time.Time) missing {
 			continue
 		}
 		switch {
-		case s.At.Before(t0) && s.Online:
+		case s.At.Add(s.Dur).Before(t0) && s.Online:
+			// Answered before the dump began, so committed before its snapshot. A save
+			// under way at t0 may miss it (Laos 2.42: the three writers' saves sent
+			// together, about 120 ms each): that one is central's to restore, as below.
 			l.before = append(l.before, s.Event)
-		case s.At.Before(t0):
+		case s.At.Before(t0) && !s.Online:
 			// Queued by the hub before the backup: in it only if pushed before the
 			// dump began, which the ledger cannot tell (Laos 2.42 pushes slowly enough
 			// that some were not); pushed after, it is central's to restore.
