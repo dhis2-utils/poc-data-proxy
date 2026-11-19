@@ -28,9 +28,12 @@ func TestC10OneTimeReferral(t *testing.T) {
 	}
 	m := s.M
 	open, prot := m.Primary(), s.protected()
+	if open.AccessLevel != "" && open.AccessLevel != "OPEN" {
+		t.Skipf("the primary program is %s: no open program to refer in (Laos)", open.AccessLevel)
+	}
 	openFrom, openTo := open.Stages[0], open.Stages[len(open.Stages)-1]
-	protStage := prot.Stages[len(prot.Stages)-1] // repeatable: the referral and its origin
-	var rels []string                            // the referrals' relationships, removed at the end with their types
+	protStage := s.repeatableStage(prot) // the referral and its origin
+	var rels []string                    // the referrals' relationships, removed at the end with their types
 	openType := s.referralType(openFrom, openTo, &rels)
 	protType := s.referralType(protStage, protStage, &rels)
 	nurse := s.connect(m.Users[tk.RoleNurse].Username)
@@ -231,7 +234,7 @@ func (s *scene) atSibling(pr *tk.Person) {
 func values(v map[string]string) []any {
 	out := []any{}
 	for de, val := range v {
-		out = append(out, map[string]any{"dataElement": de, "value": val})
+		out = append(out, map[string]any{"dataElement": de, "value": tk.DataValue(val, time.Now().UTC().Format("2006-01-02"))})
 	}
 	return out
 }
@@ -300,7 +303,7 @@ func TestC10ProtectedAfterBreakingTheGlass(t *testing.T) {
 	}
 	m := s.M
 	p := s.protected()
-	stage := p.Stages[len(p.Stages)-1]
+	stage := s.repeatableStage(p)
 	var rels []string
 	rt := s.referralType(stage, stage, &rels)
 	nurse := s.connect(m.Users[tk.RoleNurse].Username)
@@ -360,4 +363,21 @@ func TestC10ProtectedAfterBreakingTheGlass(t *testing.T) {
 	if shown := look("offline"); len(shown) > 0 {
 		t.Errorf("I3: offline the hub shows what the nurse reached by temporary ownership: %v", shown)
 	}
+}
+
+// repeatableStage is p's last repeatable stage, for a referral and its origin in the
+// same stage: a seed's last stage need not repeat (Laos: E1039).
+func (s *scene) repeatableStage(p tk.Program) string {
+	s.t.Helper()
+	for i := len(p.Stages) - 1; i >= 0; i-- {
+		var r struct{ Repeatable bool }
+		if err := s.Central.JSON("GET", "/api/programStages/"+p.Stages[i]+"?fields=repeatable", nil, &r); err != nil {
+			s.t.Fatal(err)
+		}
+		if r.Repeatable && p.Stages[i] != p.RestrictedStage {
+			return p.Stages[i]
+		}
+	}
+	s.t.Skipf("no repeatable stage in %s", p.ID)
+	return ""
 }

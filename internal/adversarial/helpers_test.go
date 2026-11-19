@@ -68,11 +68,12 @@ func (s *scene) register(c *tk.Client, p tk.Program, name string) *tk.Person {
 // event builds a payload of one event with these data values.
 func (s *scene) event(p tk.Program, stage, enrollment, uid string, values map[string]string) map[string]any {
 	dvs := []any{}
+	today := time.Now().UTC().Format("2006-01-02")
 	for de, v := range values {
-		dvs = append(dvs, map[string]any{"dataElement": de, "value": v})
+		dvs = append(dvs, map[string]any{"dataElement": de, "value": tk.DataValue(v, today)})
 	}
 	return map[string]any{"events": []any{map[string]any{"event": uid, "enrollment": enrollment, "program": p.ID,
-		"programStage": stage, "orgUnit": s.M.Facility.ID, "occurredAt": time.Now().UTC().Format("2006-01-02"),
+		"programStage": stage, "orgUnit": s.M.Facility.ID, "occurredAt": today,
 		"status": "ACTIVE", "dataValues": dvs}}}
 }
 

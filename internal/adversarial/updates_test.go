@@ -326,7 +326,9 @@ func TestN1UpgradeWithEveryKindOfRecord(t *testing.T) {
 	if st, b := nurse.Do("POST", tk.SyncImport, sc.programEvent(ep, deleted, nil)); st != 200 {
 		t.Fatalf("edit offline: %d %.300s", st, b)
 	}
-	pe := time.Now().Format("200601") // the data set is monthly in every profile
+	// Last month: the data set is monthly in every profile, and a seeded one may have no
+	// open future periods (Laos: E2017 for the current month).
+	pe := time.Now().AddDate(0, -1, 0).Format("200601")
 	aggValue := fmt.Sprint(500 + time.Now().Second())
 	values := "/api/" + strings.Join(strings.Split(e.M.DHIS2Version, ".")[1:2], "") + "/dataValues"
 	if st, b := webNurse.PostDataValue(values, map[string]string{"ds": e.M.Aggregate.DataSet, "pe": pe, "ou": e.M.Facility.ID,

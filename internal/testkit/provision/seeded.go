@@ -230,7 +230,7 @@ func Seeded(c *testkit.Central, o SeededOptions) (*testkit.Manifest, error) {
 			vals := map[string]string{}
 			for _, de := range st.ProgramStageDataElements {
 				if de.Compulsory || mandatory[de.DataElement.ID] {
-					vals[de.DataElement.ID] = sampleValue(de.DataElement, facility)
+					vals[de.DataElement.ID] = sampleEventValue(de.DataElement, facility)
 				}
 			}
 			mp.EventValues[st.ID] = vals
@@ -419,6 +419,15 @@ func ruleMandatory(c *testkit.Central) (map[string]bool, error) {
 		}
 	}
 	return m, nil
+}
+
+// sampleEventValue is sampleValue for an event's data element: a date is the event's
+// own (testkit.EventDate), as rules can compare it to the event date.
+func sampleEventValue(a seedAttr, facility string) string {
+	if a.OptionSet == nil && a.ValueType == "DATE" {
+		return testkit.EventDate
+	}
+	return sampleValue(a, facility)
 }
 
 func sampleValue(a seedAttr, facility string) string {
@@ -632,7 +641,7 @@ func seededEventPrograms(c *testkit.Central, facility string) ([]testkit.Program
 			vals := map[string]string{}
 			for _, de := range st.ProgramStageDataElements {
 				if de.Compulsory || mandatory[de.DataElement.ID] {
-					vals[de.DataElement.ID] = sampleValue(de.DataElement, facility)
+					vals[de.DataElement.ID] = sampleEventValue(de.DataElement, facility)
 				}
 			}
 			tp.EventValues[st.ID] = vals

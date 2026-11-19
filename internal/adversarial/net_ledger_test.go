@@ -318,7 +318,7 @@ func (r *netRun) event(s netSave) map[string]any {
 	dvs := []any{map[string]any{"dataElement": r.de, "value": s.Value}}
 	for de, v := range r.prog.EventValues[r.stage] {
 		if de != r.de {
-			dvs = append(dvs, map[string]any{"dataElement": de, "value": v})
+			dvs = append(dvs, map[string]any{"dataElement": de, "value": tk.DataValue(v, s.At.UTC().Format("2006-01-02"))})
 		}
 	}
 	return map[string]any{"event": s.Event, "enrollment": s.Enr, "program": r.prog.ID, "programStage": r.stage,
