@@ -229,21 +229,30 @@ func TestJ3SameCellOfflineAndOnCentral(t *testing.T) {
 			continue
 		}
 		// 2.42 audits an update with the value it replaced (2.43 with the new one;
-		// both checked on 17 November 2026): each write left an entry by its author
-		// holding one of the cell's values, and each value replaced is audited.
+		// both checked on 17 November 2026), and nothing for the write that fills an
+		// empty cell (Laos 2.42, 18 November 2026): each value replaced is audited, and
+		// each write but the one that filled the cell left an entry by its author
+		// holding one of the cell's values.
 		vals := map[string]bool{}
 		for _, w := range c.writes {
 			vals[w.value] = true
 		}
+		var unattributed []cellWrite
 		for _, w := range c.writes {
 			by, replaced := false, w == c.last
 			for _, x := range audit {
 				by = by || x.by == w.by && vals[x.value]
 				replaced = replaced || x.value == w.value
 			}
-			if !by || !replaced {
-				t.Errorf("I4: %s: the write %v is not in central's audit %v", c.de, w, audit)
+			if !replaced {
+				t.Errorf("I4: %s: the value of %v is not in central's audit %v", c.de, w, audit)
 			}
+			if !by {
+				unattributed = append(unattributed, w)
+			}
+		}
+		if len(unattributed) > 1 || len(unattributed) == 1 && unattributed[0] == c.last {
+			t.Errorf("I4: %s: writes with no audit entry by their author %v (one may have filled the cell): %v", c.de, unattributed, audit)
 		}
 	}
 	if is := a.issues(); len(is) > 0 {

@@ -291,7 +291,7 @@ func TestH4CentralRestoredFromBackup(t *testing.T) {
 	}
 	lost := r.lostSince(t0)
 	if len(lost.before) > 0 {
-		t.Errorf("I1: %d registrations confirmed before the backup are not on central", len(lost.before))
+		t.Errorf("I1: %d registrations central confirmed before the backup are not on central", len(lost.before))
 	}
 	t.Logf("accepted by central after the backup and lost with the restore, central's to restore: %s", lost)
 	t.Logf("hub log lines about the restore: %d", r.p.Grep("back in time"))
@@ -305,11 +305,11 @@ func TestH4CentralRestoredFromBackup(t *testing.T) {
 
 // missing is the events of registrations confirmed but not on central: confirmed before
 // t0, after it by the hub (from its outbox), and after it by central (passed through).
-type missing struct{ before, byHub, passed []string }
+type missing struct{ before, queuedBefore, byHub, passed []string }
 
 func (l missing) String() string {
-	return fmt.Sprintf("%d made before the backup, %d after it confirmed by the hub, %d after it passed through to central",
-		len(l.before), len(l.byHub), len(l.passed))
+	return fmt.Sprintf("%d confirmed by central before the backup, %d queued by the hub before it, %d after it confirmed by the hub, %d after it passed through to central",
+		len(l.before), len(l.queuedBefore), len(l.byHub), len(l.passed))
 }
 
 func (r *netRun) lostSince(t0 time.Time) missing {
@@ -319,8 +319,13 @@ func (r *netRun) lostSince(t0 time.Time) missing {
 			continue
 		}
 		switch {
-		case s.At.Before(t0):
+		case s.At.Before(t0) && s.Online:
 			l.before = append(l.before, s.Event)
+		case s.At.Before(t0):
+			// Queued by the hub before the backup: in it only if pushed before the
+			// dump began, which the ledger cannot tell (Laos 2.42 pushes slowly enough
+			// that some were not); pushed after, it is central's to restore.
+			l.queuedBefore = append(l.queuedBefore, s.Event)
 		case s.Online:
 			l.passed = append(l.passed, s.Event)
 		default:
