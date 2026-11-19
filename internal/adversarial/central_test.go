@@ -104,7 +104,10 @@ func TestH1CentralDownForMaintenance(t *testing.T) {
 		}
 	}
 	t.Logf("from central's start until the outbox drained: %s", callStats(since, time.Since(up)))
-	r.finish(5 * time.Minute)
+	// The writers' 10 minutes offline queue about 7,000 entries. Laos 2.42 imports one in
+	// about 68 ms (880 a minute, with nothing else on the host), so the drain takes about
+	// 8 minutes there; Laos 2.43 took under 2 (6,795 in 1 min 41 s).
+	r.finish(15 * time.Minute)
 
 	if failedReads > 0 {
 		t.Errorf("%d reads failed while central was down: staff cannot keep working", failedReads)
