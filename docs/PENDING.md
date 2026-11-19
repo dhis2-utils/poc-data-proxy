@@ -6,7 +6,7 @@ The list started on 12 November 2026 as what remained before a first pilot, from
 
 Olav's answers on 12 and 17 November are marked **Answered**. The plan for closing what is listed here is `docs/plans/2026-11-17-pending-items.md` in the private notes.
 
-Removed as done on 17 November: item 5 (CI on branch pushes, T1 and T2), item 8 (request logging, C6), item 9 (the release key, made on 16 November) and item 29 (the hub ID in the Facility Hub app's hub list, a "Show hub ID" box since 3 November).
+Removed as done on 17 November: item 5 (CI on branch pushes, T1 and T2), item 8 (request logging, C6), item 9 (the release key, made on 16 November) and item 29 (the hub ID in the Facility Hub app's hub list, a "Show hub ID" box since 3 November). Removed on 19 November: item 12 (the live suite on Sierra Leone and Laos, 2.42 and 2.43: all four pass and their R-03 baselines are in `internal/live/testdata/oracle`; the adversarial suite on all four, its failures read against each profile's metadata: mostly test assumptions, now fixed; the hub findings, fixed, are FINDINGS.md #46 to #48; results in the private notes, `docs/sessions/PROFILES-2026-11-19.md`).
 
 The list below is what remains, from the KISS review, REVIEW-FABLE5.2 section 13, FINDINGS.md and the hardware sessions. "Decide" items belong to the project. The others are work.
 
@@ -47,7 +47,6 @@ The list below is what remains, from the KISS review, REVIEW-FABLE5.2 section 13
 
 10. **A release from `main`**: v0.1.6. v0.1.5 was published on 16 November with the review fixes, and no Go code has changed since, so v0.1.6 carries the fixes made from this list. Every step of the workflow is run by hand first (tags are protected); the app's job is new since v0.1.5 and has not run in a release.
 11. **A soak on that image on a Pi**, with `hubdrive check`. Much changed on 10 and 11 November: signed instructions, input checks at the boundary, the throttle, the pull overlap.
-12. **The live suite on Sierra Leone and Laos** for the R-03 baselines. Sierra Leone 2.43.2.1 done on 17 November (live suite passes; baseline committed). Still to do: Sierra Leone 2.42 and Laos. The adversarial suite on Sierra Leone 2.43 failed 26 scenarios, the same on main: each needs reading against that profile's metadata before it counts as a finding (private notes, `docs/sessions/SL-2.43-2026-11-17.md`).
 13. **The Facility Hub app on the demo central** with the new groups, signed instructions and Revoke, as a hub manager who is not a superuser.
 14. **The unexplained hardware findings:**
     - the Pi 4 restarted on its own on 30 October;
