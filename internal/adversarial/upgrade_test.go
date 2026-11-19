@@ -191,7 +191,11 @@ func TestG1UpgradeWithQueuedSaves(t *testing.T) {
 	u.offer("0.2.0")
 	start := time.Now()
 	u.e.Net.SetDown(false)
+	// The hub upgrades with its outbox empty: the writers slow down as in netRun.upgraded
+	// (on Laos 2.42 they queued as fast as the hub pushed, 10 a second, for 10 minutes).
+	was := u.pace.Swap(int64(drainPause))
 	seen := u.watchUntil("the upgrade", 10*time.Minute, u.upgraded("0.2.0"))
+	u.pace.Store(was)
 	done := time.Now()
 	time.Sleep(20 * time.Second)
 	stop()
