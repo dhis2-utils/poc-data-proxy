@@ -55,7 +55,7 @@ class Browser:
 
     def __init__(self, pw, user, phase):
         self.user, self.phase = user, phase
-        self.ctx = pw.chromium.launch_persistent_context(PROFILE, viewport={"width": 1500, "height": 1000},
+        self.ctx = pw.chromium.launch_persistent_context(PROFILE, channel=os.environ.get("PW_CHANNEL") or None, viewport={"width": 1500, "height": 1000},
                                                          args=["--disable-dev-shm-usage"])
         self.page = self.ctx.pages[0] if self.ctx.pages else self.ctx.new_page()
         self.page.on("response", self._response)

@@ -48,7 +48,7 @@ def save():
 
 def main():
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(args=["--disable-dev-shm-usage"])
+        browser = pw.chromium.launch(channel=os.environ.get("PW_CHANNEL") or None, args=["--disable-dev-shm-usage"])
         try:
             ctx = browser.new_context(viewport={"width": 1400, "height": 900}, service_workers="block")
             P = {}

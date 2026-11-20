@@ -169,6 +169,8 @@ A Mac is a test hub for the DHIS2 team, not a facility hub (macos/README.md).
 
 ### What the live suite contains
 
+The browser tests (`HUB_CLIENTS=1`) run Playwright's Chromium; `PW_CHANNEL=msedge` runs the installed Edge instead (Windows). `TestCaptureWeb`, `TestCaptureWebRefusals` and `TestOfflineScreens` assume the synthetic profile (its data elements, its twin user and a repeatable first stage); on Sierra Leone they fail at those assumptions (the Windows VM, 20 November 2026).
+
 | Test | What it checks |
 |---|---|
 | `TestScenarios` | the acceptance scenarios (spec 13.3) on the profile's own programs: setup, online and offline writes, access per role, unique conflicts, reconnection, reboot, nothing in plain text on disk |
