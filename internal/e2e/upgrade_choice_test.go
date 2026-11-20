@@ -252,13 +252,13 @@ func TestDownloadIdleTimeout(t *testing.T) {
 			rs.srv.Config.Handler.ServeHTTP(w, r)
 			return
 		}
-		for i := range bin { // a byte every 20 ms: 1.4 s in all, never idle for long
+		for i := range bin { // a byte every 50 ms: 3.5 s in all, never idle for long
 			w.Write(bin[i : i+1])
 			w.(http.Flusher).Flush()
 			if stall && i == 5 {
 				time.Sleep(2 * time.Second)
 			}
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 		}
 	}))
 	t.Cleanup(slow.Close)
@@ -266,7 +266,9 @@ func TestDownloadIdleTimeout(t *testing.T) {
 	e.choose(`{"version":"0.3.0","percent":100}`)
 	start := time.Now()
 	e.sync()
-	if d := time.Since(start); d > time.Second {
+	// A cycle that waited would take the download's 3.5 s; one under the race
+	// detector on a slow PC takes up to 1.5 s by itself (the Windows VM, 2026-11-20).
+	if d := time.Since(start); d > 2500*time.Millisecond {
 		t.Fatalf("the download held the cycle for %v", d)
 	}
 	e.downloaded()

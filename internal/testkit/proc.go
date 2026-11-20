@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -41,10 +42,18 @@ type Proc struct {
 // in-process hub does not run. e.App is nil afterwards: use the Proc's Status.
 func (e *Env) Detach() *Proc {
 	e.T.Helper()
-	bin := filepath.Join(e.T.TempDir(), "hub")
+	bin := filepath.Join(e.T.TempDir(), hubExe)
 	BuildHub(e.T, "", bin, "")
 	return e.DetachBinary(bin, false)
 }
+
+// hubExe is the hub binary's file name: Windows starts only a name ending in .exe.
+var hubExe = func() string {
+	if runtime.GOOS == "windows" {
+		return "hub.exe"
+	}
+	return "hub"
+}()
 
 // BuildHub builds cmd/hub of the module in src ("" for this one) to out, with these
 // -ldflags (e.g. "-X main.version=0.2.0"). A tree built through a go.work (the
@@ -80,7 +89,7 @@ func (e *Env) DetachRelease(bin string) *Proc { return e.DetachBinary(bin, true)
 func (e *Env) DetachBinary(bin string, empty bool) *Proc {
 	e.T.Helper()
 	dir := e.T.TempDir()
-	p := &Proc{e: e, bin: filepath.Join(dir, "hub"), cfg: filepath.Join(dir, "hub.yaml"), Log: filepath.Join(dir, "hub.log"),
+	p := &Proc{e: e, bin: filepath.Join(dir, hubExe), cfg: filepath.Join(dir, "hub.yaml"), Log: filepath.Join(dir, "hub.log"),
 		SyncInterval: 5 * time.Second, PingInterval: 2 * time.Second}
 	b, err := os.ReadFile(bin)
 	if err == nil {
@@ -181,6 +190,7 @@ func (p *Proc) Launch() {
 	p.cmd.Stdout, p.cmd.Stderr = logf, logf
 	ownGroup(p.cmd) // Kill ends its children too
 	if err := p.cmd.Start(); err != nil {
+		logf.Close() // or Windows cannot remove the test's folder
 		p.e.T.Fatal(err)
 	}
 	p.exited = make(chan struct{})
@@ -196,14 +206,16 @@ func (p *Proc) Kill() {
 	}
 }
 
-// Stop ends it with SIGTERM, as a clean shutdown.
+// Stop ends it with SIGTERM, as a clean shutdown (on Windows, which has none, as Kill).
 func (p *Proc) Stop() { p.signal(syscall.SIGTERM) }
 
 func (p *Proc) signal(sig syscall.Signal) {
 	if !p.Running() {
 		return
 	}
-	p.cmd.Process.Signal(sig)
+	if p.cmd.Process.Signal(sig) != nil { // Windows sends no SIGTERM
+		killGroup(p.cmd)
+	}
 	<-p.exited
 }
 

@@ -66,17 +66,14 @@ check "install.ini and ca.crt stay readable (public; the CI check reads them)" g
 check "the installer records what it ran (install.log)" grep -q 'FileOpen $LogFile "$DataDir\\install.log"' <<<"$STR"
 # The CI run of 2026-10-20: /inheritance:r with /T left every file with an empty access
 # list ((OI)(CI) grants do not apply to files), so the service could not run hub.exe.
-check "no recursive /inheritance:r (files would get empty access lists)" sh -c "! grep -E 'inheritance:r.*/T' <<'X'
-$STR
-X"
+no_recursive_reset() { ! grep -E 'inheritance:r.*/T' <<<"$STR"; }
+check "no recursive /inheritance:r (files would get empty access lists)" no_recursive_reset
 check "files under the data folder inherit its access list" grep -qF '\*" /reset /T' <<<"$STR"
 check "uninstalling removes the Defender exclusion" grep -q 'Remove-MpPreference' <<<"$STR"
-check "the firewall rules admit only the PC's own subnets" sh -c "! grep 'firewall add rule' <<'X' | grep -v remoteip=localsubnet
-$STR
-X"
-check "the whole PC is the default for a user who can elevate" sh -c "! grep -q '^!define MULTIUSER_INSTALLMODE_DEFAULT_CURRENTUSER' <<'X'
-$STR
-X"
+local_subnets_only() { ! grep 'firewall add rule' <<<"$STR" | grep -v remoteip=localsubnet; }
+check "the firewall rules admit only the PC's own subnets" local_subnets_only
+whole_pc_default() { ! grep -q '^!define MULTIUSER_INSTALLMODE_DEFAULT_CURRENTUSER' <<<"$STR"; }
+check "the whole PC is the default for a user who can elevate" whole_pc_default
 check "the uninstaller keeps hosts if putting the new one in place fails" grep -qF 'Rename "$6.hub-old" $6' <<<"$STR"
 # Review R-27: the installed hub.exe is in a folder the service's account may change,
 # so no elevated step runs it (the per-user install runs it as the user, not elevated).
@@ -85,11 +82,8 @@ import re, sys
 bad = [l for l in open(sys.argv[1]) if re.search(r"(Run|nsExec::\w+)\s+'\"\$HubExe\"", l)]
 sys.exit(1 if bad else 0)
 PY
-check "a kept newer hub is logged and shown in the Apps list" sh -c "grep -q 'Kept the newer hub' <<'X' && grep -qF '\"DisplayVersion\" \"\$ShownVersion\"' <<'X2'
-$STR
-X
-$STR
-X2"
+kept_newer_shown() { grep -q 'Kept the newer hub' <<<"$STR" && grep -qF '"DisplayVersion" "$ShownVersion"' <<<"$STR"; }
+check "a kept newer hub is logged and shown in the Apps list" kept_newer_shown
 echo
 if [ "$FAILS" -gt 0 ]; then echo "$FAILS checks failed"; exit 1; fi
 echo "all checks passed"
