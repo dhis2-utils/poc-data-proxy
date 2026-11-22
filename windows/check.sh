@@ -60,7 +60,7 @@ no_recursive_reset() { ! grep -E 'inheritance:r.*/T' <<<"$STR"; }
 check "no recursive /inheritance:r (files would get empty access lists)" no_recursive_reset
 check "files under the data folder inherit its access list" grep -qF '\*" /reset /T' <<<"$STR"
 check "uninstalling removes the Defender exclusion" grep -q 'Remove-MpPreference' <<<"$STR"
-local_subnets_only() { ! grep 'firewall add rule' <<<"$STR" | grep -v remoteip=localsubnet; }
+local_subnets_only() { ! grep 'firewall add rule' <<<"$STR" | grep action=allow | grep -v remoteip=localsubnet; }
 check "the firewall rules admit only the PC's own subnets" local_subnets_only
 # Only for the whole PC (22 November 2026): a hub for one user served only its own PC.
 whole_pc_only() { grep -q '^RequestExecutionLevel admin' <<<"$STR" && ! grep -qE 'MultiUser|HKCU|LOCALAPPDATA' <<<"$STR"; }
@@ -80,6 +80,17 @@ check "an owner the installer cannot read stops it" grep -q 'Could not read the 
 check "uninstalling checks that the Defender exclusion is gone" grep -qF 'ExclusionPath -contains' <<<"$STR"
 tpm_said() { grep -q 'ReadINIStr $6 "$DataDir\\install.ini" "hub" "tpm"' <<<"$STR" && grep -q 'MUI_FINISHPAGE_TEXT .*$TpmNote' <<<"$STR"; }
 check "the installer says whether a TPM seals the hub's keys" tpm_said
+# The retest in the VM, 2026-11-22.
+appends_log() { [ "$(grep -c 'install.log" a$' <<<"$STR")" = "$(grep -A1 'install.log" a$' <<<"$STR" | grep -c 'FileSeek .* 0 END')" ]; }
+check "install.log is appended to, not written over" appends_log
+check "hub init runs before the program is replaced" python3 - "$HERE/installer.nsi" <<'PY'
+import sys
+s = open(sys.argv[1]).read()
+init, put = s.find('hub-new.exe" init -data'), s.find('File "/oname=hub.exe"')
+sys.exit(0 if 0 <= init < put else 1)
+PY
+no_prompt() { grep -q 'add rule name="${NAME} (installer)".*hub-new.exe' <<<"$STR" && grep -q 'delete rule name="${NAME} (installer)"' <<<"$STR"; }
+check "hub init runs under a firewall rule (no prompt)" no_prompt
 echo
 if [ "$FAILS" -gt 0 ]; then echo "$FAILS checks failed"; exit 1; fi
 echo "all checks passed"

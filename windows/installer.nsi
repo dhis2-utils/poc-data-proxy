@@ -155,6 +155,7 @@ Section "!The hub" SecHub
   !insertmacro SetDataDir
   Call TakeOverDataDir
   FileOpen $LogFile "$DataDir\install.log" a
+  FileSeek $LogFile 0 END ; "a" opens at the start: without this a run wrote over the last one
   FileWrite $LogFile "$\r$\n== ${NAME} ${VERSION}$\r$\n"
   Call StopHub
 
@@ -197,20 +198,29 @@ Section "!The hub" SecHub
       StrCpy $ShownVersion "$2"
     ${EndIf}
   ${EndIf}
-  SetOutPath "$DataDir\bin"
-  ${If} $1 == "install"
-    File "/oname=hub.exe" "${HUBEXE}"
-  ${EndIf}
 
   ; Settings, ports and the hub's certificate authority (hub init keeps existing ones),
-  ; by this installer's hub.exe, also where a newer one was kept.
+  ; by this installer's hub.exe, also where a newer one was kept. Before the program
+  ; is replaced: an install that stops here leaves the hub as it was (the Windows VM,
+  ; 22 November 2026, R6).
+  ; hub init tries the ports by listening on them, and Windows asks whether to let a
+  ; program no rule names onto the network: every fresh install showed that prompt,
+  ; for this temporary copy (the same run, R7 and R10). A rule naming it, removed
+  ; again after, keeps the prompt away; the hub's own rules follow below.
+  !insertmacro Run 'netsh advfirewall firewall add rule name="${NAME} (installer)" dir=in action=block program="$PLUGINSDIR\hub-new.exe" profile=any'
   !insertmacro Run '"$PLUGINSDIR\hub-new.exe" init -data "$DataDir"'
-  ${If} $0 != 0
+  StrCpy $7 $0
+  !insertmacro Run 'netsh advfirewall firewall delete rule name="${NAME} (installer)"'
+  ${If} $7 != 0
     ; For example data sealed by a TPM this PC no longer opens: hub init says so.
-    MessageBox MB_ICONSTOP "The hub could not prepare its data folder ($0): $DataDir\install.log says why." /SD IDOK
+    MessageBox MB_ICONSTOP "The hub could not prepare its data folder ($7): $DataDir\install.log says why." /SD IDOK
     !insertmacro Run 'sc start ${SERVICE}' ; as it was: its start page says what is wrong
     FileClose $LogFile
     Abort
+  ${EndIf}
+  SetOutPath "$DataDir\bin"
+  ${If} $1 == "install"
+    File "/oname=hub.exe" "${HUBEXE}"
   ${EndIf}
   ReadINIStr $Url "$DataDir\install.ini" "hub" "url"
   ReadINIStr $CAName "$DataDir\install.ini" "hub" "ca_name"
@@ -341,6 +351,7 @@ Section "un.The hub" UnSecHub
     DetailPrint "Could not confirm that Microsoft Defender no longer skips $DataDir (exit $0)."
     ${If} ${FileExists} "$DataDir\install.log"
       FileOpen $R1 "$DataDir\install.log" a
+      FileSeek $R1 0 END
       FileWrite $R1 "Uninstall: could not confirm that Microsoft Defender's exclusion of $DataDir is gone (exit $0); check Windows Security.$\r$\n"
       FileClose $R1
     ${EndIf}

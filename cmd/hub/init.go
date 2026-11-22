@@ -85,7 +85,9 @@ setup_local_only: true
 
 // writeInstallINI is what the NSIS installer reads (ReadINIStr): the ports, the
 // authority to trust and its name (to remove it again), the address for the desktop
-// shortcut, and whether a TPM seals the hub's keys.
+// shortcut, and whether a TPM seals the hub's keys: as found at this install. A TPM
+// turned on later seals them at the hub's next start, and install.ini says so only
+// at the next install; the heartbeat's deviceKey is the live value.
 func writeInstallINI(dir string, r initResult) error {
 	b, err := os.ReadFile(r.CA)
 	if err != nil {
