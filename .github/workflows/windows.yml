@@ -60,7 +60,7 @@ jobs:
         shell: pwsh
         run: |
           $setup = (Get-ChildItem dhis2-hub-*-setup.exe | Select-Object -First 1).FullName
-          Start-Process -Wait -FilePath $setup -ArgumentList '/S','/AllUsers'
+          Start-Process -Wait -FilePath $setup -ArgumentList '/S'
           $data = 'C:\ProgramData\DHIS2 Facility Hub'
           Get-Content "$data\install.ini"
           $svc = Get-Service DHIS2FacilityHub
@@ -108,7 +108,7 @@ jobs:
         shell: pwsh
         run: |
           $dir = 'C:\Program Files\DHIS2 Facility Hub'
-          Start-Process -Wait -FilePath "$dir\uninstall.exe" -ArgumentList '/AllUsers','/S',"_?=$dir"
+          Start-Process -Wait -FilePath "$dir\uninstall.exe" -ArgumentList '/S',"_?=$dir"
           if (Get-Service DHIS2FacilityHub -ErrorAction SilentlyContinue) { throw "the service is still installed" }
           if (Select-String -Path "$env:windir\System32\drivers\etc\hosts" -Pattern 'DHIS2 Facility Hub' -Quiet) { throw "the hosts line is still there" }
           # Security review S8: the uninstaller rewrites hosts line by line; the other

@@ -46,20 +46,10 @@ done
 check "the data folder is taken over before anything in it runs" python3 - "$HERE/installer.nsi" <<'PY'
 import sys
 s = open(sys.argv[1]).read()
-# The first file read from the folder, and the first run of the installed hub.exe
-# (the installer never runs it to learn its version: review R-27).
+# The first file read from the folder (the installed hub.exe is never run: below).
 own = s.find("/setowner *S-1-5-32-544")
-uses = [s.find('FileOpen $R1 "$DataDir\\version"'), s.find("'\"$HubExe\" ")]
-sys.exit(0 if own >= 0 and all(own < u for u in uses) and min(uses) >= 0 else 1)
-PY
-check "the per-user move reads the user's own folder" grep -q 'UserAppDataLocal' <<<"$STR"
-# Review GLM5-F1: the user's own folder is theirs to change, so its hub.exe must not
-# reach the admin-only folder, where the elevated installer would run it and the
-# service would start it.
-check "the per-user move leaves the user's hub.exe behind" python3 - "$HERE/installer.nsi" <<'PY'
-import re, sys
-moves = [l for l in open(sys.argv[1]) if "robocopy" in l and "UserAppDataLocal" in l]
-sys.exit(0 if moves and all(re.search(r'/XD\s+"?bin"?(\s|$|\')', l) for l in moves) else 1)
+use = s.find('FileOpen $R1 "$DataDir\\version"')
+sys.exit(0 if 0 <= own < use else 1)
 PY
 check "the installer waits for the service to stop" grep -q 'service stop' <<<"$STR"
 check "install.ini and ca.crt stay readable (public; the CI check reads them)" grep -q 'install.ini" /grant "\*S-1-5-32-545:R"' <<<"$STR"
@@ -72,11 +62,12 @@ check "files under the data folder inherit its access list" grep -qF '\*" /reset
 check "uninstalling removes the Defender exclusion" grep -q 'Remove-MpPreference' <<<"$STR"
 local_subnets_only() { ! grep 'firewall add rule' <<<"$STR" | grep -v remoteip=localsubnet; }
 check "the firewall rules admit only the PC's own subnets" local_subnets_only
-whole_pc_default() { ! grep -q '^!define MULTIUSER_INSTALLMODE_DEFAULT_CURRENTUSER' <<<"$STR"; }
-check "the whole PC is the default for a user who can elevate" whole_pc_default
+# Only for the whole PC (22 November 2026): a hub for one user served only its own PC.
+whole_pc_only() { grep -q '^RequestExecutionLevel admin' <<<"$STR" && ! grep -qE 'MultiUser|HKCU|LOCALAPPDATA' <<<"$STR"; }
+check "the installer installs for the whole PC only" whole_pc_only
 check "the uninstaller keeps hosts if putting the new one in place fails" grep -qF 'Rename "$6.hub-old" $6' <<<"$STR"
 # Review R-27: the installed hub.exe is in a folder the service's account may change,
-# so no elevated step runs it (the per-user install runs it as the user, not elevated).
+# so no elevated step runs it.
 check "no elevated step runs the installed hub.exe" python3 - "$HERE/installer.nsi" <<'PY'
 import re, sys
 bad = [l for l in open(sys.argv[1]) if re.search(r"(Run|nsExec::\w+)\s+'\"\$HubExe\"", l)]
@@ -84,6 +75,11 @@ sys.exit(1 if bad else 0)
 PY
 kept_newer_shown() { grep -q 'Kept the newer hub' <<<"$STR" && grep -qF '"DisplayVersion" "$ShownVersion"' <<<"$STR"; }
 check "a kept newer hub is logged and shown in the Apps list" kept_newer_shown
+# The Windows VM, 2026-11-20 and 21.
+check "an owner the installer cannot read stops it" grep -q 'Could not read the owner of' <<<"$STR"
+check "uninstalling checks that the Defender exclusion is gone" grep -qF 'ExclusionPath -contains' <<<"$STR"
+tpm_said() { grep -q 'ReadINIStr $6 "$DataDir\\install.ini" "hub" "tpm"' <<<"$STR" && grep -q 'MUI_FINISHPAGE_TEXT .*$TpmNote' <<<"$STR"; }
+check "the installer says whether a TPM seals the hub's keys" tpm_said
 echo
 if [ "$FAILS" -gt 0 ]; then echo "$FAILS checks failed"; exit 1; fi
 echo "all checks passed"

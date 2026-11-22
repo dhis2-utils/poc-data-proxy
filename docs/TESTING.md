@@ -125,24 +125,22 @@ It runs after every image build, in `image.yml` too (image/README.md). The hub's
   - the Go tests on `windows-latest`;
   - the installer, installed silently for the whole PC, checked (the service runs, answers over HTTPS at `localhost` and `dhis2.local` with the hub's own authority), then uninstalled.
 - **On a Windows VM, by hand** (not done yet):
-  1. install for the whole PC, and for one user without administrator rights;
+  1. install for the whole PC; a user without administrator rights is refused;
   2. set up the hub on the PC; open it from a tablet at `dhis2.local`, and at the IP;
   3. restart the PC; check the hub stays locked until the first staff login, also offline;
   4. upgrade through `facility-hub-admin/release`; check the hub comes back unlocked;
   5. plug in two USB sticks, choose one, pull it out, and check the page reports it missing;
   6. with Windows' own mDNS, and Bonjour installed, check `dhis2.local` still resolves;
   7. check Defender's exclusion, the sleep setting, and the firewall on a network marked Public;
-  8. move a per-user hub to a whole-PC install;
+  8. on a PC without a TPM, the finish page and `install.log` say the keys are not sealed;
   9. uninstall, with and without removing the data;
   10. on a PC with a TPM: `device.key` appears in the data folder and `tls.key` starts with `HUBDEV1`; the service (a virtual account) still starts after a restart, and staff log in (Windows TPM Base Services, `internal/devkey`). A fresh install with `tpm: false` in hub.yaml makes no `device.key` and works as before.
 
 #### Windows versions
 
-The hub targets 64-bit Windows 10 and 11 (WINDOWS-INSTALL.md). Go 1.26 needs Windows 10 or later. All testing so far has been on Windows 11.
+The hub supports 64-bit Windows 11 (decided 22 November 2026; WINDOWS-INSTALL.md). Windows 10 is untested: its support ended in October 2025, apart from paid extended updates and LTSC editions. Go 1.26 runs on Windows 10 too, so a country that needs it can test it, on an x86-64 machine such as an old laptop (Apple Silicon cannot run Windows 10 usefully, and GitHub has no Windows 10 runners). On Windows 10, check:
 
-Test Windows 10 22H2 too, on an x86-64 machine such as an old laptop. Apple Silicon cannot run Windows 10 usefully, and GitHub has no Windows 10 runners. On Windows 10, check:
-
-- both install modes: for the whole PC, and for one user;
+- the install;
 - the service starts at boot;
 - the firewall rules, the root certificate install and Defender's exclusion;
 - `dhis2.local` from tablets;

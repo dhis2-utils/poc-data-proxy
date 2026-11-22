@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/dhis2/facility-hub/internal/config"
+	"github.com/dhis2/facility-hub/internal/devkey"
 	"github.com/dhis2/facility-hub/internal/hubtls"
 )
 
@@ -58,7 +59,7 @@ func TestInitWritesNothingCountrySpecific(t *testing.T) {
 	}
 	// install.ini: what the NSIS installer reads (ReadINIStr).
 	ini, _ := os.ReadFile(filepath.Join(dir, "install.ini"))
-	for _, want := range []string{"[hub]", "https_port=8443", "http_port=8080", "ca=" + filepath.Join(dir, "ca.crt"), "ca_name=DHIS2 facility hub ", "url=https://dhis2.local:8443"} {
+	for _, want := range []string{"[hub]", "https_port=8443", "http_port=8080", "ca=" + filepath.Join(dir, "ca.crt"), "ca_name=DHIS2 facility hub ", "url=https://dhis2.local:8443", "tpm=none"} {
 		if !strings.Contains(string(ini), want) {
 			t.Errorf("install.ini lacks %q:\n%s", want, ini)
 		}
@@ -90,5 +91,43 @@ func TestInitQuotesPaths(t *testing.T) {
 	}
 	if _, err := initData(filepath.Join(t.TempDir(), `a"b`), false, func(int) bool { return true }); err == nil {
 		t.Error(`a folder with " in its name accepted`)
+	}
+}
+
+// fakeTPM seals by prefixing: enough for init to see a TPM that works.
+type fakeTPM struct{}
+
+func (fakeTPM) Seal(b []byte) ([]byte, error) { return append([]byte("sealed:"), b...), nil }
+func (fakeTPM) Unseal(b []byte) ([]byte, error) {
+	return []byte(strings.TrimPrefix(string(b), "sealed:")), nil
+}
+func (fakeTPM) Close() error { return nil }
+
+// install.ini says whether a TPM seals the hub's keys: the installer tells the person
+// installing (the finish page) and install.log.
+func TestInitReportsTPM(t *testing.T) {
+	old := devkey.OpenDevice
+	t.Cleanup(func() { devkey.OpenDevice = old; devkey.Use(nil) })
+	dir := t.TempDir()
+	free := func(int) bool { return true }
+	tpm := func(want string) {
+		t.Helper()
+		r, err := initData(dir, false, free)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ini, _ := os.ReadFile(filepath.Join(dir, "install.ini"))
+		if r.TPM != want || !strings.Contains(string(ini), "tpm="+want+"\r\n") {
+			t.Fatalf("TPM %q, want %q; install.ini:\n%s", r.TPM, want, ini)
+		}
+	}
+	devkey.OpenDevice = func() (devkey.Device, error) { return nil, nil }
+	tpm("none")
+	devkey.OpenDevice = func() (devkey.Device, error) { return fakeTPM{}, nil }
+	tpm("sealed") // a TPM added later seals the keys
+	devkey.OpenDevice = func() (devkey.Device, error) { return nil, nil }
+	// Taken away again: init stops with the reason, which install.log records.
+	if _, err := initData(dir, false, free); err == nil || !strings.Contains(err.Error(), "TPM") {
+		t.Fatalf("init without the TPM that sealed the data: %v", err)
 	}
 }

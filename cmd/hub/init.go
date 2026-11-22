@@ -24,6 +24,8 @@ type initResult struct {
 	CA        string // the authority to add to the PC's trusted roots
 	HTTPSPort int
 	HTTPPort  int
+	// TPM is whether the hub's keys are sealed by this machine's TPM: "sealed" or "none".
+	TPM string
 }
 
 // initData prepares a data folder for a hub on a PC (the Windows installer): hub.yaml
@@ -43,7 +45,7 @@ func initData(dir string, perUser bool, free func(int) bool) (initResult, error)
 		r.HTTPSPort, r.HTTPPort = config.ChoosePorts(free)
 		install := "for the whole PC (a Windows service)"
 		if perUser {
-			install = "for one Windows user (runs while they are logged in)"
+			install = "for one user (runs while they are logged in)"
 		}
 		text := fmt.Sprintf(`# The hub on this PC, installed %s. Written once by "hub init"; nothing
 # country-specific: central's address is given at set-up, on this PC.
@@ -67,6 +69,14 @@ setup_local_only: true
 	if err := devkey.Start(dir, c.TPM); err != nil {
 		return r, err
 	}
+	// Data sealed by a TPM this machine does not open: the installer stops and logs why.
+	if p := devkey.Problem(); p != "" {
+		return r, errors.New(p)
+	}
+	r.TPM = "none"
+	if devkey.Key() != nil {
+		r.TPM = "sealed"
+	}
 	if _, err := hubtls.Load(dir, c.HubHosts); err != nil {
 		return r, err
 	}
@@ -74,8 +84,8 @@ setup_local_only: true
 }
 
 // writeInstallINI is what the NSIS installer reads (ReadINIStr): the ports, the
-// authority to trust and its name (to remove it again), and the address for the
-// desktop shortcut.
+// authority to trust and its name (to remove it again), the address for the desktop
+// shortcut, and whether a TPM seals the hub's keys.
 func writeInstallINI(dir string, r initResult) error {
 	b, err := os.ReadFile(r.CA)
 	if err != nil {
@@ -93,8 +103,8 @@ func writeInstallINI(dir string, r initResult) error {
 	if r.HTTPSPort != 443 {
 		url += ":" + strconv.Itoa(r.HTTPSPort)
 	}
-	ini := fmt.Sprintf("[hub]\r\nhttps_port=%d\r\nhttp_port=%d\r\nca=%s\r\nca_name=%s\r\nurl=%s\r\n",
-		r.HTTPSPort, r.HTTPPort, r.CA, ca.Subject.CommonName, url)
+	ini := fmt.Sprintf("[hub]\r\nhttps_port=%d\r\nhttp_port=%d\r\nca=%s\r\nca_name=%s\r\nurl=%s\r\ntpm=%s\r\n",
+		r.HTTPSPort, r.HTTPPort, r.CA, ca.Subject.CommonName, url, r.TPM)
 	return os.WriteFile(filepath.Join(dir, "install.ini"), []byte(ini), 0o600)
 }
 
@@ -121,7 +131,7 @@ func portOf(listen string) int {
 func hubInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	dir := fs.String("data", "", "the hub's data folder")
-	perUser := fs.Bool("per-user", false, "installed for one Windows user")
+	perUser := fs.Bool("per-user", false, "installed for one user (a Mac)")
 	fs.Parse(args)
 	if *dir == "" {
 		return errors.New("need -data")
@@ -134,6 +144,6 @@ func hubInit(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("config=%s\nca=%s\nhttps_port=%d\nhttp_port=%d\n", r.Config, r.CA, r.HTTPSPort, r.HTTPPort)
+	fmt.Printf("config=%s\nca=%s\nhttps_port=%d\nhttp_port=%d\ntpm=%s\n", r.Config, r.CA, r.HTTPSPort, r.HTTPPort, r.TPM)
 	return nil
 }

@@ -25,7 +25,7 @@ Same hub, same store, same app and releases; only the packaging, the service aro
      - a desktop shortcut;
      - an antivirus exclusion where it can;
      - an offer to stop the PC sleeping.
-   - **Without administrator rights.** Installed for one Windows user, started when that user logs in, stopped when they log out. No firewall rules: Windows may then ask the user to allow it, or devices cannot reach it (the hub's page says which). For locked-down PCs where nobody on site has administrator rights.
+   - **Without administrator rights** (dropped 22 November 2026: such a hub could serve only its own PC; windows/README.md). Installed for one Windows user, started when that user logs in, stopped when they log out. No firewall rules: Windows may then ask the user to allow it, or devices cannot reach it (the hub's page says which). For locked-down PCs where nobody on site has administrator rights.
 3. **Devices use `dhis2.local`, as on the Pi.**
    - Windows only announces the PC's own name, so the hub runs a small mDNS responder of its own that answers `dhis2.local` (and only that) with the PC's private IPv4 addresses.
    - It shares UDP 5353 with Windows' own mDNS and with Bonjour, if installed.
@@ -91,7 +91,7 @@ Settled after the design review on 2026-10-20 while the user was away, to be che
    - `https://localhost` keeps working, for the set-up page.
    - Set-up accepts requests from the PC itself: loopback, or one of the PC's own addresses.
 4. **The USB stick is never adopted without a person.** Even with one removable drive plugged in, a staff member confirms it on the admin page ("Keep the hub's copy on drive E: (KINGSTON, 15 GB)"). The folder layout is the Pi's, `facility-hub\<hub ID>\`, so a copy from either can restore the other's disk.
-5. **From a per-user install to an admin install.** When the admin installer finds the installing user's per-user hub, it offers to move it:
+5. **From a per-user install to an admin install** (dropped with the per-user install, 22 November 2026). When the admin installer finds the installing user's per-user hub, it offers to move it:
    1. stop it;
    2. move its data folder to `ProgramData`;
    3. set the access list;
