@@ -94,7 +94,7 @@ A difference means a module in the old `go.sum` is not what the checksum databas
 
 Hub endpoints:
 
-- `GET /hub/status`: no auth. `{mode, hubId, lastPush, lastPull, pending, rejected, version, locked, setup}`. `lastPush` is when central last answered a push, not when the outbox was last found empty.
+- `GET /hub/status`: no auth. `{mode, hubId, lastPush, lastPull, pending, rejected, version, locked, setup}`. `pending` is what still waits to reach central: tracker objects with unsent changes, plus aggregate values and notes (since 22 November 2026; the heartbeat's `pending` counts the same). `lastPush` is when central last answered a push, not when the outbox was last found empty.
 - `/hub/ui`: admin page, for staff assigned to the facility (log in at `/hub/login`). It shows status, outbox, issues and users with their access refresh times. Under "Your sync errors" the signed-in user sees their own refused changes: one per record as "<date> | <org unit>", central's message, the values they entered and who closes it. Other users' refusals show only in the issue table, with values masked. The page has these actions:
   - sync now;
   - **simulate uplink cut**, for demos, only with `uplink_switch: true`;

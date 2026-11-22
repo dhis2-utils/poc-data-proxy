@@ -43,7 +43,7 @@ func Status(h *core.Hub) map[string]any {
 	return map[string]any{
 		"hubId": h.HubID(), "facility": h.Facility(), "version": h.Version, "serverVersion": h.ServerVersion(),
 		"uptimeSeconds": int(time.Since(h.Started).Seconds()), "lastPush": lastPush, "lastPull": lastPull,
-		"lastSync": lastSync, "lastError": lastErr, "pending": h.Store.CountObjects(store.SyncPending),
+		"lastSync": lastSync, "lastError": lastErr, "pending": h.Pending(),
 		// oldestPending: when the oldest waiting save was made (the app's "pending" flag).
 		"rejected": h.Store.CountObjects(store.SyncRejected), "pendingOutbox": h.Store.CountOutbox(store.OutboxPending),
 		"oldestPending": h.Store.OldestPendingOutbox(), "stuckOutbox": h.StuckOutbox(),

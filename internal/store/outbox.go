@@ -273,6 +273,14 @@ func (s *Store) PendingOutboxByUser() (map[int64]int, error) {
 	return out, rows.Err()
 }
 
+// CountPendingUntracked counts pending entries that mark no object pending: aggregate
+// values and completions, and notes (a tracker save marks its objects).
+func (s *Store) CountPendingUntracked() int {
+	var n int
+	s.DB().QueryRow(`SELECT count(*) FROM outbox WHERE state=? AND kind<>?`, OutboxPending, OutboxTracker).Scan(&n)
+	return n
+}
+
 func (s *Store) CountOutbox(state string) int {
 	var n int
 	s.DB().QueryRow(`SELECT count(*) FROM outbox WHERE state=?`, state).Scan(&n)

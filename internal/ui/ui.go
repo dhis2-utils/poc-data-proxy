@@ -101,7 +101,7 @@ func StatusBody(h *core.Hub) map[string]any {
 	}
 	lastPush, lastPull := h.LastPushPull()
 	out := map[string]any{"mode": mode, "hubId": h.HubID(), "lastPush": nullable(lastPush), "lastPull": nullable(lastPull),
-		"pending": h.Store.CountObjects(store.SyncPending), "rejected": h.Store.CountObjects(store.SyncRejected),
+		"pending": h.Pending(), "rejected": h.Store.CountObjects(store.SyncRejected),
 		"version": h.Version, "locked": !h.Store.Unlocked(), "setup": h.Mode() == core.ModeSetup}
 	if start, running := h.Stats.Cycle(); start != "" {
 		out["syncStarted"], out["syncing"] = start, running

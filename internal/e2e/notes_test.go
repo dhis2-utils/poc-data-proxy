@@ -41,6 +41,10 @@ func TestNotesOffline(t *testing.T) {
 	if notes, _ := ev["notes"].([]any); len(notes) != 1 {
 		t.Errorf("nurse_b offline sees notes %v", ev["notes"])
 	}
+	// /hub/status counts the notes as waiting (the Windows VM, 20 November: "pending 0").
+	if st := a.json("GET", "/hub/status", nil, 200); st["pending"] != float64(3) {
+		t.Errorf("/hub/status pending %v with three notes waiting", st["pending"])
+	}
 
 	e.online()
 	e.central.DeleteProgramEvent("NtEv0000002")
