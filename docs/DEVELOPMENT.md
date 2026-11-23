@@ -170,7 +170,7 @@ go build -ldflags "-X github.com/dhis2/facility-hub/internal/upgrade.ReleaseKey=
 - CI builds (the Windows installer, macOS, a Pi image run by hand) are `<VERSION>-ci.<run number>`, which sort above the previous release and below this one, so each installs over the one before;
 - a plain `go build` is `0.0.0-dev`, older than all of them.
 
-**Release notes** are `docs/releases/<version>.md`, written for the countries that run hubs, and merged before the tag. The release workflow publishes that file as the release's notes; without it, GitHub's list of merged pull requests, with a warning (the dry run warns too). Annotate the tag with one line: `git tag -s v0.2.0 -m "v0.2.0: <what it brings, in a few words>"`.
+**Release notes** are `docs/releases/<version>.md`, written for the countries that run hubs, and merged before the tag. The release workflow publishes that file as the release's notes, followed by a list of what each file in the release is for (written by the workflow, so the notes need not repeat it); without it, GitHub's list of merged pull requests, with a warning (the dry run warns too). Annotate the tag with one line: `git tag -s v0.2.0 -m "v0.2.0: <what it brings, in a few words>"`.
 
 After a release, the next commit raises `VERSION`.
 

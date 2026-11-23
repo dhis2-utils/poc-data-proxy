@@ -208,9 +208,27 @@ jobs:
         # A draft until every file is attached: hubs upgrade from the published release
         # and must never see it half uploaded. The notes are docs/releases/<version>.md;
         # without it, GitHub's list of merged pull requests, with a warning: notes are
-        # not worth a failed release.
+        # not worth a failed release. Either way they end with what each file is for:
+        # hub-windows-amd64.exe was taken for the Windows installer (v0.2.0).
         run: |
-          NOTES="docs/releases/$VERSION.md"
-          if [ -s "$NOTES" ]; then set -- --notes-file "$NOTES"; else echo "::warning::no $NOTES"; set -- --generate-notes; fi
-          gh release create "$GITHUB_REF_NAME" out/* --draft --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" "$@"
+          NOTES="docs/releases/$VERSION.md" BODY="$RUNNER_TEMP/notes.md"
+          set --
+          if [ -s "$NOTES" ]; then cat "$NOTES" > "$BODY"; else echo "::warning::no $NOTES"; : > "$BODY"; set -- --generate-notes; fi
+          SETUP="dhis2-hub-$VERSION-setup.exe"
+          if [ -e "out/$SETUP" ]; then
+            INSTALLER="- \`$SETUP\`: the Windows installer (docs/WINDOWS-INSTALL.md)."
+          else
+            INSTALLER="- No Windows installer: there is no code-signing certificate yet."
+          fi
+          cat >> "$BODY" <<EOF
+
+          ### Files in this release
+
+          - \`dhis2-hub-$VERSION-arm64.img.xz\`: the Raspberry Pi image, flashed at the depot (docs/DEPLOYMENT.md).
+          - \`facility-hub-$VERSION.zip\`: the Facility Hub app, for App Management on central.
+          $INSTALLER
+          - \`hub-linux-arm64\`, \`hub-linux-amd64\`, \`hub-windows-amd64.exe\`, \`hub-darwin-arm64\`, \`hub-darwin-amd64\`: the hub program, which installed hubs download when they upgrade themselves. They are not installers: don't run them by hand.
+          - \`release.json\`, \`release.json.sig\`: what hubs check those downloads against.
+          EOF
+          gh release create "$GITHUB_REF_NAME" out/* --draft --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file "$BODY" "$@"
           gh release edit "$GITHUB_REF_NAME" --draft=false --repo "$GITHUB_REPOSITORY"
