@@ -200,6 +200,17 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 				batch[it.UID] = old
 				continue
 			}
+			if old.Deleted && old.SyncState == store.SyncSynced && it.Data["deleted"] == true {
+				// A tombstone stays as the hub dated it: a deletion on central cannot be
+				// undone, and a refusal closed on it (closeMoot, a discard) dates it the
+				// hub's now, so Android's next download marks the record deleted. Central's
+				// time of the deletion may be older than Android's last download from the
+				// hub, which then never marked it (the GitHub Windows runner, 23 November
+				// 2026, TestMootRefusalClosesItself).
+				objs = append(objs, &tracker.Obj{UID: old.UID, Kind: "visibility-only", Slot: old.Slot})
+				batch[it.UID] = old
+				continue
+			}
 			if old.SyncState == store.SyncSuperseded || (old.SyncState == store.SyncRejected && !discarded[old.UID]) {
 				// Central's version changed after the refusal: the hub's copy follows it,
 				// and the refusal stays open, superseded, until a hub manager resends or

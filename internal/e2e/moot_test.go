@@ -32,7 +32,10 @@ func TestMootRefusalClosesItself(t *testing.T) {
 		map[string]string{"MootEv00003": fc.Stage1}), 200)
 	e.central.SoftDelete("MootEv00001")
 	e.central.SoftDelete("MootTe00002") // with its enrollment
-	// Android's last download, before the push.
+	// Android's last download, before the push, and after central's deletions: central's
+	// times are older than it. In the same millisecond the test passed without the fix
+	// (the GitHub Windows runner, 23 November 2026, was slower and failed).
+	time.Sleep(50 * time.Millisecond)
 	mark := time.Now().UTC().Format("2006-01-02T15:04:05.000")
 	time.Sleep(50 * time.Millisecond)
 	e.online()
