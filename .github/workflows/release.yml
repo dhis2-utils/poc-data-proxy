@@ -8,6 +8,8 @@
 # reviewers; only the publish job of a v* tag push enters that environment and reads it.
 # A dry run signs with a throwaway key, even where the real one is set.
 name: Release
+# The run's title in the Actions list; without it, the tagged commit's message.
+run-name: ${{ github.event_name == 'push' && format('Release {0}', github.ref_name) || 'Release dry run' }}
 
 on:
   push:
@@ -48,6 +50,8 @@ jobs:
             V="${INPUT_VERSION:-$FILE}"
           fi
           echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "bad version $V"; exit 1; }
+          # The release notes (publish, below): missing notes warn, here in the dry run too.
+          [ -s "docs/releases/$V.md" ] || echo "::warning::no docs/releases/$V.md: the release gets GitHub's generated notes"
           echo "version=$V" >> "$GITHUB_OUTPUT"
 
   binaries:
@@ -159,6 +163,9 @@ jobs:
     permissions:
       contents: write  # gh release create
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: docs/releases  # the release notes only
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: binaries
@@ -197,8 +204,13 @@ jobs:
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
         # A draft until every file is attached: hubs upgrade from the published release
-        # and must never see it half uploaded.
+        # and must never see it half uploaded. The notes are docs/releases/<version>.md;
+        # without it, GitHub's list of merged pull requests, with a warning: notes are
+        # not worth a failed release.
         run: |
-          gh release create "$GITHUB_REF_NAME" out/* --draft --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+          NOTES="docs/releases/$VERSION.md"
+          if [ -s "$NOTES" ]; then set -- --notes-file "$NOTES"; else echo "::warning::no $NOTES"; set -- --generate-notes; fi
+          gh release create "$GITHUB_REF_NAME" out/* --draft --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" "$@"
           gh release edit "$GITHUB_REF_NAME" --draft=false --repo "$GITHUB_REPOSITORY"
