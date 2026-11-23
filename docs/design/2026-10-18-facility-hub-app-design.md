@@ -30,7 +30,7 @@ Fixed in the app, computed from the heartbeat and the time:
 | Flag | When |
 |---|---|
 | Silent | last heartbeat (`time`) more than 2 days ago |
-| Pending | `pendingOutbox` > 0 and the last push (`lastPush`) more than 1 day ago or never, or `stuckOutbox` > 0 (saves waiting for their user to log in) |
+| Pending | `pendingOutbox` > 0 and the oldest waiting save (`oldestPending`) made more than 1 day ago, or `stuckOutbox` > 0 (saves waiting for their user to log in). Hubs before 0.1.6 send no `oldestPending`; for them the last push (`lastPush`) counts, which then moved whenever the outbox was empty |
 | Refused | `issues` > 0 |
 | Low disk | `diskFreeBytes` under 2 GB |
 | USB stick | `usb` reported and not present, not writable, or with an error |

@@ -1,6 +1,7 @@
 package adversarial
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -68,6 +69,33 @@ type lanDevice struct {
 	queue []lanItem
 	sent  int // resends that got an answer
 	most  int // longest queue
+	// values: generated values the device reserved through the hub, as Android keeps
+	// its own, so it registers while the facility network is down.
+	values map[string][]string
+}
+
+// value takes a reserved value of attr, reserving more through the hub when out; false
+// when there is none (the network is down and the device used its own up).
+func (d *lanDevice) value(attr string) (string, bool) {
+	if len(d.values[attr]) == 0 {
+		var got []struct{ Value string }
+		st, _, b, err := d.c.Try("GET", "/api/trackedEntityAttributes/"+attr+"/generateAndReserve?numberToReserve=50", nil)
+		if err != nil || st != 200 || json.Unmarshal(b, &got) != nil {
+			return "", false
+		}
+		if d.values == nil {
+			d.values = map[string][]string{}
+		}
+		for _, g := range got {
+			d.values[attr] = append(d.values[attr], g.Value)
+		}
+		if len(d.values[attr]) == 0 {
+			return "", false
+		}
+	}
+	v := d.values[attr][0]
+	d.values[attr] = d.values[attr][1:]
+	return v, true
 }
 
 type lanItem struct {
@@ -98,6 +126,13 @@ func (d *lanDevice) once() {
 		payload = map[string]any{"events": []any{r.event(s)}}
 	} else {
 		pr := r.e.M.NewPerson(r.prog, r.tag+strings.ToLower(tk.UID()[:5]))
+		for _, attr := range r.prog.MandatoryGenerated {
+			v, ok := d.value(attr)
+			if !ok {
+				return // no value to register with: not a save
+			}
+			pr.SetAttr(attr, v)
+		}
 		s.TE, s.Enr, s.Event = pr.TE, pr.Enrollment, tk.UID()
 		te := pr.Payload["trackedEntities"].([]any)[0].(map[string]any)
 		te["enrollments"].([]any)[0].(map[string]any)["events"] = []any{r.event(s)}

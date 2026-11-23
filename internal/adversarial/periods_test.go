@@ -226,7 +226,13 @@ func TestJ6ExpiryDaysWhileOffline(t *testing.T) {
 	a.Offline()
 	a.enter(nurse, a.old, de, "71")
 	a.enter(nurse, a.pe, de, "72")
-	a.SetDataSetField(ds, "expiryDays", 1)
+	// One day past the open period's end, or one day if it has not ended: a.pe is last
+	// month where the current one is not open yet (Laos: no open future periods).
+	expiry := 1
+	if ended := a.App.Hub.CentralNow().Sub(a.peEnd); ended > 0 {
+		expiry = int(ended.Hours()/24) + 2
+	}
+	a.SetDataSetField(ds, "expiryDays", expiry)
 	a.noRepeats(a.reconnectAggregate(3))
 	issues := a.issues()
 	vOld, _ := a.onCentral(a.old, de)

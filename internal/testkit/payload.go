@@ -31,6 +31,9 @@ func (m *Manifest) NewPerson(p Program, name string, stages ...string) *Person {
 		pr.Unique = "T-" + UID()
 		values[p.UniqueAttr] = pr.Unique
 	}
+	for _, a := range p.OtherUnique {
+		values[a] = "T-" + UID()
+	}
 	attrs := []any{}
 	for a, v := range values {
 		attrs = append(attrs, map[string]any{"attribute": a, "value": v})
@@ -48,10 +51,22 @@ func (m *Manifest) NewPerson(p Program, name string, stages ...string) *Person {
 	return pr
 }
 
+// EventDate in a manifest's event values stands for the event's own date: a seed's
+// rules can compare a date to the event's (Laos: a result date before the sample's).
+const EventDate = "@eventDate"
+
+// DataValue is v for an event on date (YYYY-MM-DD): EventDate becomes date.
+func DataValue(v, date string) string {
+	if v == EventDate {
+		return date
+	}
+	return v
+}
+
 func (m *Manifest) event(p Program, stage, ev, enrollment, date string) map[string]any {
 	dvs := []any{}
 	for d, v := range p.EventValues[stage] {
-		dvs = append(dvs, map[string]any{"dataElement": d, "value": v})
+		dvs = append(dvs, map[string]any{"dataElement": d, "value": DataValue(v, date)})
 	}
 	return map[string]any{"event": ev, "enrollment": enrollment, "program": p.ID, "programStage": stage,
 		"orgUnit": m.Facility.ID, "occurredAt": date, "status": "ACTIVE", "dataValues": dvs}

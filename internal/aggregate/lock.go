@@ -64,21 +64,28 @@ func Expired(ds *DataSet, p Period, now time.Time) bool {
 }
 
 // InputOpen: data input periods, if the data set has any, allow writes to p at now.
-// Central judges them by the day, not the moment (F5): it takes values all of the
-// closing day and from the start of the opening day, so the dates compare.
+// Central 2.42 judges them by the day, not the moment (F5, 2.42.7.1, checked again on
+// 17 November 2026): it takes values all of the closing day and from the start of the
+// opening day, so the dates compare. Central 2.43 (2.43.2.1, the same day) compares
+// the moment: a value ten seconds after a same-day closing time is refused (E8030),
+// and one before a same-day opening time too. ds.InputByMoment says which.
 func InputOpen(ds *DataSet, p Period, now time.Time) bool {
 	if len(ds.InputPeriods) == 0 {
 		return true
 	}
-	n := day(Naive(now))
+	n, at := Naive(now), day
+	if ds.InputByMoment {
+		at = func(t time.Time) time.Time { return t }
+	}
+	n = at(n)
 	for _, ip := range ds.InputPeriods {
 		if ip.Period != p.ID {
 			continue
 		}
-		if t, err := parseDHIS2Time(ip.Opening); err == nil && n.Before(day(t)) {
+		if t, err := parseDHIS2Time(ip.Opening); err == nil && n.Before(at(t)) {
 			return false
 		}
-		if t, err := parseDHIS2Time(ip.Closing); err == nil && n.After(day(t)) {
+		if t, err := parseDHIS2Time(ip.Closing); err == nil && n.After(at(t)) {
 			return false
 		}
 		return true

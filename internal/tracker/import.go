@@ -53,6 +53,9 @@ type ImportOutcome struct {
 	Parents []string
 	// Atomic is set when atomicMode=ALL rejected everything because of an error.
 	Atomic bool
+	// Bases are central's updatedAt of the copies these saves edit, by UID, for objects
+	// the hub held as central's: the overwrite count (sync/overwrites.go).
+	Bases map[string]string
 }
 
 func (o *ImportOutcome) Stats() (total Stats, byType map[string]Stats) {
@@ -126,6 +129,13 @@ func (im *Importer) Import(payload M) *ImportOutcome {
 			continue
 		}
 		res.Created = created
+		if prev := im.Ix.Get(obj.UID); prev != nil && im.pending[obj.UID] == nil && prev.Origin == store.OriginCentral &&
+			prev.SyncState == store.SyncSynced && prev.UpdatedAt != "" && obj.Kind != store.KindRelationship {
+			if im.outcome.Bases == nil {
+				im.outcome.Bases = map[string]string{}
+			}
+			im.outcome.Bases[obj.UID] = prev.UpdatedAt // the overwrite count (sync/overwrites.go)
+		}
 		im.pending[obj.UID] = obj
 		im.outcome.Accepted = append(im.outcome.Accepted, obj)
 		im.outcome.Refs = append(im.outcome.Refs, store.OutboxRef{UID: obj.UID, Kind: obj.Kind, Created: created})
@@ -282,6 +292,9 @@ func (im *Importer) validateTE(it *Item, old *Obj) (*Obj, bool, []ErrorReport) {
 		return nil, false, im.errf(it, "E1001", "User: `%s`, has no data write access to tracked entity type: `%s`.", im.UserUID, tet)
 	}
 	if errs := im.checkUnique(it); errs != nil {
+		return nil, false, errs
+	}
+	if errs := im.checkValueTypes(it); errs != nil {
 		return nil, false, errs
 	}
 	o := im.newObj(it, old)
@@ -498,6 +511,9 @@ func (im *Importer) validateEvent(it *Item, old *Obj) (*Obj, bool, []ErrorReport
 	if old == nil && im.stageTaken(it.UID, enr, program, stage) {
 		return nil, false, im.errf(it, "E1039", "ProgramStage: `%s`, is not repeatable and an event already exists.", stage)
 	}
+	if errs := im.checkValueTypes(it); errs != nil {
+		return nil, false, errs
+	}
 	o := im.newObj(it, old)
 	o.TE, o.Enrollment, o.Program, o.Stage = parent.TE, enr, program, stage
 	o.Data["program"], o.Data["programStage"], o.Data["enrollment"], o.Data["trackedEntity"] = program, stage, enr, parent.TE
@@ -603,6 +619,9 @@ func (im *Importer) eventProgramEvent(it *Item, old *Obj, program, stage string)
 	}
 	if !im.V.Access.Stage(stage).Write {
 		return nil, false, im.errf(it, "E1095", "User: `%s` has no data write access to ProgramStage: `%s`.", im.UserUID, stage)
+	}
+	if errs := im.checkValueTypes(it); errs != nil {
+		return nil, false, errs
 	}
 	o := im.newObj(it, old)
 	o.TE, o.Enrollment, o.Program, o.Stage = "", "", program, stage

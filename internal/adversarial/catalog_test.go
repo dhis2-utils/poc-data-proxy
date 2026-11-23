@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/url"
 	"slices"
 	"strings"
@@ -381,13 +382,21 @@ func TestA16LargeImportDuringPull(t *testing.T) {
 			"shortName": fmt.Sprintf("A16 %s %d", tag, i), "valueType": "NUMBER", "domainType": "AGGREGATE", "aggregationType": "SUM"})
 	}
 	payload := map[string]any{"dataElements": des}
-	t.Cleanup(func() {
-		start := time.Now()
-		st, b, err := s.Central.Do("POST", "/api/metadata?importStrategy=DELETE", payload)
-		if err != nil || st/100 != 2 {
-			t.Errorf("NOT UNDONE on central: %d imported data elements: %d %v %.300s", n, st, err, b)
+	// Deleted once the whole suite is done (afterAll): on Laos the delete took 1h40
+	// (18 November 2026) and slowed every test that ran meanwhile. Central finishes the
+	// asynchronous job on its own; leftovers are named "Adversarial A16 <tag>".
+	central := s.Central
+	afterAll(func() {
+		var job struct {
+			Response struct {
+				ID string `json:"id"`
+			} `json:"response"`
 		}
-		t.Logf("the %d data elements deleted in %s", n, time.Since(start).Round(time.Second))
+		if err := central.JSON("POST", "/api/metadata?importStrategy=DELETE&async=true", payload, &job); err != nil {
+			log.Printf("A16: NOT UNDONE on central: the %d imported data elements (Adversarial A16 %s): %v", n, tag, err)
+			return
+		}
+		log.Printf("A16: the %d data elements (Adversarial A16 %s) are being deleted by central's job %s", n, tag, job.Response.ID)
 	})
 	pullDone := make(chan struct{})
 	type imports struct {

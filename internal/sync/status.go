@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/core"
+	"github.com/dhis2/facility-hub/internal/devkey"
 	"github.com/dhis2/facility-hub/internal/hubtls"
 	"github.com/dhis2/facility-hub/internal/store"
 )
@@ -42,9 +43,11 @@ func Status(h *core.Hub) map[string]any {
 	return map[string]any{
 		"hubId": h.HubID(), "facility": h.Facility(), "version": h.Version, "serverVersion": h.ServerVersion(),
 		"uptimeSeconds": int(time.Since(h.Started).Seconds()), "lastPush": lastPush, "lastPull": lastPull,
-		"lastSync": lastSync, "lastError": lastErr, "pending": h.Store.CountObjects(store.SyncPending),
+		"lastSync": lastSync, "lastError": lastErr, "pending": h.Pending(),
+		// oldestPending: when the oldest waiting save was made (the app's "pending" flag).
 		"rejected": h.Store.CountObjects(store.SyncRejected), "pendingOutbox": h.Store.CountOutbox(store.OutboxPending),
-		"stuckOutbox": h.StuckOutbox(), "retired": h.Retired(), "superseded": h.Store.CountObjects(store.SyncSuperseded),
+		"oldestPending": h.Store.OldestPendingOutbox(), "stuckOutbox": h.StuckOutbox(),
+		"retired": h.Retired(), "superseded": h.Store.CountObjects(store.SyncSuperseded),
 		"issues": h.Store.CountIssues(), "diskFreeBytes": diskfree.Free(h.Cfg.DataDir), "lastUpgrade": upgrade,
 		"needsUpgrade": h.API() == nil && h.ServerVersion() != "", "time": time.Now().UTC().Format(time.RFC3339),
 		// Whose token the hub's housekeeping uses, so the Facility Hub app can list the
@@ -64,6 +67,12 @@ func Status(h *core.Hub) map[string]any {
 		// a screen nobody opened online), since the hub started: the 10 most frequent,
 		// by endpoint (identifiers as {uid}, parameter names without values).
 		"offlineMisses": misses, "offlineMissesTotal": missTotal,
+		// Whether the hub's keys are sealed with a TPM (docs/DEPLOYMENT.md, "TPM"): a
+		// country sees which hubs rely on staff passwords alone.
+		"deviceKey": devkey.Key() != nil,
+		// Offline saves that replaced a newer change on central, among the update
+		// entries checked: one in overwritesSampled (sync/overwrites.go).
+		"overwrites": h.Store.Overwrites(), "overwritesSampled": OverwriteSample,
 		// The USB stick (docs/RECOVERY.md, C2): central sees a hub without a working one.
 		"usb": usbStatus(h),
 		// How devices reach the hub (docs/DEPLOYMENT.md, "Reaching the hub securely"): its

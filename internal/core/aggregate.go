@@ -76,6 +76,15 @@ func (h *Hub) APIMinor() string {
 func (h *Hub) RefreshAggAccess(ctx context.Context, userID int64, auth central.Auth, l *access.List) error {
 	path := "/api/" + h.APIMinor() + "/dataEntry/metadata"
 	authorities, stamp := l.Authorities, accessStamp(l)
+	// Nor does the ETag cover which data sets are assigned to the facility (2.43.2.1,
+	// 17 November 2026: a data set taken off it changed the answer, not the ETag, and the
+	// hub kept serving its form offline; J2). One small read of the facility's data sets,
+	// as the user, goes into the stamp.
+	assigned, err := h.facilityDataSets(ctx, auth)
+	if central.IsNetwork(err) {
+		return err
+	}
+	stamp += assigned
 	// Asked with the ETag of the copy the hub holds: unchanged, central answers 304
 	// with no body (3.5 MB a user an hour with eRegisters' forms otherwise;
 	// PERFORMANCE.md, "Central's load from one facility"). A change to the forms
@@ -109,6 +118,11 @@ func (h *Hub) RefreshAggAccess(ctx context.Context, userID int64, auth central.A
 		if a, err = aggregate.ParseMetadata(b, authorities); err != nil {
 			return fmt.Errorf("dataEntry/metadata: %w", err)
 		}
+		if h.APIMinor() >= "43" { // central compares data input periods with the moment
+			for _, ds := range a.DataSets {
+				ds.InputByMoment = true
+			}
+		}
 		if err := h.fillAttributeCombos(ctx, a, auth); err != nil {
 			return err
 		}
@@ -132,6 +146,28 @@ func (h *Hub) RefreshAggAccess(ctx context.Context, userID int64, auth central.A
 	h.aggAccess[userID] = a
 	h.mu.Unlock()
 	return nil
+}
+
+// facilityDataSets lists, sorted, the data sets assigned to the facility that auth may
+// see; on another error, a value that never matches a stored stamp, so the refresh
+// asks without the ETag.
+func (h *Hub) facilityDataSets(ctx context.Context, auth central.Auth) (string, error) {
+	var res struct {
+		DataSets []struct {
+			ID string `json:"id"`
+		} `json:"dataSets"`
+	}
+	err := h.Central.JSON(ctx, "GET", central.Q("/api/dataSets", "filter", "organisationUnits.id:eq:"+h.Facility(),
+		"fields", "id", "paging", "false"), nil, auth, &res)
+	if err != nil {
+		return "unknown:" + NewUID(), err
+	}
+	ids := make([]string, 0, len(res.DataSets))
+	for _, d := range res.DataSets {
+		ids = append(ids, d.ID)
+	}
+	slices.Sort(ids)
+	return strings.Join(ids, ","), nil
 }
 
 // fillAttributeCombos reads the option combinations of the data sets' attribute

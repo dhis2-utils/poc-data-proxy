@@ -79,7 +79,7 @@ Scripted Capture web runs (Playwright) and Android Capture runs (adb and the UI 
 | `go test ./...` | unit tests, fake-central end-to-end tests, and the live suite against the fake |
 | `go run ./cmd/hubtest provision -profile laos -url https://dhis2.example.org -admin user:password -out manifest.json` | turn a DHIS2 instance into a profile's shape and write its manifest. `synthetic` needs an empty instance; `sierra-leone` and `laos` need the matching demo database |
 | `HUB_MANIFEST=manifest.json HUB_REPORT=oracle.json go test ./internal/live/` | the live suite against that instance |
-| `HUB_MANIFEST=manifest.json go test ./internal/adversarial/` | the adversarial scenarios ([ADVERSARIAL-TESTING.md](ADVERSARIAL-TESTING.md)) against that instance; those that show a finding not fixed skip unless `HUB_FINDINGS=1` |
+| `HUB_MANIFEST=manifest.json go test ./internal/adversarial/` | the adversarial scenarios ([ADVERSARIAL-TESTING.md](ADVERSARIAL-TESTING.md)) against that instance; those that show a finding not fixed skip unless `HUB_FINDINGS=1`. Run `TestD6DNSFails` and `TestD8BadCertificate` on their own (`-run`): they set `HOSTALIASES` and `SSL_CERT_FILE`, which Go reads once per process, so after other scenarios they fail at setup |
 
 On GitHub, `.github/workflows/test.yml` runs on a push to any branch but main, when Go code, test data, the app or the workflow changed:
 - `go vet` and every Go test, with `swtpm` for the TPM tests;
@@ -125,24 +125,22 @@ It runs after every image build, in `image.yml` too (image/README.md). The hub's
   - the Go tests on `windows-latest`;
   - the installer, installed silently for the whole PC, checked (the service runs, answers over HTTPS at `localhost` and `dhis2.local` with the hub's own authority), then uninstalled.
 - **On a Windows VM, by hand** (not done yet):
-  1. install for the whole PC, and for one user without administrator rights;
+  1. install for the whole PC; a user without administrator rights is refused;
   2. set up the hub on the PC; open it from a tablet at `dhis2.local`, and at the IP;
   3. restart the PC; check the hub stays locked until the first staff login, also offline;
   4. upgrade through `facility-hub-admin/release`; check the hub comes back unlocked;
   5. plug in two USB sticks, choose one, pull it out, and check the page reports it missing;
   6. with Windows' own mDNS, and Bonjour installed, check `dhis2.local` still resolves;
   7. check Defender's exclusion, the sleep setting, and the firewall on a network marked Public;
-  8. move a per-user hub to a whole-PC install;
+  8. on a PC without a TPM, the finish page and `install.log` say the keys are not sealed;
   9. uninstall, with and without removing the data;
   10. on a PC with a TPM: `device.key` appears in the data folder and `tls.key` starts with `HUBDEV1`; the service (a virtual account) still starts after a restart, and staff log in (Windows TPM Base Services, `internal/devkey`). A fresh install with `tpm: false` in hub.yaml makes no `device.key` and works as before.
 
 #### Windows versions
 
-The hub targets 64-bit Windows 10 and 11 (WINDOWS-INSTALL.md). Go 1.26 needs Windows 10 or later. All testing so far has been on Windows 11.
+The hub supports 64-bit Windows 11 (decided 22 November 2026; WINDOWS-INSTALL.md). Windows 10 is untested: its support ended in October 2025, apart from paid extended updates and LTSC editions. Go 1.26 runs on Windows 10 too, so a country that needs it can test it, on an x86-64 machine such as an old laptop (Apple Silicon cannot run Windows 10 usefully, and GitHub has no Windows 10 runners). On Windows 10, check:
 
-Test Windows 10 22H2 too, on an x86-64 machine such as an old laptop. Apple Silicon cannot run Windows 10 usefully, and GitHub has no Windows 10 runners. On Windows 10, check:
-
-- both install modes: for the whole PC, and for one user;
+- the install;
 - the service starts at boot;
 - the firewall rules, the root certificate install and Defender's exclusion;
 - `dhis2.local` from tablets;
@@ -169,6 +167,8 @@ A Mac is a test hub for the DHIS2 team, not a facility hub (macos/README.md).
 
 ### What the live suite contains
 
+The browser tests (`HUB_CLIENTS=1`) run Playwright's Chromium; `PW_CHANNEL=msedge` runs the installed Edge instead (Windows). `TestCaptureWeb`, `TestCaptureWebRefusals` and `TestOfflineScreens` assume the synthetic profile (its data elements, its twin user and a repeatable first stage); on Sierra Leone they fail at those assumptions (the Windows VM, 20 November 2026).
+
 | Test | What it checks |
 |---|---|
 | `TestScenarios` | the acceptance scenarios (spec 13.3) on the profile's own programs: setup, online and offline writes, access per role, unique conflicts, reconnection, reboot, nothing in plain text on disk |
@@ -178,7 +178,7 @@ A Mac is a test hub for the DHIS2 team, not a facility hub (macos/README.md).
 | `TestTransferOnCentral`, `TestTransferThroughHub`, `TestBreakTheGlass`, `TestAccessChangeOfOneUser`, `TestCaptureAboveFacility` | the same situations, and access changes, against the fake central (no DHIS2 needed) |
 | `TestCaptureWeb` | (`HUB_CLIENTS=1`) the real Capture web app with Playwright: working lists and the enrollment dashboard online, then offline; fails if the offline working list does not render, and reports every request the hub refused |
 | `TestOfflineScreens` | (`HUB_CLIENTS=1`) the real Capture and Data Entry apps (`clients/offline_screens.py`), each user in a fresh browser: the nurse opens every screen online (front page, working lists, a dashboard, registration and event forms, each data set's form); her twin only logs in online; the restricted nurse opens Capture's front page once. Offline, each opens every screen: the twin and the restricted nurse must open what the nurse opens, with no "needs connection" for metadata (the hub's load at login, FINDINGS.md "Shared metadata cache"). The result, with the hub's misses by endpoint per user and what it loaded, is in `offline-screens/result.json` next to `HUB_REPORT` |
-| `TestCaptureWebRefusals` | (`HUB_CLIENTS=1`) adversarial I1c: what Capture web shows, with screenshots, when the hub refuses a save offline as "needs connection" (a note), "upgrading" (local writes frozen) and by its own validation (a stage made non-repeatable on central after Capture cached it: E1039); opened again, nothing may appear saved that central does not have |
+| `TestCaptureWebRefusals` | (`HUB_CLIENTS=1`) adversarial I1c: a note written offline in Capture web (taken, shown again, on central once by its author after the sync), then what Capture web shows, with screenshots, when the hub refuses a save offline as "upgrading" (local writes frozen) and by its own validation (a stage made non-repeatable on central after Capture cached it: E1039); opened again, nothing may appear saved that central does not have |
 | `TestRefusedFixedInCapture` | (`HUB_CLIENTS=1`, internal/adversarial) the author fixes her own refused change in Capture web (`clients/refused_capture.py`): a person's attribute refused after its type became NUMBER; from the hub page she follows "Open in Capture", the hub answers the reads from its copy, she corrects and saves online; central has the new value and the refusal and its link are gone |
 | `TestCaptureWebUsers` | (`HUB_CLIENTS=1`) adversarial I2c: the nurse, the restricted user and the outsider in turn on one browser, online and offline; nothing shown that the same user does not see alone in a fresh browser online |
 | `TestCaptureWebUpdate` | (`HUB_CLIENTS=1`, `HUB_CAPTURE_ZIP`) adversarial I10c, N18: the Capture release in `HUB_CAPTURE_ZIP` installed on central while the hub is offline; the cached version keeps working offline, the new one loads online and works offline; central's Capture is put back after |

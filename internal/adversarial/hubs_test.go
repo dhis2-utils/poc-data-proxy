@@ -163,7 +163,7 @@ func TestG11AllKeySlotsLost(t *testing.T) {
 		t.Errorf("I6: the hub cannot be unlocked by any staff member: %v objects wait; RECOVERY.md has no step for it", queued)
 		return
 	}
-	r.p.WaitFor("drained", 5*time.Minute, tk.Drained)
+	r.waitDrained("drained", 5*time.Minute)
 	// The new password binds the slot again at the next online login.
 	st, b = login(web(), newPassword)
 	t.Logf("the nurse with the new password, online, after the unlock: %d %s", st, b)
@@ -581,6 +581,7 @@ func TestN6TwoReleasesAtOnce(t *testing.T) {
 	}
 	atSibling := func(name string) string {
 		pr := e2.M.NewPerson(r.prog, name)
+		n.Complete(r.prog, pr) // generated values the program requires, from the sibling's hub
 		te := pr.Payload["trackedEntities"].([]any)[0].(map[string]any)
 		te["orgUnit"] = sib
 		for _, en := range te["enrollments"].([]any) {
@@ -685,10 +686,15 @@ func TestG8TwoHubsPersonMoves(t *testing.T) {
 	}
 	stage := ""
 	for _, st := range p.Stages {
-		if st != p.RestrictedStage && len(p.EventValues[st]) > 0 {
-			stage = st
-			break
+		if st != p.RestrictedStage && (stage == "" || len(p.EventValues[st]) > 0) {
+			stage = st // the first with values, else the first (Laos: none has any)
+			if len(p.EventValues[st]) > 0 {
+				break
+			}
 		}
+	}
+	if stage == "" {
+		t.Skip("no stage of the protected program the nurse may write")
 	}
 	sib := s.M.Sibling.ID
 	nurseA := s.connect(s.M.Users[tk.RoleNurse].Username)
@@ -798,16 +804,18 @@ func TestG7RetiredHubAggregate(t *testing.T) {
 	s.Offline()
 	nurse := s.AndroidUser(s.M.Users[tk.RoleNurse].Username)
 	pr := s.M.NewPerson(s.M.Primary(), "Zqretagg")
-	nurse.Complete(s.M.Primary(), pr)
+	// Generated values from central: the replaced hub rightly refuses to reserve them
+	// (503), and the registration is to test its refusal of the save itself.
+	s.CentralComplete(s.M.Primary(), pr)
 	tst, tb := nurse.Do("POST", tk.SyncImport, pr.Payload)
-	ast, ab := s.aggValue(web, s.M.Aggregate.Number, month(0), "5")
+	ast, ab := s.aggValue(web, s.M.Aggregate.Number, month(-1), "5")
 	t.Logf("the replaced hub offline: a registration %d %.150s; an aggregate value %d %s", tst, tb, ast, ab)
 	if ast/100 == 2 { // fixed 29 October: refused as tracker saves are
 		t.Errorf("the replaced hub takes an aggregate value offline (%d), while it refuses tracker saves (%d)", ast, tst)
 	}
 	s.Online()
 	s.Sync()
-	s.DeleteCentralDataValue(s.M.Aggregate.DataSet, month(0), s.M.Aggregate.Number, s.M.Aggregate.COC)
+	s.DeleteCentralDataValue(s.M.Aggregate.DataSet, month(-1), s.M.Aggregate.Number, s.M.Aggregate.COC)
 }
 
 // dropEntries deletes a hub's registry entry and heartbeat when the test ends, before

@@ -178,6 +178,13 @@ func (h *Hub) FreezeLocalWrites() {
 
 func (h *Hub) ThawLocalWrites() { h.Upgrading.Store(false) }
 
+// Pending is what still waits to reach central: tracker objects with unsent changes,
+// plus aggregate values and notes waiting to be pushed (the Windows VM, 20 November
+// 2026: "pending 0" while an offline note and a value still waited).
+func (h *Hub) Pending() int {
+	return h.Store.CountObjects(store.SyncPending) + h.Store.CountPendingUntracked()
+}
+
 // StuckOutbox counts pending outbox entries that cannot be pushed until their author
 // logs in online again (central refused their token). Such an entry may never push,
 // for instance when the author has left (REVIEW-2 F3).

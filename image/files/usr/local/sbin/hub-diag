@@ -17,8 +17,21 @@ mountpoint -q /boot/firmware || { echo "/boot/firmware is not mounted"; exit 0; 
   echo; echo "== failed units"; systemctl --failed --no-pager 2>&1
   echo; echo "== hub log, this start"; journalctl -b -u hub.service --no-pager -n 150 2>&1
   echo; echo "== memory"; free -m 2>&1; cat /proc/swaps 2>&1; echo "pressure:"; cat /proc/pressure/memory 2>&1
-  echo; echo "== hub log, previous start (last lines)"; journalctl -b -1 -u hub.service --no-pager -n 60 2>&1
-  echo; echo "== kernel, previous start: memory and hangs"; journalctl -b -1 -k --no-pager 2>&1 | grep -iE "out of memory|oom|killed process|hung task|watchdog" | tail -20
+  # Where swapped pages go (PENDING.md, item 26): zram stays in memory, but a zram
+  # writeback device or a swap file puts pages of the hub's memory on the disk.
+  echo "swap devices:"; swapon --show 2>&1; zramctl 2>&1
+  for z in /sys/block/zram*; do [ -e "$z" ] && echo "$(basename "$z") backing_dev: $(cat "$z/backing_dev" 2>&1)"; done
+  losetup -l 2>&1
+  systemctl list-units --all --no-pager --plain 'rpi-swap*' 'rpi-zram*' 'systemd-zram*' 'dev-zram*' 2>&1 | head -12
+  ls -la /etc/rpi/swap.conf /etc/rpi/swap.conf.d /usr/lib/rpi/swap.conf* 2>&1
+  echo; echo "== hub log, previous start (last lines)"; journalctl -b -1 -u hub.service --no-pager -n 300 2>&1
+  echo; echo "== kernel, previous start: memory and hangs"; journalctl -b -1 -k --no-pager 2>&1 | grep -iE "out of memory|oom|killed process|hung task|watchdog|voltage|throttl" | tail -20
+  # Undervoltage and throttling since boot (bits 16-19), and now (bits 0-3).
+  echo; echo "== power"; vcgencmd get_throttled 2>&1
+  # Sync cycles and connectivity over the last day, across restarts (the journal is on
+  # disk): a night without cycles, or "online" while pushes fail (PENDING.md, item 14).
+  echo; echo "== sync cycles and connectivity, last 26 hours"
+  journalctl -u hub.service --since -26h --no-pager -o short-iso 2>&1 | grep -E "sync cycle|connectivity|central still unreachable|upstream request" | tail -80
   echo; echo "== network"; nmcli -t device 2>&1; nmcli -t radio 2>&1; rfkill list 2>&1; ip -br addr 2>&1
   echo; echo "== USB stick"; lsblk -o NAME,SIZE,FSTYPE,LABEL,PARTUUID,MOUNTPOINTS 2>&1
   findmnt /media/hub-usb 2>&1 || echo "/media/hub-usb: not mounted"

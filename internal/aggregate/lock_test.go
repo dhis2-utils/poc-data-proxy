@@ -92,6 +92,23 @@ func TestLockStatus(t *testing.T) {
 			t.Errorf("InputOpen at %v: %v, want %v", c.now, got, c.want)
 		}
 	}
+	// 2.43 compares the moment.
+	ds.InputPeriods = []InputPeriod{{Period: "202609", Opening: "2026-10-01T08:00:00.000", Closing: "2026-10-05T17:00:00.000"}}
+	ds.InputByMoment = true
+	for _, c := range []struct {
+		now  time.Time
+		want bool
+	}{
+		{time.Date(2026, 10, 1, 7, 59, 59, 0, time.UTC), false}, // the opening day, before its time
+		{time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC), true},
+		{time.Date(2026, 10, 5, 17, 0, 0, 0, time.UTC), true},
+		{time.Date(2026, 10, 5, 17, 0, 10, 0, time.UTC), false}, // ten seconds after closing
+	} {
+		if got := InputOpen(ds, sep, c.now); got != c.want {
+			t.Errorf("InputOpen by the moment at %v: %v, want %v", c.now, got, c.want)
+		}
+	}
+	ds.InputByMoment = false
 	aug, _ := Current("Monthly", time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))
 	if InputOpen(ds, aug, before) {
 		t.Error("a period without a data input period is closed when the data set has any")

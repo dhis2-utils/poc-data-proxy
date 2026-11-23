@@ -35,7 +35,8 @@ func replaceBinary(src, dst string) error {
 
 // Reexec starts exe in place of this process. A service cannot replace itself: it
 // seals the data key for the new start (handover.go) and exits, and the service
-// manager starts it again; a per-user hub starts the new process itself.
+// manager starts it again; a hub run outside the service (tests, by hand) starts the
+// new process itself.
 func Reexec(exe string, dk []byte) error {
 	if len(dk) > 0 && HandoverDir != "" {
 		if err := WriteHandover(HandoverDir, dk, time.Now(), dpapiSeal); err != nil {

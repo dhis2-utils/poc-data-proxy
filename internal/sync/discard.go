@@ -39,7 +39,7 @@ func (w *Worker) discard(ctx context.Context, issues []*store.Issue) (string, er
 	var seqs []int64
 	author := map[string]int64{} // by object: the author of its newest refusal
 	for _, is := range issues {  // newest first
-		if is.Kind == store.OutboxAggregate {
+		if is.Kind == store.OutboxAggregate || is.Kind == store.OutboxNote {
 			seqs = append(seqs, is.OutboxSeq)
 		} else if _, ok := author[is.ObjectUID]; !ok {
 			author[is.ObjectUID] = is.UserID

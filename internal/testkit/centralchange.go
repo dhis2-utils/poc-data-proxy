@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 )
 
 // Changes on central, as an administrator makes them while a hub holds offline work
@@ -198,12 +199,49 @@ func (e *Env) NewUserLike(role string) User {
 	cur["id"], cur["username"], cur["password"] = u.UID, u.Username, e.M.Password
 	cur["firstName"], cur["surname"] = "Adversarial", u.Username
 	e.centralDo("POST", "/api/users", cur)
+	made := time.Now().Add(-5 * time.Minute) // a margin for central's clock
 	e.T.Cleanup(func() {
-		if st, b, err := e.Central.Do("DELETE", "/api/users/"+u.UID, nil); err != nil || (st/100 != 2 && st != 404) {
+		st, b, err := e.deleteCentralUser(u.UID, made)
+		if err != nil || (st/100 != 2 && st != 404) {
 			e.T.Errorf("NOT UNDONE on central: user %s: %d %v %.300s", u.Username, st, err, b)
 		}
 	})
 	return u
+}
+
+// deleteCentralUser deletes a user on central. Central (2.42) refuses to delete a user
+// named as the last updater of the program messages its notifications sent for their
+// enrollments (Sierra Leone's primary program sends one on enrollment): those, for
+// enrollments updated since, go first.
+func (e *Env) deleteCentralUser(uid string, since time.Time) (int, []byte, error) {
+	st, b, err := e.Central.Do("DELETE", "/api/users/"+uid, nil)
+	if err == nil && st == 409 && strings.Contains(string(b), "programmessage") {
+		e.dropProgramMessages(uid, since)
+		st, b, err = e.Central.Do("DELETE", "/api/users/"+uid, nil)
+	}
+	return st, b, err
+}
+
+// dropProgramMessages deletes the program messages user last updated, for enrollments
+// in the district updated since a time.
+func (e *Env) dropProgramMessages(user string, since time.Time) {
+	var enrs struct {
+		Enrollments []struct{ Enrollment string } `json:"enrollments"`
+	}
+	e.Central.JSON("GET", "/api/tracker/enrollments?"+url.Values{"orgUnits": {e.M.District.ID}, "orgUnitMode": {"DESCENDANTS"},
+		"updatedAfter": {since.UTC().Format("2006-01-02T15:04:05")}, "fields": {"enrollment"}, "paging": {"false"}}.Encode(), nil, &enrs)
+	for _, en := range enrs.Enrollments {
+		var msgs []struct {
+			ID            string              `json:"id"`
+			LastUpdatedBy struct{ ID string } `json:"lastUpdatedBy"`
+		}
+		e.Central.JSON("GET", "/api/messages?enrollment="+en.Enrollment, nil, &msgs)
+		for _, m := range msgs {
+			if m.LastUpdatedBy.ID == user {
+				e.Central.Do("DELETE", "/api/messages/"+m.ID, nil)
+			}
+		}
+	}
 }
 
 // SetUserOrgUnits replaces a user's capture org units (search and data view stay).
@@ -271,7 +309,9 @@ func (e *Env) DeleteUser(u User) {
 		delete(e.Fake.Users, u.Username)
 		return
 	}
-	e.centralDo("DELETE", "/api/users/"+u.UID, nil)
+	if st, b, err := e.deleteCentralUser(u.UID, time.Now().Add(-24*time.Hour)); err != nil || st/100 != 2 {
+		e.T.Fatalf("central DELETE /api/users/%s: %d %v %.300s", u.UID, st, err, b)
+	}
 }
 
 // RemoveSharing removes a user's or a user group's access to a metadata object (kind

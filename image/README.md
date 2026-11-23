@@ -24,7 +24,7 @@ On a Mac with Apple silicon, `image/test-build.sh` does all three in one go (the
 - the hub binary, its user, its service and `hub.yaml`;
 - the host name, packages, users and firewall;
 - the polkit rule, the watchdog, the USB stick mount and the machine ID;
-- the hub's sandbox (`ProtectSystem=strict`, its writable folders, no swap), the captive DNS answer written by root, the boot partition as `nofail`, the saved clock, the polkit rule for the time zone, the Raspberry Pi archive in unattended upgrades, and no load-test mode.
+- the hub's sandbox (`ProtectSystem=strict`, its writable folders, `MemorySwapMax=0`, which the Raspberry Pi kernel does not enforce: PENDING.md item 26), the captive DNS answer written by root, the boot partition as `nofail`, the saved clock, the polkit rule for the time zone, the Raspberry Pi archive in unattended upgrades, and no load-test mode.
 
 What only a Pi can show (booting, Wi-Fi, the watchdog, the clock, the stick) is in docs/DEPLOYMENT.md, section 2, and in "Checks on a Pi after an image change" below.
 
@@ -49,14 +49,14 @@ Flash the image with Raspberry Pi Imager or `xz -dc … | dd`, without the Image
 
 What you need: a Pi 5 that starts from a USB SSD; a Pi 4 without an RTC on a microSD card; a FAT USB stick and an exFAT one; an Ethernet cable to a network with internet; a phone; the Facility Hub app on a central where you may roll out releases.
 
-1. **Build the image.** From the repository's root, on a Mac with Apple silicon and Docker running: `image/test-build.sh` (or `image/test-build.sh <IP>`, if the Mac's address is not on `en0`). It takes 10–15 minutes and must end with "all checks passed" and "Done". It builds the image `image/out/test/dhis2-hub-<version>-local.1-arm64.img.xz` with a throwaway release key, and a release `<version>` signed with that key for step 5, served from the Mac. Never give this image to a facility. Once the project has its release key (docs/PENDING.md, item 9), `gh workflow run image.yml --ref <branch>` builds an image with the real key instead.
+1. **Build the image.** From the repository's root, on a Mac with Apple silicon and Docker running: `image/test-build.sh` (or `image/test-build.sh <IP>`, if the Mac's address is not on `en0`). It takes 10–15 minutes and must end with "all checks passed" and "Done". It builds the image `image/out/test/dhis2-hub-<version>-local.1-arm64.img.xz` with a throwaway release key, and a release `<version>` signed with that key for step 5, served from the Mac. Never give this image to a facility. The project has its release key since 16 November, so `gh workflow run image.yml --ref <branch>` builds an image with the real key instead.
 2. **Flash it** to the SSD and to the card: Raspberry Pi Imager, "Use custom", with no OS customisation; or `xz -dc dhis2-hub-<version>-arm64.img.xz | sudo dd of=/dev/<disk> bs=4M conv=fsync`.
 3. **First start.** Put the FAT stick in the Pi 5, connect the cable, start it from the SSD, and wait 5 minutes. `http://dhis2.local` shows the hub's start page. Set the hub up against central (DEPLOYMENT.md, section 3), as a test facility. Then switch it off, take out the SSD, and open `hub-diag.txt`. These hold for every later reading:
    - "failed units" lists none.
    - "hub log, this start" and "warnings and errors" hold no "Read-only file system", "permission denied" or "Not authorized".
 4. **The sandbox** (`deploy/hub.service`). In "hub sandbox":
    - `ProtectSystem=strict`, `ProtectHome=yes`, `RuntimeDirectory=hub`, `ReadWritePaths=/usr/local/lib/hub -/media/hub-usb`, `MemorySwapMax=0`.
-   - `memory.swap.max 0` and `memory.swap.current 0`. "No such file" there means the kernel has no swap control for the hub: note it.
+   - `memory.swap.max 0` and `memory.swap.current 0`. "No such file" there means the kernel has no swap control for the hub (the Pi 4 on 16 November). Then, under "memory", record where swap goes: `swapon --show`, zram's `backing_dev` (`none` keeps swapped pages in memory), what `losetup -l` shows behind a loop device, and the `rpi-swap` units (PENDING.md, item 26).
    - Under "as the hub sees them", `/` and `/etc` start with `ro`; `/usr/local/lib/hub`, `/var/lib/hub`, `/run/hub` and `/media/hub-usb` (with the stick in) start with `rw`.
 5. **Self-upgrade.** On the Mac, keeping the address it had in step 1: `cd image/out/test/srv && python3 -m http.server 8000`. On central, in the Facility Hub app's version page, type the repository's `VERSION` (such as `0.1.5`) for this hub. Within one sync cycle (15 minutes), plus the download, the Mac's server logs `release.json`, `release.json.sig` and `hub-linux-arm64`, and the hub's admin page shows the new version, as does the first line of `hub-diag.txt` ("== hub"). Its log has "upgrading" and no "binary swap failed" or "saving previous binary". The binary folder is the one the sandbox must leave writable.
 6. **The stick: copy and restore.** On the hub's admin page the stick shows a recent copy. Then restore it as in RECOVERY.md, C2: a second SSD flashed with this image, the same stick. The restored hub shows the facility and its data.

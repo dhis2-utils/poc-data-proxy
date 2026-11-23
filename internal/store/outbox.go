@@ -12,6 +12,10 @@ import (
 const (
 	OutboxTracker   = "tracker"
 	OutboxAggregate = "aggregate"
+	// OutboxNote is a note added offline to an existing event or enrollment, pushed
+	// with the request Capture made (sync/notes.go). Filed under its record in
+	// outbox_objects, so Resend and Discard reach it as they reach other saves.
+	OutboxNote = "note"
 )
 
 // Outbox entry states.
@@ -38,7 +42,7 @@ type OutboxEntry struct {
 	// Params are the client's import flags to send along on push, as a query
 	// string ("skipSideEffects=true"); empty for none.
 	Params string
-	Kind   string // OutboxTracker or OutboxAggregate
+	Kind   string // OutboxTracker, OutboxAggregate or OutboxNote
 }
 
 // OutboxRef is an object UID + kind in an outbox entry. Created: the entry creates the
@@ -269,10 +273,32 @@ func (s *Store) PendingOutboxByUser() (map[int64]int, error) {
 	return out, rows.Err()
 }
 
+// CountPendingUntracked counts pending entries that mark no object pending: aggregate
+// values and completions, and notes (a tracker save marks its objects).
+func (s *Store) CountPendingUntracked() int {
+	var n int
+	s.DB().QueryRow(`SELECT count(*) FROM outbox WHERE state=? AND kind<>?`, OutboxPending, OutboxTracker).Scan(&n)
+	return n
+}
+
 func (s *Store) CountOutbox(state string) int {
 	var n int
 	s.DB().QueryRow(`SELECT count(*) FROM outbox WHERE state=?`, state).Scan(&n)
 	return n
+}
+
+// SetOutboxKind sets the kind of the entry seq, appended by AppendOutbox as tracker.
+func (s *Store) SetOutboxKind(tx *sql.Tx, seq int64, kind string) error {
+	_, err := tx.Exec(`UPDATE outbox SET kind=? WHERE seq=?`, kind, seq)
+	return err
+}
+
+// OldestPendingOutbox is when the oldest save still waiting to be pushed was made,
+// "" when none waits.
+func (s *Store) OldestPendingOutbox() string {
+	var t sql.NullString
+	s.DB().QueryRow(`SELECT min(created_at) FROM outbox WHERE state=?`, OutboxPending).Scan(&t)
+	return t.String
 }
 
 // Requeue sends refused saves again (a retry from the Facility Hub app): the refused

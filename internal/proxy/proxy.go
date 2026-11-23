@@ -204,11 +204,23 @@ func cacheable(r *http.Request, status int) bool {
 
 var meRe = regexp.MustCompile(`^/api/([0-9]{2}/)?me(\.json)?$`)
 
+var systemInfoRe = regexp.MustCompile(`^/api/([0-9]{2}/)?system/info(\.json)?$`)
+
 // validationRe: central's validation of data the hub may have changed since
 // (validation/dataSet/<ds>, run by the Data Entry app). An online answer replayed
 // offline could say "no alerts" for values that break a rule, so it is not cached
 // and offline needs a connection (FINDINGS.md, I6c).
 var validationRe = regexp.MustCompile(`^/api/([0-9]{2}/)?validation/`)
+
+// generatedRe: generated attribute values. Each answer is a value central reserved
+// once; replayed, it is a value already used, and the registration is refused at the
+// push (E1064). Not cached; offline the pool answers (trackerapi.ServeGenerated).
+var generatedRe = regexp.MustCompile(`^/api/([0-9]{2}/)?trackedEntityAttributes/[^/]+/(generate|generateAndReserve|requestValues)/?$`)
+
+// uncached: answers that are never stored or replayed (validationRe, generatedRe).
+func uncached(path string) bool {
+	return validationRe.MatchString(path) || generatedRe.MatchString(path)
+}
 
 // selectFields applies a top-level DHIS2 fields selection ("authorities",
 // "settings[keyUiLocale]") to a JSON object, as central does for /api/me. Fields the
@@ -424,7 +436,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					&store.CachedResponse{Status: res.Status, Header: res.Header, Body: res.Body}); err != nil {
 					slog.Warn("public cache write", "err", err)
 				}
-			} else if r.Method == http.MethodGet && cacheable(r, res.Status) && len(res.Body) <= maxCacheBody && !validationRe.MatchString(r.URL.Path) &&
+			} else if r.Method == http.MethodGet && cacheable(r, res.Status) && len(res.Body) <= maxCacheBody && !uncached(r.URL.Path) &&
 				p.H.Store.Unlocked() && cacheUser(sess) > 0 {
 				if err := p.H.Store.PutCache(cacheUser(sess), r.Method, r.URL.RequestURI(),
 					&store.CachedResponse{Status: res.Status, Header: res.Header, Body: res.Body}); err != nil {
@@ -551,6 +563,10 @@ func (p *Proxy) serveOffline(w http.ResponseWriter, r *http.Request, sess *core.
 		p.H.NeedsConnection(w, "validation runs on central")
 		return 503
 	}
+	if generatedRe.MatchString(r.URL.Path) {
+		p.H.NeedsConnection(w, "generated values come from central or the hub's pool")
+		return 503
+	}
 	uri := r.URL.RequestURI()
 	cached, err := p.H.Store.GetCache(cacheUser(sess), r.Method, uri)
 	if err == nil && cached == nil && sess != nil && shared(r.URL.Path) {
@@ -572,6 +588,16 @@ func (p *Proxy) serveOffline(w http.ResponseWriter, r *http.Request, sess *core.
 			w.Header().Set("Content-Type", "application/json;charset=UTF-8")
 			w.Header().Set("X-Hub-Cache", "offline; me")
 			body, _ := selectFields(me.Body, r.URL.Query().Get("fields")) // offline: the best it has
+			w.Write(body)
+			return 200
+		}
+	}
+	if err == nil && cached == nil && sess != nil && systemInfoRe.MatchString(r.URL.Path) {
+		// The hub's own copy, cut to what any staff member gets (core.PrivateSystemInfo).
+		if info := p.H.Store.Private(core.PrivateSystemInfo); info != "" {
+			w.Header().Set("Content-Type", "application/json;charset=UTF-8")
+			w.Header().Set("X-Hub-Cache", "offline; system info")
+			body, _ := selectFields([]byte(info), r.URL.Query().Get("fields"))
 			w.Write(body)
 			return 200
 		}

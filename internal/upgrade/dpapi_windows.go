@@ -7,7 +7,7 @@ import (
 )
 
 // dpapiSeal and dpapiOpen seal the data key for the hub's own Windows account only
-// (the service's virtual account, or the user of a per-user hub).
+// (the service's virtual account, or the user running a hub outside the service).
 func dpapiSeal(b []byte) ([]byte, error) {
 	in := windows.DataBlob{Size: uint32(len(b)), Data: &b[0]}
 	var out windows.DataBlob

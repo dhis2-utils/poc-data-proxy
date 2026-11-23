@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -94,6 +95,24 @@ type netRun struct {
 	de     string // the data element each save sets
 	tag    string // in every person's name, to find them on central
 	ledger *netLedger
+	// pace is the writers' pause between saves (write sets it; waitDrained slows it).
+	pace atomic.Int64
+}
+
+// drainPause is each writer's pause while the outbox drains: the three writers then
+// save about once a second together, above a busy facility's peak. During a fault they
+// write as fast as write's pause says, to build a large backlog; holding that rate
+// through the drain measured the host's speed instead (about 10 saves a second, as
+// fast as the hub pushes against central on 2.42; 17 November 2026).
+const drainPause = 3 * time.Second
+
+// waitDrained waits for the outbox to drain with the writers at drainPause, and
+// restores their pace after.
+func (r *netRun) waitDrained(what string, limit time.Duration) {
+	r.t.Helper()
+	was := r.pace.Swap(int64(drainPause))
+	defer r.pace.Store(was)
+	r.p.WaitFor(what, limit, tk.Drained)
 }
 
 // netStart sets a hub up for the facility in HUB_MANIFEST, logs the writers in once
@@ -153,9 +172,48 @@ func newRun(t *testing.T, e *tk.Env) *netRun {
 		}
 	}
 	if r.de == "" {
+		r.stage, r.de = numericElement(t, e, r.prog)
+	}
+	if r.de == "" {
 		t.Skip("the primary program has no stage with a numeric value to save")
 	}
 	return r
+}
+
+// numericElement is an optional number data element of one of p's stages on central,
+// for a program whose required event values hold no number (Sierra Leone's); "" when
+// there is none.
+func numericElement(t *testing.T, e *tk.Env, p tk.Program) (stage, de string) {
+	t.Helper()
+	if !e.Live() {
+		return "", ""
+	}
+	for _, st := range p.Stages {
+		if st == p.RestrictedStage {
+			continue
+		}
+		var res struct {
+			PSDEs []struct {
+				Compulsory  bool
+				DataElement struct {
+					ID, ValueType string
+					OptionSet     *struct{ ID string }
+				}
+			} `json:"programStageDataElements"`
+		}
+		if err := e.Central.JSON("GET", "/api/programStages/"+st+
+			"?fields=programStageDataElements[compulsory,dataElement[id,valueType,optionSet[id]]]", nil, &res); err != nil {
+			t.Fatal(err)
+		}
+		for _, x := range res.PSDEs {
+			d := x.DataElement
+			if !x.Compulsory && d.OptionSet == nil && slices.Contains([]string{"NUMBER", "INTEGER", "INTEGER_POSITIVE",
+				"INTEGER_ZERO_OR_POSITIVE"}, d.ValueType) {
+				return st, d.ID
+			}
+		}
+	}
+	return "", ""
 }
 
 // netWriter is one client saving in a loop: new registrations, and updates of the
@@ -183,6 +241,7 @@ func (r *netRun) writers() []*netWriter {
 
 // write starts the writers; the returned function stops them and waits.
 func (r *netRun) write(pause time.Duration) (stop func()) {
+	r.pace.Store(int64(pause))
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	for _, w := range r.writers() {
@@ -196,7 +255,7 @@ func (r *netRun) write(pause time.Duration) (stop func()) {
 				default:
 				}
 				w.once()
-				time.Sleep(pause)
+				time.Sleep(time.Duration(r.pace.Load()))
 			}
 		}()
 	}
@@ -216,6 +275,18 @@ func (w *netWriter) once() {
 	} else {
 		pr := r.e.M.NewPerson(r.prog, r.tag+strings.ToLower(tk.UID()[:5]))
 		s.TE, s.Enr, s.Event = pr.TE, pr.Enrollment, tk.UID()
+		// Generated values the program requires (Sierra Leone's case ID), reserved
+		// through the hub as the apps do; a reservation that fails is the save's failure.
+		for _, attr := range r.prog.MandatoryGenerated {
+			st, _, b, err := w.c.Try("GET", "/api/trackedEntityAttributes/"+attr+"/generate", nil)
+			var v struct{ Value string }
+			if json.Unmarshal(b, &v); err != nil || st != 200 || v.Value == "" {
+				s.Status, s.Dur, s.Err = st, time.Since(s.At), fmt.Sprintf("reserving %s: %d %v %.200s", attr, st, err, b)
+				r.ledger.add(s)
+				return
+			}
+			pr.SetAttr(attr, v.Value)
+		}
 		te := pr.Payload["trackedEntities"].([]any)[0].(map[string]any)
 		te["enrollments"].([]any)[0].(map[string]any)["events"] = []any{r.event(s)}
 		payload = pr.Payload
@@ -244,12 +315,11 @@ func (w *netWriter) post(payload map[string]any) (int, string, []byte, error) {
 }
 
 func (r *netRun) event(s netSave) map[string]any {
-	dvs := []any{}
+	dvs := []any{map[string]any{"dataElement": r.de, "value": s.Value}}
 	for de, v := range r.prog.EventValues[r.stage] {
-		if de == r.de {
-			v = s.Value
+		if de != r.de {
+			dvs = append(dvs, map[string]any{"dataElement": de, "value": tk.DataValue(v, s.At.UTC().Format("2006-01-02"))})
 		}
-		dvs = append(dvs, map[string]any{"dataElement": de, "value": v})
 	}
 	return map[string]any{"event": s.Event, "enrollment": s.Enr, "program": r.prog.ID, "programStage": r.stage,
 		"orgUnit": r.e.M.Facility.ID, "occurredAt": s.At.UTC().Format("2006-01-02"), "status": "ACTIVE", "dataValues": dvs}
@@ -450,7 +520,7 @@ func value(ev map[string]any, de string) string {
 func (r *netRun) finish(drain time.Duration) netCheck {
 	r.t.Helper()
 	start := time.Now()
-	r.p.WaitFor("the outbox to drain", drain, tk.Drained)
+	r.waitDrained("the outbox to drain", drain)
 	r.t.Logf("drained %s after the fault ended", time.Since(start).Round(time.Second))
 	r.t.Logf("ledger: %s", r.ledger.summary())
 	seen := map[string]bool{}

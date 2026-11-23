@@ -118,6 +118,14 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 	stubbed := h.stubOld(items, get)
 	skipped := map[string]bool{}
 	var supersede []string // refused objects whose refusal central's version supersedes now
+	// Objects written on this hub that central's copy now replaces: pushed, and listed
+	// by this user's pull first. As local objects every user the hub's rules allow
+	// could read them; as central's, only users whose pull listed them. Pulls run per
+	// access group, so the author's own may come later in the cycle, and until then
+	// she was refused her own record (M2, PENDING.md item 30). They are shared by the
+	// rules once stored, as an online save is (ShareByRules); each user's own full
+	// pull then settles what central shows them.
+	var wasLocal []string
 	var objs []*tracker.Obj
 	for _, it := range items {
 		if !tracker.ValidUID(it.UID) {
@@ -192,6 +200,17 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 				batch[it.UID] = old
 				continue
 			}
+			if old.Deleted && old.SyncState == store.SyncSynced && it.Data["deleted"] == true {
+				// A tombstone stays as the hub dated it: a deletion on central cannot be
+				// undone, and a refusal closed on it (closeMoot, a discard) dates it the
+				// hub's now, so Android's next download marks the record deleted. Central's
+				// time of the deletion may be older than Android's last download from the
+				// hub, which then never marked it (the GitHub Windows runner, 23 November
+				// 2026, TestMootRefusalClosesItself).
+				objs = append(objs, &tracker.Obj{UID: old.UID, Kind: "visibility-only", Slot: old.Slot})
+				batch[it.UID] = old
+				continue
+			}
 			if old.SyncState == store.SyncSuperseded || (old.SyncState == store.SyncRejected && !discarded[old.UID]) {
 				// Central's version changed after the refusal: the hub's copy follows it,
 				// and the refusal stays open, superseded, until a hub manager resends or
@@ -248,6 +267,9 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 				o.Data["createdAt"] = now
 			}
 		}
+		if old != nil && old.Origin == store.OriginLocal {
+			wasLocal = append(wasLocal, it.UID)
+		}
 		batch[it.UID] = o
 		objs = append(objs, o)
 	}
@@ -295,6 +317,10 @@ func (h *Hub) upsertCentral(userID int64, payload tracker.M, forceFacility bool,
 		}
 		uids = append(uids, o.UID)
 	}
+	wasLocal = slices.DeleteFunc(wasLocal, func(uid string) bool { return batch[uid].Kind == "visibility-only" })
+	if len(wasLocal) > 0 {
+		h.ShareByRules(wasLocal)
+	}
 	return uids, nil
 }
 
@@ -336,8 +362,10 @@ func (h *Hub) PersistImport(userID int64, out *tracker.ImportOutcome, params str
 				return err
 			}
 		}
-		seq, err = h.Store.AppendOutbox(tx, userID, payload, params, out.Refs, dep)
-		return err
+		if seq, err = h.Store.AppendOutbox(tx, userID, payload, params, out.Refs, dep); err != nil {
+			return err
+		}
+		return h.Store.AddOutboxBases(tx, seq, out.Bases, out.Refs) // the overwrite count (sync/overwrites.go)
 	})
 	if err != nil {
 		return 0, err

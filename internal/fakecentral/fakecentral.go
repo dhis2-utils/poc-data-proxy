@@ -132,7 +132,12 @@ type Central struct {
 	order          []string
 	DataStore      map[string]map[string]json.RawMessage
 	reserved       int
-	down           atomic.Bool
+	// LimitReserved makes generateAndReserve answer as central does when a pattern
+	// runs short: ReserveLeft values remain, and a request for more is refused with
+	// 409 "Not enough values left" (a short pattern such as RANDOM(###); tests).
+	LimitReserved bool
+	ReserveLeft   int
+	down          atomic.Bool
 	Version        string
 	// FutureEnrollmentDates and FutureIncidentDates are the TB program's
 	// selectEnrollmentDatesInFuture and selectIncidentDatesInFuture. False, as on a new
@@ -141,6 +146,10 @@ type Central struct {
 	// AggETag, when set, is dataEntry/metadata's ETag whatever the answer holds: as
 	// on 2.43.2.1, where a user's new org units change the answer, not the ETag.
 	AggETag string
+	// AggUnassigned are data sets taken off the facility: dataEntry/metadata lists them
+	// without it (with AggETag set, under the same ETag, as 2.43.2.1 does), and so does
+	// the data set listing by org unit.
+	AggUnassigned map[string]bool
 	// AggMetadataNotModified counts dataEntry/metadata requests answered 304.
 	AggMetadataNotModified int
 	// GeneratedPattern replaces the generated attribute's pattern when set.
@@ -168,6 +177,8 @@ type Central struct {
 	AggExpiryDays float64 // expiry days of AggDataSet
 	// OnAggWrite runs as an aggregate write arrives, before it is handled (tests).
 	OnAggWrite func()
+	// NoteRequests are the records notes were added to with the note request, in order.
+	NoteRequests []string
 	// CompactValueSets answers dataValueSets as 2.43 does: fields every value shares
 	// (orgUnit, attributeOptionCombo, period) once at the top, not on each value.
 	CompactValueSets bool
@@ -620,7 +631,12 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		c.mu.Unlock()
 		writeJSON(w, 200, out)
 	case p == "/api/system/info":
-		writeJSON(w, 200, map[string]any{"version": c.Version, "revision": "fake", "serverTimeZoneId": c.zone().String()})
+		info := map[string]any{"version": c.Version, "revision": "fake", "serverTimeZoneId": c.zone().String(),
+			"userAgent": r.UserAgent(), "databaseInfo": map[string]any{"spatialSupport": true, "time": time.Now().Format("2006-01-02T15:04:05.000")}}
+		if u != nil && slices.Contains(u.Authorities, "ALL") { // the server's own details, as 2.42 gives a superuser
+			info["javaVersion"], info["osName"], info["memoryInfo"] = "17.0.13", "Linux", "Mem Total in JVM: 3072 Mb"
+		}
+		writeJSON(w, 200, info)
 	case p == "/api/me":
 		ous := []any{}
 		for _, ou := range u.OrgUnits {
@@ -726,6 +742,9 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		if uid := strings.TrimPrefix(p, "/api/tracker/trackedEntities/"); !c.gen.getTE(w, r, uid) {
 			c.getTE(w, r, u, uid)
 		}
+	case r.Method == "POST" && strings.HasSuffix(p, "/note") && (strings.HasPrefix(p, "/api/tracker/events/") ||
+		strings.HasPrefix(p, "/api/tracker/enrollments/")):
+		c.addNote(w, r, u, strings.Split(strings.TrimPrefix(p, "/api/tracker/"), "/")[1])
 	case strings.HasPrefix(p, "/api/tracker/events/") && r.Method == "GET":
 		c.getEvent(w, u, strings.TrimPrefix(p, "/api/tracker/events/"))
 	case p == "/api/tracker/ownership/transfer" && r.Method == "PUT":
@@ -749,6 +768,14 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		attr := strings.Split(p, "/")[3]
 		var out []any
 		c.mu.Lock()
+		if c.LimitReserved {
+			if max(n, 1) > c.ReserveLeft {
+				c.mu.Unlock()
+				webMessage(w, 409, fmt.Sprintf("Could not reserve value: Not enough values left to reserve %d values.", n), "")
+				return
+			}
+			c.ReserveLeft -= max(n, 1)
+		}
 		for i := 0; i < max(n, 1); i++ {
 			c.reserved++
 			out = append(out, map[string]any{"ownerObject": "TRACKEDENTITYATTRIBUTE", "ownerUid": attr, "key": "RANDOM(##########)",
@@ -777,7 +804,7 @@ func (c *Central) serve(w http.ResponseWriter, r *http.Request) {
 		c.shareToken(w, r, u)
 	case p == "/api/sharing" && r.URL.Query().Get("type") == "dataStore":
 		c.shareEntry(w, r, u)
-	case strings.HasPrefix(p, "/api/dataStore/"):
+	case strings.HasPrefix(p, "/api/dataStore/"), strings.HasPrefix(p, "/api/42/dataStore/"), strings.HasPrefix(p, "/api/43/dataStore/"):
 		c.dataStore(w, r, u)
 	case strings.HasPrefix(p, "/api/validation/dataSet/") || strings.HasPrefix(p, "/api/42/validation/dataSet/"):
 		// The Data Entry app's "Run validation": no rules here, so no violations.
@@ -1227,7 +1254,8 @@ func orEmptyErr(e []errReport) []errReport {
 }
 
 func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/dataStore/"), "/")
+	_, rest, _ := strings.Cut(r.URL.Path, "/dataStore/") // with or without the apps' version segment
+	parts := strings.Split(rest, "/")
 	ns := parts[0]
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -1332,4 +1360,37 @@ func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
 		delete(c.public, id)
 		writeJSON(w, 200, map[string]any{"status": "OK"})
 	}
+}
+
+// addNote is POST /api/tracker/{events|enrollments}/{uid}/note as 2.42.7.1 and 2.43.2.1
+// answer it: the note is added with central's time and the user as its author, the
+// record is not otherwise changed (not even updatedAt), a note UID the record has is
+// refused with 400 E1003, and a record central does not have gets 404 E1005.
+func (c *Central) addNote(w http.ResponseWriter, r *http.Request, u *User, uid string) {
+	var in struct {
+		Note  string `json:"note"`
+		Value string `json:"value"`
+	}
+	json.NewDecoder(r.Body).Decode(&in)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	o := c.objects[uid]
+	if o == nil || o["deleted"] == true {
+		webMessage(w, 404, "Event with id "+uid+" could not be found.", "E1005")
+		return
+	}
+	if in.Note == "" {
+		in.Note = tracker.NewUID()
+	}
+	notes, _ := o["notes"].([]any)
+	for _, n := range notes {
+		if m, _ := n.(map[string]any); m != nil && m["note"] == in.Note {
+			webMessage(w, 400, "Note `"+in.Note+"` already exists.", "E1003")
+			return
+		}
+	}
+	o["notes"] = append(notes, map[string]any{"note": in.Note, "value": in.Value, "storedAt": c.now(), "storedBy": u.Username,
+		"createdBy": map[string]any{"uid": u.UID, "username": u.Username}})
+	c.NoteRequests = append(c.NoteRequests, uid)
+	writeJSON(w, 200, map[string]any{"note": in.Note, "value": in.Value})
 }

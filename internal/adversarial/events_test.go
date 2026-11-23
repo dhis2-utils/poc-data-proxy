@@ -26,7 +26,7 @@ func (s *scene) programEvent(p tk.Program, uid string, values map[string]string)
 	stage := p.Stages[0]
 	dvs := []any{}
 	for de, v := range p.EventValues[stage] {
-		dvs = append(dvs, map[string]any{"dataElement": de, "value": v})
+		dvs = append(dvs, map[string]any{"dataElement": de, "value": tk.DataValue(v, time.Now().UTC().Format("2006-01-02"))})
 	}
 	for de, v := range values {
 		dvs = append(dvs, map[string]any{"dataElement": de, "value": v})

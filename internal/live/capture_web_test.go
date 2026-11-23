@@ -128,7 +128,7 @@ func checkCaptureWeb(t *testing.T, e *tk.Env, out string) {
 				DataValues []struct{ Value string }  `json:"dataValues"`
 			} `json:"events"`
 		}
-		if err := e.Central.JSON("GET", "/api/tracker/events?paging=false&enrollments="+enr+"&fields=event,createdBy,dataValues[value]", nil, &evs); err != nil {
+		if err := e.Central.JSON("GET", enrollmentEventsPath(t, e, enr), nil, &evs); err != nil {
 			t.Fatal(err)
 		}
 		var found []string

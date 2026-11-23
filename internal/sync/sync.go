@@ -4,6 +4,7 @@
 package sync
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"strings"
 	stdsync "sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dhis2/facility-hub/internal/central"
@@ -27,6 +29,12 @@ type Worker struct {
 
 	mu     stdsync.Mutex // one cycle at a time
 	pushMu stdsync.Mutex // one push at a time: Cycle, the upgrade drain and reset all push
+	// pushAnswered: central answered a push in the current Push (under pushMu).
+	pushAnswered bool
+	skipped      atomic.Pointer[string] // why the last cycle was skipped; nil after one ran
+	// OverwriteSample: one outbox entry in this many is checked for overwrites
+	// (overwrites.go); 0 for OverwriteSample.
+	OverwriteSample int
 
 	lastRefresh time.Time // last access and catalog refresh (Config.AccessRefreshInterval)
 	lastBeat    time.Time // last heartbeat sent (Config.HeartbeatInterval)
@@ -109,15 +117,38 @@ func (w *Worker) refreshAccess(ctx context.Context, errs *[]error) error {
 	return nil
 }
 
+// skipReason says why no cycle can run now; "" when one can.
+func skipReason(h *core.Hub) string {
+	switch {
+	case !h.Online():
+		return "offline"
+	case !h.Store.Unlocked():
+		return "store locked: no staff login since the start"
+	case h.Mode() != core.ModeActive:
+		return "not set up"
+	case h.Runtime() == nil:
+		return "no runtime settings"
+	case h.Revoked():
+		return "revoked on central"
+	}
+	return ""
+}
+
 // Cycle runs one full sync if the hub is online, unlocked and set up.
 func (w *Worker) Cycle(ctx context.Context) error {
 	h := w.H
 	if !h.Online() && h.Store.Unlocked() && h.Mode() == core.ModeActive {
 		h.TryCentralMove(ctx) // central may have moved (docs/DEPLOYMENT.md, section 6)
 	}
-	if !h.Online() || !h.Store.Unlocked() || h.Mode() != core.ModeActive || h.Runtime() == nil || h.Revoked() {
+	if why := skipReason(h); why != "" {
+		// Once per change of reason: a night without cycles left nothing in the log to
+		// say why (PENDING.md, item 14).
+		if prev := w.skipped.Swap(&why); prev == nil || *prev != why {
+			slog.Info("sync cycle skipped", "why", why)
+		}
 		return nil
 	}
+	w.skipped.Store(nil)
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	start := time.Now()
@@ -213,6 +244,16 @@ func (w *Worker) cycle(ctx context.Context) error {
 	if err := w.ReportIssues(ctx); err != nil {
 		errs = append(errs, err)
 	}
+	// The pool before the pull: a user's first pull can take many minutes, and their
+	// programs' generated attributes, new to the catalog at their login, would have no
+	// values offline if the link dropped during it (PENDING.md, item 31). One request
+	// per attribute below its watermark, none otherwise.
+	if err := w.RefillPool(ctx); err != nil {
+		if central.IsNetwork(err) {
+			return err
+		}
+		errs = append(errs, err)
+	}
 	if err := w.Pull(ctx); err != nil {
 		if central.IsNetwork(err) {
 			return err
@@ -234,9 +275,6 @@ func (w *Worker) cycle(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("tracker retention: %w", err))
 	} else if s+d > 0 {
 		slog.Info("retention pruned tracker", "stubbed", s, "deleted", d)
-	}
-	if err := w.RefillPool(ctx); err != nil {
-		errs = append(errs, err)
 	}
 	if _, err := h.Store.PruneCache(30 * 24 * time.Hour); err != nil {
 		errs = append(errs, fmt.Errorf("cache: %w", err))
@@ -315,6 +353,14 @@ const metaRegistryTokens = "registry_tokens" // the token IDs last listed in the
 // reserve between 1 and 1000 values"): a bigger pool fills over several cycles.
 const maxReservePerRequest = 1000
 
+// notEnoughLeft reports whether central refused a reservation because the pattern has
+// fewer values left than asked for (2.42 and 2.43: 409 "Could not reserve value: Not
+// enough values left to reserve N values.", no error code).
+func notEnoughLeft(err error) bool {
+	var he *central.HTTPError
+	return errors.As(err, &he) && he.Status == 409 && bytes.Contains(he.Body, []byte("Not enough values left"))
+}
+
 // poolLowWatermark is the fraction of a pool's target below which it is refilled:
 // above it, no request goes to central, so a nearly full pool does not cost a small
 // top-up every cycle (T2/T4, decided 2026-10-30). The comparison multiplies instead
@@ -358,10 +404,32 @@ func (w *Worker) RefillPool(ctx context.Context) error {
 		if strings.Contains(a.Pattern, "ORG_UNIT_CODE") {
 			code = rt.FacilityCode
 		}
+		// A short pattern (Laos: ORG_UNIT_CODE + RANDOM(###), 1000 values per facility)
+		// runs out: central refuses a request for more than are left, so ask for half
+		// as many, down to one. A pool still below its watermark after that is reported:
+		// the error shows on the hub page as the last sync error.
 		var vals []json.RawMessage
-		if err := h.Central.JSON(ctx, "GET", h.API().ReservePath(a.ID, need, code), nil, h.HubAuth(), &vals); err != nil {
+		var err error
+		short := false
+		for {
+			err = h.Central.JSON(ctx, "GET", h.API().ReservePath(a.ID, need, code), nil, h.HubAuth(), &vals)
+			if err == nil || !notEnoughLeft(err) {
+				break
+			}
+			short = true
+			if need == 1 {
+				err = nil
+				break
+			}
+			need /= 2
+		}
+		if err != nil {
 			errs = append(errs, fmt.Errorf("reserve %s: %w", a.ID, err))
 			continue
+		}
+		if short && (have+len(vals))*poolLowWatermark < target {
+			errs = append(errs, fmt.Errorf("reserved values for %s (pattern %s): central has too few left, the pool holds %d of %d",
+				a.ID, a.Pattern, have+len(vals), target))
 		}
 		var rvs []store.ReservedValue
 		for _, v := range vals {

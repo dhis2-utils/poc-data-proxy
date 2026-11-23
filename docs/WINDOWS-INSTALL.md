@@ -2,13 +2,13 @@
 
 For the person at the facility, or the district focal point, putting the hub on a PC the facility already has. About 15 minutes.
 
-**Choose the PC.** It should stay on while staff work: a records-room desktop, or a small server that is always on (for example the one for OpenMRS). It needs 64-bit Windows 10 or 11, a few GB of free disk, and the facility's network (cable or Wi-Fi). A laptop that goes home in the evening takes the hub with it.
+**Choose the PC.** It should stay on while staff work: a records-room desktop, or a small server that is always on (for example the one for OpenMRS). It needs 64-bit Windows 11 (Windows 10 is untested), a few GB of free disk, and the facility's network (cable or Wi-Fi). A laptop that goes home in the evening takes the hub with it.
 
 1. **Get the installer**, `dhis2-hub-<version>-setup.exe`: from the GitHub release, or from the USB stick you brought.
-2. **Run it.**
-   - **If you can, choose "for anyone who uses this computer"** (Windows asks for an administrator). The hub then runs as a service from start-up, whether or not anyone is logged in, and devices on the network can reach it.
-   - **Without administrator rights, choose "only for me".** The hub then runs only while you are logged in, and Windows may ask to allow it on the network: say yes.
+2. **Run it** as an administrator (Windows asks). The hub runs as a service from start-up, whether or not anyone is logged in, and devices on the network can reach it. Someone with administrator rights on the PC must do this step.
 3. **Leave "Keep this PC awake" ticked.** A sleeping PC serves no one.
+
+   The last page says if the PC has no usable TPM (security chip). The hub works without one, but then only staff passwords protect its data if the PC is stolen. Most PCs sold with Windows 11 have one; if it is switched off, turn it on in the PC's firmware settings and restart: the hub uses it from then on.
 4. **Set the hub up on this PC:** open "DHIS2 Facility Hub" on the desktop. Then:
    1. give central's address from the country's installation card;
    2. log in with a DHIS2 account assigned to this facility, and confirm the facility.

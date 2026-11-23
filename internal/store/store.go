@@ -252,6 +252,11 @@ CREATE INDEX agg_forms_ds ON agg_forms(data_set, fetched_at);
 	// (review R-47). A new column with a constant default: existing rows are not
 	// rewritten.
 	`ALTER TABLE outbox_objects ADD COLUMN created INTEGER NOT NULL DEFAULT 0;`,
+	// 8: central's updatedAt of each object an offline save edits, for counting saves
+	// that replace a newer change on central (store/overwrites.go). A new table: no
+	// existing row is touched. Removing the count is one DROP TABLE in a migration.
+	`CREATE TABLE outbox_base(seq INTEGER NOT NULL, uid TEXT NOT NULL, kind TEXT NOT NULL, updated_at TEXT NOT NULL,
+  PRIMARY KEY(seq, uid));`,
 }
 
 // DataPath is the data file that belongs to the key file at path.

@@ -26,7 +26,7 @@ func TestA1CompulsoryDataElement(t *testing.T) {
 	var stage, de string
 	for _, st := range p.Stages {
 		for _, el := range s.stageElements(st) {
-			if _, filled := p.EventValues[st][el.ID]; !el.Compulsory && !filled && el.OptionSet == "" && stage == "" {
+			if _, filled := p.EventValues[st][el.ID]; !el.Compulsory && !filled && el.takesDigits() && stage == "" {
 				stage, de = st, el.ID
 			}
 		}
@@ -52,7 +52,7 @@ func TestA1CompulsoryDataElement(t *testing.T) {
 	must(s.save(nurse, "c: completed event without "+de, completed(s.event(p, stage, c.Enrollment, evC, p.EventValues[stage]))))
 	edited := maps.Clone(p.EventValues[stage])
 	for _, el := range s.stageElements(stage) {
-		if _, ok := edited[el.ID]; !ok && el.ID != de && el.OptionSet == "" {
+		if _, ok := edited[el.ID]; !ok && el.ID != de && el.takesDigits() {
 			edited[el.ID] = "8" // a later edit of another value
 			break
 		}

@@ -142,6 +142,31 @@ func TestAggregateRefreshAfterAccessChange(t *testing.T) {
 	}
 }
 
+// Nor does it cover which data sets are assigned to the facility (2.43.2.1, J2: a
+// data set taken off the facility changed the answer, not the ETag, and the hub kept
+// serving its form offline). The hub reads the facility's data sets with each refresh
+// and asks without the ETag when they changed.
+func TestAggregateRefreshAfterDataSetUnassigned(t *testing.T) {
+	e, ag, nurse, _ := aggregateEnv(t)
+	e.NeedFake()
+	h := e.App.Hub
+	u, _ := h.Store.UserByName(nurse.User)
+	e.Fake.AggETag = `"same-for-every-answer"`
+	if err := h.RefreshAccess(context.Background(), u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if d := h.AggAccess(u.ID).DataSets[ag.DataSet]; d == nil || !d.Assigned(e.M.Facility.ID) {
+		t.Fatalf("the data set is not assigned to begin with")
+	}
+	e.Fake.AggUnassigned = map[string]bool{ag.DataSet: true}
+	if err := h.RefreshAccess(context.Background(), u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if d := h.AggAccess(u.ID).DataSets[ag.DataSet]; d != nil && d.Assigned(e.M.Facility.ID) {
+		t.Errorf("after the data set left the facility, the hub still has it assigned")
+	}
+}
+
 func formPath(e *tk.Env, ds, pe string) string {
 	q := url.Values{"ds": {ds}, "pe": {pe}, "ou": {e.M.Facility.ID}}
 	return "/api/" + e.App.Hub.APIMinor() + "/dataEntry/dataValues?" + q.Encode()

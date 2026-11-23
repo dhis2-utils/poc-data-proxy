@@ -46,38 +46,51 @@ done
 check "the data folder is taken over before anything in it runs" python3 - "$HERE/installer.nsi" <<'PY'
 import sys
 s = open(sys.argv[1]).read()
-# The first file read from the folder, and the first run of the installed hub.exe
-# (the installer never runs it to learn its version: review R-27).
+# The first file read from the folder (the installed hub.exe is never run: below).
 own = s.find("/setowner *S-1-5-32-544")
-uses = [s.find('FileOpen $R1 "$DataDir\\version"'), s.find("'\"$HubExe\" ")]
-sys.exit(0 if own >= 0 and all(own < u for u in uses) and min(uses) >= 0 else 1)
-PY
-check "the per-user move reads the user's own folder" grep -q 'UserAppDataLocal' <<<"$STR"
-# Review GLM5-F1: the user's own folder is theirs to change, so its hub.exe must not
-# reach the admin-only folder, where the elevated installer would run it and the
-# service would start it.
-check "the per-user move leaves the user's hub.exe behind" python3 - "$HERE/installer.nsi" <<'PY'
-import re, sys
-moves = [l for l in open(sys.argv[1]) if "robocopy" in l and "UserAppDataLocal" in l]
-sys.exit(0 if moves and all(re.search(r'/XD\s+"?bin"?(\s|$|\')', l) for l in moves) else 1)
+use = s.find('FileOpen $R1 "$DataDir\\version"')
+sys.exit(0 if 0 <= own < use else 1)
 PY
 check "the installer waits for the service to stop" grep -q 'service stop' <<<"$STR"
 check "install.ini and ca.crt stay readable (public; the CI check reads them)" grep -q 'install.ini" /grant "\*S-1-5-32-545:R"' <<<"$STR"
 check "the installer records what it ran (install.log)" grep -q 'FileOpen $LogFile "$DataDir\\install.log"' <<<"$STR"
 # The CI run of 2026-10-20: /inheritance:r with /T left every file with an empty access
 # list ((OI)(CI) grants do not apply to files), so the service could not run hub.exe.
-check "no recursive /inheritance:r (files would get empty access lists)" sh -c "! grep -E 'inheritance:r.*/T' <<'X'
-$STR
-X"
+no_recursive_reset() { ! grep -E 'inheritance:r.*/T' <<<"$STR"; }
+check "no recursive /inheritance:r (files would get empty access lists)" no_recursive_reset
 check "files under the data folder inherit its access list" grep -qF '\*" /reset /T' <<<"$STR"
 check "uninstalling removes the Defender exclusion" grep -q 'Remove-MpPreference' <<<"$STR"
-check "the firewall rules admit only the PC's own subnets" sh -c "! grep 'firewall add rule' <<'X' | grep -v remoteip=localsubnet
-$STR
-X"
-check "the whole PC is the default for a user who can elevate" sh -c "! grep -q '^!define MULTIUSER_INSTALLMODE_DEFAULT_CURRENTUSER' <<'X'
-$STR
-X"
+local_subnets_only() { ! grep 'firewall add rule' <<<"$STR" | grep action=allow | grep -v remoteip=localsubnet; }
+check "the firewall rules admit only the PC's own subnets" local_subnets_only
+# Only for the whole PC (22 November 2026): a hub for one user served only its own PC.
+whole_pc_only() { grep -q '^RequestExecutionLevel admin' <<<"$STR" && ! grep -qE 'MultiUser|HKCU|LOCALAPPDATA' <<<"$STR"; }
+check "the installer installs for the whole PC only" whole_pc_only
 check "the uninstaller keeps hosts if putting the new one in place fails" grep -qF 'Rename "$6.hub-old" $6' <<<"$STR"
+# Review R-27: the installed hub.exe is in a folder the service's account may change,
+# so no elevated step runs it.
+check "no elevated step runs the installed hub.exe" python3 - "$HERE/installer.nsi" <<'PY'
+import re, sys
+bad = [l for l in open(sys.argv[1]) if re.search(r"(Run|nsExec::\w+)\s+'\"\$HubExe\"", l)]
+sys.exit(1 if bad else 0)
+PY
+kept_newer_shown() { grep -q 'Kept the newer hub' <<<"$STR" && grep -qF '"DisplayVersion" "$ShownVersion"' <<<"$STR"; }
+check "a kept newer hub is logged and shown in the Apps list" kept_newer_shown
+# The Windows VM, 2026-11-20 and 21.
+check "an owner the installer cannot read stops it" grep -q 'Could not read the owner of' <<<"$STR"
+check "uninstalling checks that the Defender exclusion is gone" grep -qF 'ExclusionPath -contains' <<<"$STR"
+tpm_said() { grep -q 'ReadINIStr $6 "$DataDir\\install.ini" "hub" "tpm"' <<<"$STR" && grep -q 'MUI_FINISHPAGE_TEXT .*$TpmNote' <<<"$STR"; }
+check "the installer says whether a TPM seals the hub's keys" tpm_said
+# The retest in the VM, 2026-11-22.
+appends_log() { [ "$(grep -c 'install.log" a$' <<<"$STR")" = "$(grep -A1 'install.log" a$' <<<"$STR" | grep -c 'FileSeek .* 0 END')" ]; }
+check "install.log is appended to, not written over" appends_log
+check "hub init runs before the program is replaced" python3 - "$HERE/installer.nsi" <<'PY'
+import sys
+s = open(sys.argv[1]).read()
+init, put = s.find('hub-new.exe" init -data'), s.find('File "/oname=hub.exe"')
+sys.exit(0 if 0 <= init < put else 1)
+PY
+no_prompt() { grep -q 'add rule name="${NAME} (installer)".*hub-new.exe' <<<"$STR" && grep -q 'delete rule name="${NAME} (installer)"' <<<"$STR"; }
+check "hub init runs under a firewall rule (no prompt)" no_prompt
 echo
 if [ "$FAILS" -gt 0 ]; then echo "$FAILS checks failed"; exit 1; fi
 echo "all checks passed"

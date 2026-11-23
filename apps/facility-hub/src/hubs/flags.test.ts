@@ -62,6 +62,26 @@ describe('flags', () => {
         ).toEqual([])
     })
 
+    it('raises pending by the oldest waiting save, not the last push', () => {
+        // An idle hub whose last push was days ago: a save of an hour ago is not late.
+        expect(
+            kinds({
+                ...healthy,
+                pendingOutbox: 1,
+                lastPush: ago(72),
+                oldestPending: ago(1),
+            })
+        ).toEqual([])
+        expect(
+            kinds({
+                ...healthy,
+                pendingOutbox: 1,
+                lastPush: ago(1),
+                oldestPending: ago(30),
+            })
+        ).toEqual(['pending'])
+    })
+
     it('does not raise usb when the hub has no stick configured', () => {
         expect(kinds({ ...healthy, usb: null })).toEqual([])
     })

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dhis2/facility-hub/internal/aggregate"
 	tk "github.com/dhis2/facility-hub/internal/testkit"
@@ -19,6 +20,7 @@ type aggScene struct {
 	*scene
 	ag      *tk.Aggregate
 	pe, old string
+	peEnd   time.Time // when pe ends: after now if it is the current period
 	values  string
 }
 
@@ -43,16 +45,17 @@ func beginAggregate(t *testing.T, roles ...string) *aggScene {
 	ds := acc.DataSets[a.ag.DataSet]
 	now := s.App.Hub.CentralNow()
 	cur, _ := aggregate.Current(ds.PeriodType, now)
-	var open []string
+	var open []aggregate.Period
 	for _, p := range aggregate.Window(ds, now, s.App.Hub.AggRetention().For(ds.ID)) {
 		if !p.Start.After(cur.Start) {
-			open = append(open, p.ID)
+			open = append(open, p)
 		}
 	}
 	if len(open) < 2 {
 		t.Skipf("%s has fewer than two open periods: %v", a.ag.DataSet, open)
 	}
-	a.pe, a.old = open[len(open)-1], open[len(open)-2]
+	a.pe, a.old = open[len(open)-1].ID, open[len(open)-2].ID
+	a.peEnd = open[len(open)-1].End
 	return a
 }
 
@@ -217,10 +220,39 @@ func TestJ3SameCellOfflineAndOnCentral(t *testing.T) {
 			t.Errorf("%s: central has %q by %q, want the last write to arrive, %v", c.de, v, by, c.last)
 		}
 		audit := a.audit(a.pe, c.de)
-		for _, w := range c.writes {
-			if !slices.Contains(audit, w) {
-				t.Errorf("I4: %s: the write %v is not in central's audit %v", c.de, w, audit)
+		if !strings.HasPrefix(a.M.DHIS2Version, "2.42") {
+			for _, w := range c.writes {
+				if !slices.Contains(audit, w) {
+					t.Errorf("I4: %s: the write %v is not in central's audit %v", c.de, w, audit)
+				}
 			}
+			continue
+		}
+		// 2.42 audits an update with the value it replaced (2.43 with the new one;
+		// both checked on 17 November 2026), and nothing for the write that fills an
+		// empty cell (Laos 2.42, 18 November 2026): each value replaced is audited, and
+		// each write but the one that filled the cell left an entry by its author
+		// holding one of the cell's values.
+		vals := map[string]bool{}
+		for _, w := range c.writes {
+			vals[w.value] = true
+		}
+		var unattributed []cellWrite
+		for _, w := range c.writes {
+			by, replaced := false, w == c.last
+			for _, x := range audit {
+				by = by || x.by == w.by && vals[x.value]
+				replaced = replaced || x.value == w.value
+			}
+			if !replaced {
+				t.Errorf("I4: %s: the value of %v is not in central's audit %v", c.de, w, audit)
+			}
+			if !by {
+				unattributed = append(unattributed, w)
+			}
+		}
+		if len(unattributed) > 1 || len(unattributed) == 1 && unattributed[0] == c.last {
+			t.Errorf("I4: %s: writes with no audit entry by their author %v (one may have filled the cell): %v", c.de, unattributed, audit)
 		}
 	}
 	if is := a.issues(); len(is) > 0 {
@@ -239,7 +271,8 @@ func (a *aggScene) audit(pe, de string) []cellWrite {
 			Created, ModifiedBy, AuditType, Value string
 		} `json:"dataValueAudits"`
 	}
-	q := url.Values{"ds": {a.ag.DataSet}, "pe": {pe}, "ou": {a.M.Facility.ID}, "de": {de}, "co": {a.ag.COC}, "pageSize": {"20"}}
+	// Not by data set: with ds, 2.42 lists every element of the set and ignores de.
+	q := url.Values{"pe": {pe}, "ou": {a.M.Facility.ID}, "de": {de}, "co": {a.ag.COC}, "pageSize": {"20"}}
 	if err := a.Central.JSON("GET", "/api/audits/dataValue?"+q.Encode(), nil, &res); err != nil {
 		a.t.Fatal(err)
 	}

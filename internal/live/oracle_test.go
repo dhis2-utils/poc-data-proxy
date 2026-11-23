@@ -572,8 +572,6 @@ func knownGap(o tk.Outcome, q tk.Query, dims map[string]string, m *tk.Manifest) 
 		return "an order on the program's search attribute: central collates text in the database's locale (Aïcha sorts as Aicha), the hub compares bytes; ties on the same value break by creation time, newest first, as central does (measured 2026-11-02)"
 	case o.Verdict == tk.Lenient && orderField(q) == "scheduledAt" && strings.Contains(o.Detail, "Cannot order by 'scheduledDate'"):
 		return "an event program's events ordered by scheduledAt: 2.43 refuses the order (400), the hub answers it as 2.42 does (seen 2026-11-03)"
-	case o.Verdict == tk.Leak && orderField(q) == "scheduledAt":
-		return "a paged list ordered by scheduledAt: events with no scheduled date sort first when descending on central, last on the hub, so the two first pages hold different events"
 	}
 	return ""
 }

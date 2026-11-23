@@ -55,6 +55,7 @@ func TestA6ProgramBecomesProtected(t *testing.T) {
 	s.CentralImport(x.Payload)
 	s.Sync()
 	stage := p.Stages[0]
+	later := s.stageAgain(p, stage) // a's second event
 	others := []string{
 		"/api/tracker/trackedEntities/" + x.TE + "?program=" + p.ID + "&fields=trackedEntity",
 		"/api/tracker/enrollments/" + x.Enrollment + "?fields=enrollment",
@@ -79,7 +80,7 @@ func TestA6ProgramBecomesProtected(t *testing.T) {
 	s.Offline()
 	s.sameAsCentral(nurse, "protected, offline", append(others,
 		"/api/tracker/trackedEntities/"+a.TE+"?program="+p.ID+"&fields=trackedEntity")...)
-	if st, _ := s.save(nurse, "an event for the facility's person, protected", s.event(p, stage, a.Enrollment, tk.UID(), p.EventValues[stage])); st != 200 {
+	if st, _ := s.save(nurse, "an event for the facility's person, protected", s.event(p, later, a.Enrollment, tk.UID(), p.EventValues[later])); st != 200 {
 		t.Error("offline, the hub refuses an event for a person the facility owns in a protected program")
 	}
 	s.reconnect(1)
@@ -103,6 +104,9 @@ func TestA8OnlyEnrollOnceTurnedOn(t *testing.T) {
 		t.Skip("the fake central's onlyEnrollOnce is tested in internal/live (TestEnrollmentRulesOffline)")
 	}
 	p := s.M.Primary()
+	// The scenario turns onlyEnrollOnce on, so it starts off (Sierra Leone's primary
+	// program has it on); the sync below brings that to the hub.
+	s.SetField("/api/programs/"+p.ID, "onlyEnrollOnce", false)
 	nurse := s.connect(s.M.Users[tk.RoleNurse].Username)
 	a := s.register(nurse, p, "AdvA8a")
 	s.Sync()

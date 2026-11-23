@@ -101,6 +101,10 @@ func TestE3KillDuringFirstPull(t *testing.T) {
 		}
 	}
 	unlock()
+	// A small facility's whole first pull can be fewer reads than the later kill points
+	// (Sierra Leone's is about 27): once a kill finds the pull finished, the kills stop
+	// and the comparison with central below still holds.
+kills:
 	for i, after := range []int{3, 15, 40} {
 		pulls := 0
 		for pulls < after {
@@ -110,7 +114,11 @@ func TestE3KillDuringFirstPull(t *testing.T) {
 				}
 			}
 			if s := p.Status(); s["lastPull"] != nil {
-				t.Fatalf("the first pull ended before kill %d (%d tracker reads)", i+1, pulls)
+				if i == 0 {
+					t.Fatalf("the first pull ended before the first kill (%d tracker reads)", pulls)
+				}
+				t.Logf("the first pull ended before kill %d (%d tracker reads since the last): no more kills", i+1, pulls)
+				break kills
 			}
 			time.Sleep(50 * time.Millisecond)
 		}

@@ -68,12 +68,35 @@ func (s *scene) register(c *tk.Client, p tk.Program, name string) *tk.Person {
 // event builds a payload of one event with these data values.
 func (s *scene) event(p tk.Program, stage, enrollment, uid string, values map[string]string) map[string]any {
 	dvs := []any{}
+	today := time.Now().UTC().Format("2006-01-02")
 	for de, v := range values {
-		dvs = append(dvs, map[string]any{"dataElement": de, "value": v})
+		dvs = append(dvs, map[string]any{"dataElement": de, "value": tk.DataValue(v, today)})
 	}
 	return map[string]any{"events": []any{map[string]any{"event": uid, "enrollment": enrollment, "program": p.ID,
-		"programStage": stage, "orgUnit": s.M.Facility.ID, "occurredAt": time.Now().UTC().Format("2006-01-02"),
+		"programStage": stage, "orgUnit": s.M.Facility.ID, "occurredAt": today,
 		"status": "ACTIVE", "dataValues": dvs}}}
+}
+
+// stageAgain is a stage for one more event of an enrollment with events in used: the
+// last of used when it is repeatable, else one of p's stages not in used (Sierra
+// Leone's are all non-repeatable, and central refuses a second event in one with
+// E1039). It skips the test when the program has none left.
+func (s *scene) stageAgain(p tk.Program, used ...string) string {
+	s.t.Helper()
+	var r struct{ Repeatable bool }
+	if err := s.Central.JSON("GET", "/api/programStages/"+used[len(used)-1]+"?fields=repeatable", nil, &r); err != nil {
+		s.t.Fatal(err)
+	}
+	if r.Repeatable {
+		return used[len(used)-1]
+	}
+	for _, st := range p.Stages {
+		if !slices.Contains(used, st) {
+			return st
+		}
+	}
+	s.t.Skipf("program %s has no stage left for another event of one enrollment", p.ID)
+	return ""
 }
 
 // reconnect brings the uplink back and runs cycles, returning how many tracker pushes
@@ -130,8 +153,24 @@ func (s *scene) expect(want map[string]string, allowed ...string) []tk.Line {
 type stageElement struct {
 	ID         string
 	Compulsory bool
+	ValueType  string
 	OptionSet  string
 	Options    []string
+}
+
+// takesDigits reports whether central takes the small positive whole numbers the
+// scenarios write ("7", "8", "99") as the element's value: not a boolean, a date or
+// an option (Sierra Leone's stages mix these with numbers; central refuses "7" in a
+// boolean with E1302).
+func (e stageElement) takesDigits() bool {
+	if e.OptionSet != "" {
+		return false
+	}
+	switch e.ValueType {
+	case "NUMBER", "INTEGER", "INTEGER_POSITIVE", "INTEGER_ZERO_OR_POSITIVE", "TEXT", "LONG_TEXT":
+		return true
+	}
+	return false
 }
 
 func (s *scene) stageElements(stage string) []stageElement {
@@ -141,6 +180,7 @@ func (s *scene) stageElements(stage string) []stageElement {
 			Compulsory  bool
 			DataElement struct {
 				ID        string
+				ValueType string
 				OptionSet *struct {
 					ID      string
 					Options []struct{ Code string }
@@ -149,12 +189,12 @@ func (s *scene) stageElements(stage string) []stageElement {
 		} `json:"programStageDataElements"`
 	}
 	if err := s.Central.JSON("GET", "/api/programStages/"+stage+
-		"?fields=programStageDataElements[compulsory,dataElement[id,optionSet[id,options[code]]]]", nil, &res); err != nil {
+		"?fields=programStageDataElements[compulsory,dataElement[id,valueType,optionSet[id,options[code]]]]", nil, &res); err != nil {
 		s.t.Fatal(err)
 	}
 	var out []stageElement
 	for _, p := range res.PSDEs {
-		el := stageElement{ID: p.DataElement.ID, Compulsory: p.Compulsory}
+		el := stageElement{ID: p.DataElement.ID, Compulsory: p.Compulsory, ValueType: p.DataElement.ValueType}
 		if os := p.DataElement.OptionSet; os != nil {
 			el.OptionSet = os.ID
 			for _, o := range os.Options {

@@ -101,7 +101,11 @@ type Program struct {
 	// the hub (online from central, offline from its pool) as the apps do.
 	MandatoryGenerated []string `json:"mandatoryGenerated,omitempty"`
 	UniqueAttr         string   `json:"uniqueAttr,omitempty"`
-	GeneratedAttr      string   `json:"generatedAttr,omitempty"`
+	// OtherUnique are the program's further unique attributes (not generated): each
+	// person gets a value of its own in them too, as a program rule may require one
+	// (Laos: the TB registration number of a notified case).
+	OtherUnique   []string `json:"otherUnique,omitempty"`
+	GeneratedAttr string   `json:"generatedAttr,omitempty"`
 	// OnlyAttrs: attributes of this program alone, neither its tracked entity type's
 	// nor another manifest program's. The oracle filters and orders other programs'
 	// lists on them, which a user who cannot read this program must not learn from

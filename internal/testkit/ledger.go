@@ -62,6 +62,8 @@ func (l Line) String() string {
 type Ledger struct {
 	e     *Env
 	Saves []Save
+	// typeAttrs: each tracked entity type's own attributes, read from central once.
+	typeAttrs map[string]map[string]bool
 }
 
 func (e *Env) Ledger() *Ledger { return &Ledger{e: e} }
@@ -85,6 +87,13 @@ func (l *Ledger) Confirmed(user string, payload map[string]any) {
 				for _, en := range asAnyList(o["enrollments"]) {
 					if s.Program == "" {
 						s.Program, _ = en.(map[string]any)["program"].(string)
+					}
+				}
+				// A person saved without an enrollment (an edit of their attributes) is
+				// read back in the program of an earlier save of them.
+				for i := len(l.Saves) - 1; i >= 0 && s.Program == ""; i-- {
+					if l.Saves[i].UID == s.UID {
+						s.Program = l.Saves[i].Program
 					}
 				}
 				walk("enrollments", s.UID, o["enrollments"])
@@ -227,8 +236,21 @@ func (e *Env) issueOnCentral(key string) bool {
 }
 
 // differs says what of a save is not on central as saved: values and the author.
+// For a person central has not enrolled in the program they were saved in (that
+// enrollment refused, or none saved), central lists only their type's attributes:
+// the program attributes are the refused enrollment's to answer for.
 func (l *Ledger) differs(s Save, o map[string]any) string {
 	var d []string
+	values := s.Values
+	if s.Kind == "trackedEntities" && l.e.Live() && !enrolledIn(o, s.Program) {
+		own := l.ownAttrs(fmt.Sprint(o["trackedEntityType"]))
+		values = map[string]string{}
+		for k, v := range s.Values {
+			if own[k] {
+				values[k] = v
+			}
+		}
+	}
 	got := map[string]string{}
 	key, list := "dataElement", o["dataValues"]
 	if s.Kind == "trackedEntities" {
@@ -241,7 +263,7 @@ func (l *Ledger) differs(s Save, o map[string]any) string {
 	if st, _ := o["status"].(string); s.Status != "" && st != s.Status {
 		d = append(d, fmt.Sprintf("status %s, central %s", s.Status, st))
 	}
-	for k, v := range s.Values {
+	for k, v := range values {
 		if got[k] != v {
 			d = append(d, fmt.Sprintf("%s=%q, central %q", k, v, got[k]))
 		}
@@ -254,6 +276,40 @@ func (l *Ledger) differs(s Save, o map[string]any) string {
 	}
 	slices.Sort(d)
 	return strings.Join(d, "; ")
+}
+
+// enrolledIn reports whether central's person o has an enrollment in program.
+func enrolledIn(o map[string]any, program string) bool {
+	for _, x := range asAnyList(o["enrollments"]) {
+		if m, _ := x.(map[string]any); program != "" && m["program"] == program && m["deleted"] != true {
+			return true
+		}
+	}
+	return false
+}
+
+// ownAttrs is a tracked entity type's own attributes on central.
+func (l *Ledger) ownAttrs(tet string) map[string]bool {
+	if a, ok := l.typeAttrs[tet]; ok {
+		return a
+	}
+	var res struct {
+		TETAs []struct {
+			Attr struct{ ID string } `json:"trackedEntityAttribute"`
+		} `json:"trackedEntityTypeAttributes"`
+	}
+	if err := l.e.Central.JSON("GET", "/api/trackedEntityTypes/"+tet+"?fields=trackedEntityTypeAttributes[trackedEntityAttribute[id]]", nil, &res); err != nil {
+		l.e.T.Fatal(err)
+	}
+	a := map[string]bool{}
+	for _, x := range res.TETAs {
+		a[x.Attr.ID] = true
+	}
+	if l.typeAttrs == nil {
+		l.typeAttrs = map[string]map[string]bool{}
+	}
+	l.typeAttrs[tet] = a
+	return a
 }
 
 // duplicates finds another event on central in the same enrollment and stage with

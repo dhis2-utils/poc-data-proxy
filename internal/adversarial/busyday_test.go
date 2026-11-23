@@ -417,14 +417,15 @@ func m2Seed(t *testing.T, e *tk.Env, r *netRun, n int, pg string) (old int) {
 // it a local object (readable by its rules), but the first pull to fetch it after the
 // push (here the admin's, listed before hers) stores it as central's, visible to that
 // puller only (core.UpsertCentral), and no bit was ever set for its author. Until her
-// own pull in the same cycle lists it, she is refused her own record.
+// own pull in the same cycle lists it, she is refused her own record. Fixed: the pull
+// shares such objects by the hub's rules (core.upsertCentral; e2e
+// TestM2AuthorKeepsOwnRecordsAfterPush).
 //
 // The scene: the nurse registers people offline; back online, one cycle runs with the
 // uplink slowed so its pulls take a while, while the restricted user keeps saving
 // (her saves wait in the outbox, so the hub answers tracker requests itself) and the
 // nurse keeps reading and updating her people.
 func TestM2AuthorKeepsOwnRecordsAfterPush(t *testing.T) {
-	finding(t, "M2: after a push, another user's pull makes the author's offline registrations central's and hides them from her until her own pull")
 	r := netPrepare(t)
 	e := r.e
 	e.Setup()

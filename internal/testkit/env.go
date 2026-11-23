@@ -108,7 +108,9 @@ func (e *Env) Config() config.Config {
 	c.TLS = false
 	c.SyncInterval = time.Hour // tests run cycles by hand
 	c.PingTimeout = 5 * time.Second
-	c.ReservedPoolSize = 10
+	// Small: every test starts a hub, and a short pattern has few values per facility
+	// (Laos, ORG_UNIT_CODE + RANDOM(###): 1000; a whole suite at 10 a hub took 951).
+	c.ReservedPoolSize = 5
 	c.OwnershipCheckInterval = 0 // every cycle: tests sync by hand
 	c.AccessRefreshInterval = 0  // likewise
 	c.ReconnectDelay = 0

@@ -158,7 +158,7 @@ func TestC7RelationshipToPersonNotHeld(t *testing.T) {
 	t.Logf("online through the hub, to a person not held: before the push %d %v; after it %d %v; central then answers the nurse %d for it",
 		stQ, errorCodes(bQ), stO, errorCodes(bO), cst)
 	s.expect(nil, tk.OnCentral)
-	for uid, want := range map[string]bool{toX: stX == 200, toB: true, onlineToX: stO == 200, queuedToX: stQ == 200} {
+	for uid, want := range map[string]bool{toX: stX == 200, toB: stB == 200, onlineToX: stO == 200, queuedToX: stQ == 200} {
 		on := s.CentralObject("relationships", uid) != nil
 		t.Logf("relationship %s on central: %v (taken: %v)", uid, on, want)
 		if on != want {
@@ -255,7 +255,12 @@ func TestC9EnrollmentCompletedOnCentral(t *testing.T) {
 		t.Skip("enrollment status on a real DHIS2")
 	}
 	p := s.M.Primary()
+	// Four events of one enrollment: each in a stage of its own where the stages are
+	// not repeatable.
 	stage := p.Stages[0]
+	second := s.stageAgain(p, stage)
+	third := s.stageAgain(p, stage, second)
+	fourth := s.stageAgain(p, stage, second, third)
 	nurse := s.connect(s.M.Users[tk.RoleNurse].Username)
 	a := s.register(nurse, p, "AdvC9a")
 	s.Sync()
@@ -265,7 +270,7 @@ func TestC9EnrollmentCompletedOnCentral(t *testing.T) {
 	if st, _ := s.save(nurse, "an active event offline", s.event(p, stage, a.Enrollment, active, p.EventValues[stage])); st != 200 {
 		t.Fatal("the hub refused valid work offline")
 	}
-	if st, _ := s.save(nurse, "a completed event offline", completed(s.event(p, stage, a.Enrollment, done, p.EventValues[stage]))); st != 200 {
+	if st, _ := s.save(nurse, "a completed event offline", completed(s.event(p, second, a.Enrollment, done, p.EventValues[second]))); st != 200 {
 		t.Fatal("the hub refused valid work offline")
 	}
 	s.CentralImport(s.enrollment(p, a.TE, a.Enrollment, "COMPLETED"))
@@ -286,10 +291,10 @@ func TestC9EnrollmentCompletedOnCentral(t *testing.T) {
 	if !strings.Contains(string(b), "COMPLETED") {
 		t.Errorf("after the pull the hub does not show the enrollment completed offline")
 	}
-	hst, hb := s.save(nurse, "another event offline, after the sync", s.event(p, stage, a.Enrollment, tk.UID(), p.EventValues[stage]))
+	hst, hb := s.save(nurse, "another event offline, after the sync", s.event(p, third, a.Enrollment, tk.UID(), p.EventValues[third]))
 	s.Online()
 	direct := tk.UID()
-	cst, cb, _ := s.Central.As(nurse.User, s.M.Password).Do("POST", tk.SyncImport, s.event(p, stage, a.Enrollment, direct, p.EventValues[stage]))
+	cst, cb, _ := s.Central.As(nurse.User, s.M.Password).Do("POST", tk.SyncImport, s.event(p, fourth, a.Enrollment, direct, p.EventValues[fourth]))
 	if cst == 200 {
 		s.CentralDelete("events", direct)
 	}

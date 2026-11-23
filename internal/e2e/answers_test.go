@@ -337,6 +337,10 @@ func TestAggregatePushGoesOnPastAFailingEdit(t *testing.T) {
 	if st, b := a.do("POST", "/api/dataValues?"+q.Encode(), nil); st/100 != 2 {
 		t.Fatalf("offline value: %d %s", st, b)
 	}
+	// /hub/status counts the value as waiting (the Windows VM, 20 November: "pending 0").
+	if st := a.json("GET", "/hub/status", nil, 200); st["pending"] != float64(1) {
+		t.Errorf("/hub/status pending %v with one value waiting", st["pending"])
+	}
 	a.json("POST", postSync, newPatient("AggTe000001", "AggEn000001", "After", "", nil), 200)
 	e.central.FailPaths = map[string]int{"/api/dataValues": 500}
 	e.online()

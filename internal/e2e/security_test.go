@@ -564,7 +564,6 @@ func TestPerUserMetadataNotShared(t *testing.T) {
 		"/api/42/organisationUnits?fields=id&withinUserHierarchy=true",
 		"/api/organisationUnits/" + fc.Facility + "?fields=id,displayName",
 		"/api/programs?fields=id,displayName&paging=false",
-		"/api/system/info?fields=version",
 	}
 	for _, p := range perUser {
 		a.do("GET", p, nil)
@@ -840,5 +839,126 @@ func TestReservedPoolPatternChange(t *testing.T) {
 	e.sync()
 	if have := count(); have != full-1 {
 		t.Errorf("new pattern unchanged since: pool %d after the sync, want %d kept", have, full-1)
+	}
+}
+
+// A user whose programs join the catalog at their login has generated values offline
+// as soon as the next cycle has reached central, though the cycle's pull, long on a
+// user's first day, did not finish (PENDING.md, item 31): the pool is refilled before
+// the pull, not after it.
+func TestPoolFilledBeforeFirstPull(t *testing.T) {
+	e := newEnv(t)
+	e.central.Users["hub_admin"].NoProgramMeta = true
+	e.setup()
+	a := e.web("nurse_a")
+	a.login() // the program joins the catalog; its pool is empty
+	// The link drops during the pull.
+	e.central.StallResponse = map[string]int{"GET /api/tracker/trackedEntities": 1000}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := e.app.Worker.Cycle(ctx)
+	if err == nil {
+		t.Fatal("the cycle's pull went through")
+	}
+	e.offline()
+	if st, body := a.do("GET", "/api/trackedEntityAttributes/"+fc.AttrTBID+"/generate", nil); st != 200 {
+		t.Errorf("a generated value offline after a cycle cut in its pull: %d %s", st, body)
+	}
+}
+
+// T3 (PENDING.md, item 32): a staff member with no copy of /api/system/info, as on a
+// first Android login offline, gets the hub's own copy, cut to the fields any staff
+// member gets; Android otherwise said "The URL provided is not a DHIS2 server". Not
+// before a login: an anonymous request gets the login answer, as for other metadata.
+func TestSystemInfoOfflineForAnyStaff(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	e.sync()
+	b := e.android("nurse_b") // never asked for system/info
+	if st, _ := b.do("GET", "/api/me", nil); st != 200 {
+		t.Fatalf("nurse_b online: %d", st)
+	}
+	e.offline()
+	for _, p := range []string{"/api/system/info?fields=version,contextPath,revision", "/api/42/system/info"} {
+		st, body := b.do("GET", p, nil)
+		var info map[string]any
+		json.Unmarshal(body, &info)
+		if st != 200 || info["version"] == nil {
+			t.Errorf("nurse_b offline, %s: %d %s", p, st, body)
+		}
+		for _, k := range []string{"javaVersion", "osName", "memoryInfo", "userAgent"} {
+			if _, ok := info[k]; ok {
+				t.Errorf("%s offline carries %s", p, k)
+			}
+		}
+	}
+	req, _ := http.NewRequest("GET", e.srv.URL+"/api/system/info", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode == 200 {
+		t.Error("system/info offline without a login")
+	}
+}
+
+// H5: in the seconds after the link drops, before the probe notices, a request for a
+// generated value fails on its way to central; the hub then answers from its pool, as
+// it does offline, instead of "needs connection". Never from the proxy's cache: a
+// value central gave online is used, and the same value again is refused at the push
+// (E1064; adversarial E1 on Sierra Leone 2.43, 17 November 2026).
+func TestGeneratedFromPoolWhenCentralJustWentAway(t *testing.T) {
+	e := newEnv(t)
+	e.setup()
+	a := e.web("nurse_a")
+	a.login()
+	e.sync() // fills the pool
+	path := "/api/trackedEntityAttributes/" + fc.AttrTBID + "/generateAndReserve?numberToReserve=1"
+	st, online := a.do("GET", path, nil)
+	if st != 200 {
+		t.Fatalf("online: %d %s", st, online)
+	}
+	e.central.SetDown(true)
+	if !e.app.Hub.Online() {
+		t.Fatal("the hub noticed already")
+	}
+	if st, body := a.do("GET", "/api/trackedEntityAttributes/"+fc.AttrTBID+"/generate", nil); st != 200 {
+		t.Errorf("a generated value while central has just gone: %d %s", st, body)
+	}
+	st, again := a.do("GET", path, nil)
+	if st != 200 {
+		t.Errorf("the same request while central has just gone: %d %s", st, again)
+	}
+	if string(again) == string(online) {
+		t.Errorf("the value central gave online, handed out again: %s", again)
+	}
+}
+
+// A generated attribute whose pattern runs short on central (Laos: ORG_UNIT_CODE +
+// RANDOM(###), 1000 values per facility): central refuses a request for more values
+// than are left. Must hold: the hub takes what is left, asking for half as many each
+// time; a pool still below its low watermark is reported as a sync error, which the hub
+// page shows; the sync goes on.
+func TestPoolWhenPatternRunsShort(t *testing.T) {
+	e := newEnv(t)
+	e.central.LimitReserved, e.central.ReserveLeft = true, 3
+	e.setup() // asks for 5, refused; then 2
+	now := func() string { return e.app.Hub.CentralTime(time.Now()) }
+	if have := e.app.Hub.Store.CountReservedValues(fc.AttrTBID, now()); have != 2 {
+		t.Fatalf("pool after the first sync: %d values, want the 2 asked for after the refusal", have)
+	}
+	if _, err := e.app.Hub.Store.DropReservedValues(fc.AttrTBID); err != nil {
+		t.Fatal(err)
+	}
+	err := e.app.Worker.Cycle(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "central has too few left, the pool holds 1 of 5") {
+		t.Fatalf("a pool central cannot fill: sync error %v", err)
+	}
+	if left := e.central.ReserveLeft; left != 0 {
+		t.Errorf("central has %d values left that the hub did not ask for", left)
+	}
+	if !e.app.Hub.Online() {
+		t.Error("the hub went offline over a short pattern")
 	}
 }

@@ -20,12 +20,19 @@ import (
 // cycles waits for n sync cycles of the hub process to end after now.
 func (r *netRun) cycles(n int) {
 	r.t.Helper()
-	for range n {
-		before := r.p.Status()["syncStarted"]
-		r.p.WaitFor("a sync cycle", 3*time.Minute, func(s map[string]any) bool {
-			return s["syncStarted"] != before && s["syncing"] == false
-		})
+	// Counted in the log: with work waiting the hub starts the next cycle at once, so
+	// the status rarely shows it idle (Laos 2.42: back-to-back cycles of 20 s).
+	done := func() int {
+		b, _ := os.ReadFile(r.p.Log)
+		return strings.Count(string(b), `msg="sync cycle done"`)
 	}
+	want := done() + n
+	if s := r.p.Status(); s["syncing"] == true {
+		want++ // the cycle under way started before the call
+	}
+	r.p.WaitFor(fmt.Sprintf("%d sync cycles", n), time.Duration(n)*3*time.Minute, func(map[string]any) bool {
+		return done() >= want
+	})
 }
 
 // resultsSince is the hub's upgrade results logged since it had n of them.
@@ -171,7 +178,9 @@ func TestG2NewReleaseFails(t *testing.T) {
 	r := releaseStart(t, cur)
 	e, p := r.e, r.p
 	hubID := p.Status()["hubId"].(string)
-	stop := r.write(300 * time.Millisecond)
+	// Writers at drainPause throughout: each release is taken with the outbox empty, and
+	// at the usual pace it never emptied on Laos 2.42 (155 to 264 waiting for 4 minutes).
+	stop := r.write(drainPause)
 	defer func() { stop() }()
 
 	// 1. A release that fails its health check.
@@ -200,7 +209,7 @@ func TestG2NewReleaseFails(t *testing.T) {
 	}
 	stop()
 	r.finish(5 * time.Minute)
-	stop = r.write(300 * time.Millisecond)
+	stop = r.write(drainPause)
 
 	// 2. A release that cannot start: it exits at every start, before its health check.
 	bad = ch.build("", "0.3.5", "-X main.startFail=true")
@@ -427,8 +436,9 @@ func TestN7StricterReleaseWithQueuedSaves(t *testing.T) {
 	choose(e, "0.2.0", s["hubId"].(string))
 	s = r.upgraded("0.2.0", 5*time.Minute)
 	stop()
+	r.cycles(1) // not "syncing" false: on Laos 2.42 the cycles ran back to back
 	p.WaitFor("drained but theirs", 3*time.Minute, func(s map[string]any) bool {
-		return s["stuckOutbox"] != nil && s["syncing"] == false && s["mode"] == "online"
+		return s["stuckOutbox"] != nil && s["mode"] == "online"
 	})
 	t.Logf("after the upgrade: %v", p.Status())
 

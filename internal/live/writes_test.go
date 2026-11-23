@@ -217,7 +217,7 @@ func programEvent(m *tk.Manifest, p tk.Program, aoc string) (string, map[string]
 	if vals := p.EventValues[p.Stages[0]]; len(vals) > 0 {
 		var dv []any
 		for de, v := range vals {
-			dv = append(dv, map[string]any{"dataElement": de, "value": v})
+			dv = append(dv, map[string]any{"dataElement": de, "value": tk.DataValue(v, time.Now().UTC().Format(time.DateOnly))})
 		}
 		ev["dataValues"] = dv
 	}

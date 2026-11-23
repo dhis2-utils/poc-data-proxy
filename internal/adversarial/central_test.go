@@ -17,6 +17,9 @@ func perMinute(calls []tk.Call, at []time.Time, start time.Time) ([]int, string)
 	var n []int
 	paths := map[int]map[string]int{}
 	for i, c := range calls {
+		if at[i].Before(start) {
+			continue
+		}
 		m := int(at[i].Sub(start) / time.Minute)
 		for len(n) <= m {
 			n = append(n, 0)
@@ -60,6 +63,11 @@ func TestH1CentralDownForMaintenance(t *testing.T) {
 	r.e.StopCentral()
 	stopped := time.Now()
 	r.p.WaitFor("offline", 2*time.Minute, tk.Offline)
+	// I7 counts from here: until the probe notices, requests go to central as when
+	// online (how long that takes is logged here). Calls are timed when collected:
+	// those made so far are collected now, before the moment counting starts.
+	collect()
+	offline := time.Now()
 	t.Logf("central stopped in %s; the hub offline %s after the stop began, %s after it ended",
 		stopped.Sub(down).Round(time.Second), time.Since(down).Round(time.Second), time.Since(stopped).Round(100*time.Millisecond))
 
@@ -76,7 +84,7 @@ func TestH1CentralDownForMaintenance(t *testing.T) {
 		time.Sleep(time.Second)
 	}
 	collect()
-	byMinute, busiest := perMinute(calls, at, stopped)
+	byMinute, busiest := perMinute(calls, at, offline)
 	t.Logf("central down %s: saves waited %s; reads %s, %d not 200", outage, r.waits(stopped, time.Now()), durStats(reads), failedReads)
 	t.Logf("requests to central per minute while down: %v; busiest minute: %s", byMinute, busiest)
 	t.Logf("hub status while down: %v", r.p.Status())
@@ -96,7 +104,10 @@ func TestH1CentralDownForMaintenance(t *testing.T) {
 		}
 	}
 	t.Logf("from central's start until the outbox drained: %s", callStats(since, time.Since(up)))
-	r.finish(5 * time.Minute)
+	// The writers' 10 minutes offline queue about 7,000 entries. Laos 2.42 imports one in
+	// about 68 ms (880 a minute, with nothing else on the host), so the drain takes about
+	// 8 minutes there; Laos 2.43 took under 2 (6,795 in 1 min 41 s).
+	r.finish(15 * time.Minute)
 
 	if failedReads > 0 {
 		t.Errorf("%d reads failed while central was down: staff cannot keep working", failedReads)
@@ -192,6 +203,7 @@ func (r *netRun) pulls(n int) {
 func (r *netRun) centralPerson(v string) netSave {
 	r.t.Helper()
 	pr := r.e.M.NewPerson(r.prog, "Zqcen"+strings.ToLower(tk.UID()[:6]))
+	r.e.CentralComplete(r.prog, pr) // generated values the program requires, from central
 	s := netSave{TE: pr.TE, Enr: pr.Enrollment, Event: tk.UID(), Value: v, At: time.Now()}
 	te := pr.Payload["trackedEntities"].([]any)[0].(map[string]any)
 	te["enrollments"].([]any)[0].(map[string]any)["events"] = []any{r.event(s)}
@@ -254,12 +266,12 @@ func TestH4CentralRestoredFromBackup(t *testing.T) {
 	t.Logf("backup taken from %s to %s", t0.Format("15:04:05"), time.Now().Format("15:04:05"))
 	r.outage(20 * time.Second)
 	r.e.Net.SetDown(false)
-	r.p.WaitFor("drained", 3*time.Minute, tk.Drained)
+	r.waitDrained("drained", 3*time.Minute)
 	time.Sleep(10 * time.Second) // saves pass through to central
 	r.centralEdit(a, "42")
 	r.pulls(2)
 	stop()
-	r.p.WaitFor("drained", 3*time.Minute, tk.Drained)
+	r.waitDrained("drained", 3*time.Minute)
 	t.Logf("before the restore, the hub offline shows a %v", r.offlineValues(a.Event))
 
 	// Saves the hub has not sent when central is restored: they are the hub's to deliver.
@@ -273,7 +285,7 @@ func TestH4CentralRestoredFromBackup(t *testing.T) {
 	queue()
 	r.e.Net.SetDown(false)
 	r.p.WaitFor("online", 3*time.Minute, tk.Online)
-	r.p.WaitFor("drained", 3*time.Minute, tk.Drained)
+	r.waitDrained("drained", 3*time.Minute)
 	r.centralEdit(b, "43")
 	r.pulls(2)
 	t.Logf("ledger: %s", r.ledger.summary())
@@ -282,7 +294,7 @@ func TestH4CentralRestoredFromBackup(t *testing.T) {
 	}
 	lost := r.lostSince(t0)
 	if len(lost.before) > 0 {
-		t.Errorf("I1: %d registrations confirmed before the backup are not on central", len(lost.before))
+		t.Errorf("I1: %d registrations central confirmed before the backup are not on central", len(lost.before))
 	}
 	t.Logf("accepted by central after the backup and lost with the restore, central's to restore: %s", lost)
 	t.Logf("hub log lines about the restore: %d", r.p.Grep("back in time"))
@@ -295,12 +307,13 @@ func TestH4CentralRestoredFromBackup(t *testing.T) {
 }
 
 // missing is the events of registrations confirmed but not on central: confirmed before
-// t0, after it by the hub (from its outbox), and after it by central (passed through).
-type missing struct{ before, byHub, passed []string }
+// t0, after it by the hub (from its outbox), and after it by central (passed through;
+// also a save under way at t0).
+type missing struct{ before, queuedBefore, byHub, passed []string }
 
 func (l missing) String() string {
-	return fmt.Sprintf("%d made before the backup, %d after it confirmed by the hub, %d after it passed through to central",
-		len(l.before), len(l.byHub), len(l.passed))
+	return fmt.Sprintf("%d confirmed by central before the backup, %d queued by the hub before it, %d after it confirmed by the hub, %d after it passed through to central",
+		len(l.before), len(l.queuedBefore), len(l.byHub), len(l.passed))
 }
 
 func (r *netRun) lostSince(t0 time.Time) missing {
@@ -310,8 +323,16 @@ func (r *netRun) lostSince(t0 time.Time) missing {
 			continue
 		}
 		switch {
-		case s.At.Before(t0):
+		case s.At.Add(s.Dur).Before(t0) && s.Online:
+			// Answered before the dump began, so committed before its snapshot. A save
+			// under way at t0 may miss it (Laos 2.42: the three writers' saves sent
+			// together, about 120 ms each): that one is central's to restore, as below.
 			l.before = append(l.before, s.Event)
+		case s.At.Before(t0) && !s.Online:
+			// Queued by the hub before the backup: in it only if pushed before the
+			// dump began, which the ledger cannot tell (Laos 2.42 pushes slowly enough
+			// that some were not); pushed after, it is central's to restore.
+			l.queuedBefore = append(l.queuedBefore, s.Event)
 		case s.Online:
 			l.passed = append(l.passed, s.Event)
 		default:

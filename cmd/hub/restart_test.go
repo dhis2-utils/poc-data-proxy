@@ -35,7 +35,7 @@ func TestRestartStopsClosesAndReplaces(t *testing.T) {
 	}
 }
 
-// A per-user hub on Windows starts its successor (after an upgrade or a restore) before
+// A hub on Windows run outside the service starts its successor (after an upgrade or a restore) before
 // it exits: the successor waits for the ports instead of failing to start.
 func TestListenWaitsForPorts(t *testing.T) {
 	old, err := net.Listen("tcp", "127.0.0.1:0")

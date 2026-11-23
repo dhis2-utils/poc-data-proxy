@@ -273,13 +273,14 @@ def refusals(ctx):
     R["steps"]["offline"] = {"dashboard": c.dashboard(enr)[:1500]}
     c.shot("i1c-offline-dashboard")
 
-    # "Needs connection": a note on the enrollment, which the hub cannot take offline.
+    # A note on the enrollment: the hub takes it offline and sends Capture's request
+    # to central at the push, as its author (not a refusal since 17 November 2026).
     note = os.environ["NOTE"]
-    s = c.add_note(note, "i1c-needs-connection")
+    s = c.add_note(note, "i1c-note-offline")
     c.page.wait_for_timeout(20000)  # any retry Capture makes (1 s, 5 s, 15 s)
     s["reopened"] = c.dashboard(enr)
-    c.shot("i1c-needs-connection-reopened")
-    R["steps"]["needs-connection"] = s
+    c.shot("i1c-note-offline-reopened")
+    R["steps"]["note-offline"] = s
 
     # "Upgrading": the hub refuses local writes while an upgrade copies its store.
     w, stage = os.environ["WEIGHT_UPGRADING"], os.environ["STAGE_NAME"]
@@ -398,7 +399,7 @@ def update(ctx):
 
 def main():
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(args=["--disable-dev-shm-usage"])
+        browser = pw.chromium.launch(channel=os.environ.get("PW_CHANNEL") or None, args=["--disable-dev-shm-usage"])
         try:
             ctx = browser.new_context(viewport={"width": 1400, "height": 900})
             try:

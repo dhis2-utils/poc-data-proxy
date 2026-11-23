@@ -191,6 +191,45 @@ export const HubPage = () => {
                                 v: hb.serverVersion,
                             })}
                     </dd>
+                    <dt>{i18n.t('Offline saves over newer changes')}</dt>
+                    <dd>
+                        {hb?.overwrites === undefined
+                            ? '—'
+                            : i18n.t(
+                                  '{{- n}} found, checking one in {{- every}} offline saves that edit a record from central',
+                                  {
+                                      n: hb.overwrites.count,
+                                      every: hb.overwritesSampled ?? 10,
+                                  }
+                              )}
+                        {hb?.overwrites?.recent.map((o) => (
+                            <div
+                                key={o.uid + o.pushed}
+                                className={styles.muted}
+                            >
+                                {i18n.t(
+                                    '{{- kind}} {{- uid}} by {{- user}}, saved {{- saved}}; central changed it {{- central}}',
+                                    {
+                                        kind: o.kind,
+                                        uid: o.uid,
+                                        user: o.user,
+                                        saved: when(o.saved),
+                                        central: when(o.central),
+                                    }
+                                )}
+                            </div>
+                        ))}
+                    </dd>
+                    <dt>{i18n.t('TPM')}</dt>
+                    <dd>
+                        {hb?.deviceKey === undefined
+                            ? '—'
+                            : hb.deviceKey
+                              ? i18n.t('keys sealed with the TPM')
+                              : i18n.t(
+                                    'none, so staff passwords alone protect a stolen hub'
+                                )}
+                    </dd>
                     <dt>{i18n.t('Addresses')}</dt>
                     <dd>
                         {hb?.addresses?.length

@@ -329,6 +329,7 @@ func (w *Worker) pushAggregate(ctx context.Context, e *store.OutboxEntry) (pushR
 		h.Store.NoteAttempt(e.Seq, err.Error())
 		return pushResult{stop: true}, err
 	}
+	w.pushAnswered = true
 	rb, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	switch {

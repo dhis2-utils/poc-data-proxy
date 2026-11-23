@@ -7,6 +7,28 @@ export type Heartbeat = {
     serverVersion?: string
     time?: string
     lastPush?: string
+    /** When the oldest save still waiting to be pushed was made ("" when none waits). */
+    oldestPending?: string
+    /** The hub's keys are sealed with a TPM (missing: a hub before 0.1.6). */
+    deviceKey?: boolean
+    /**
+     * Offline saves that replaced a newer change on central, among the update saves
+     * the hub checked: one in overwritesSampled (sync/overwrites.go). No values.
+     */
+    overwrites?: {
+        count: number
+        recent: {
+            uid: string
+            kind: string
+            program?: string
+            user: string
+            base: string
+            central: string
+            saved: string
+            pushed: string
+        }[]
+    }
+    overwritesSampled?: number
     lastPull?: string
     lastSync?: string
     lastError?: string
@@ -117,7 +139,9 @@ export const flags = (hb: Heartbeat | undefined, now: Date): Flag[] => {
     add(
         'pending',
         ((hb.pendingOutbox ?? 0) > 0 &&
-            older(hb.lastPush, now, pendingAfter)) ||
+            // Hubs from before 0.1.6 send no oldestPending; their lastPush moved
+            // whenever the outbox was empty, so it stood for the same thing.
+            older(hb.oldestPending ?? hb.lastPush, now, pendingAfter)) ||
             (hb.stuckOutbox ?? 0) > 0
     )
     add('refused', (hb.issues ?? 0) > 0)

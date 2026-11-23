@@ -29,9 +29,9 @@ func restartFunc(shutdown func(), closeApp func() error, exe func() (string, err
 	}
 }
 
-// listen binds addr, trying again for up to wait: a per-user hub on Windows starts its
-// successor (upgrade.Reexec) before it exits, and the successor must not fail on ports
-// the old process still holds.
+// listen binds addr, trying again for up to wait: a hub on Windows run outside the
+// service (tests, by hand) starts its successor (upgrade.Reexec) before it exits, and
+// the successor must not fail on ports the old process still holds.
 func listen(addr string, wait time.Duration) (net.Listener, error) {
 	end := time.Now().Add(wait)
 	for {

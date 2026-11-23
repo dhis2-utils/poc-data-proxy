@@ -348,7 +348,10 @@ func (m *Monitor) OnChange(fn func(online, forced bool)) {
 	m.mu.Unlock()
 }
 
-func (m *Monitor) set(online bool) {
+// set records the state; why is what decided it, logged with a change, so a hub that
+// shows online while its pushes fail leaves the probe's answer in the log (PENDING.md,
+// item 14).
+func (m *Monitor) set(online bool, why string) {
 	m.notifyMu.Lock()
 	defer m.notifyMu.Unlock()
 	m.mu.Lock()
@@ -358,7 +361,7 @@ func (m *Monitor) set(online bool) {
 	forced := m.forced != nil
 	m.mu.Unlock()
 	if changed && !forced {
-		slog.Info("connectivity", "online", online)
+		slog.Info("connectivity", "online", online, "why", why)
 		for _, fn := range ls {
 			fn(online, false)
 		}
@@ -385,7 +388,7 @@ func (m *Monitor) ReportNotCentral(err error) {
 	m.mu.Lock()
 	m.failures = 2
 	m.mu.Unlock()
-	m.set(false)
+	m.set(false, "answered by something other than central")
 }
 
 // Force pins the state; nil releases it.
@@ -506,9 +509,9 @@ func (m *Monitor) Probe(ctx context.Context, baseURL string) bool {
 	f := m.failures
 	m.mu.Unlock()
 	if ok {
-		m.set(true)
+		m.set(true, "probe: "+why)
 	} else if f >= 2 {
-		m.set(false)
+		m.set(false, fmt.Sprintf("%d probes failed, the last: %s", f, why))
 	}
 	return ok
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/logfile"
 )
 
-// logToFile: a Windows service, a per-user hub started without a window, or a macOS
+// logToFile: a Windows service, a hub started without a window, or a macOS
 // launchd agent has no console. The log goes to <data>/hub.log, capped at 10 MB, one
 // old file kept; when run by hand in a terminal it goes there too.
 func logToFile(dataDir string) {

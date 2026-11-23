@@ -210,6 +210,11 @@ func releaseStart(t *testing.T, old string) *netRun {
 // upgraded waits for the hub to run version, logging what it did meanwhile.
 func (r *netRun) upgraded(version string, timeout time.Duration) map[string]any {
 	r.t.Helper()
+	// The hub upgrades with its outbox empty; at the writers' test pace the queue never
+	// empties (N2 on Laos: about 20 waiting for 10 minutes), so they slow down as they
+	// do while the outbox drains (waitDrained).
+	was := r.pace.Swap(int64(drainPause))
+	defer r.pace.Store(was)
 	start := time.Now()
 	s := r.p.WaitFor("version "+version, timeout, func(s map[string]any) bool { return s["version"] == version })
 	r.t.Logf("on %s after %s: %v", version, time.Since(start).Round(time.Second), s)
@@ -321,7 +326,9 @@ func TestN1UpgradeWithEveryKindOfRecord(t *testing.T) {
 	if st, b := nurse.Do("POST", tk.SyncImport, sc.programEvent(ep, deleted, nil)); st != 200 {
 		t.Fatalf("edit offline: %d %.300s", st, b)
 	}
-	pe := time.Now().Format("200601") // the data set is monthly in every profile
+	// Last month: the data set is monthly in every profile, and a seeded one may have no
+	// open future periods (Laos: E2017 for the current month).
+	pe := time.Now().AddDate(0, -1, 0).Format("200601")
 	aggValue := fmt.Sprint(500 + time.Now().Second())
 	values := "/api/" + strings.Join(strings.Split(e.M.DHIS2Version, ".")[1:2], "") + "/dataValues"
 	if st, b := webNurse.PostDataValue(values, map[string]string{"ds": e.M.Aggregate.DataSet, "pe": pe, "ou": e.M.Facility.ID,
@@ -353,11 +360,16 @@ func TestN1UpgradeWithEveryKindOfRecord(t *testing.T) {
 	if n := p.Grep("upgrade result=ok"); n != 1 {
 		t.Errorf("the log says upgrade result=ok %d times", n)
 	}
-	if s["hubId"] != hubID || s["locked"] != false || s["stuckOutbox"] != float64(1) || s["rejected"] != float64(1) {
+	// The refused edit of the event deleted on central: a release since 4 November
+	// closes such a refusal itself and drops the record ("refused change closed: deleted
+	// on central", decided 4 November; docs/design/2026-11-04-refused-changes.md), so
+	// after the upgrade it may be closed (0) or, from an older release, still kept (1).
+	if s["hubId"] != hubID || s["locked"] != false || s["stuckOutbox"] != float64(1) ||
+		(s["rejected"] != float64(1) && s["rejected"] != float64(0)) {
 		t.Errorf("not carried over: hub %v (was %s), locked %v, stuck %v, rejected %v", s["hubId"], hubID, s["locked"], s["stuckOutbox"], s["rejected"])
 	}
 	after := r.offlineRead()
-	if m := missingFrom(before, after); len(m) > 0 {
+	if m := slices.DeleteFunc(missingFrom(before, after), func(k string) bool { return k == "event "+deleted }); len(m) > 0 {
 		t.Errorf("I1: %d records held before the upgrade are gone offline after it: %v", len(m), first(m))
 	}
 	t.Logf("held offline: %d before, %d after", len(before), len(after))
