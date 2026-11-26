@@ -175,6 +175,17 @@ An Infineon SLB 9670 board on SPI (the image enables its overlay):
 3. Take the TPM board off: the start page says the security chip is missing, and nothing else is served. Put it back: the hub works again.
 4. Without a board, the image boots as before, with no TPM driver errors beyond the probe.
 
+### 8. The soak (each release image before it goes to facilities)
+
+72 hours on a Pi from the release image, set up against a test central (PENDING.md, item 11; adversarial M1).
+
+1. Start `hubdrive run` from another computer, with a ledger file (step 5).
+2. Cut the uplink for a while every few hours.
+3. Cut the board's power once a day, while the driver saves.
+4. Note the hub's memory, its disk use and its outbox count at the start, each day and at the end. They must stay flat: memory and disk apart from the data saved, the outbox back to zero after each outage.
+5. Stop the driver. Only then run `hubdrive check` on the ledger: no confirmed save lost, partial, duplicated or wrong.
+6. Read `hub-diag.txt` for restarts, skipped sync cycles and undervoltage nobody caused (below).
+
 ### When something unexplained happens
 
 A restart, a night without sync cycles, or "online" while nothing is pushed (PENDING.md, item 14): keep the disk as it is and read what the hub left.

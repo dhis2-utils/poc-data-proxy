@@ -5,6 +5,8 @@ For the person at the facility, or the district focal point, putting the hub on 
 **Choose the PC.** It should stay on while staff work: a records-room desktop, or a small server that is always on (for example the one for OpenMRS). It needs 64-bit Windows 11 (Windows 10 is untested), a few GB of free disk, and the facility's network (cable or Wi-Fi). A laptop that goes home in the evening takes the hub with it.
 
 1. **Get the installer**, `dhis2-hub-<version>-setup.exe`: from the GitHub release, or from the USB stick you brought.
+
+   Release 0.2.0 has no installer attached: there is no code-signing certificate yet (PENDING.md, item 37). Until there is, the team supporting the test builds one (`windows/README.md`). It is signed with a test certificate, so Windows warns of an unknown publisher: choose "More info", then "Run anyway".
 2. **Run it** as an administrator (Windows asks). The hub runs as a service from start-up, whether or not anyone is logged in, and devices on the network can reach it. Someone with administrator rights on the PC must do this step.
 3. **Leave "Keep this PC awake" ticked.** A sleeping PC serves no one.
 

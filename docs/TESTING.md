@@ -124,7 +124,7 @@ It runs after every image build, in `image.yml` too (image/README.md). The hub's
 - **On GitHub** (`.github/workflows/windows.yml`), run by hand:
   - the Go tests on `windows-latest`;
   - the installer, installed silently for the whole PC, checked (the service runs, answers over HTTPS at `localhost` and `dhis2.local` with the hub's own authority), then uninstalled.
-- **On a Windows VM, by hand** (not done yet):
+- **On a Windows VM, by hand.** Run on a Windows 11 x64 VM from 19 to 22 November 2026 (FINDINGS.md #49 to #54; the record is in the private notes, `docs/sessions/WINDOWS-VM-2026-11-22.md`). Steps 1, 3, 4, 7, 8, 9 and 10 (with a virtual TPM) were run. Not run: step 2 from a tablet (the VM's network was private to its host), step 5 (USB sticks) and step 6 (Bonjour). In step 7 the hub could not be reached on a network marked Public; the cause is fixed, and reachability was not measured again. These, and all ten steps on a real PC, are PENDING.md item 15:
   1. install for the whole PC; a user without administrator rights is refused;
   2. set up the hub on the PC; open it from a tablet at `dhis2.local`, and at the IP;
   3. restart the PC; check the hub stays locked until the first staff login, also offline;

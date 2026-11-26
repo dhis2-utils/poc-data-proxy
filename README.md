@@ -9,7 +9,7 @@ A small device on a facility's network that keeps working copies of the facility
 **Status: an experiment.** It is being tested with country teams on test servers. Do not use it with production data or let patient care depend on it. What works offline and what does not is in [SUPPORTED.md](docs/SUPPORTED.md); what is still open, known weaknesses included, in [PENDING.md](docs/PENDING.md).
 
 - DHIS2 **2.42 and 2.43**.
-- Runs on a **Raspberry Pi** 4 or 5 (a ready image), a **Windows** PC (an installer), or any Linux machine.
+- Runs on a **Raspberry Pi** 4 or 5 (a ready image), a **Windows** PC (an installer, not yet attached to releases: it awaits a code-signing certificate), or any Linux machine.
 - Releases: [GitHub releases](https://github.com/dhis2-utils/poc-data-proxy/releases). A hub upgrades itself to the version chosen on central, and checks each release's signature first.
 
 ## Trying it
