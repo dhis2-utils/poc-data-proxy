@@ -14,7 +14,7 @@ windows/check.sh out/dhis2-hub-0.3.0-setup.exe
 SIGN_CERT=cert.pem SIGN_KEY=key.pem windows/build.sh 0.3.0 out/
 ```
 
-**Signing.** No supplier code-signing certificate exists yet. Without `SIGN_CERT` and `SIGN_KEY` (PEM files), `sign.sh` signs with a self-signed test certificate. It makes the certificate once in `~/.cache/hub-signing`. Windows does not trust it, so SmartScreen warns. The real certificate's key must sit in hardware or a cloud signing service (docs/DEPLOYMENT.md, "Signing"): `sign.sh` is the one place to change for that.
+**Signing.** No supplier code-signing certificate exists yet. Without `SIGN_CERT` and `SIGN_KEY` (PEM files), `sign.sh` signs with a self-signed test certificate. It makes the certificate once in `~/.cache/hub-signing`. Windows does not trust it, so SmartScreen warns. The real certificate's key must sit in hardware or a cloud signing service (docs/OPERATIONS.md, "Signing releases"): `sign.sh` is the one place to change for that.
 
 **What the installer does** (installer.nsi). It installs for the whole PC and needs administrator rights; `/S` makes it silent. (An install for one user, without them, was dropped on 22 November 2026: that hub could serve only its own PC.)
 

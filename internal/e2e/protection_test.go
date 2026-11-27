@@ -16,7 +16,7 @@ import (
 )
 
 // Finding 5 (critical review 2026-10-27): on 2.42 any user may write the hub's dataStore
-// entries until a country protects them with sharing (DEPLOYMENT.md, "Protect the data
+// entries until a country protects them with sharing (OPERATIONS.md, "Protect the data
 // store namespaces"). The hub reports the entries it trusts that are still open, in
 // its heartbeat and on its admin page; protected and missing ones are not listed.
 func TestHeartbeatReportsUnprotectedEntries(t *testing.T) {

@@ -61,7 +61,7 @@ func (e *env) moveCode(addr string) string {
 	return hubaccount.MoveCode(key, addr)
 }
 
-// DEPLOYMENT.md "The hub's own account": a hub asks for an account at set-up and shows
+// OPERATIONS.md, "The hub's own account": a hub asks for an account at set-up and shows
 // a code on its admin page; the national team approves it in the Facility Hub app with
 // that code; at its next refresh the hub takes it up: its own token, the staff
 // member's deleted. The account is scoped to the hub's facility.
@@ -282,7 +282,7 @@ func trap(t *testing.T) (*httptest.Server, *atomic.Bool) {
 	return srv, got
 }
 
-// DEPLOYMENT.md section 6, typed in: after an unplanned move, the national team gives
+// OPERATIONS.md, "Moving central", typed in: after an unplanned move, the national team gives
 // each facility central's new address and a code made for it (Facility Hub app). A
 // staff member enters both on the hub's page; the hub checks the code itself, sends
 // nothing anywhere for it, and moves only to the address the code was made for.

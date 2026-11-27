@@ -142,7 +142,7 @@ A printed card attached to the device: what the lights mean, who to call, and th
 
 ### I. Push after a reboot without anyone logging in
 
-**Decided against (2026-10-20).** The first login after a restart, from any client, unlocks the hub, and Android's background sync does it unasked; a key that unlocks at boot would hand the data to whoever takes the whole device. The hub's TPM-held device key (DEPLOYMENT.md, section 2) protects the disk, but never unlocks it.
+**Decided against (2026-10-20).** The first login after a restart, from any client, unlocks the hub, and Android's background sync does it unasked; a key that unlocks at boot would hand the data to whoever takes the whole device. The hub's TPM-held device key ([SECURITY-DESIGN.md](SECURITY-DESIGN.md), "The TPM") protects the disk, but never unlocks it.
 
 (Added from the review against the code; see "Notes against the current hub".) Keep what is needed to push (the outbox entries and the users' tokens) under a key available at boot without a person, for example derived from a device-unique key; Raspberry Pi 4 and 5 are believed to have one in OTP memory, to be checked. The cache of central's data stays under the data key, as now.
 
@@ -150,7 +150,7 @@ A printed card attached to the device: what the lights mean, who to call, and th
 - Does not cover: a dead device or card (C and F do).
 - Cost: medium. It needs the outbox and tokens split from the rest of the data file (see E).
 - Trade-off: stealing the running device exposes the unsynced entries and tokens, not the cache; tokens can be revoked on central.
-- On a Windows PC (DEPLOYMENT.md, options under consideration), DPAPI or the TPM holds such a key for a service at boot, usable only on that machine.
+- On a Windows PC ([DEPLOYMENT.md](DEPLOYMENT.md), "The hub on a Windows PC"), DPAPI or the TPM holds such a key for a service at boot, usable only on that machine.
 
 ## A possible combination
 
@@ -177,7 +177,7 @@ A printed card attached to the device: what the lights mean, who to call, and th
 
 How the options relate to the hub as built (October 2026). Considerations, not decisions.
 
-- **A restart locks the hub until a known user logs in, through any client.** The store is locked at boot (spec 9.1), and the sync worker pushes only while it is unlocked (`internal/sync/sync.go`). Any login unlocks it: Capture web, the hub UI, or Android, whose background sync sends the stored credentials with every request, so a facility with Android devices set to sync periodically recovers without anyone doing anything. The user must have logged in to this hub online before (that is how they get a key slot), and a password changed on central while the hub was locked no longer opens their old slot. The gap is real mainly at web-only facilities, overnight, or before work starts. Option I closes it; a UPS (DEPLOYMENT.md, options under consideration) makes it rarer.
+- **A restart locks the hub until a known user logs in, through any client.** The store is locked at boot (spec 9.1), and the sync worker pushes only while it is unlocked (`internal/sync/sync.go`). Any login unlocks it: Capture web, the hub UI, or Android, whose background sync sends the stored credentials with every request, so a facility with Android devices set to sync periodically recovers without anyone doing anything. The user must have logged in to this hub online before (that is how they get a key slot), and a password changed on central while the hub was locked no longer opens their old slot. The gap is real mainly at web-only facilities, overnight, or before work starts. Option I closes it; a UPS ([design/deployment-options.md](design/deployment-options.md)) makes it rarer.
 - **A password change on central is not learned while the hub is locked** (G11, decided 2026-10-30). A key slot verifies the password that was current when the slot was written, and the hub replaces a user's slot only when that user logs in online. So if every staff password changes while the hub is locked (or offline), the **old** password still unlocks it offline, and the new one does not, until someone logs in online and the slot is replaced. Treat a password change made for a person who left on bad terms as urgent only together with revoking their tokens (FINDINGS.md, "Tokens outlive their user"): offline, the old password keeps working until an online login replaces the slot.
 - **A is largely in place.** The hub probes central every 15 seconds while offline (every 60 seconds while online), starts a sync when the connection returns, and runs a full cycle every 15 minutes (±10 %). Left to do: push before pulling, so that a short window gets the outbox out first; small push batches; resuming partway through the outbox.
 - **C combines well with F.** A mirror encrypted like the main store needs the key file and a user's password to open, so it shares the hub's unlock problem. A mirror written as F's copies, encrypted to the per-hub public key, is unreadable at the facility, harmless if the stick is lost, and recoverable centrally: one mechanism, kept in two places.

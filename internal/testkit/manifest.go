@@ -33,7 +33,7 @@ type Manifest struct {
 	SetupGroup string `json:"setupGroup"` // also the hub owners group
 	// The hub accounts group and role. With SetupGroup as the hub owners, they are
 	// named in facility-hub-admin/accounts before any hub is set up, as a superuser
-	// does in the Facility Hub app (docs/DEPLOYMENT.md).
+	// does in the Facility Hub app (docs/OPERATIONS.md, "Protect the data store namespaces").
 	AccountsGroup string          `json:"accountsGroup"`
 	AccountsRole  string          `json:"accountsRole"`
 	Facility      OrgUnit         `json:"facility"`

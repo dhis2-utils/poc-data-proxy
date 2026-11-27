@@ -32,7 +32,7 @@ import {
 } from '@/hubs/useHubs'
 
 // A planned move: hubs read it from the current central and switch once the old
-// address has stopped answering (docs/DEPLOYMENT.md, section 6).
+// address has stopped answering (docs/OPERATIONS.md, "Moving central").
 const PlannedMove = () => {
     const { baseUrl } = useConfig()
     // Withdrawn by writing it empty (hubs ignore a move without an address): deleting it

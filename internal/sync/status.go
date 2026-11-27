@@ -67,7 +67,7 @@ func Status(h *core.Hub) map[string]any {
 		// a screen nobody opened online), since the hub started: the 10 most frequent,
 		// by endpoint (identifiers as {uid}, parameter names without values).
 		"offlineMisses": misses, "offlineMissesTotal": missTotal,
-		// Whether the hub's keys are sealed with a TPM (docs/DEPLOYMENT.md, "TPM"): a
+		// Whether the hub's keys are sealed with a TPM (docs/SECURITY-DESIGN.md, "The TPM"): a
 		// country sees which hubs rely on staff passwords alone.
 		"deviceKey": devkey.Key() != nil,
 		// Offline saves that replaced a newer change on central, among the update

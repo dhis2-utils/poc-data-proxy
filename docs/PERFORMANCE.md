@@ -78,7 +78,7 @@ Every confirmed save was read back (2 568–2 675 a run); one request failed in 
 - **A Pi 5 with an SSD serves the busy HC IV size** (300 k people) with pages in tens of milliseconds and Android syncs of 3 s, while its memory stayed under 400 MB. Its p95s at 300 k were lower than at 100 k: with flash storage the size hardly matters.
 - **A Pi 4 with 1 GB and an SD card serves 60 k** with medians under 100 ms and tails about a second. Its limit is the card's writes (18–23 ms each, ten times the SSD's), which show in the save tails (p95 1.3–1.6 s). Memory is not the limit at 60 k (225 MB). Bytes written per day, for the card's endurance, were not measured in these runs: the samples counted operations, not bytes. The sampler records MB read and written from the next runs on.
 - **The Pi 4 runs warm without a heatsink**: 75.5 °C at 60 k in a 20 °C room, 4.5 °C below the point where it slows itself down. A facility at 30–35 °C would push it past that; it needs a heatsink and a ventilated case.
-- The Pi 4 booted with the image's date (6 October) until it found network time: a board without a clock battery starts at its last known time (DEPLOYMENT.md, "Clock").
+- The Pi 4 booted with the image's date (6 October) until it found network time: a board without a clock battery starts at its last known time (DEPLOYMENT.md, section 1, "Clock").
 
 **Second round: the storage swapped, and up to 500 k** (image `0.1.5-local.8019c36`, the same hub with the sampler counting bytes). The Pi 5 on the microSD card, the Pi 4 on the SSD, now with a heatsink; otherwise as above.
 
@@ -281,7 +281,7 @@ The hub's own work in the working day: its 24 cycles 2.8 s of DB time and 14 s o
 | Weekly full pull | 18 | 1.5 | 38, 4.3 MB |
 | Set-up and first pull (once) | 326 | 111.5 | 398, 172 MB |
 
-All ten `dataEntry/metadata` requests of each hourly refresh were answered 304 with no body. Counted for 24 hours as above (72 cycles, 24 hourly refreshes, one catch-up, a day of pings, a seventh of the weekly pull): **about 50 MB a day** (49.8 MB, 6 100 requests) while forms and access do not change. One form change in the day invalidates every user's copy: each user's `dataEntry/metadata` comes once in full (3.46 MB here), about 35 MB more for ten users, about 85 MB that day (checked with curl: a data set's description changed, both users checked got 200 instead of 304; reverted). Smaller cycles (13 requests instead of 27) and no refresh for the admin (accounts that manage users pass through, `da7b657`) account for the rest of the drop besides the ETag. With local reads on (section "Answering staff from the hub while online" in DEPLOYMENT.md, off by default), a cycle was 0.52 MB and an hourly refresh 1.29 MB: about 75 MB a day.
+All ten `dataEntry/metadata` requests of each hourly refresh were answered 304 with no body. Counted for 24 hours as above (72 cycles, 24 hourly refreshes, one catch-up, a day of pings, a seventh of the weekly pull): **about 50 MB a day** (49.8 MB, 6 100 requests) while forms and access do not change. One form change in the day invalidates every user's copy: each user's `dataEntry/metadata` comes once in full (3.46 MB here), about 35 MB more for ten users, about 85 MB that day (checked with curl: a data set's description changed, both users checked got 200 instead of 304; reverted). Smaller cycles (13 requests instead of 27) and no refresh for the admin (accounts that manage users pass through, `da7b657`) account for the rest of the drop besides the ETag. With local reads on (section "Answering staff from the hub while online" in OPERATIONS.md, off by default), a cycle was 0.52 MB and an hourly refresh 1.29 MB: about 75 MB a day.
 
 Not in the 50 MB: the daily refetch of every held aggregate form (`aggFullEvery`), empty forms of 93 bytes on this seed, perhaps 5–15 MB a day at a facility with a year of filled forms (not measured); the staff's own requests through the hub. The 72 cycles assume a working quarter-hour's changes day and night, which overstates the night. Set-up needed the hub owners group named on central first (`f1263b1`), which `eregisters_setup.py` does not do: written by hand to `facility-hub-admin/accounts`.
 
@@ -400,7 +400,7 @@ A first measurement on 5 November gave 67 s for every app start: the test's brow
 
 The screens inside the app cost a second at most, and a warm app start 5 s. Registering a patient online through the hub is then a few seconds of waiting plus the typing, on a clean link. The minutes reported from the field fit an empty browser cache (before this change), a central that does not compress (almost 4 minutes for the bundle at 31 KB/s), and links that lose packets, which this test did not model.
 
-**Answering staff from the hub while online** (built 6 November; docs/DEPLOYMENT.md). The same screens under docs/CONNECTIVITY.md's conditions: "typical rural" is 31 KB/s, 1 s per request and 3 % loss, "poor" 2 s and 8 % (the test link stalls a request 1 s when it loses a packet, `Netcut.SetLoss`). Medians of 5, with the setting off, with patient data only from the hub (its first version), and with patient data and metadata from the hub:
+**Answering staff from the hub while online** (built 6 November; docs/OPERATIONS.md). The same screens under docs/CONNECTIVITY.md's conditions: "typical rural" is 31 KB/s, 1 s per request and 3 % loss, "poor" 2 s and 8 % (the test link stalls a request 1 s when it loses a packet, `Netcut.SetLoss`). Medians of 5, with the setting off, with patient data only from the hub (its first version), and with patient data and metadata from the hub:
 
 | Capture web | Typical: to central | Typical: data from hub | Typical: data and metadata from hub | Poor: to central | Poor: data and metadata from hub | Offline |
 |---|---|---|---|---|---|---|
@@ -605,7 +605,7 @@ Changing an event moves its own and its tracked entity's `updatedAt`, not its en
 
 Still to measure: the same on `pi5`. Pruning a hub that already holds five years is a one-off of about half an hour at the HC IV size. It runs at the first sync cycle after a window is set, and offline writes wait for one transaction of 1 000 rows at most.
 
-Sent outbox entries are deleted 30 days after central accepted them (docs/DEPLOYMENT.md). Until 2026-10-28 none were deleted, so the first sync cycle after that upgrade deletes the backlog. In process (x86 sandbox, `internal/store`), 295 000 sent entries of 1.5 KB took 24 s in one transaction, with every save waiting behind it; in transactions of 1 000 entries they took 4.9 s, 16 ms each. A cycle with nothing to delete spends 6 ms on it.
+Sent outbox entries are deleted 30 days after central accepted them (docs/ARCHITECTURE.md, "The store"). Until 2026-10-28 none were deleted, so the first sync cycle after that upgrade deletes the backlog. In process (x86 sandbox, `internal/store`), 295 000 sent entries of 1.5 KB took 24 s in one transaction, with every save waiting behind it; in transactions of 1 000 entries they took 4.9 s, 16 ms each. A cycle with nothing to delete spends 6 ms on it.
 
 ## Security of the SQLite index
 

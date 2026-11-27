@@ -11,7 +11,7 @@ import (
 )
 
 // The device-clock warning compares each device's time with the hub's
-// (docs/DEPLOYMENT.md, appendix A). A hub behind by more than half an hour lists every device with the
+// (docs/design/2026-11-04-no-rtc.md). A hub behind by more than half an hour lists every device with the
 // right time as ahead; a hub ahead hides devices that are. Here the test's clock is the
 // hub's: a device with the right time reads the hub's now plus how far the hub is
 // behind.

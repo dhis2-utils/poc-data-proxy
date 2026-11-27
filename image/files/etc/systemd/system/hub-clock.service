@@ -1,6 +1,6 @@
 # A Pi without a battery-backed clock starts at the time systemd takes as its
 # earliest: the later of its build date and the time stamp of
-# /var/lib/systemd/timesync/clock (docs/DEPLOYMENT.md, appendix A). Nothing updates that file on this
+# /var/lib/systemd/timesync/clock (docs/design/2026-11-04-no-rtc.md). Nothing updates that file on this
 # image (chrony replaced systemd-timesyncd), so a Pi 4 started at the base image's
 # date after every power cut without network. This touches it every 15 minutes and at
 # shutdown: the clock then starts behind by at most the power cut and 15 minutes.

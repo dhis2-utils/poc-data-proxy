@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 )
 
-// The overwrite count (PENDING.md, item 3; docs/DEPLOYMENT.md, "Offline edits and
+// The overwrite count (PENDING.md, item 3; docs/OPERATIONS.md, "Offline edits and
 // newer changes on central"): telemetry only. For each object an offline save edits
 // that the hub held as central's, the outbox entry keeps central's updatedAt of that
 // copy (outbox_base, migration 8); before the push the hub reads central's current

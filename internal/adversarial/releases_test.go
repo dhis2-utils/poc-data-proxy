@@ -470,8 +470,8 @@ func TestN7StricterReleaseWithQueuedSaves(t *testing.T) {
 // N8: the release key changes. A hub trusts one key, built in. Must hold: a release
 // signed only with a new key is refused; a release signed with the old key that
 // carries the new key is taken, and from then the hub takes releases of the new key
-// and refuses those of the old one. (No such path is documented: DEPLOYMENT.md says
-// only that releases are signed with the supplier's key.)
+// and refuses those of the old one. (Written before the rotation path was documented in OPERATIONS.md,
+// "Signing releases"; at the time the docs said only that releases are signed with the supplier's key.)
 func TestN8ReleaseKeyChanges(t *testing.T) {
 	ch := newChannel(t)
 	ch.run(ch.dir, ch.tool, "keygen", "-out", filepath.Join(ch.dir, "new"))

@@ -110,7 +110,7 @@ type Central struct {
 	public            map[string]string          // dataStore entry id -> public access its sharing sets
 	groupShares       map[string]map[string]any  // dataStore entry id -> group -> {access}, as metaData shows it
 	// HubWriters, when set, are the only users who may write the facility-hub-*
-	// dataStore namespaces (protected by sharing, as DEPLOYMENT.md advises).
+	// dataStore namespaces (protected by sharing, as OPERATIONS.md advises).
 	HubWriters map[string]bool
 	// UnseenGroups are user groups only their members can see: a dataStore sharing by
 	// anyone else drops them and answers 200, as 2.42 and 2.43 do.
@@ -1260,7 +1260,7 @@ func (c *Central) dataStore(w http.ResponseWriter, r *http.Request, u *User) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.HubWriters != nil && r.Method != "GET" && strings.HasPrefix(ns, "facility-hub-") && !c.HubWriters[u.Username] {
-		// The namespaces protected as DEPLOYMENT.md advises: only some accounts write.
+		// The namespaces protected as OPERATIONS.md advises: only some accounts write.
 		webMessage(w, 403, "Access denied for key", "E1102")
 		return
 	}

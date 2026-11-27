@@ -272,7 +272,7 @@ The push sends one save per request, one at a time, so the link's latency sets i
 
 An offline edit can replace a newer change made on central meanwhile, and nobody is told: central keeps the last save it receives and does not compare versions. Where the app sends every attribute or value of the record, not only the changed one, the stale copy also puts back fields the nurse never touched. Within the facility nothing new happens, since every device saves to the hub's one copy. The case needs one record edited both through the hub and on central while the hub is offline. Android Capture on its own does the same.
 
-The hub counts these cases (`internal/sync/overwrites.go`, telemetry only; the push goes ahead whatever it finds). For each offline save that edits a record the hub held as central's, it keeps central's `updatedAt` of the copy edited (table `outbox_base`). Before pushing one such save in ten, it reads central's current `updatedAt` of those records with the author's token, and counts the save if central changed the record since. The heartbeat carries the count and the recent cases (`overwrites`, `overwritesSampled`), without values, and the Facility Hub app shows them on the hub's page. Registrations, new events and edits of records made on the hub cost nothing. A country turns the count off with `facility-hub-config/overwrites` = `{"off": true}`. What to tell staff, the measured cost and the options if the case proves common are in [DEPLOYMENT.md](DEPLOYMENT.md), "Offline edits and newer changes on central".
+The hub counts these cases (`internal/sync/overwrites.go`, telemetry only; the push goes ahead whatever it finds). For each offline save that edits a record the hub held as central's, it keeps central's `updatedAt` of the copy edited (table `outbox_base`). Before pushing one such save in ten, it reads central's current `updatedAt` of those records with the author's token, and counts the save if central changed the record since. The heartbeat carries the count and the recent cases (`overwrites`, `overwritesSampled`), without values, and the Facility Hub app shows them on the hub's page. Registrations, new events and edits of records made on the hub cost nothing. A country turns the count off with `facility-hub-config/overwrites` = `{"off": true}`. What to tell staff, the measured cost and the options if the case proves common are in [OPERATIONS.md](OPERATIONS.md), "Offline edits and newer changes on central".
 
 ### Refused changes
 
@@ -417,7 +417,7 @@ On 2.42 a new dataStore entry is writable by any user. Each hub therefore shares
 
 Sharing cannot tell the Facility Hub app's writes from those of a user who created a missing entry first and shared it read-only with everyone else (R-07, R-23, R-30a). The app therefore adds to each instruction it writes an `issued` time and one code per approved hub: the first 16 bytes of HMAC-SHA256 under that hub's move key, over the entry's name and content. An approved hub acts on `central-move`, `retries`, `release`, `accounts`, the `facility-hub-config` settings and the revoked status in its registry entry only with a valid code for itself, issued no earlier than the last one of that kind it took. It ignores the rest and names them in its heartbeat (`unsigned`), on its admin page and as a flag in the app (`TestSignedInstructions`).
 
-A hub not yet approved has no move key. It ignores moves, retries and the settings, and uses the built-in defaults, so a first pull before approval keeps everything. Every hub manager can read every move key (accepted), so the codes keep out other DHIS2 users, not managers. Details are in [DEPLOYMENT.md](DEPLOYMENT.md), "Security operations", and [design/2026-11-11-signed-instructions.md](design/2026-11-11-signed-instructions.md).
+A hub not yet approved has no move key. It ignores moves, retries and the settings, and uses the built-in defaults, so a first pull before approval keeps everything. Every hub manager can read every move key (accepted), so the codes keep out other DHIS2 users, not managers. Details are in [SECURITY-DESIGN.md](SECURITY-DESIGN.md), "Central's dataStore", and [design/2026-11-11-signed-instructions.md](design/2026-11-11-signed-instructions.md).
 
 ### The hub's own account
 
@@ -439,7 +439,7 @@ On a version a hub release does not support, the hub only passes requests throug
 
 ### Central's time zone
 
-Central's server time zone should be the facilities' own, or the easternmost of a country's zones. Central judges future enrollment and incident dates by its own date, while staff date records by their devices. With central in a zone to the west, every registration dated today is refused between local midnight and central's: 398 saves an hour each night in the Pi 5 soak, with central on UTC and the clients on UTC+1 ([DEPLOYMENT.md](DEPLOYMENT.md), "Central's time zone").
+Central's server time zone should be the facilities' own, or the easternmost of a country's zones. Central judges future enrollment and incident dates by its own date, while staff date records by their devices, so with central in a zone to the west, registrations dated today are refused each night between local midnight and central's. Why, and what to set, is in [OPERATIONS.md](OPERATIONS.md), "Central's time zone".
 
 ## Platforms and upgrades
 
@@ -453,13 +453,13 @@ The same code builds one binary per platform. The version is in the `VERSION` fi
 
 ### Network set-up on a Pi
 
-On a Pi, network set-up goes through NetworkManager (`internal/netsetup`). With no cable network, the hub starts a setup Wi-Fi `Hub-<ID>` and serves a captive page. Its 8-digit password is in `facility-hub/hub.txt` on the USB stick, the one file on the stick meant for people, which also holds the setup code until set-up. Setting up a Pi therefore needs a device that reads the stick. From the page, staff join the clinic's Wi-Fi or MiFi, or make the hub the clinic's Wi-Fi with its own DHCP and DNS (case C). If the network is gone for 15 minutes, the setup Wi-Fi comes back.
+On a Pi, network set-up goes through NetworkManager (`internal/netsetup`). With no cable network, the hub starts a setup Wi-Fi `Hub-<ID>` and serves a captive page. Its 8-digit password is in `facility-hub/hub.txt` on the USB stick, the one file on the stick meant for people, which also holds the setup code until set-up. Setting up a Pi therefore needs a device that reads the stick. From the page, staff join the clinic's Wi-Fi or MiFi, or make the hub the clinic's Wi-Fi with its own DHCP and DNS (case C). If the network is gone for 15 minutes, the setup Wi-Fi comes back. The connections are `hub-setup`, `hub-wifi` and `hub-facility`. A cable or USB modem stops the setup Wi-Fi, never the facility's Wi-Fi. While the setup Wi-Fi is on, the hub tries a Wi-Fi it joined before every 15 minutes, since NetworkManager does not retry while the radio is an access point. The captive answer is one dnsmasq line (`address=/#/10.42.0.1`): the hub creates the flag `/run/hub/captive`, and the root unit `hub-captive.path` writes or removes the line in `/etc/NetworkManager/dnsmasq-shared.d/hub-captive.conf`. The hub waits for it, at most 5 seconds, before it starts a shared Wi-Fi, and at each boot the unit removes a line a power cut left.
 
 The facility Wi-Fi of case C keeps the name `Hub-<ID>`, with a password the hub makes: 4 groups of 4 characters, about 80 bits, sealed as `facility-wifi`. It is shown on the admin page and in `hub.txt`. "New password" makes a new one, and every device joins again. A hub that joined another network and goes back to its own Wi-Fi reuses the stored password. The network cases are in [DEPLOYMENT.md](DEPLOYMENT.md), section 4.
 
 ### Clocks
 
-A hub needs the right time: the deployment requires the Pi 5's RTC with its battery, or an add-on RTC on a Pi 4. Without one, a Pi on the hub's image that restarts with no network starts at the image's base date, not at its last saved time, until chrony reaches NTP (confirmed on a Pi 4, F1). The image's `hub-clock` saves the time every 15 minutes and at shutdown, and the next start begins there; its check on a Pi is open ([PENDING.md](PENDING.md), item 6). [DEPLOYMENT.md](DEPLOYMENT.md), appendix A, covers the hub with its clock wrong.
+A hub needs the right time: the deployment requires the Pi 5's RTC with its battery, or an add-on RTC on a Pi 4. Without one, a Pi on the hub's image that restarts with no network starts at the image's base date, not at its last saved time, until chrony reaches NTP (confirmed on a Pi 4, F1). The image's `hub-clock` saves the time every 15 minutes and at shutdown, and the next start begins there; its check on a Pi is open ([PENDING.md](PENDING.md), item 6). [design/2026-11-04-no-rtc.md](design/2026-11-04-no-rtc.md) covers the hub with its clock wrong.
 
 The hub notices when its clock is behind. It keeps the newest `Date` header central has sent it, stored so that it survives a restart without network. When its own clock is more than 10 minutes behind that, the future-date check leaves the dates to central at push, the device-clock warning is off, and the hub's page says "The hub's clock is behind" (`TestHubClockBehindLeavesDatesToCentral`). Some effects remain: the offline aggregate window follows the hub's clock and can offer an earlier month than the current one, and a hub behind the start of central's certificate cannot reach central until NTP sets its clock. A clock ahead lets future dates through, to be refused at push. On the Windows VM, a clock three hours ahead and one a month ahead lost no saves (F2).
 
@@ -476,7 +476,7 @@ A hub never moves to an older version, and does not retry a version that failed 
 
 Windows refuses to rename a file that another process holds open, which Linux allows. On the Windows VM an upgrade failed at its store swap for that reason (E4); the hub came back on the old release with its old store, and no save was lost. The swap now retries every half second for up to a minute, a failed swap reports its real reason in the heartbeat, and the migrated copy put aside is deleted (`TestSwapWaitsForHeldFile`).
 
-The release key signs only in the publish job of a `v*` tag push on the default branch, behind a GitHub environment; a dry run signs with a throwaway key (R-08). Actions are pinned by commit in every workflow, and CI builds with the newest Go 1.26 patch. The release steps, the release notes and what a release holds are in [DEVELOPMENT.md](DEVELOPMENT.md), "Releases and self-upgrade"; rollout and staging in [DEPLOYMENT.md](DEPLOYMENT.md), "Upgrades".
+The release key signs only in the publish job of a `v*` tag push on the default branch, behind a GitHub environment; a dry run signs with a throwaway key (R-08). Actions are pinned by commit in every workflow, and CI builds with the newest Go 1.26 patch. The release steps, the release notes and what a release holds are in [DEVELOPMENT.md](DEVELOPMENT.md), "Releases and self-upgrade"; rollout and staging in [OPERATIONS.md](OPERATIONS.md), "Upgrades".
 
 ## Code map
 
@@ -518,7 +518,8 @@ CI runs the Go tests and the app's tests, lint and type check on each push to a 
 
 - [PERFORMANCE.md](PERFORMANCE.md): how the hub scales, and every measurement.
 - [FINDINGS.md](FINDINGS.md): what DHIS2 does, what the hub decided, and each fixed finding with its test.
-- [DEPLOYMENT.md](DEPLOYMENT.md): hardware, network set-ups, running a fleet, and the hub with its clock wrong (appendix A).
+- [DEPLOYMENT.md](DEPLOYMENT.md): hardware, set-up and network set-ups. [OPERATIONS.md](OPERATIONS.md): running a fleet.
+- [design/2026-11-04-no-rtc.md](design/2026-11-04-no-rtc.md): the hub with its clock wrong.
 - [RECOVERY.md](RECOVERY.md): the USB stick and what a lost hub costs.
 - [TESTING.md](TESTING.md) and [ADVERSARIAL-TESTING.md](ADVERSARIAL-TESTING.md): the test framework, and the worst cases against a real DHIS2.
 - [CONNECTIVITY.md](CONNECTIVITY.md): links at facilities and the test conditions.

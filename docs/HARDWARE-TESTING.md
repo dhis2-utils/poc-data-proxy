@@ -33,7 +33,7 @@ Questions the runs answer:
 - Boot from the storage under test where possible. Otherwise boot from a small card and put the hub's data folder on the storage under test; say which in the results.
 - Before testing, check the board does not throttle: `vcgencmd get_throttled` should print `throttled=0x0`, under load too.
 - For USB SSDs on the Pi 4: `lsusb -t` should show `Driver=uas`, and `dmesg` should stay free of resets under load.
-- The clock: the Pi 5's RTC battery fitted, or an RTC module on the Pi 4 (DEPLOYMENT.md, "Clock"). Check that it keeps time across a power cut with the network unplugged: `timedatectl` after power-on shows the right time before any network comes up.
+- The clock: the Pi 5's RTC battery fitted, or an RTC module on the Pi 4 (DEPLOYMENT.md, section 1, "Clock"). Check that it keeps time across a power cut with the network unplugged: `timedatectl` after power-on shows the right time before any network comes up.
 
 ### The hub on the board
 
@@ -159,7 +159,7 @@ docker run --rm -v "$PWD/perf/results:/results" --entrypoint hubload facility-hu
   -hub http://<pi>:8080 -central http://host.docker.internal:8090 -verify /results/confirmed.tsv
 ```
 
-Run the first command with `-setup -fill` the first time only. Keep one confirmed file per storage across the cuts: each verify checks everything confirmed so far. Tried in the sandbox with the hub killed hard (`kill -9`) in the middle of an offline load: 85 of 85 confirmed records were there after the restart. A killed process is not a power cut (the operating system still writes what the hub handed it), so the boards' runs are the real test. Test with and without a UPS or supercapacitor module, if one is part of the kit (DEPLOYMENT.md, options under consideration).
+Run the first command with `-setup -fill` the first time only. Keep one confirmed file per storage across the cuts: each verify checks everything confirmed so far. Tried in the sandbox with the hub killed hard (`kill -9`) in the middle of an offline load: 85 of 85 confirmed records were there after the restart. A killed process is not a power cut (the operating system still writes what the hub handed it), so the boards' runs are the real test. Test with and without a UPS or supercapacitor module, if one is part of the kit (design/deployment-options.md).
 
 Against a real central, `cmd/hubdrive` does the same end to end: `hubdrive run` saves through the hub (HTTPS, `-ca` the hub's `ca.crt`) as staff users, as Capture web and Android clients, through power cuts and uplink cuts, and writes every save to a ledger; `hubdrive check` then reads each one on central, as `internal/adversarial` does, and reports what is lost, partial, duplicated or wrong. Its defaults are Ngelehun CHC's Child Programme on the demo central. `TestDriveThroughFaults` runs it against a hub process with the uplink cut and a `kill -9`. With the synthetic 2.42 profile, 168 saves were confirmed (138 of them by the hub offline), 0 were lost, and one event deleted on central was reported lost.
 

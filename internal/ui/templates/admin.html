@@ -35,7 +35,7 @@
 <p>The hub's clock is {{.HubAhead}} ahead of central's at central's latest answer, probably set by hand. Records saved through the hub carry the hub's time until the next sync brings central's. Set the clock right, or let the computer take its time from the network.</p></div>{{end}}
 {{with .Clocks}}<div class="card"><h2>Device clocks ahead</h2>
 <p>These users' devices showed a time ahead of central's at their latest sync. A date the device calls today can then be in the future for central, and the hub refuses it, as central does.</p>
-<p>If every device is ahead by about the same whole number of hours, the devices are right and central's time zone is behind the facility's: tell the central team (DEPLOYMENT.md, "Central's time zone"), and do not change the devices. If one device is ahead and the others are not, set that device's date and time to automatic.</p>
+<p>If every device is ahead by about the same whole number of hours, the devices are right and central's time zone is behind the facility's: tell the central team (OPERATIONS.md, "Central's time zone"), and do not change the devices. If one device is ahead and the others are not, set that device's date and time to automatic.</p>
 <table><tr><th>User</th><th>Ahead by</th><th>Seen</th></tr>
 {{range .}}<tr><td>{{.User}}</td><td>{{.Ahead}}</td><td>{{.At}}</td></tr>{{end}}
 </table><p class="muted">Read from what Android Capture sends. Capture web sends no device time.</p></div>{{end}}

@@ -7,7 +7,7 @@ import (
 )
 
 // Offline, the hub's clock decides which periods of a data set are open and when a
-// period expires (docs/DEPLOYMENT.md, appendix A). A monthly data set with 10 expiry days and no open
+// period expires (docs/design/2026-11-04-no-rtc.md). A monthly data set with 10 expiry days and no open
 // future periods: on 4 November central takes October; September locked on 10
 // October.
 func TestNoRTCAggregateWindow(t *testing.T) {

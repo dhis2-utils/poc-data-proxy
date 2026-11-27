@@ -13,7 +13,7 @@ import (
 )
 
 // These tests record what the hub does when its own clock is wrong, as on a Pi 4
-// without an RTC started after a power cut with no network (docs/DEPLOYMENT.md, appendix A). They
+// without an RTC started after a power cut with no network (docs/design/2026-11-04-no-rtc.md). They
 // pass on today's code: they describe its behaviour, not a wish. A fix changes them.
 
 // The future-date check (F4) compares the enrollment date with the hub's today. A hub

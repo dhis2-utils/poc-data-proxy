@@ -87,8 +87,8 @@ type Config struct {
 	USBDir          string
 	USBRequireMount bool
 	// CentralMoveAfter is how long central's address must have stopped answering
-	// before the hub moves to an announced or redirected new one (docs/DEPLOYMENT.md,
-	// section 6): a brief outage during a planned move must not move it early.
+	// before the hub moves to an announced or redirected new one (docs/OPERATIONS.md,
+	// "Moving central"): a brief outage during a planned move must not move it early.
 	CentralMoveAfter time.Duration
 	// UplinkSwitch shows "Simulate uplink cut" on the admin page, for demonstrations.
 	// Off in the field: a hub that looks offline lets staff type in a new central.

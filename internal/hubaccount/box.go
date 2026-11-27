@@ -1,4 +1,4 @@
-// Package hubaccount gives a hub an account of its own on central (docs/DEPLOYMENT.md,
+// Package hubaccount gives a hub an account of its own on central (docs/OPERATIONS.md,
 // "The hub's own account"): someone allowed to create users approves the hub, and the
 // account reaches the hub encrypted to a key only the hub holds.
 package hubaccount

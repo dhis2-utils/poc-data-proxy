@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// The heartbeat's daily history (docs/DEPLOYMENT.md, "Monitoring"): the latest status
+// The heartbeat's daily history (docs/OPERATIONS.md, "Monitoring"): the latest status
 // says how a hub is now, this how it has lived, for the last historyDays days.
 const (
 	historyKey     = "status_history"

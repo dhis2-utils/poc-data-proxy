@@ -18,7 +18,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/hubaccount"
 )
 
-// The hub's own account (docs/DEPLOYMENT.md, "The hub's own account"): at set-up the
+// The hub's own account (docs/OPERATIONS.md, "The hub's own account"): at set-up the
 // hub asks for one in its registry entry and shows a code made from its key on its
 // admin page; the national team approves it in the Facility Hub app with that code,
 // which hands the account over encrypted to the hub's key; the hub takes it up here,
@@ -295,7 +295,7 @@ var ErrNoMoveKey = errors.New("only a hub the national team approved can move to
 var ErrWrongCode = errors.New("the code is not the one for this hub and this address: check both with the national team")
 
 // TypedMove switches to a central address a staff member typed in after an unplanned
-// move (docs/DEPLOYMENT.md, section 6), with the code the national team gave for this
+// move (docs/OPERATIONS.md, "Moving central"), with the code the national team gave for this
 // hub and that address (hubaccount.MoveCode). The hub checks the code itself and sends
 // nothing for it; it moves only while its current address does not answer (the demo
 // uplink switch does not count), and never when hub.yaml pins the address.

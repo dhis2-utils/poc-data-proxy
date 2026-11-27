@@ -96,7 +96,7 @@ func TestDeviceClockAheadWarns(t *testing.T) {
 }
 
 // A hub whose clock is behind central's (a Pi 4 without an RTC after a power cut with
-// no network starts at its image's date, docs/DEPLOYMENT.md, appendix A) would refuse today's
+// no network starts at its image's date, docs/design/2026-11-04-no-rtc.md) would refuse today's
 // registrations as future dates and list every device as ahead. Once central has shown
 // it a later time, the hub leaves the dates to central and says so on its page.
 func TestHubClockBehindLeavesDatesToCentral(t *testing.T) {

@@ -16,7 +16,7 @@ The hub is a test build. Set it up against your own DHIS2 test instance, not the
   - DHIS2 2.42 or 2.43, with your configuration (programs, data sets, eRegisters);
   - reachable from the hub's network over `https`, with a publicly trusted certificate (Let's Encrypt is fine; a self-signed one is refused);
   - a superuser for the one-time steps below;
-  - test users assigned to the test facility, without two-factor login (a user with 2FA cannot use the hub yet, docs/DEPLOYMENT.md, appendix B), and not superusers.
+  - test users assigned to the test facility, without two-factor login (a user with 2FA cannot use the hub yet, docs/design/2026-11-04-two-factor.md), and not superusers.
 
 ## 1. Central, once
 

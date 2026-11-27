@@ -465,7 +465,7 @@ func Restore(dir string, bundle []byte) error {
 	return nil
 }
 
-// HSTS tells browsers to use HTTPS for the hub's name for a week (DEPLOYMENT.md: short,
+// HSTS tells browsers to use HTTPS for the hub's name for a week (DEPLOYMENT.md, "Reaching the hub securely": short,
 // so devices reach a replaced hub's start page again soon).
 func HSTS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

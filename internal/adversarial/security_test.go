@@ -525,7 +525,7 @@ func TestL2OfflinePasswordGuessing(t *testing.T) {
 // not be readable without a password: the store files are encrypted at rest. Must hold:
 // a distinctive value the hub pulled and stored appears in cleartext in none of the
 // files in the data directory (I3). What is plaintext there by design (the hub's CA and
-// server key, the setup token, the network config — docs/DEPLOYMENT.md section 2) is
+// server key, the setup token, the network config — docs/SECURITY-DESIGN.md, "What is not encrypted") is
 // listed and checked to hold no patient data. Sandbox part only; the USB stick's copy
 // is the same encrypted store (docs/ADVERSARIAL-TESTING.md, L4).
 func TestL4CopiedDiskReadElsewhere(t *testing.T) {
@@ -658,7 +658,7 @@ func (s *scene) setPublicAccess(path, access string) {
 // user cannot write facility-hub-admin/central-move where the namespace is protected, as
 // hubtest provisions it (public read-only); (2) where it is not (the entry made writable
 // by any user here), the hub itself ignores the announcement (core/move.go
-// refreshCentralMove, docs/DEPLOYMENT.md section 6). Either way the central URL stays
+// refreshCentralMove, docs/OPERATIONS.md, "Moving central"). Either way the central URL stays
 // and the forged address is never contacted.
 func TestL3ForgedMoveAnnouncement(t *testing.T) {
 	s := begin(t)
@@ -709,10 +709,10 @@ func TestL3ForgedMoveAnnouncement(t *testing.T) {
 }
 
 // L3 (registry): an ordinary user forges this hub's registry entry, marking it
-// "retired" (or "revoked"). Must hold (as DEPLOYMENT.md requires the namespace
+// "retired" (or "revoked"). Must hold (as OPERATIONS.md requires the namespace
 // protected): the hub ignores a status it cannot trust. The hub shares its entry with
 // the hub owners group at set-up (set-up needs one named), so an ordinary user's write
-// is refused and the test ends there; on an entry left open, accepted for "retired" (FINDINGS.md 16, DEPLOYMENT.md "Protect
+// is refused and the test ends there; on an entry left open, accepted for "retired" (FINDINGS.md 16, OPERATIONS.md "Protect
 // the data store namespaces"): it costs offline service, no data, and ends when the entry
 // is active again; the test checks exactly that.
 func TestL3ForgedRegistryStatus(t *testing.T) {

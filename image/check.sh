@@ -194,7 +194,7 @@ DIAG=$(cat_ /usr/local/sbin/hub-diag)
 check "hub-diag writes only to a mounted boot partition" grep -qF 'mountpoint -q /boot/firmware' <<<"$DIAG"
 check "hub-diag syncs its new file before the rename" grep -qF 'sync "$out.tmp"' <<<"$DIAG"
 
-# The clock for a Pi without RTC (docs/DEPLOYMENT.md, appendix A).
+# The clock for a Pi without RTC (docs/design/2026-11-04-no-rtc.md).
 check "hub-clock.service is enabled" exists /etc/systemd/system/multi-user.target.wants/hub-clock.service
 check "hub-clock.service touches systemd's saved time" sh -c "debugfs -R 'cat /etc/systemd/system/hub-clock.service' '$R' 2>/dev/null | grep -q '^ExecStop=/usr/bin/touch /var/lib/systemd/timesync/clock'"
 installed systemd-timesyncd && bad "systemd-timesyncd is installed: hub-clock is not needed" || ok "systemd-timesyncd is not installed (chrony): hub-clock keeps the saved time"

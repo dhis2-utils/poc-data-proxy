@@ -138,7 +138,7 @@ func skipReason(h *core.Hub) string {
 func (w *Worker) Cycle(ctx context.Context) error {
 	h := w.H
 	if !h.Online() && h.Store.Unlocked() && h.Mode() == core.ModeActive {
-		h.TryCentralMove(ctx) // central may have moved (docs/DEPLOYMENT.md, section 6)
+		h.TryCentralMove(ctx) // central may have moved (docs/OPERATIONS.md, "Moving central")
 	}
 	if why := skipReason(h); why != "" {
 		// Once per change of reason: a night without cycles left nothing in the log to

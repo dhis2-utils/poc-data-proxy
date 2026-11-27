@@ -513,7 +513,7 @@ func (h *Hub) revokedForReal(ctx context.Context) bool {
 	if refused {
 		return true
 	}
-	slog.Warn("the registry marks this hub's tokens as revoked, but central still takes its token: ignored (protect facility-hub-registry, docs/DEPLOYMENT.md)", "err", err)
+	slog.Warn("the registry marks this hub's tokens as revoked, but central still takes its token: ignored (protect facility-hub-registry, docs/OPERATIONS.md)", "err", err)
 	return false
 }
 
@@ -796,7 +796,7 @@ func (rt *Runtime) TokenOwner() string {
 // TakeOverHubToken moves the hub's housekeeping (heartbeat, issue reports, registry,
 // program list, generated IDs, upgrade checks) to a token of this user, who must be
 // assigned to the facility, and deletes the old token: for when the person who set
-// the hub up leaves (docs/DEPLOYMENT.md, "The hub's own account"). A hub with its own
+// the hub up leaves (docs/OPERATIONS.md, "The hub's own account"). A hub with its own
 // account is taken over only once central refuses that account (ErrOwnAccountWorks).
 func (h *Hub) TakeOverHubToken(ctx context.Context, username, password string) error {
 	h.tokenMu.Lock()

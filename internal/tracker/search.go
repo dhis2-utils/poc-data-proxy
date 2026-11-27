@@ -130,7 +130,7 @@ func updatedSince(w *where, alias string, q url.Values) *APIError {
 
 // hubClockBehind reports whether updatedAfter is more than a day ahead of the hub's
 // clock, in any time zone (up to UTC+14). The hub's clock is then behind central's (a
-// Pi without a clock battery started with no network, docs/DEPLOYMENT.md, "Clock"), its
+// Pi without a clock battery started with no network, docs/DEPLOYMENT.md, section 1, "Clock"), its
 // write times say nothing against the watermark, and everything written on the hub
 // counts as updated (hubUpdated).
 func hubClockBehind(q url.Values) bool {

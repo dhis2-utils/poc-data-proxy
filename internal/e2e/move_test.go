@@ -83,7 +83,7 @@ func (e *env) cycleOffline() {
 	e.app.Worker.Cycle(context.Background())
 }
 
-// DEPLOYMENT.md section 6: the national team announces central's new address on the
+// OPERATIONS.md, "Moving central": the national team announces central's new address on the
 // current central; when the old one stops answering, hubs switch to the new one,
 // which must hold this hub's registry entry. Nothing is sent to it before that check
 // but the hub's own token, which the current central vouched for by announcing it.

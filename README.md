@@ -25,7 +25,7 @@ A small device on a facility's network that keeps working copies of the facility
 - Changes made offline wait in the hub's outbox, encrypted on its disk, with a copy on a USB stick, and go to central when it is back. What central refuses is kept and reported to its author and on central.
 - Devices reach the hub at `https://dhis2.local`, with a certificate from the hub's own authority, installed once per device.
 
-The design and the choices behind it: [DEPLOYMENT.md](docs/DEPLOYMENT.md). What building it taught us about DHIS2: [FINDINGS.md](docs/FINDINGS.md).
+A short overview for decision-makers and implementers: [OVERVIEW.md](docs/OVERVIEW.md). The rollout proposal: [DEPLOYMENT.md](docs/DEPLOYMENT.md). What building it taught us about DHIS2: [FINDINGS.md](docs/FINDINGS.md).
 
 ## Documents
 
@@ -42,12 +42,14 @@ The design and the choices behind it: [DEPLOYMENT.md](docs/DEPLOYMENT.md). What 
 
 | Document | What it covers |
 |---|---|
+| [OVERVIEW.md](docs/OVERVIEW.md) | The whole picture in about eight pages: what the hub does, rollout, running hubs, security, what is tested and what is open |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the hub works inside, for developers: routing a request, logins and tokens, tracker and aggregate data, the outbox, the store, the sync cycle, the code map |
 | [SECURITY-DESIGN.md](docs/SECURITY-DESIGN.md) | The threat model, encryption at rest, who sees what, the network, accounts and tokens on central, not losing data, and the known gaps |
-| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Rolling out hubs: hardware, the image, set-up, networks, reaching the hub securely, running the fleet; a hub without a real-time clock and two-factor login (appendices) |
+| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | The rollout proposal: who gets a hub, hardware, the image, set-up, networks, reaching the hub securely, pointing devices at the hub |
+| [OPERATIONS.md](docs/OPERATIONS.md) | Running the fleet: monitoring, refused changes, upgrades, support, central's time zone, security tasks on central |
 | [RECOVERY.md](docs/RECOVERY.md) | Keeping unsent data safe: backup and recovery |
 | [CONNECTIVITY.md](docs/CONNECTIVITY.md) | How facilities are connected, and what that means for the hub |
-| [design/](docs/design/) | The design of each larger feature, as built (the code cites them) |
+| [design/](docs/design/) | The design of each larger feature, as built (the code cites them); studies such as a hub without a real-time clock and two-factor login; deployment options not decided or not chosen |
 
 **What we learned, and what is open**
 

@@ -83,7 +83,7 @@ func (h *Hub) WritableByAll(ctx context.Context, path string) (bool, error) {
 const MetaUnprotected = "unprotected"
 
 // CheckProtection notes which of the dataStore entries the hub acts on any user may
-// write (docs/DEPLOYMENT.md, "Protect the data store namespaces"), for the heartbeat
+// write (docs/OPERATIONS.md, "Protect the data store namespaces"), for the heartbeat
 // and the admin page. Missing entries are not listed.
 func (h *Hub) CheckProtection(ctx context.Context) {
 	var open []string
@@ -103,7 +103,7 @@ func (h *Hub) CheckProtection(ctx context.Context) {
 		}
 	}
 	if len(open) > 0 {
-		slog.Warn("dataStore entries the hub acts on are writable by any user; protect them on central (docs/DEPLOYMENT.md)", "entries", open)
+		slog.Warn("dataStore entries the hub acts on are writable by any user; protect them on central (docs/OPERATIONS.md)", "entries", open)
 	}
 	h.Store.SetMeta(MetaUnprotected, strings.Join(open, " "))
 }

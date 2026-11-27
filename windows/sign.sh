@@ -2,7 +2,7 @@
 # Authenticode-signs a Windows file in place. With SIGN_CERT and SIGN_KEY (PEM files)
 # it uses them; otherwise a self-signed test certificate, made once in
 # ~/.cache/hub-signing, which Windows does not trust: no supplier certificate exists
-# yet (docs/DEPLOYMENT.md, "Signing").
+# yet (docs/OPERATIONS.md, "Signing releases").
 #
 #   windows/sign.sh file.exe
 set -euo pipefail

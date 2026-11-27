@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// The hub checks central's certificate by its own clock (docs/DEPLOYMENT.md, appendix A). A hub whose
+// The hub checks central's certificate by its own clock (docs/design/2026-11-04-no-rtc.md). A hub whose
 // clock is behind the start of central's certificate (Let's Encrypt renews every 60
 // days) cannot reach central: every probe fails, so it stays offline until its clock is
 // set right. Here the test's clock is the hub's, and central's certificate starts

@@ -480,7 +480,7 @@ func (u *UI) handleReset(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleTakeOver moves the hub's housekeeping to a token of the logged-in staff member,
-// who confirms with their password (docs/DEPLOYMENT.md, "The hub's own account").
+// who confirms with their password (docs/OPERATIONS.md, "The hub's own account").
 func (u *UI) handleTakeOver(w http.ResponseWriter, r *http.Request) {
 	sess := u.H.Sessions.FromCookie(r)
 	if r.Method != http.MethodPost || sess == nil {

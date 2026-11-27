@@ -54,7 +54,7 @@ export const signedValue = (
 /**
  * Writes facility-hub-admin/<key> (or <namespace>/<key>: facility-hub-config, the
  * country's settings, is written the same way), which must be writable by administrators only
- * (docs/DEPLOYMENT.md, section 6: a planned move there moves every hub). A new
+ * (docs/OPERATIONS.md, "Moving central": a planned move there moves every hub). A new
  * dataStore entry is public (read and write) until its sharing is set, and its owner
  * (who created it) keeps write access whatever the sharing says. So an entry created by
  * someone else is deleted and created again; it is created empty, shared as public read

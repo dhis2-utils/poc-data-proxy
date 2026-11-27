@@ -12,7 +12,7 @@ import (
 	"github.com/dhis2/facility-hub/internal/central"
 )
 
-// Central moves to a new address (docs/DEPLOYMENT.md, section 6). A hub must never be
+// Central moves to a new address (docs/OPERATIONS.md, "Moving central"). A hub must never be
 // stranded by it, nor follow a server that is not the same DHIS2. Two ways, each
 // vouched for by the current central:
 //   - announced: facility-hub-admin/central-move {"url": ..., "from": RFC 3339}, read

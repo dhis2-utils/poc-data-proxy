@@ -211,7 +211,7 @@ The hub checks offline only what it can know; central decides on push. In each s
 |---|---|---|---|
 | L1 | A user asks the hub for another user's data with crafted queries (filters, fields, paging) | Nothing beyond central (I3) | S |
 | L2 | Offline password guessing | Throttled; no key slot opened | S |
-| L3 | A forged entry in the hub registry or move announcement on central | Ignored; protected namespaces as DEPLOYMENT.md | S |
+| L3 | A forged entry in the hub registry or move announcement on central | Ignored; protected namespaces as OPERATIONS.md | S |
 | L4 | A stolen disk or stick read on another machine | No personal data in clear | S, P |
 | L5 | A device on the facility network that is not staff | Gets nothing without logging in | S |
 | L6 | A fake central (DNS spoofed on the facility network) | The hub does not send tokens or data to it | S, P |

@@ -13,7 +13,7 @@ import { toBase64 } from '@/hubaccount/approve'
 import { instructionCode } from '@/hubaccount/codes'
 import { FakeApi } from '@/hubaccount/fakeApi'
 
-// facility-hub-admin must be writable by administrators only (docs/DEPLOYMENT.md): a
+// facility-hub-admin must be writable by administrators only (docs/OPERATIONS.md): a
 // planned move there moves every hub. A new dataStore entry is public read and write
 // until its sharing is set.
 describe('writeAdminEntry', () => {

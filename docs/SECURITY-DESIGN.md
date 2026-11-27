@@ -82,7 +82,7 @@ A TPM is recommended and used where there is one, but not required (decided 17 N
 - **On a Pi** the TPM is an add-on board (Infineon SLB 9670 on SPI, about USD 25), which the image enables.
 - **On Windows** the hub uses the PC's own TPM. Windows 11 requires TPM 2.0, so most PCs sold with it have one. The installer's last page and `install.log` say when the PC has no usable TPM.
 
-Three limits ([DEPLOYMENT.md](DEPLOYMENT.md), section 2, "What is not encrypted"):
+Three limits:
 
 - A stolen whole device, board and TPM together, is not protected. The key has no PCR policy: the Pi has no measured boot, and on Windows a firmware update would lock the hub out.
 - The USB stick keeps slots that open with the password alone, so the hub can be restored on new hardware.
@@ -92,7 +92,7 @@ What has run: the code is tested against a software TPM. On a Windows 11 VM with
 
 ### What is not encrypted
 
-These files in the data folder are plaintext, readable only by the hub's service account (and root or administrators). On a Pi the unit makes the data folder 0700 and the hub writes its files 0600 (R-26). A hub keeps the unit of the image it was flashed with, since self-upgrade replaces only the binary. On Windows the installer limits the folder to the service account, administrators and SYSTEM.
+These files in the data folder are plaintext, readable only by the hub's service account (and root or administrators). On a Pi the unit makes the data folder 0700 and the hub writes its files 0600 (R-26). A hub keeps the unit of the image it was flashed with, since self-upgrade replaces only the binary. On Windows the installer limits the folder to the service account, administrators and SYSTEM. On a Mac the folder is 0700.
 
 | File | Why it is plaintext | With a TPM |
 | --- | --- | --- |
@@ -142,7 +142,7 @@ Only users who logged in to this hub online before, while assigned to its facili
 
 Central's decisions reach the hub within minutes: Basic credentials are checked again every 5 minutes, and a user central refuses is marked "needs online login". Through a token it takes longer. Central caches a token's login, with the user's access as it was, for an hour (measured on 2.42.7), and the hub refreshes access hourly. An access change on central therefore reaches the hub within about two hours. This was accepted. Deleting the user's tokens on central ends it at once.
 
-Do not reuse usernames on central. A hub knows its users by username, so a new account with a deleted account's username inherits its place on the hub once it logs in there (R-40; [DEPLOYMENT.md](DEPLOYMENT.md), "Security operations").
+Do not reuse usernames on central. A hub knows its users by username, so a new account with a deleted account's username inherits its place on the hub once it logs in there (R-40; [OPERATIONS.md](OPERATIONS.md), "Tokens and passwords").
 
 Sessions use HttpOnly, SameSite=Lax cookies, and end after 1 hour idle or 12 hours at most. Hub pages send `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and a strict content security policy. Posts to the setup, login and admin pages must come from the hub's own origin, scheme included, and logout takes a POST only (R-35, R-36).
 
@@ -162,7 +162,7 @@ The hub's page has one tier for all facility staff: anyone assigned to the facil
 
 ## On the network
 
-Every connection to the hub is encrypted and authenticated, on the facility LAN too. Plain HTTP is ruled out, and so are certificate warnings that staff learn to click through. A clicked-through warning stops a listener, not someone posing as the hub. Browsers also refuse service workers, which offline apps need, on an untrusted certificate. The decision and the options not chosen are in [DEPLOYMENT.md](DEPLOYMENT.md), "Reaching the hub securely".
+Every connection to the hub is encrypted and authenticated, on the facility LAN too. Plain HTTP is ruled out, and so are certificate warnings that staff learn to click through. A clicked-through warning stops a listener, not someone posing as the hub. Browsers also refuse service workers, which offline apps need, on an untrusted certificate. The decision is in [DEPLOYMENT.md](DEPLOYMENT.md), "Reaching the hub securely", and the options not chosen in [design/deployment-options.md](design/deployment-options.md).
 
 ### The hub's certificate authority
 
@@ -178,7 +178,7 @@ The authority file is served at `http://dhis2.local/hub/ca.crt`. Someone on the 
 
 Plain HTTP on port 80 serves only the start page and the authority file. The page tries `https://` in the background, and moves there once the device trusts the hub. HTTPS answers carry HSTS for seven days, so a device used weekly never meets a fake plain-HTTP page.
 
-The authority's key sits next to the server's key, outside the encrypted store, because the hub issues certificates without anyone logging in. From a stolen disk without a TPM, it lets someone pose as `dhis2.local`, the hub's other names, and HTTPS on any private address, to the devices that installed this hub's authority. Such a hub is retired, and its devices remove its authority.
+The authority's key sits next to the server's key, outside the encrypted store, because the hub issues certificates without anyone logging in. From a stolen disk without a TPM, it lets someone pose as `dhis2.local`, the hub's other names, and HTTPS on any private address, to the devices that installed this hub's authority. Since every hub uses `dhis2.local`, that holds at any facility those devices visit, and it is enough to collect the passwords staff type at their next login there. It does not reach public sites, software or mail. Such a hub is retired, and its devices remove its authority and install the new hub's. The key files are written synced, so a power cut leaves the old file or the new one. A key that cannot be read stops the hub rather than being replaced; a corrupt one is kept aside (`ca.key.bad`) and replaced.
 
 ### Other defences
 
@@ -195,7 +195,7 @@ The Android Capture app is on hold, because it does not trust authorities instal
 
 The setup page is the hub's front door before any user exists:
 
-- **The setup code** has 8 digits and is written to the USB stick in the box (`facility-hub/hub.txt`, the line "Setup code:", removed at set-up). It proves the person holds the box. Wrong codes are throttled like logins, and across all devices together at 50. Someone who stops at 49 and waits out each 15-minute window gets about 4 700 guesses a day: an even chance takes about 29 years, 1 % about 7 months (R-04, R-29). A restore from the stick, and a network change before set-up, need the code too (R-15, R-29). Codes are compared in constant time.
+- **The setup code** has 8 digits and is written to the USB stick in the box (`facility-hub/hub.txt`, the line "Setup code:", removed at set-up). It proves the person holds the box. Wrong codes are throttled like logins, and across all devices together at 50. Someone who stops at 49 and waits out each 15-minute window gets about 4 700 guesses a day: an even chance takes about 29 years, 1 % about 7 months (R-04, R-29). A restore from the stick, and a network change before set-up, need the code too (R-15, R-29). Codes are compared in constant time. On an image built for one central or a list of them, set-up needs no code, so before set-up the setup Wi-Fi's password is then the only gate on the network forms.
 - **Central's address** comes from the country's installation card: https with a publicly trusted certificate only, optionally limited by `central_hosts`. The login step uses only an address the server step checked.
 - **The facility** is found among the logged-in user's own org units. Set-up and take-over need the hub owners group named in the Facility Hub app's Settings, which only superusers edit. Only its members may do them. A set-up cut short does not block later ones (R-09), and a form submitted twice runs it once (R-38).
 - **The setup Wi-Fi** `Hub-<ID>` (a Pi without a cable network) uses WPA2 with an 8-digit password, on the stick in `hub.txt`. It guards only the temporary setup network. When the hub becomes the facility's Wi-Fi (case C), that network keeps the name and takes a password the hub makes: 4 groups of 4 characters, about 79 bits, kept as `facility-wifi`. It is shown on the admin page and in `hub.txt`. "New password" replaces it, and every device joins again.
@@ -221,7 +221,7 @@ To revoke a hub, a hub manager uses Revoke in the Facility Hub app. It writes a 
 
 ### Central's dataStore
 
-The namespaces must be protected before the first hub goes out ([DEPLOYMENT.md](DEPLOYMENT.md), "On central, before the first hub" and "Security operations"). By default any user can write a namespace, and a forged registry entry could retire a hub. Write access to the `facility-hub-*` namespaces goes only to the hub groups named in the Facility Hub app's Settings. `facility-hub-admin` (release, moves, resends) is writable by administrators only, and `facility-hub-keys` (move keys) is shared with hub managers only.
+The namespaces must be protected before the first hub goes out ([DEPLOYMENT.md](DEPLOYMENT.md), "On central, before the first hub", and [OPERATIONS.md](OPERATIONS.md), "Protect the data store namespaces"). By default any user can write a namespace, and a forged registry entry could retire a hub. Write access to the `facility-hub-*` namespaces goes only to the hub groups named in the Facility Hub app's Settings. `facility-hub-admin` (release, moves, resends) is writable by administrators only, and `facility-hub-keys` (move keys) is shared with hub managers only.
 
 Sharing alone was not enough. On 2.42 any user may create a missing entry, own it and share it read-only for everyone else, and that passed the hubs' check of public access (R-07). So the Facility Hub app signs each instruction it writes, with a code per approved hub: the first 16 bytes of an HMAC-SHA256 made with that hub's move key, bound to the hub, the kind of instruction and its content ([the design](design/2026-11-11-signed-instructions.md), built 11 November 2026).
 
@@ -254,7 +254,7 @@ Hubs upgrade only to binaries that match an ed25519-signed manifest, which is ve
 - The release signing key was made on 16 November 2026. v0.1.5 and v0.2.0 are signed releases.
 - The key is a secret of a GitHub environment with required reviewers. Only the publish job of a `v*` tag push enters it, and the tag must be on the default branch, so a dry run cannot sign with the real key (R-08).
 - Workflows are read-only by default and their actions are pinned by commit.
-- How to rotate the key is in [DEPLOYMENT.md](DEPLOYMENT.md), section 2, "Release key rotation".
+- How to rotate the key is in [OPERATIONS.md](OPERATIONS.md), "Signing releases".
 - A tagged release leaves the Windows installer out unless a real Authenticode certificate is set. No such certificate exists yet, so v0.2.0 has no Windows installer attached ([PENDING.md](PENDING.md), item 37).
 
 ## Not losing data
@@ -330,7 +330,7 @@ What reaches central is what staff entered, in the order they entered it, under 
 
 **Refusals.** A refused object stays on the hub, visible offline, and does not hold up anyone else's saves. Its issue goes to central with codes and UIDs, every sent value masked as `***`. If central's version changes after the refusal, central's version replaces the hub's copy, and the refusal stays open as superseded until a hub manager resends or discards it (R-22). The comparison uses only central's clock. Once central is fixed, a hub manager can resend a whole group of refusals as their original authors. Saves of a user who cannot log in online for 7 days after central stopped taking their token become refusals with the code `NO_LOGIN`. Resend can then name another hub user to send them as. Central records that user as their creator and decides on each save with that user's token.
 
-**Edits on both sides.** When a record was edited both locally and on central, the hub's pending version wins on the hub until it is pushed. It then reaches central as an update (`CREATE_AND_UPDATE`), like any client's. Central keeps the last save it receives, so an offline edit can replace a newer change on central without anyone being told. Android Capture on its own does the same. Since 17 November 2026 the hub counts these cases, checking one save in ten, and the Facility Hub app shows them. Nothing is held back ([DEPLOYMENT.md](DEPLOYMENT.md), "Offline edits and newer changes on central").
+**Edits on both sides.** When a record was edited both locally and on central, the hub's pending version wins on the hub until it is pushed. It then reaches central as an update (`CREATE_AND_UPDATE`), like any client's. Central keeps the last save it receives, so an offline edit can replace a newer change on central without anyone being told. Android Capture on its own does the same. Since 17 November 2026 the hub counts these cases, checking one save in ten, and the Facility Hub app shows them. Nothing is held back ([OPERATIONS.md](OPERATIONS.md), "Offline edits and newer changes on central").
 
 **Upgrades.** Local writes are frozen while an upgrade pushes the outbox and migrates a copy of the store, so an upgrade never cuts a write in half. Entries waiting for a user's online login do not block an upgrade; they show as `stuckOutbox`. The new release's health check tests only the hub (its store and its status page), not central. Until it passes, the release takes no saves (clients get "upgrading" and retry) and pushes nothing, so a rollback loses nothing. On Windows the data key is handed to the new program in a file sealed to the hub's account (DPAPI), read once and refused after 2 minutes.
 
@@ -380,7 +380,8 @@ The hub had seven reviews: two of the whole hub (7 and 8 October 2026), a securi
 
 In this repository:
 
-- [DEPLOYMENT.md](DEPLOYMENT.md): section 2 ("What is not encrypted"), section 3 ("On central, before the first hub"), section 4 ("Reaching the hub securely") and section 6 ("Security operations", "Offline edits and newer changes on central").
+- [DEPLOYMENT.md](DEPLOYMENT.md): section 3 ("On central, before the first hub") and section 4 ("Reaching the hub securely").
+- [OPERATIONS.md](OPERATIONS.md): "Security operations", and "Offline edits and newer changes on central".
 - [RECOVERY.md](RECOVERY.md): the backup and recovery options, and the USB stick as built.
 - [FINDINGS.md](FINDINGS.md): what was found and fixed, with tests.
 - [PENDING.md](PENDING.md): what is open.

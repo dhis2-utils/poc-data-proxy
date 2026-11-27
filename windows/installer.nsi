@@ -226,8 +226,8 @@ Section "!The hub" SecHub
   ReadINIStr $CAName "$DataDir\install.ini" "hub" "ca_name"
   ReadINIStr $4 "$DataDir\install.ini" "hub" "https_port"
   ReadINIStr $5 "$DataDir\install.ini" "hub" "http_port"
-  ; Whether a TPM seals the hub's keys: recommended, not required (docs/DEPLOYMENT.md,
-  ; "TPM"). Said where the person installing sees it, and in install.log.
+  ; Whether a TPM seals the hub's keys: recommended, not required (docs/SECURITY-DESIGN.md,
+  ; "The TPM"). Said where the person installing sees it, and in install.log.
   ReadINIStr $6 "$DataDir\install.ini" "hub" "tpm"
   ${If} $6 == "sealed"
     FileWrite $LogFile "TPM: the hub's keys are sealed by this PC's TPM.$\r$\n"

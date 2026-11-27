@@ -8,7 +8,7 @@ import (
 )
 
 // Reserved values are dropped from the pool by the hub's clock when handed out
-// (docs/DEPLOYMENT.md, appendix A). Central reserves them for 60 days by default. A hub more than 60
+// (docs/design/2026-11-04-no-rtc.md). Central reserves them for 60 days by default. A hub more than 60
 // days ahead drops the whole pool at the first offline registration and hands out
 // none; a hub behind hands out values whose reservation central has let go.
 func TestNoRTCReservedValuesByHubClock(t *testing.T) {
