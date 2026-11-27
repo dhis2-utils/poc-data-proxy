@@ -210,7 +210,7 @@ Orders follow central's. Central orders by the column asked for, then by creatio
 
 Offline answers carry `X-Hub-Scope: facility`, since patients registered elsewhere cannot appear. The live oracles in `internal/live` run the same queries against real DHIS2 and compare the answers; they find no LEAK or DIFFERS. Each profile (synthetic, Sierra Leone, Laos) and DHIS2 version (2.42, 2.43) has a checked-in baseline in `internal/live/testdata/oracle`. One case counts as accepted: a person owned elsewhere, opened offline with a protected program, gets only what central shows the same user without the program. `TestQueryPlansUseIndexes` fails if a query scans a table, and `TestFirstPageReadsOnWithoutGaps` checks paging.
 
-Both halves use only attributes the user can read. An event filter on an attribute of a program the user cannot read matches nothing, and a sort on one sorts as if empty (R-03). Central itself filters and sorts on such attributes (checked on 2.42.6 and 2.43.2), so here the hub is stricter, and the oracle accepts the difference. An order central refuses gets central's 400 instead of being ignored (R-51). Fuzz tests hold SQL and Go to the same answer for the filter and order parameters.
+Both halves use only attributes the user can read. An event filter on an attribute of a program the user cannot read matches nothing, and a sort on one sorts as if empty (R-03). An order central refuses gets central's 400 instead of being ignored (R-51). Fuzz tests hold SQL and Go to the same answer for the filter and order parameters.
 
 ## Writes: the outbox
 
