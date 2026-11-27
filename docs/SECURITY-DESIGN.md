@@ -77,7 +77,7 @@ A key slot checks the password that was current when the slot was written. The h
 
 Where the machine has a TPM 2.0 (`internal/devkey`), the hub seals a device key in it: 32 random bytes, kept sealed as `device.key` in the data folder. The device key is mixed into every key slot on the disk, and it seals the TLS keys, the setup code and the Wi-Fi files. A disk taken without its TPM then allows neither password guessing nor posing as the hub. The device key never unlocks the hub: that still takes a staff login.
 
-A TPM is recommended and used where there is one, never required (decided 17 November 2026). Pi kits without a board and PCs without a TPM are supported. `tpm: false` in `hub.yaml` turns it off. The heartbeat says whether a hub's keys are sealed (`deviceKey`), and the Facility Hub app shows it on the hub's page.
+A TPM is recommended and used where there is one, but not required (decided 17 November 2026). Pi kits without a board and PCs without a TPM are supported. `tpm: false` in `hub.yaml` turns it off. The heartbeat says whether a hub's keys are sealed (`deviceKey`), and the Facility Hub app shows it on the hub's page.
 
 - **On a Pi** the TPM is an add-on board (Infineon SLB 9670 on SPI, about USD 25), which the image enables.
 - **On Windows** the hub uses the PC's own TPM. Windows 11 requires TPM 2.0, so most PCs sold with it have one. The installer's last page and `install.log` say when the PC has no usable TPM.
@@ -340,7 +340,7 @@ The full list of what is open, with decisions and answers, is [PENDING.md](PENDI
 
 | Risk | Why it remains | What would close it |
 | --- | --- | --- |
-| The weakest staff password sets the bar for a stolen disk or stick | One data key per facility. Every key slot is an offline oracle for that user's central password | A TPM where there is one (recommended, never required). Enforce central's password policy for hub users |
+| The weakest staff password sets the bar for a stolen disk or stick | One data key per facility. Every key slot is an offline oracle for that user's central password | A TPM where there is one (recommended, but not required). Enforce central's password policy for hub users |
 | A stolen disk without a TPM allows posing as the hub to its devices | `tls.key` and `ca.key` must be readable before anyone logs in | A TPM seals them. Otherwise retire the hub and remove its authority from devices |
 | A whole device stolen with its TPM | No measured boot ties the key to the hub's own software | Handle as a password leak: users change passwords, tokens are revoked in the Facility Hub app |
 | A running hub holds everything | Once unlocked, the data key and decrypted pages are in memory | Physical security and a UPS. A moved powered-on hub keeps its key until it loses power |

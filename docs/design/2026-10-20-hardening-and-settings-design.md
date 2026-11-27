@@ -25,7 +25,7 @@ Tested on 2.42.6 (2026-10-20, `agent-facility-hub-demo`):
 
 ## 1. Device secret (TPM 2.0), optional
 
-**Decided:** used where present; never required; no unlock without a person.
+**Decided:** used where present; not required; no unlock without a person.
 
 - **Where:** Linux through `/dev/tpmrm0` (a Pi with a TPM board, x86 PCs); Windows through TBS. macOS and machines without a TPM work as today.
   - The Pi image enables the common SPI TPM overlay and gives the hub's user the `tss` group. Without a TPM board nothing appears.
