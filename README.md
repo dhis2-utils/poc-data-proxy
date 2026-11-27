@@ -42,6 +42,8 @@ The design and the choices behind it: [DEPLOYMENT.md](docs/DEPLOYMENT.md). What 
 
 | Document | What it covers |
 |---|---|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the hub works inside, for developers: routing a request, logins and tokens, tracker and aggregate data, the outbox, the store, the sync cycle, the code map |
+| [SECURITY-DESIGN.md](docs/SECURITY-DESIGN.md) | The threat model, encryption at rest, who sees what, the network, accounts and tokens on central, not losing data, and the known gaps |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Rolling out hubs: hardware, the image, set-up, networks, reaching the hub securely, running the fleet; a hub without a real-time clock and two-factor login (appendices) |
 | [RECOVERY.md](docs/RECOVERY.md) | Keeping unsent data safe: backup and recovery |
 | [CONNECTIVITY.md](docs/CONNECTIVITY.md) | How facilities are connected, and what that means for the hub |
